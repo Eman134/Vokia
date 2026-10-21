@@ -127,46 +127,52 @@ Os agentes falam entre si e com você por um servidor MCP local, com ferramentas
 
 ### 6.5 Stack do app
 
-Electron + electron-vite, TypeScript estrito, React, Tailwind, shadcn/ui, @xyflow/react (fluxos e canvas), zustand (estado), better-sqlite3, zod (validação de mensagens das CLIs).
+Tauri 2, Vue 3 + Vite, TypeScript estrito, Tailwind, shadcn-vue, `@vue-flow/core` (fluxos e canvas), Pinia (estado), plugin SQL do Tauri com SQLite, Rust no backend nativo e zod (validação de mensagens das CLIs).
 
 ### 6.6 Distribuição e atualização
 
 O app é **todo local**: roda, guarda dados e executa os agentes só na máquina. A única chamada externa do próprio app é a busca de atualização ao abrir.
 
-- **Executável por sistema**, gerado pelo `electron-builder`:
+- **Executável por sistema**, gerado pelo `tauri build`:
   - Windows: instalador NSIS (`.exe`);
   - macOS: `.dmg`;
   - Linux: `AppImage`.
-- **Atualização ao iniciar**, com `electron-updater` usando o **GitHub Releases** do repositório público. Não precisa de servidor próprio.
-  1. Ao abrir, o app lê o `latest.yml` da release mais recente e compara com a versão instalada.
+- **Atualização ao iniciar**, com o plugin de updater do Tauri usando o **GitHub Releases** do repositório público. Não precisa de servidor próprio.
+  1. Ao abrir, o app consulta o manifesto de atualização da release mais recente e compara com a versão instalada.
   2. Se houver versão nova, baixa em segundo plano.
   3. Avisa na barra de ação: "Versão 0.3.0 pronta · Reiniciar".
-  4. Instala ao reiniciar ou ao fechar o app (`autoInstallOnAppQuit`).
+  4. Instala ao reiniciar ou ao fechar o app, conforme a configuração do updater.
 - **Sem internet ou erro na busca:** o app abre normalmente na versão atual e mostra o erro na barra. A falha é visível, mas não bloqueia o uso.
 - **Configuração mínima:**
 
 ```ts
-// processo principal
-autoUpdater.autoInstallOnAppQuit = true;
-autoUpdater.on('update-downloaded', info => win.webContents.send('update:ready', info.version));
-autoUpdater.on('error', err => win.webContents.send('update:error', err.message));
-autoUpdater.checkForUpdates();
+// frontend Vue 3 — exemplo de integração com o plugin updater do Tauri
+import { check } from '@tauri-apps/plugin-updater';
+
+const update = await check();
+if (update) {
+  await update.downloadAndInstall();
+}
 ```
 
-```yaml
-# electron-builder.yml
-publish:
-  provider: github
-  owner: <usuario>
-  repo: vokia
+```json
+// src-tauri/tauri.conf.json
+{
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/<usuario>/vokia/releases/latest/download/latest.json"],
+      "pubkey": "<chave-pública-do-updater>"
+    }
+  }
+}
 ```
 
-- **Publicação de versões:** um GitHub Action roda `electron-builder --publish always` a cada tag `v*` e gera os instaladores dos três sistemas na release.
+- **Publicação de versões:** um GitHub Action roda `tauri build` a cada tag `v*` e publica os instaladores e o manifesto assinado nas releases do GitHub.
 - **Por sistema:**
   - Windows funciona sem assinatura, com aviso do SmartScreen na primeira instalação.
   - Linux funciona sem nada extra.
   - macOS só atualiza sozinho com app assinado e notarizado (conta Apple Developer). Até lá, o app só avisa "nova versão disponível" com o link da release.
-- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull` + `npm install` + `npm run dev`. Não é o caminho para usuários finais.
+- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull` + `npm install` + `npm run tauri dev`. Não é o caminho para usuários finais.
 - **Configurações:** a versão instalada, "Procurar atualização agora" e um interruptor para desligar a busca ao iniciar.
 
 ---
@@ -497,7 +503,7 @@ Valem para todos os projetos; regras de um projeto ou de um agente ficam nas pá
 - "Sempre neste projeto" grava a permissão no projeto, de forma visível e reversível em Configurações.
 - Merge e push sempre passam por você, salvo se a orquestração estiver configurada para "nunca parar" (merge automático), o que aparece de forma explícita no fluxo.
 - Telemetria desligada por padrão. Dados locais.
-- A busca de atualização só fala com o GitHub Releases do repositório oficial e não envia dados do usuário. O `electron-updater` confere o hash de cada download antes de instalar.
+- A busca de atualização só fala com o GitHub Releases do repositório oficial e não envia dados do usuário. O updater do Tauri valida a assinatura e o hash de cada download antes de instalar.
 
 ---
 
@@ -505,7 +511,7 @@ Valem para todos os projetos; regras de um projeto ou de um agente ficam nas pá
 
 | Fase | Entrega |
 |---|---|
-| 0 · Base | App Electron, detecção das CLIs, um agente rodando em headless com saída em stream-json, SQLite, executável para Windows, macOS e Linux, busca de atualização no GitHub Releases ao iniciar, GitHub Action de release por tag |
+| 0 · Base | App Vue 3 + Tauri, detecção das CLIs, um agente rodando em headless com saída em stream-json, SQLite, executável para Windows, macOS e Linux, busca de atualização no GitHub Releases ao iniciar, GitHub Action de release por tag |
 | 1 · Um projeto, um time | Onboarding e novo projeto, Projetos, worktree por feature, barra de ação com pedidos e proposta de cards, kanban do backlog, Conversas com terminal |
 | 2 · Orquestração | Camadas, roles, servidor MCP (delegate, report, ask_human), regras das setas, limites, decisões na barra |
 | 3 · Planos e artefatos | Planos por feature/task, delegação de plano, Backlog e planos, artefatos (Mermaid, PlantUML, Documento, ADR, Casos de uso, Anotações, Whiteboard) |
