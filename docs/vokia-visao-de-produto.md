@@ -127,8 +127,19 @@ Os agentes falam entre si e com você por um servidor MCP local, com ferramentas
 
 ### 6.5 Stack do app
 
-Tauri 2, Vue 3 + Vite, TypeScript estrito, Tailwind, shadcn-vue, `@vue-flow/core` (fluxos e canvas), Pinia (estado), plugin SQL do Tauri com SQLite, Rust no backend nativo e zod (validação de mensagens das CLIs).
+Tauri 2, Vue 3 + Vite, TypeScript estrito, Tailwind CSS, shadcn-vue, @vue-flow/core (fluxos e canvas), Pinia (estado), plugin SQL do Tauri com SQLite, Rust no backend nativo e zod (validação de mensagens das CLIs).
 
+#### 6.5.1 Tailwind CSS
+
+O frontend usa Tailwind CSS como camada principal de estilo, integrado ao Vite.
+
+- Dependências de desenvolvimento: tailwindcss e @tailwindcss/vite.
+- O plugin do Tailwind é registrado no vite.config.ts junto do plugin Vue.
+- O arquivo src/assets/main.css importa Tailwind e concentra os tokens do produto.
+- Os componentes Vue usam utilitários Tailwind; componentes reutilizáveis ficam em src/components/ui.
+- O modo escuro usa a estratégia por classe (.dark).
+
+Exemplo mínimo no Vite: use tailwindcss() junto de vue() no array de plugins. No main.css, importe tailwindcss e defina os tokens do produto com @theme.
 ### 6.6 Distribuição e atualização
 
 O app é **todo local**: roda, guarda dados e executa os agentes só na máquina. A única chamada externa do próprio app é a busca de atualização ao abrir.
