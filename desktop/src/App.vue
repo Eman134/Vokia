@@ -14,7 +14,13 @@ onUnmounted(team.stop)
 
 <template>
   <main
-    v-if="team.cliProblem"
+    v-if="team.startupError"
+    class="flex h-screen items-center justify-center bg-canvas p-8 text-center text-sm text-red-700"
+  >
+    {{ team.startupError }}
+  </main>
+  <main
+    v-else-if="team.cliProblem"
     class="flex h-screen flex-col items-center justify-center gap-4 bg-canvas p-8 text-center text-ink"
   >
     <h1 class="text-xl font-semibold">A Vokia precisa da CLI do Claude Code</h1>

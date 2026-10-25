@@ -28,6 +28,7 @@ export const AGENTS: readonly AgentProfile[] = [
 export const useTeam = defineStore('team', () => {
   const cliChecked = ref(false)
   const cliProblem = ref<CliProblem | null>(null)
+  const startupError = ref<string | null>(null)
   const feed = ref<FeedEntry[]>([])
   const states = ref<Record<Agent, AgentState>>({ iara: 'idle', davi: 'idle' })
   const busy = ref(false)
@@ -41,11 +42,15 @@ export const useTeam = defineStore('team', () => {
   )
 
   async function start(): Promise<void> {
-    cliProblem.value = await invoke<CliProblem | null>('cli_problem')
-    if (cliProblem.value === null) {
-      unlisten = await listen<VokiaEvent>(VOKIA_EVENT, (event) => apply(event.payload))
+    try {
+      cliProblem.value = await invoke<CliProblem | null>('cli_problem')
+      if (cliProblem.value === null) {
+        unlisten = await listen<VokiaEvent>(VOKIA_EVENT, (event) => apply(event.payload))
+      }
+      cliChecked.value = true
+    } catch (error) {
+      startupError.value = `Não foi possível iniciar a Vokia: ${String(error)}`
     }
-    cliChecked.value = true
   }
 
   function stop(): void {
@@ -76,5 +81,5 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
-  return { cliChecked, cliProblem, feed, states, busy, thinkingAgent, statusText, start, stop, send }
+  return { cliChecked, cliProblem, startupError, feed, states, busy, thinkingAgent, statusText, start, stop, send }
 })

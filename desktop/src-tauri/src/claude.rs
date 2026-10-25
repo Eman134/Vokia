@@ -70,6 +70,8 @@ struct AuthStatus {
 struct CliResponse {
     #[serde(default)]
     result: String,
+    #[serde(default)]
+    subtype: String,
     session_id: String,
     is_error: bool,
 }
@@ -141,7 +143,12 @@ pub async fn ask(
     let response: CliResponse =
         serde_json::from_slice(&output.stdout).map_err(ClaudeError::InvalidJson)?;
     if response.is_error {
-        return Err(ClaudeError::Reported(response.result));
+        let message = if response.result.is_empty() {
+            format!("sem texto (subtype: {})", response.subtype)
+        } else {
+            response.result
+        };
+        return Err(ClaudeError::Reported(message));
     }
     Ok(Reply {
         text: response.result,
