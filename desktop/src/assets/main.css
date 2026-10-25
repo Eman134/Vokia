@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-canvas: #fbfbfd;
+  --color-line: #ecebf2;
+  --color-ink: #18161f;
+  --color-accent: #6e5fa6;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
