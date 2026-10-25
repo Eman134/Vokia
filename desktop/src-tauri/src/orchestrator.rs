@@ -125,9 +125,10 @@ fn delegation(reply: &str) -> Option<String> {
     reply
         .lines()
         .rev()
-        .find_map(|line| line.trim().strip_prefix(DELEGATION_PREFIX))
-        .map(|request| request.trim().to_string())
-        .filter(|request| !request.is_empty())
+        .filter_map(|line| line.trim().strip_prefix(DELEGATION_PREFIX))
+        .map(str::trim)
+        .find(|request| !request.is_empty())
+        .map(str::to_string)
 }
 
 fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Result<(), FlowError> {
