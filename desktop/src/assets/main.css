@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-canvas: #fbfbfd;
-  --color-line: #ecebf2;
-  --color-ink: #18161f;
-  --color-accent: #6e5fa6;
+  --color-canvas: #fafafa;
+  --color-line: #e6e6ea;
+  --color-ink: #1c1c21;
+  --color-accent: #5b57d1;
   --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
 }
 
