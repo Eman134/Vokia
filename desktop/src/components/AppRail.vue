@@ -1,12 +1,15 @@
 <template>
   <nav class="flex w-[88px] shrink-0 flex-col items-center gap-6 border-r border-line bg-white py-5">
-    <svg class="h-9 w-9" viewBox="0 0 1024 1024" aria-label="Vokia">
-      <rect width="1024" height="1024" rx="224" class="fill-accent" />
-      <path
-        d="M512 192c40 120 184 216 184 392a184 184 0 0 1-368 0c0-96 48-160 104-216 8 72 40 112 80 128-24-112 0-208 0-304z"
-        class="fill-canvas"
-      />
-    </svg>
+    <div class="grid h-10 w-10 place-items-center rounded-xl bg-ink" role="img" aria-label="Vokia">
+      <svg class="h-6 w-6" viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M6 16 H20 L32 44 L44 16 H58 L38 60 H26 Z" class="fill-canvas" />
+        <path
+          d="M32 40 C 24 34, 23 25, 28 18 C 31 14, 31 9, 29 3 C 38 7, 43 15, 41 24 C 40 29, 37 33, 32 40 Z"
+          class="fill-canvas"
+        />
+        <path d="M32 44 L36 34 C 34 37, 33 39, 32 40 C 31 39, 30 37, 28 34 Z" class="fill-ink" />
+      </svg>
+    </div>
     <a
       class="flex w-16 flex-col items-center gap-1 rounded-xl bg-accent/10 py-2 text-xs font-medium text-accent"
       aria-current="page"
