@@ -2,11 +2,24 @@
 
 @theme {
   --color-canvas: #fafafa;
+  --color-surface: #ffffff;
   --color-line: #e6e6ea;
   --color-ink: #1c1c21;
+  --color-muted: #6b6b76;
+  --color-faint: #a6a6b0;
   --color-accent: #5b57d1;
+  --color-accent-soft: #eeedfb;
+  --color-accent-ink: #ffffff;
+  --color-ok: #2f9e5b;
+  --color-warn: #e07b24;
+  --color-danger: #cf4a3c;
   --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
 }
+
+:root {
+  --shadow-float: 0 10px 28px rgba(28, 28, 33, 0.08);
+}
+
 
 body {
   margin: 0;

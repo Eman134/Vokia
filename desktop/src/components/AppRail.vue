@@ -1,5 +1,5 @@
 <template>
-  <nav class="flex w-[88px] shrink-0 flex-col items-center gap-6 border-r border-line bg-white py-5">
+  <nav class="flex w-[88px] shrink-0 flex-col items-center gap-6 border-r border-line bg-surface py-5">
     <div class="grid h-10 w-10 place-items-center rounded-xl bg-ink" role="img" aria-label="Vokia">
       <svg class="h-6 w-6" viewBox="0 0 64 64" aria-hidden="true">
         <path d="M6 16 H20 L32 44 L44 16 H58 L38 60 H26 Z" class="fill-canvas" />
@@ -11,7 +11,7 @@
       </svg>
     </div>
     <a
-      class="flex w-16 flex-col items-center gap-1 rounded-xl bg-accent/10 py-2 text-xs font-medium text-accent"
+      class="flex w-16 flex-col items-center gap-1 rounded-xl bg-accent-soft py-2 text-xs font-medium text-accent"
       aria-current="page"
     >
       <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">

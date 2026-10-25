@@ -23,7 +23,7 @@ async function submit(): Promise<void> {
 
 <template>
   <form
-    class="fixed bottom-6 left-1/2 flex w-[min(720px,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-sm"
+    class="fixed bottom-6 left-1/2 flex w-[min(720px,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-(--shadow-float)"
     @submit.prevent="submit"
   >
     <svg
@@ -39,12 +39,12 @@ async function submit(): Promise<void> {
         cx="12"
         cy="12"
         :r="RING_RADIUS"
-        class="stroke-accent"
+        class="stroke-ok"
         stroke-linecap="round"
         :stroke-dasharray="team.thinkingAgent ? SPINNING_RING_DASH : FULL_RING_DASH"
       />
     </svg>
-    <span class="w-32 shrink-0 text-sm text-ink/70">{{ team.statusText }}</span>
+    <span class="w-32 shrink-0 text-sm text-muted">{{ team.statusText }}</span>
     <input
       v-model="draft"
       class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-60"
@@ -53,7 +53,7 @@ async function submit(): Promise<void> {
     />
     <button
       type="submit"
-      class="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+      class="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-60"
       :disabled="team.busy || draft.trim() === ''"
     >
       Enviar

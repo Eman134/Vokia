@@ -15,7 +15,7 @@ onUnmounted(team.stop)
 <template>
   <main
     v-if="team.startupError"
-    class="flex h-screen items-center justify-center bg-canvas p-8 text-center text-sm text-red-700"
+    class="flex h-screen items-center justify-center bg-canvas p-8 text-center text-sm text-danger"
   >
     {{ team.startupError }}
   </main>
@@ -24,9 +24,9 @@ onUnmounted(team.stop)
     class="flex h-screen flex-col items-center justify-center gap-4 bg-canvas p-8 text-center text-ink"
   >
     <h1 class="text-xl font-semibold">A Vokia precisa da CLI do Claude Code</h1>
-    <p class="max-w-lg text-sm text-ink/70">{{ team.cliProblem.reason }}</p>
-    <p class="text-sm text-ink/70">Para resolver, rode no terminal e reabra o app:</p>
-    <code class="rounded-xl border border-line bg-white px-4 py-2 text-sm text-accent">
+    <p class="max-w-lg text-sm text-muted">{{ team.cliProblem.reason }}</p>
+    <p class="text-sm text-muted">Para resolver, rode no terminal e reabra o app:</p>
+    <code class="rounded-xl border border-line bg-surface px-4 py-2 text-sm text-accent">
       {{ team.cliProblem.fixCommand }}
     </code>
   </main>
