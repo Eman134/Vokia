@@ -20,6 +20,24 @@
   --shadow-float: 0 10px 28px rgba(28, 28, 33, 0.08);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-canvas: #121214;
+    --color-surface: #1a1a1e;
+    --color-line: #2f2f36;
+    --color-ink: #ececf0;
+    --color-muted: #a1a1ac;
+    --color-faint: #686873;
+    --color-accent: #a8a5ff;
+    --color-accent-soft: #262540;
+    --color-accent-ink: #121214;
+    --color-ok: #5fd08e;
+    --color-warn: #ffa257;
+    --color-danger: #ff7f70;
+    --shadow-float: 0 10px 28px rgba(0, 0, 0, 0.45);
+  }
+}
 
 body {
   margin: 0;
