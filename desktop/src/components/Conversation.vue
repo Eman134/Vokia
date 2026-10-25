@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useTeam } from '../stores/useTeam'
+import ThemeSwitch from './ThemeSwitch.vue'
 import type { Speaker, VokiaMessage } from '../types/events'
 
 const SPEAKER_NAMES: Record<Speaker, string> = {
@@ -22,7 +23,10 @@ function author(message: VokiaMessage): string {
 
 <template>
   <section class="flex-1 overflow-y-auto px-8 pb-40 pt-6">
-    <h1 class="mb-6 text-lg font-semibold text-ink">Conversas</h1>
+    <header class="mb-6 flex items-center justify-between gap-4">
+      <h1 class="text-lg font-semibold text-ink">Conversas</h1>
+      <ThemeSwitch />
+    </header>
     <p v-if="team.feed.length === 0" class="text-sm text-muted">Nenhuma mensagem ainda.</p>
     <ol class="flex max-w-3xl flex-col gap-3">
       <li v-for="(entry, index) in team.feed" :key="index">
