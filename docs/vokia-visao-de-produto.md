@@ -130,7 +130,7 @@ Os agentes falam entre si e com você por um servidor MCP local, com ferramentas
 
 ### 6.5 Stack do app
 
-Electron + electron-vite, TypeScript estrito, React, Tailwind, shadcn/ui, @xyflow/react (fluxos e canvas), zustand (estado), better-sqlite3, zod (validação de mensagens das CLIs).
+Tauri 2 (Rust no backend, com comandos e eventos), Vue 3 com script setup, TypeScript estrito, Vite, Pinia e Tailwind 4.
 
 ### 6.6 Distribuição e atualização
 
@@ -526,7 +526,7 @@ Valem para todos os projetos; regras de um projeto ou de um agente ficam nas pá
 - "Sempre neste projeto" grava a permissão no projeto, de forma visível e reversível em Configurações.
 - Merge e push sempre passam por você, salvo se a orquestração estiver configurada para "nunca parar" (merge automático), o que aparece de forma explícita no fluxo.
 - Telemetria desligada por padrão. Dados locais.
-- A busca de atualização só fala com o GitHub Releases do repositório oficial e não envia dados do usuário. O `electron-updater` confere o hash de cada download antes de instalar.
+- A busca de atualização só fala com o GitHub Releases do repositório oficial e não envia dados do usuário. O updater do Tauri confere a assinatura de cada download com a chave pública embutida no app, antes de instalar.
 
 ---
 
@@ -534,7 +534,7 @@ Valem para todos os projetos; regras de um projeto ou de um agente ficam nas pá
 
 | Fase | Entrega |
 |---|---|
-| 0 · Base | App Electron, detecção das CLIs, um agente rodando em headless com saída em stream-json, SQLite, executável para Windows, macOS e Linux, busca de atualização no GitHub Releases ao iniciar, GitHub Action de release por tag |
+| 0 · Base | App Tauri, detecção das CLIs, um agente rodando em headless com saída em stream-json, SQLite, executável para Windows, macOS e Linux, busca de atualização no GitHub Releases ao iniciar, GitHub Action de release por tag |
 | 1 · Um projeto, um time | Onboarding e novo projeto, Projetos, worktree por feature, barra de ação com pedidos e proposta de cards, kanban do backlog, Conversas com terminal |
 | 2 · Orquestração | Camadas, roles, servidor MCP (delegate, report, ask_human), regras das setas, limites, decisões na barra |
 | 3 · Planos e artefatos | Planos por feature/task, delegação de plano, Backlog e planos, artefatos (Mermaid, PlantUML, Documento, ADR, Casos de uso, Anotações, Whiteboard) |
