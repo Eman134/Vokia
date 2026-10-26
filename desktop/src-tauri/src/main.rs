@@ -4,26 +4,17 @@
 mod claude;
 mod events;
 mod orchestrator;
+mod tray;
+mod window;
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use tauri::menu::{Menu, MenuEvent, MenuItemBuilder};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{App, AppHandle, Manager, State, Window, WindowEvent};
+use tauri::{AppHandle, State};
 
 use claude::CliProblem;
 use events::Agent;
-
-const MAIN_WINDOW_LABEL: &str = "main";
-const TRAY_OPEN_ID: &str = "open";
-const TRAY_QUIT_ID: &str = "quit";
-const TRAY_OPEN_LABEL: &str = "Abrir Vokia";
-const TRAY_QUIT_LABEL: &str = "Sair";
-const TRAY_TOOLTIP: &str = "Vokia";
-const QUIT_EXIT_CODE: i32 = 0;
 
 pub struct AppState {
     pub cli: Result<PathBuf, CliProblem>,
@@ -47,114 +38,12 @@ async fn send_request(
     Ok(())
 }
 
-fn setup_tray(app: &App) -> Result<(), Box<dyn Error>> {
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or("Ícone padrão da Vokia não encontrado; a bandeja não pode ser criada.")?;
-    let open = MenuItemBuilder::with_id(TRAY_OPEN_ID, TRAY_OPEN_LABEL)
-        .build(app)
-        .map_err(tray_error)?;
-    let quit = MenuItemBuilder::with_id(TRAY_QUIT_ID, TRAY_QUIT_LABEL)
-        .build(app)
-        .map_err(tray_error)?;
-    let menu = Menu::with_items(app, &[&open, &quit]).map_err(tray_error)?;
-    TrayIconBuilder::new()
-        .icon(icon)
-        .tooltip(TRAY_TOOLTIP)
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(handle_tray_menu)
-        .on_tray_icon_event(handle_tray_click)
-        .build(app)
-        .map_err(tray_error)?;
-    Ok(())
-}
-
-fn tray_error(error: tauri::Error) -> String {
-    format!("Não foi possível criar o ícone da bandeja: {error}")
-}
-
-fn handle_tray_menu(app: &AppHandle, event: MenuEvent) {
-    match event.id.as_ref() {
-        TRAY_OPEN_ID => report_window_error(show_main_window(app)),
-        TRAY_QUIT_ID => app.exit(QUIT_EXIT_CODE),
-        _ => {}
-    }
-}
-
-fn handle_tray_click(tray: &TrayIcon, event: TrayIconEvent) {
-    if let TrayIconEvent::Click {
-        button: MouseButton::Left,
-        button_state: MouseButtonState::Up,
-        ..
-    } = event
-    {
-        report_window_error(show_main_window(tray.app_handle()));
-    }
-}
-
-fn show_main_window(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        window.show()?;
-        window.unminimize()?;
-        window.set_focus()?;
-    }
-    Ok(())
-}
-
-fn handle_second_instance(app: &AppHandle, _args: Vec<String>, _cwd: String) {
-    report_window_error(show_main_window(app));
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        report_window_error(focus_over_foreground_thread(&window));
-    }
-}
-
-fn focus_over_foreground_thread(window: &tauri::WebviewWindow) -> tauri::Result<()> {
-    let foreground_thread =
-        unsafe { GetWindowThreadProcessId(GetForegroundWindow(), std::ptr::null_mut()) };
-    let current_thread = unsafe { GetCurrentThreadId() };
-    let attached = unsafe { AttachThreadInput(current_thread, foreground_thread, ATTACH) } != 0;
-    let result = window.set_focus();
-    if attached {
-        unsafe { AttachThreadInput(current_thread, foreground_thread, DETACH) };
-    }
-    result
-}
-
-const ATTACH: i32 = 1;
-const DETACH: i32 = 0;
-
-#[link(name = "user32")]
-extern "system" {
-    fn GetForegroundWindow() -> *mut std::ffi::c_void;
-    fn GetWindowThreadProcessId(hwnd: *mut std::ffi::c_void, process_id: *mut u32) -> u32;
-    fn AttachThreadInput(attach: u32, attach_to: u32, attach_flag: i32) -> i32;
-}
-
-extern "system" {
-    fn GetCurrentThreadId() -> u32;
-}
-
-fn hide_main_window_on_close(window: &Window, event: &WindowEvent) {
-    if let WindowEvent::CloseRequested { api, .. } = event {
-        if window.label() == MAIN_WINDOW_LABEL {
-            api.prevent_close();
-            report_window_error(window.hide());
-        }
-    }
-}
-
-fn report_window_error(result: tauri::Result<()>) {
-    if let Err(error) = result {
-        eprintln!("Não foi possível atualizar a janela da Vokia: {error}");
-    }
-}
-
 fn main() {
     let cli = tauri::async_runtime::block_on(claude::locate());
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(handle_second_instance))
+        .plugin(tauri_plugin_single_instance::init(
+            window::handle_second_instance,
+        ))
         .manage(AppState {
             cli,
             sessions: Mutex::new(HashMap::new()),
@@ -162,8 +51,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![cli_problem, send_request])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| setup_tray(app))
-        .on_window_event(hide_main_window_on_close)
+        .setup(|app| tray::setup_tray(app))
+        .on_window_event(window::hide_main_window_on_close)
         .run(tauri::generate_context!())
         .expect("falha ao iniciar o app Vokia");
 }
