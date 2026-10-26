@@ -126,6 +126,8 @@ fn main() {
             sessions: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![cli_problem, send_request])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| setup_tray(app))
         .on_window_event(hide_main_window_on_close)
         .run(tauri::generate_context!())

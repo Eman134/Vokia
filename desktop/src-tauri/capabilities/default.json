@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Permite invoke dos comandos do app e escutar eventos na janela principal.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }
