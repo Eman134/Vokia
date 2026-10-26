@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::claude::{self, ClaudeError};
 use crate::events::{Agent, AgentState, Speaker, VokiaEvent, EVENT_NAME};
-use crate::AppState;
+use crate::state::AppState;
 
 const IARA_ROLE: &str = "Você é Iara, tech lead do time. Responda em português, em no máximo 3 frases. Quando precisar do Davi, termine a resposta com uma linha exatamente assim: @Davi: <pedido>.";
 const DAVI_ROLE: &str = "Você é Davi, dev frontend. Responda em português, em no máximo 3 frases.";
