@@ -1,7 +1,6 @@
 import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
-import { check as checkForUpdate, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
+import { checkForUpdate, relaunchApp, type DownloadEvent, type Update } from './updaterApi'
 
 const UPDATE_CHECK_TIMEOUT_MS = 10_000
 const PERCENT = 100
@@ -31,7 +30,7 @@ export const useUpdater = defineStore('updater', () => {
       return
     }
     try {
-      const found = await checkForUpdate({ timeout: UPDATE_CHECK_TIMEOUT_MS })
+      const found = await checkForUpdate(UPDATE_CHECK_TIMEOUT_MS)
       if (found !== null) {
         update.value = found
         status.value = 'available'
@@ -64,7 +63,7 @@ export const useUpdater = defineStore('updater', () => {
       await current.download(trackDownload)
       status.value = 'installing'
       await current.install()
-      await relaunch()
+      await relaunchApp()
     } catch (error) {
       status.value = 'failed'
       installError.value = `Não foi possível atualizar: ${String(error)}`

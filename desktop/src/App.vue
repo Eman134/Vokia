@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { useTeam } from './stores/useTeam'
-import AppRail from './components/AppRail.vue'
-import AgentList from './components/AgentList.vue'
-import Conversation from './components/Conversation.vue'
-import ActionBar from './components/ActionBar.vue'
-import UpdatePrompt from './components/UpdatePrompt.vue'
-import { useUpdater } from './stores/useUpdater'
+import { useTeam } from './features/team/useTeam'
+import AppRail from './shell/AppRail.vue'
+import AgentList from './features/team/AgentList.vue'
+import Conversation from './features/team/Conversation.vue'
+import ActionBar from './features/team/ActionBar.vue'
+import UpdatePrompt from './features/updater/UpdatePrompt.vue'
+import { useUpdater } from './features/updater/useUpdater'
 
 const team = useTeam()
 const updater = useUpdater()

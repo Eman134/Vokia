@@ -62,6 +62,23 @@ A chave privada nunca vai para o repositório. Detalhes do fluxo de distribuiç�
 - `docs/`: visão do produto e protótipos (`docs/prototipo/`).
 - `.github/workflows/`: workflow de release.
 
+Núcleo Rust (`desktop/src-tauri/src/`):
+- `main.rs`: ponto de entrada; declara os módulos e monta o Builder do Tauri.
+- `state.rs`: `AppState`, com o caminho da CLI e as sessões dos agentes.
+- `commands.rs`: comandos expostos ao frontend (`cli_problem`, `send_request`, `check_connection`); só delegam.
+- `window.rs`: janela principal, instância única e relato de erro de janela.
+- `tray.rs`: ícone e menu da bandeja.
+- `claude.rs`: adaptador da CLI do Claude Code.
+- `orchestrator.rs`: fluxo da Iara e do Davi.
+- `events.rs`: eventos enviados ao frontend.
+- `connectivity.rs`: checagem de alcance da API, sem enviar dados.
+
+Frontend (`desktop/src/`):
+- `main.ts` e `App.vue` na raiz; `styles/` com tokens e CSS global; `shell/` com a moldura do app.
+- `features/<nome>/`: componentes, store (`useX.ts`), serviço (`xApi.ts`) quando a feature fala com o Tauri, e tipos (ex.: `features/team/events.ts`, que espelha `events.rs`). Hoje: `team`, `updater` e `theme`.
+- Camadas em uma direção: componente → store → serviço → Tauri. Só os serviços importam `@tauri-apps`.
+- Tokens de design só em `desktop/src/styles/tokens.css`; constantes nomeadas no topo do arquivo que as usa.
+
 ## Documentação
 
 - [Visão de produto](docs/vokia-visao-de-produto.md)

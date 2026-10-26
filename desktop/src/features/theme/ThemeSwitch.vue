@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { THEME_CHOICES, useTheme, type ThemeChoice } from '../stores/useTheme'
+import { THEME_CHOICES, useTheme, type ThemeChoice } from './useTheme'
 
 const THEME_LABELS: Record<ThemeChoice, string> = {
   light: 'Claro',

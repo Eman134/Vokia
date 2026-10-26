@@ -1,4 +1,9 @@
 @theme {
+  --color-*: initial;
+  --radius-*: initial;
+  --text-*: initial;
+  --shadow-*: initial;
+
   --color-bg: light-dark(#fafafa, #121214);
   --color-surface: light-dark(#ffffff, #1a1a1e);
   --color-surface-2: light-dark(#f3f3f5, #232328);
@@ -23,6 +28,7 @@
   --shadow-seg: 0 1px 2px rgb(0 0 0 / 8%);
   --shadow-panel: 0 20px 50px color-mix(in srgb, var(--color-overlay) 50%, transparent);
 
+  --radius-tail: 4px;
   --radius-chip: 6px;
   --radius-control-sm: 8px;
   --radius-control: 10px;
@@ -63,6 +69,23 @@
   --font-sans: 'Geist Variable', Geist, 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
   --font-hand: Caveat, cursive;
+
+  --animate-dot-1: dot-pulse 1.2s ease-in-out infinite;
+  --animate-dot-2: dot-pulse 1.2s ease-in-out 0.2s infinite;
+  --animate-dot-3: dot-pulse 1.2s ease-in-out 0.4s infinite;
+
+  @keyframes dot-pulse {
+    0%,
+    60%,
+    100% {
+      opacity: 0.3;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
 }
 
 :root {

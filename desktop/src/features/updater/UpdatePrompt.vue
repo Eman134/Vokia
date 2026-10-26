@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useUpdater } from '../stores/useUpdater'
+import { useUpdater } from './useUpdater'
 
 const DATE_LOCALE = 'pt-BR'
 const INSTALL_LABEL = 'Atualizar agora'

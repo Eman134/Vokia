@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { AGENTS, useTeam } from '../stores/useTeam'
-import type { AgentState } from '../types/events'
+import { AGENTS, useTeam } from './useTeam'
+import type { AgentState } from './events'
 
 const STATE_LABELS: Record<AgentState, string> = {
   thinking: 'pensando',
