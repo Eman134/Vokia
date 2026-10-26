@@ -5,10 +5,14 @@ import AppRail from './components/AppRail.vue'
 import AgentList from './components/AgentList.vue'
 import Conversation from './components/Conversation.vue'
 import ActionBar from './components/ActionBar.vue'
+import UpdatePrompt from './components/UpdatePrompt.vue'
+import { useUpdater } from './stores/useUpdater'
 
 const team = useTeam()
+const updater = useUpdater()
 
 onMounted(team.start)
+onMounted(updater.check)
 onUnmounted(team.stop)
 </script>
 
@@ -36,4 +40,5 @@ onUnmounted(team.stop)
     <Conversation />
     <ActionBar />
   </div>
+  <UpdatePrompt />
 </template>
