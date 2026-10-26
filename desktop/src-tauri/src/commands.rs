@@ -1,12 +1,18 @@
 use tauri::{AppHandle, State};
 
 use crate::claude::CliProblem;
+use crate::connectivity;
 use crate::orchestrator;
 use crate::state::AppState;
 
 #[tauri::command]
 pub fn cli_problem(state: State<'_, AppState>) -> Option<CliProblem> {
     state.cli.as_ref().err().cloned()
+}
+
+#[tauri::command]
+pub async fn check_connection() -> bool {
+    connectivity::is_reachable().await
 }
 
 #[tauri::command]

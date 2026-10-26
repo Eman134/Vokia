@@ -3,6 +3,7 @@
 
 mod claude;
 mod commands;
+mod connectivity;
 mod events;
 mod orchestrator;
 mod state;
@@ -26,7 +27,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::cli_problem,
-            commands::send_request
+            commands::send_request,
+            commands::check_connection
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
