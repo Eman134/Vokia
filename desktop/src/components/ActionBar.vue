@@ -2,7 +2,10 @@
 import { ref } from 'vue'
 import { useTeam } from '../stores/useTeam'
 
-const RING_RADIUS = 9
+const RING_BOX = 28
+const RING_CENTER = RING_BOX / 2
+const RING_RADIUS = 11
+const RING_STROKE = 2.5
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 const SPINNING_ARC = RING_CIRCUMFERENCE / 4
 const FULL_RING_DASH = `${RING_CIRCUMFERENCE} 0`
@@ -23,40 +26,34 @@ async function submit(): Promise<void> {
 
 <template>
   <form
-    class="fixed bottom-6 left-1/2 flex w-[min(720px,calc(100%-2rem))] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-(--shadow-float)"
+    class="fixed bottom-6 inset-x-6 mx-auto flex h-12 max-w-190 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float"
     @submit.prevent="submit"
   >
     <svg
-      class="h-6 w-6 shrink-0"
+      class="size-6.5 shrink-0"
       :class="{ 'animate-spin': team.thinkingAgent }"
-      viewBox="0 0 24 24"
+      :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
       fill="none"
-      stroke-width="3"
+      :stroke-width="RING_STROKE"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" :r="RING_RADIUS" class="stroke-line" />
+      <circle :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_RADIUS" class="stroke-line" />
       <circle
-        cx="12"
-        cy="12"
+        :cx="RING_CENTER"
+        :cy="RING_CENTER"
         :r="RING_RADIUS"
         class="stroke-ok"
         stroke-linecap="round"
         :stroke-dasharray="team.thinkingAgent ? SPINNING_RING_DASH : FULL_RING_DASH"
       />
     </svg>
-    <span class="w-32 shrink-0 text-sm text-muted">{{ team.statusText }}</span>
+    <span class="w-32 shrink-0 truncate text-label font-semibold text-muted">{{ team.statusText }}</span>
+    <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
     <input
       v-model="draft"
-      class="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-accent disabled:opacity-60"
+      class="h-8.5 min-w-0 flex-1 rounded-full bg-surface-2 px-3.5 text-label text-ink outline-none placeholder:text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
       placeholder="Peça algo ao time"
       :disabled="team.busy"
     />
-    <button
-      type="submit"
-      class="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-60"
-      :disabled="team.busy || draft.trim() === ''"
-    >
-      Enviar
-    </button>
   </form>
 </template>

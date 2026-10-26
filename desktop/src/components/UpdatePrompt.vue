@@ -33,32 +33,32 @@ const installLabel = computed<string>(() => {
 <template>
   <div
     v-if="updater.status !== 'idle'"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-canvas/70 p-4"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
   >
     <section
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-prompt-title"
-      class="w-[min(520px,100%)] rounded-2xl border border-line bg-surface p-6 shadow-(--shadow-float)"
+      class="w-130 max-w-full rounded-dialog border border-line bg-surface p-6 shadow-float"
     >
-      <h2 id="update-prompt-title" class="text-lg font-semibold text-ink">Nova versão disponível</h2>
-      <p class="mt-1 text-sm text-muted">
+      <h2 id="update-prompt-title" class="text-section text-ink">Nova versão disponível</h2>
+      <p class="mt-1 text-caption text-muted">
         Vokia {{ updater.version }} · instalada: {{ updater.currentVersion }}
       </p>
-      <p v-if="releaseDate" class="text-sm text-muted">Publicada em {{ releaseDate }}</p>
+      <p v-if="releaseDate" class="text-caption text-muted">Publicada em {{ releaseDate }}</p>
 
-      <div class="mt-4 max-h-64 overflow-y-auto rounded-xl border border-line bg-canvas p-3">
-        <p v-if="updater.notes" class="whitespace-pre-wrap text-sm text-ink">{{ updater.notes }}</p>
-        <p v-else class="text-sm text-muted">Sem notas de versão.</p>
+      <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3">
+        <p v-if="updater.notes" class="whitespace-pre-wrap text-control text-ink">{{ updater.notes }}</p>
+        <p v-else class="text-control text-muted">Sem notas de versão.</p>
       </div>
 
-      <p v-if="updater.installError" class="mt-4 text-sm text-danger">{{ updater.installError }}</p>
+      <p v-if="updater.installError" class="mt-4 text-small text-danger">{{ updater.installError }}</p>
 
       <div class="mt-6 flex justify-end gap-2">
         <button
           v-if="updater.status === 'failed'"
           type="button"
-          class="rounded-xl bg-surface-2 px-4 py-2 text-sm font-medium text-ink"
+          class="h-9 rounded-control bg-surface-2 px-3.5 text-control font-medium text-ink"
           @click="updater.dismissUpdate()"
         >
           Fechar
@@ -66,7 +66,7 @@ const installLabel = computed<string>(() => {
         <template v-else>
           <button
             type="button"
-            class="rounded-xl bg-surface-2 px-4 py-2 text-sm font-medium text-ink disabled:opacity-60"
+            class="h-9 rounded-control px-3.5 text-control font-medium text-muted disabled:opacity-40"
             :disabled="updater.busy"
             @click="updater.dismissUpdate()"
           >
@@ -74,7 +74,7 @@ const installLabel = computed<string>(() => {
           </button>
           <button
             type="button"
-            class="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-60"
+            class="h-9 rounded-control bg-ink px-3.5 text-control font-medium text-bg disabled:opacity-40"
             :disabled="updater.busy"
             @click="updater.install()"
           >
@@ -87,12 +87,12 @@ const installLabel = computed<string>(() => {
 
   <div
     v-if="updater.checkError"
-    class="fixed top-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-2xl border border-line bg-surface px-4 py-3 shadow-(--shadow-float)"
+    class="fixed top-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-popover border border-line bg-surface px-3.5 py-3 shadow-float"
   >
-    <p class="text-sm text-muted">{{ updater.checkError }}</p>
+    <p class="text-caption text-muted">{{ updater.checkError }}</p>
     <button
       type="button"
-      class="shrink-0 text-sm font-medium text-accent"
+      class="h-7.5 shrink-0 rounded-control-sm px-3.5 text-control font-medium text-muted"
       @click="updater.dismissCheckError()"
     >
       Fechar

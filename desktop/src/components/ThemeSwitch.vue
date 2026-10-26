@@ -11,15 +11,15 @@ const theme = useTheme()
 </script>
 
 <template>
-  <div class="flex gap-0.5 rounded-xl bg-surface-2 p-[3px]" role="group" aria-label="Tema">
+  <div class="flex gap-0.5 rounded-control bg-surface-2 p-0.75" role="group" aria-label="Tema">
     <button
       v-for="option in THEME_CHOICES"
       :key="option"
       type="button"
-      class="h-[30px] cursor-pointer whitespace-nowrap rounded-[9px] px-[11px] text-[12.5px]"
+      class="cursor-pointer whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption"
       :class="
         theme.choice === option
-          ? 'bg-surface font-semibold text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]'
+          ? 'bg-surface font-medium text-ink shadow-seg'
           : 'text-muted'
       "
       :aria-pressed="theme.choice === option"

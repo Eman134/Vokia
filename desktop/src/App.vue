@@ -19,22 +19,22 @@ onUnmounted(team.stop)
 <template>
   <main
     v-if="team.startupError"
-    class="flex h-screen items-center justify-center bg-canvas p-8 text-center text-sm text-danger"
+    class="flex h-screen items-center justify-center bg-bg p-8 text-center text-body text-danger"
   >
     {{ team.startupError }}
   </main>
   <main
     v-else-if="team.cliProblem"
-    class="flex h-screen flex-col items-center justify-center gap-4 bg-canvas p-8 text-center text-ink"
+    class="flex h-screen flex-col items-center justify-center gap-4 bg-bg p-8 text-center text-ink"
   >
-    <h1 class="text-xl font-semibold">A Vokia precisa da CLI do Claude Code</h1>
-    <p class="max-w-lg text-sm text-muted">{{ team.cliProblem.reason }}</p>
-    <p class="text-sm text-muted">Para resolver, rode no terminal e reabra o app:</p>
-    <code class="rounded-xl border border-line bg-surface px-4 py-2 text-sm text-accent">
+    <h1 class="text-section">A Vokia precisa da CLI do Claude Code</h1>
+    <p class="max-w-lg text-body text-muted">{{ team.cliProblem.reason }}</p>
+    <p class="text-body text-muted">Para resolver, rode no terminal e reabra o app:</p>
+    <code class="rounded-control-sm bg-surface-2 px-2.5 py-2 font-mono text-caption text-ink">
       {{ team.cliProblem.fixCommand }}
     </code>
   </main>
-  <div v-else-if="team.cliChecked" class="flex h-screen bg-canvas text-ink">
+  <div v-else-if="team.cliChecked" class="flex h-screen bg-bg text-ink">
     <AppRail />
     <AgentList />
     <Conversation />
