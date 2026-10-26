@@ -62,10 +62,14 @@ pub async fn handle_request(
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
     emit_message(app, Speaker::User, Speaker::Iara, request)?;
     let iara_reply = ask_agent(app, state, cli, Agent::Iara, request).await?;
-    emit_message(app, Speaker::Iara, Speaker::User, &iara_reply)?;
     let Some(davi_request) = delegation(&iara_reply) else {
+        emit_message(app, Speaker::Iara, Speaker::User, &iara_reply)?;
         return emit_state(app, Agent::Iara, AgentState::Idle);
     };
+    let visible_reply = without_delegation(&iara_reply);
+    if !visible_reply.is_empty() {
+        emit_message(app, Speaker::Iara, Speaker::User, &visible_reply)?;
+    }
     emit_state(app, Agent::Iara, AgentState::Waiting)?;
     emit_message(app, Speaker::Iara, Speaker::Davi, &davi_request)?;
     let davi_reply = ask_agent(app, state, cli, Agent::Davi, &davi_request).await?;
@@ -121,14 +125,28 @@ fn role(agent: Agent) -> &'static str {
     }
 }
 
+fn delegation_request(line: &str) -> Option<&str> {
+    line.trim().strip_prefix(DELEGATION_PREFIX)
+}
+
 fn delegation(reply: &str) -> Option<String> {
     reply
         .lines()
         .rev()
-        .filter_map(|line| line.trim().strip_prefix(DELEGATION_PREFIX))
+        .filter_map(delegation_request)
         .map(str::trim)
         .find(|request| !request.is_empty())
         .map(str::to_string)
+}
+
+fn without_delegation(reply: &str) -> String {
+    reply
+        .lines()
+        .filter(|line| delegation_request(line).is_none())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Result<(), FlowError> {

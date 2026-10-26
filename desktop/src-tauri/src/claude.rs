@@ -1,13 +1,16 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
+use tokio::time::timeout;
 
 const CLI_NAME: &str = "claude";
 const MODEL: &str = "haiku";
-const MAX_TURNS: &str = "1";
+const MAX_TURNS: &str = "3";
+const CLI_TIMEOUT: Duration = Duration::from_secs(120);
 const INSTALL_COMMAND: &str = "npm install -g @anthropic-ai/claude-code";
 const LOGIN_COMMAND: &str = "claude auth login";
 // Sem isso o executável release (subsistema "windows") abre uma janela de console a cada chamada.
@@ -27,6 +30,7 @@ pub enum ClaudeError {
     Exit { code: Option<i32>, message: String },
     InvalidJson(serde_json::Error),
     Reported(String),
+    Timeout(Duration),
 }
 
 impl fmt::Display for ClaudeError {
@@ -49,6 +53,13 @@ impl fmt::Display for ClaudeError {
             }
             ClaudeError::InvalidJson(error) => {
                 write!(f, "A CLI claude devolveu um JSON inválido: {error}")
+            }
+            ClaudeError::Timeout(limit) => {
+                write!(
+                    f,
+                    "A CLI claude não respondeu em {} s e foi encerrada.",
+                    limit.as_secs()
+                )
             }
             ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
         }
@@ -116,6 +127,7 @@ pub async fn ask(
     session_id: Option<&str>,
 ) -> Result<Reply, ClaudeError> {
     let mut command = base_command(cli);
+    command.kill_on_drop(true);
     command.args([
         "-p",
         message,
@@ -133,7 +145,10 @@ pub async fn ask(
     if let Some(id) = session_id {
         command.args(["--resume", id]);
     }
-    let output = command.output().await.map_err(ClaudeError::Spawn)?;
+    let output = timeout(CLI_TIMEOUT, command.output())
+        .await
+        .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))?
+        .map_err(ClaudeError::Spawn)?;
     if !output.status.success() {
         return Err(ClaudeError::Exit {
             code: output.status.code(),
