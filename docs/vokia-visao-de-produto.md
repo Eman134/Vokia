@@ -134,43 +134,24 @@ Electron + electron-vite, TypeScript estrito, React, Tailwind, shadcn/ui, @xyflo
 
 ### 6.6 Distribuição e atualização
 
-O app é **todo local**: roda, guarda dados e executa os agentes só na máquina. A única chamada externa do próprio app é a busca de atualização ao abrir.
+O app é **todo local**: roda, guarda dados e executa os agentes só na máquina. A única chamada externa do próprio app é a checagem de atualização ao abrir, feita pelo lado nativo do app e sem enviar dados do usuário.
 
-- **Executável por sistema**, gerado pelo `electron-builder`:
-  - Windows: instalador NSIS (`.exe`);
-  - macOS: `.dmg`;
-  - Linux: `AppImage`.
-- **Atualização ao iniciar**, com `electron-updater` usando o **GitHub Releases** do repositório público. Não precisa de servidor próprio.
-  1. Ao abrir, o app lê o `latest.yml` da release mais recente e compara com a versão instalada.
-  2. Se houver versão nova, baixa em segundo plano.
-  3. Avisa na barra de ação: "Versão 0.3.0 pronta · Reiniciar".
-  4. Instala ao reiniciar ou ao fechar o app (`autoInstallOnAppQuit`).
-- **Sem internet ou erro na busca:** o app abre normalmente na versão atual e mostra o erro na barra. A falha é visível, mas não bloqueia o uso.
-- **Configuração mínima:**
-
-```ts
-// processo principal
-autoUpdater.autoInstallOnAppQuit = true;
-autoUpdater.on('update-downloaded', info => win.webContents.send('update:ready', info.version));
-autoUpdater.on('error', err => win.webContents.send('update:error', err.message));
-autoUpdater.checkForUpdates();
-```
-
-```yaml
-# electron-builder.yml
-publish:
-  provider: github
-  owner: <usuario>
-  repo: vokia
-```
-
-- **Publicação de versões:** um GitHub Action roda `electron-builder --publish always` a cada tag `v*` e gera os instaladores dos três sistemas na release.
-- **Por sistema:**
-  - Windows funciona sem assinatura, com aviso do SmartScreen na primeira instalação.
-  - Linux funciona sem nada extra.
-  - macOS só atualiza sozinho com app assinado e notarizado (conta Apple Developer). Até lá, o app só avisa "nova versão disponível" com o link da release.
-- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull` + `npm install` + `npm run dev`. Não é o caminho para usuários finais.
-- **Configurações:** a versão instalada, "Procurar atualização agora" e um interruptor para desligar a busca ao iniciar.
+- **Plataforma atual:** Windows x64, com instalador NSIS (`.exe`) que instala por usuário, sem administrador, em modo passivo com barra de progresso. macOS e Linux ainda não são publicados. Quando macOS entrar, o app só avisará sobre a versão nova sem assinatura Apple, como a regra atual.
+- **Gatilho:** o app só enxerga uma **release publicada** no GitHub, nunca rascunho nem pré-release, cujo tag seja `vX.Y.Z` e cuja versão seja maior que a instalada, comparada por versão semântica. Commits, pushes na branch principal e mudanças em `desktop/` não disparam nada por si só.
+- **Ao abrir:** em build de produção, o app consulta o `latest.json` anexado à release mais recente do repositório público `Eman134/Vokia`. Se houver versão nova, abre um pedido de atualização em modal, com versão, data e notas de versão. "Atualizar agora" baixa com progresso, verifica a assinatura, instala e reabre o app. "Depois" fecha o pedido só nesta abertura; na próxima, o pedido volta. A checagem não roda no modo de desenvolvimento.
+- **Notas de versão:** o texto exibido é a mensagem do tag anotado `vX.Y.Z`, que a Action usa como corpo da release e do `latest.json`. Editar as notas no rascunho da release depois do build **não** altera o `latest.json`. As notas aparecem como texto puro, com quebras de linha preservadas e rolagem quando são longas.
+- **Como publicar uma versão:**
+  1. Suba a versão em `desktop/package.json`, que é a fonte única do número do app. O `Cargo.toml` deve receber o mesmo número.
+  2. Faça commit dessa mudança na branch principal.
+  3. Crie o tag anotado `vX.Y.Z` com as notas de versão como mensagem e envie o tag ao GitHub. Se o número do tag não bater com o `package.json`, a Action falha antes de publicar qualquer coisa.
+  4. Acompanhe a Action de release no GitHub. Ela compila no Windows, assina o instalador e cria a release **como rascunho**, com o instalador NSIS, o arquivo de assinatura e o `latest.json`.
+  5. Confira o rascunho (instalador anexado, versão e notas) e clique em **Publicar**. Só depois disso as instalações existentes enxergam a versão nova. Um rascunho esquecido significa que ninguém recebe a atualização.
+- **Chaves de assinatura:** o par de chaves do Tauri é gerado uma vez, fica fora do repositório, na pasta `.tauri` do diretório do usuário, e tem senha. A chave privada e a senha ficam **somente** no gerenciador de senhas de quem publica e nos secrets do GitHub Actions, com os nomes `TAURI_SIGNING_PRIVATE_KEY` (conteúdo do arquivo da chave privada) e `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Nunca commite a chave privada nem arquivos `.key`. A chave pública fica em `tauri.conf.json`, porque é pública por definição. Se a chave privada ou a senha se perderem, as instalações existentes ficam presas na versão atual para sempre.
+- **Falhas:** erro de rede, resposta 404, JSON inválido ou assinatura inválida aparecem como aviso discreto e dispensável. O app segue na versão instalada e nunca trava. A checagem tem limite de 10 segundos e roda depois que a tela principal carrega, sem atrasar a abertura.
+- **Windows sem assinatura de código:** o SmartScreen pode alertar na primeira instalação. As atualizações seguintes são feitas pelo próprio app, sem passar pelo navegador.
+- **App na bandeja:** o app que fica na bandeja do sistema só checa atualização ao abrir. Dias na bandeja significam nenhuma nova checagem.
+- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull`, `npm install` e `npm run tauri dev` dentro de `desktop/`. Não é o caminho para usuários finais, e a checagem de atualização não roda nesse modo.
+- **Configurações (ainda não implementado):** a versão instalada na tela, "Procurar atualização agora" e um interruptor para desligar a busca ao iniciar.
 
 ---
 
