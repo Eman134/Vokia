@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Em push de tag o checkout pode trazer a referência leve; sem o fetch forçado o objeto anotado não existe.
+      - name: Buscar tags anotados
+        shell: bash
+        run: git fetch --tags --force
+
+      - name: Conferir versão do tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="$(node -p "require('./desktop/package.json').version")"
+          if [ "${TAG#v}" != "$VERSION" ]; then
+            echo "::error::O tag ${TAG} não corresponde à versão ${VERSION} de desktop/package.json."
+            exit 1
+          fi
+
+      - name: Conferir tag anotado e ler notas
+        id: notes
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$(git cat-file -t "refs/tags/${TAG}")" != "tag" ]; then
+            echo "::error::O tag ${TAG} não é anotado; crie com mensagem contendo as notas de versão."
+            exit 1
+          fi
+          {
+            echo "body<<NOTES_EOF"
+            git for-each-ref --format='%(contents)' "refs/tags/${TAG}"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Instalar dependências
+        working-directory: desktop
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Vokia v__VERSION__'
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: '--config {"bundle":{"createUpdaterArtifacts":true}}'
