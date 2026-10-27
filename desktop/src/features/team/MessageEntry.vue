@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AGENTS, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
+import { AGENTS, DEFAULT_RECIPIENT, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
 import type { Speaker, VokiaMessage } from './events'
 
 defineProps<{ entry: FeedEntry }>()
@@ -27,11 +27,16 @@ function profile(speaker: Speaker): AgentProfile | undefined {
 
 <template>
   <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex items-start justify-end gap-2.5">
-    <p
-      class="wrap-break-word max-w-3/4 whitespace-pre-wrap rounded-card rounded-tr-tail bg-surface-2 px-4 py-3 text-control text-ink"
-    >
-      {{ entry.text }}
-    </p>
+    <div class="flex max-w-3/4 flex-col items-end gap-1">
+      <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-caption text-muted">
+        Para {{ SPEAKER_NAMES[entry.to] }}
+      </span>
+      <p
+        class="wrap-break-word whitespace-pre-wrap rounded-card rounded-tr-tail bg-surface-2 px-4 py-3 text-control text-ink"
+      >
+        {{ entry.text }}
+      </p>
+    </div>
     <span class="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-small font-semibold text-bg">
       {{ USER_INITIAL }}
     </span>

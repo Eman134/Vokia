@@ -18,6 +18,8 @@ import {
 } from './teamApi'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
+export const DEFAULT_RECIPIENT: Agent = 'iara'
+const MENTION_PATTERN = /^@(\S+)(?:\s+|$)/
 
 export interface AgentProfile {
   id: Agent
@@ -40,6 +42,24 @@ export function isBetweenAgents(message: VokiaMessage): boolean {
   return message.from !== 'user' && message.to !== 'user'
 }
 
+export interface ParsedMention {
+  agent: Agent
+  text: string
+}
+
+export function parseMention(text: string): ParsedMention | null {
+  const match = MENTION_PATTERN.exec(text)
+  if (match === null) {
+    return null
+  }
+  const [mention, name] = match
+  const profile = AGENTS.find((agent) => agent.name.toLowerCase() === name.toLowerCase())
+  if (profile === undefined) {
+    return null
+  }
+  return { agent: profile.id, text: text.slice(mention.length) }
+}
+
 export const useTeam = defineStore('team', () => {
   const cliChecked = ref(false)
   const cliProblem = ref<CliProblem | null>(null)
@@ -49,6 +69,7 @@ export const useTeam = defineStore('team', () => {
   const busy = ref(false)
   const online = ref(true)
   const checking = ref(false)
+  const recipient = ref<Agent | null>(null)
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -136,7 +157,20 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
+  function chooseRecipient(agent: Agent): void {
+    recipient.value = agent
+  }
+
+  function clearRecipient(): void {
+    recipient.value = null
+  }
+
   async function send(text: string): Promise<boolean> {
+    const mention = parseMention(text)
+    const body = mention?.text ?? text
+    if (body.trim() === '') {
+      return false
+    }
     checking.value = true
     try {
       if (!(await refreshConnection())) {
@@ -145,9 +179,12 @@ export const useTeam = defineStore('team', () => {
     } finally {
       checking.value = false
     }
+    if (mention !== null) {
+      recipient.value = mention.agent
+    }
     busy.value = true
     try {
-      await sendRequest(text)
+      await sendRequest(body, recipient.value ?? DEFAULT_RECIPIENT)
     } catch (error) {
       feed.value.push({ type: 'error', message: String(error) })
     } finally {
@@ -166,10 +203,13 @@ export const useTeam = defineStore('team', () => {
     busy,
     online,
     checking,
+    recipient,
     thinkingAgent,
     statusText,
     start,
     stop,
+    chooseRecipient,
+    clearRecipient,
     send,
   }
 })

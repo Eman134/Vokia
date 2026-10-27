@@ -21,13 +21,22 @@ const team = useTeam()
   <aside class="w-60 shrink-0 border-r border-line bg-surface p-4">
     <h2 class="mb-3 text-small font-semibold text-muted">Agentes</h2>
     <ul class="flex flex-col gap-2">
-      <li v-for="agent in AGENTS" :key="agent.id" class="rounded-card border border-line p-3">
-        <p class="text-body font-semibold text-ink">{{ agent.name }}</p>
-        <p class="text-caption text-muted">{{ agent.role }}</p>
-        <p class="mt-1 flex items-center gap-1.5 text-caption text-ink">
-          <span class="size-1.75 rounded-full" :class="DOT_CLASSES[team.states[agent.id]]" />
-          {{ STATE_LABELS[team.states[agent.id]] }}
-        </p>
+      <li v-for="agent in AGENTS" :key="agent.id">
+        <button
+          type="button"
+          class="flex w-full cursor-pointer flex-col rounded-card border p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+          :class="team.recipient === agent.id ? 'border-accent bg-accent-soft' : 'border-line'"
+          :aria-pressed="team.recipient === agent.id"
+          :disabled="team.busy || team.checking"
+          @click="team.chooseRecipient(agent.id)"
+        >
+          <span class="block text-body font-semibold text-ink">{{ agent.name }}</span>
+          <span class="block text-caption text-muted">{{ agent.role }}</span>
+          <span class="mt-1 flex items-center gap-1.5 text-caption text-ink">
+            <span class="size-1.75 rounded-full" :class="DOT_CLASSES[team.states[agent.id]]" />
+            {{ STATE_LABELS[team.states[agent.id]] }}
+          </span>
+        </button>
       </li>
     </ul>
   </aside>

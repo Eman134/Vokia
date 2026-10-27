@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const EVENT_NAME: &str = "vokia://event";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Agent {
     Iara,

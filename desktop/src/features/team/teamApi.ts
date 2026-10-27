@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { VOKIA_EVENT, type CliProblem, type VokiaEvent } from './events'
+import { VOKIA_EVENT, type Agent, type CliProblem, type VokiaEvent } from './events'
 
 export type { UnlistenFn }
 
@@ -12,8 +12,8 @@ export function fetchCliProblem(): Promise<CliProblem | null> {
   return invoke<CliProblem | null>(CLI_PROBLEM_COMMAND)
 }
 
-export function sendRequest(text: string): Promise<void> {
-  return invoke<void>(SEND_REQUEST_COMMAND, { text })
+export function sendRequest(text: string, to: Agent): Promise<void> {
+  return invoke<void>(SEND_REQUEST_COMMAND, { text, to })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

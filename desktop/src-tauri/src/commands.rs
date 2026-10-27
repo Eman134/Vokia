@@ -2,6 +2,7 @@ use tauri::{AppHandle, State};
 
 use crate::claude::CliProblem;
 use crate::connectivity;
+use crate::events::Agent;
 use crate::orchestrator;
 use crate::state::AppState;
 
@@ -20,8 +21,9 @@ pub async fn send_request(
     app: AppHandle,
     state: State<'_, AppState>,
     text: String,
+    to: Agent,
 ) -> Result<(), String> {
-    if let Err(error) = orchestrator::handle_request(&app, &state, &text).await {
+    if let Err(error) = orchestrator::handle_request(&app, &state, &text, to).await {
         orchestrator::report_failure(&app, &error).map_err(|emit_error| emit_error.to_string())?;
     }
     Ok(())

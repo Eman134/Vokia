@@ -55,11 +55,36 @@ pub async fn handle_request(
     app: &AppHandle,
     state: &AppState,
     request: &str,
+    recipient: Agent,
 ) -> Result<(), FlowError> {
     let cli = state
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
+    match recipient {
+        Agent::Iara => handle_iara_request(app, state, cli, request).await,
+        Agent::Davi => handle_davi_request(app, state, cli, request).await,
+    }
+}
+
+async fn handle_davi_request(
+    app: &AppHandle,
+    state: &AppState,
+    cli: &Path,
+    request: &str,
+) -> Result<(), FlowError> {
+    emit_message(app, Speaker::User, Speaker::Davi, request)?;
+    let davi_reply = ask_agent(app, state, cli, Agent::Davi, request).await?;
+    emit_state(app, Agent::Davi, AgentState::Idle)?;
+    emit_message(app, Speaker::Davi, Speaker::User, &davi_reply)
+}
+
+async fn handle_iara_request(
+    app: &AppHandle,
+    state: &AppState,
+    cli: &Path,
+    request: &str,
+) -> Result<(), FlowError> {
     emit_message(app, Speaker::User, Speaker::Iara, request)?;
     let iara_reply = ask_agent(app, state, cli, Agent::Iara, request).await?;
     let Some(davi_request) = delegation(&iara_reply) else {

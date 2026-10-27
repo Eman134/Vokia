@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useTeam } from './useTeam'
+import { computed, ref, useId, watch } from 'vue'
+import { AGENTS, useTeam, type AgentProfile } from './useTeam'
+import MentionMenu from './MentionMenu.vue'
 
 const RING_BOX = 28
 const RING_CENTER = RING_BOX / 2
@@ -12,19 +13,116 @@ const FULL_RING_DASH = `${RING_CIRCUMFERENCE} 0`
 const SPINNING_RING_DASH = `${SPINNING_ARC} ${RING_CIRCUMFERENCE - SPINNING_ARC}`
 const PILL_CLASSES =
   'fixed bottom-6 inset-x-6 mx-auto flex h-12 max-w-190 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float'
+const CHIP_CLASSES =
+  'flex h-7 shrink-0 items-center gap-1 rounded-full bg-accent-soft py-0.5 pl-3 pr-1 text-label font-semibold text-accent'
+const CHIP_REMOVE_CLASSES =
+  'grid size-5 cursor-pointer place-items-center rounded-full hover:bg-surface focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40'
+const DEFAULT_PLACEHOLDER = 'Peça algo ao time'
+const MENTION_QUERY_PATTERN = /^@(\S*)$/
 
 const team = useTeam()
 const draft = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
+const listboxId = useId()
+const menuDismissed = ref(false)
+const highlightedIndex = ref(0)
+
+const locked = computed(() => team.busy || team.checking)
+const recipientProfile = computed(() => AGENTS.find((agent) => agent.id === team.recipient))
+const placeholder = computed(() =>
+  recipientProfile.value ? `Mensagem para ${recipientProfile.value.name}` : DEFAULT_PLACEHOLDER,
+)
+const mentionQuery = computed<string | null>(() => MENTION_QUERY_PATTERN.exec(draft.value)?.[1] ?? null)
+const mentionMatches = computed<AgentProfile[]>(() => {
+  const query = mentionQuery.value
+  if (query === null) {
+    return []
+  }
+  const prefix = query.toLowerCase()
+  return AGENTS.filter((agent) => agent.name.toLowerCase().startsWith(prefix))
+})
+const highlightedAgent = computed(() => mentionMatches.value.at(highlightedIndex.value))
+const menuOpen = computed(() => mentionQuery.value !== null && !menuDismissed.value && !locked.value)
+const activeOptionId = computed(() =>
+  menuOpen.value && highlightedAgent.value ? `${listboxId}-${highlightedAgent.value.id}` : undefined,
+)
+
+watch(mentionQuery, () => {
+  menuDismissed.value = false
+  highlightedIndex.value = 0
+})
+
+watch(
+  () => team.recipient,
+  () => inputRef.value?.focus(),
+)
 
 async function submit(): Promise<void> {
   const text = draft.value.trim()
-  if (text === '' || team.busy || team.checking) {
+  if (text === '' || locked.value) {
     return
   }
   const pending = draft.value
   draft.value = ''
   if (!(await team.send(text))) {
     draft.value = pending
+  }
+}
+
+function chooseMentionAgent(agent: AgentProfile): void {
+  team.chooseRecipient(agent.id)
+  draft.value = ''
+}
+
+function dismissMenu(): void {
+  menuDismissed.value = true
+}
+
+function moveHighlight(step: number): void {
+  const count = mentionMatches.value.length
+  if (count === 0) {
+    return
+  }
+  highlightedIndex.value = (highlightedIndex.value + step + count) % count
+}
+
+function handleMentionKey(event: KeyboardEvent): void {
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault()
+      moveHighlight(1)
+      break
+    case 'ArrowUp':
+      event.preventDefault()
+      moveHighlight(-1)
+      break
+    case 'Enter':
+    case 'Tab': {
+      const agent = highlightedAgent.value
+      if (agent === undefined && event.key === 'Tab') {
+        break
+      }
+      // Enter com a lista aberta nunca envia, mesmo sem resultado.
+      event.preventDefault()
+      if (agent !== undefined) {
+        chooseMentionAgent(agent)
+      }
+      break
+    }
+    case 'Escape':
+      event.preventDefault()
+      dismissMenu()
+      break
+  }
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (menuOpen.value) {
+    handleMentionKey(event)
+    return
+  }
+  if (event.key === 'Backspace' && draft.value === '' && team.recipient !== null) {
+    team.clearRecipient()
   }
 }
 </script>
