@@ -1,0 +1,141 @@
+@startuml barra-de-acao
+title Barra de ação · parâmetros: page, flow, modo
+
+state "Barra" as Barra {
+
+  state "Interação" as Interacao {
+    [*] --> Compacta
+    state "Compacta" as Compacta
+    state "Expandida" as Expandida
+    state "Menu aberto" as MenuAberto
+    state "Digitando" as Digitando
+    state "Painel aberto (aba: decisões ou agora)" as PainelAberto
+    state "Compositor aberto" as CompositorAberto
+
+    Compacta --> Expandida : mouse entra [modo dentro do app]
+    Compacta --> Expandida : clique [modo fora do app]
+    Expandida --> Compacta : mouse sai [sem foco e sem menu]
+    Expandida --> Compacta : clique [modo fora do app]
+    Expandida --> MenuAberto : ☰ [sem fluxo]
+    MenuAberto --> Expandida : ☰, mouse sai ou ação escolhida
+    MenuAberto --> CompositorAberto : ação Nova feature ou Novo pedido
+    CompositorAberto --> Expandida : Fechar ou fundo
+    Expandida --> Digitando : clique no campo
+    Digitando --> Expandida : sai do campo
+    Digitando --> Digitando : digita @ / abre a lista de agentes
+    Digitando --> Digitando : digita / / abre a lista de comandos
+    Expandida --> PainelAberto : botão decisões ou ⌘J [sem fluxo]
+    PainelAberto --> Expandida : botão decisões ou Esc
+    PainelAberto --> PainelAberto : troca de aba
+
+    note bottom of Compacta
+      Só anel, status curto e contador.
+      modo = tray | tarefas | lateral. Fora do app, Compacta e Expandida alternam por clique.
+      No modo tarefas o inicial é Expandida, com o aviso visível. Qualquer clique na barra de tarefas,
+      inclusive no widget, alterna entre Expandida e Compacta (mostra ou oculta o aviso).
+      Regra aceita. Não há outro comportamento de clique. Fora do app só se aprovam comandos.
+    end note
+    note bottom of Expandida
+      (a) Com fluxo ativo (flow = onboarding ou novo-projeto), a barra mostra as etapas no lugar
+      do ☰ e do botão decisões. O botão Pronto na última etapa encerra o fluxo.
+      Esperando você é ignorado pelo usuário e o botão Pronto encerra o fluxo: decisão aceita (PENDENCIAS.md › Decisões aceitas).
+      pendência (5): painel ao entrar em fluxo (PEN-013).
+      Esc, ⌘J e o timer de 8 s do balão: regra aceita, a implementar.
+    end note
+    note bottom of MenuAberto
+      (b) ⌥n aciona a ação n do menu (regra aceita). As ações dependem do parâmetro page.
+    end note
+  }
+
+  --
+
+  state "Status (anel ou mascote)" as Status {
+    [*] --> Repouso
+    state "Repouso" as Repouso
+    state "Pensando" as Pensando
+    state "Trabalhando (agentes: 1 ou n)" as Trabalhando
+    state "Precisa de você" as PrecisaDeVoce
+    state "Erro" as Erro
+    state "Concluído" as Concluido
+    state "Pausado" as Pausado
+
+    Repouso --> Trabalhando : agente começa tarefa
+    Trabalhando --> Repouso : último agente para [sem decisão e sem erro]
+    Repouso --> Pensando : Iara começa a planejar
+    Pensando --> Trabalhando : plano pronto
+    Trabalhando --> PrecisaDeVoce : decisão pendente
+    PrecisaDeVoce --> Trabalhando : decisões respondidas ou Permitir [agente ativo]
+    Trabalhando --> Erro : testes falharam
+    PrecisaDeVoce --> Erro : testes falharam
+    Erro --> Trabalhando : novo teste passa (regra aceita)
+    Trabalhando --> Concluido : lote ou feature pronta
+    Concluido --> Trabalhando : outra tarefa começa
+    Concluido --> Repouso : tempo [duração não definida, pendência (3)]
+    Trabalhando --> Pausado : uso chega a 90%
+    Pausado --> Trabalhando : janela renova
+
+    note bottom of Trabalhando
+      (c) Ordem de cor (regra aceita): Pausado > Erro > Precisa de você > Trabalhando > Repouso.
+      pendência (3): a posição de Concluído e de agentes n (vários agentes) na ordem (PEN-002) e a de Pensando (PEN-012).
+    end note
+    note bottom of Repouso
+      (d) Mascote só em mensagens gerais e no balão de limite (regra aceita).
+      Trabalho, execução, Erro e Concluído usam anel, traços e contadores.
+      pendência (6): o protótipo diverge das regras no mascote, nos momentos, na decisão em linha,
+      nas cores do Dock e nos textos "4 trabalhando" e "um agente" (PEN-011, PEN-014 e PEN-015).
+    end note
+    note bottom of PrecisaDeVoce
+      (e) A decisão de um clique aparece na linha da barra enquanto o estado é Precisa de você.
+      É variação, não estado. Entra só permissão de comando e pergunta com até duas opções curtas:
+      decisão aceita (PENDENCIAS.md › Decisões aceitas). Conflito com a regra 03 do quadro: PEN-015.
+      Fora do app só se aprovam comandos: Permitir leva a Trabalhando.
+    end note
+  }
+
+  --
+
+  state "Aviso (balão, um por vez)" as Aviso {
+    [*] --> SemAviso
+    state "Sem aviso" as SemAviso
+    state "Momento (tipo: memória, grafo, decisão, skill, conflito ou comemoração)" as Momento
+    state "Limite (nível: 75, 90 ou renovou)" as Limite
+
+    state "Pedido" as Pedido {
+      state "Classificando" as Classificando
+      state "Sugestão (tamanho: pequeno ou feature)" as Sugestao
+      state "Enviado" as Enviado
+      state "Devolvido" as Devolvido
+      state "Triagem (fase: pergunta ou proposta)" as Triagem
+    }
+
+    SemAviso --> Momento : fato visto [painel fechado]
+    Momento --> SemAviso : ação ou 8 s sem resposta (regra aceita)
+
+    SemAviso --> Limite : uso de 5 h chega a 75%
+    Limite --> Limite : chega a 90%
+    Limite --> Limite : janela renova
+    Limite --> SemAviso : qualquer botão
+
+    SemAviso --> Classificando : Enter no campo
+    Classificando --> Sugestao : Iara classifica (regra aceita: o padrão é confirmar com balão)
+    Sugestao --> Sugestao : É uma feature ou É pequeno
+    Sugestao --> Enviado : Mandar para <agente>
+    Sugestao --> Triagem : Começar triagem
+    Enviado --> Devolvido : agente devolve
+    Devolvido --> Enviado : Manter com <agente> (regra aceita)
+    Devolvido --> Triagem : Mandar para a triagem
+    Triagem --> Triagem : pergunta da Iara, resposta do usuário e proposta
+    Triagem --> SemAviso : Aprovar a proposta
+    Enviado --> SemAviso : Ver conversa ou Desfazer
+
+    note bottom of SemAviso
+      (f) Decisões aceitas (PENDENCIAS.md › Decisões aceitas): momento com painel aberto espera na fila até o painel fechar;
+      fechar um balão não impede os próximos.
+      pendência (4): a guarda que separa pequeno de feature (PEN-010).
+      pendência (5): efeito dos botões de balão (PEN-003).
+    end note
+  }
+}
+
+[*] --> Barra
+@enduml
