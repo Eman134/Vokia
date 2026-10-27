@@ -149,14 +149,41 @@ function onKeydown(event: KeyboardEvent): void {
     </svg>
     <span class="w-32 shrink-0 truncate text-label font-semibold text-muted">{{ team.statusText }}</span>
     <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
+    <span v-if="recipientProfile" :class="CHIP_CLASSES">
+      {{ recipientProfile.name }}
+      <button
+        type="button"
+        :class="CHIP_REMOVE_CLASSES"
+        :aria-label="`Remover destinatário ${recipientProfile.name}`"
+        :disabled="locked"
+        @click="team.clearRecipient()"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </span>
     <input
+      ref="inputRef"
       v-model="draft"
+      role="combobox"
+      aria-autocomplete="list"
+      :aria-expanded="menuOpen"
+      :aria-controls="menuOpen && mentionMatches.length > 0 ? listboxId : undefined"
+      :aria-activedescendant="activeOptionId"
       class="h-8.5 min-w-0 flex-1 rounded-full bg-surface-2 px-3.5 text-label text-ink outline-none placeholder:text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-      placeholder="Peça algo ao time"
-      :disabled="team.busy || team.checking"
+      :placeholder="placeholder"
+      :disabled="locked"
+      @keydown="onKeydown"
+      @blur="dismissMenu"
+    />
+    <MentionMenu
+      v-if="menuOpen"
+      :id="listboxId"
+      :agents="mentionMatches"
+      :active-index="highlightedIndex"
+      @choose="chooseMentionAgent"
     />
   </form>
-  <div role="status" :class="team.online ? undefined : PILL_CLASSES">
+  <div role="status" :class="team.online ? undefined : [PILL_CLASSES, 'justify-center']">
     <template v-if="!team.online">
       <svg
         class="size-4 shrink-0 text-danger"
