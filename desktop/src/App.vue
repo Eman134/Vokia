@@ -2,18 +2,23 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useTeam } from './features/team/useTeam'
 import AppRail from './shell/AppRail.vue'
+import { RAIL_COLLAPSED_WIDTH } from './shell/railNav'
 import AgentList from './features/team/AgentList.vue'
 import Conversation from './features/team/Conversation.vue'
 import ActionBar from './features/team/ActionBar.vue'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
+import { useUsage } from './features/usage/useUsage'
 
 const team = useTeam()
 const updater = useUpdater()
+const usage = useUsage()
 
 onMounted(team.start)
 onMounted(updater.check)
+onMounted(usage.start)
 onUnmounted(team.stop)
+onUnmounted(usage.stop)
 </script>
 
 <template>
@@ -34,7 +39,7 @@ onUnmounted(team.stop)
       {{ team.cliProblem.fixCommand }}
     </code>
   </main>
-  <div v-else-if="team.cliChecked" class="flex h-screen bg-bg text-ink">
+  <div v-else-if="team.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${RAIL_COLLAPSED_WIDTH}px` }">
     <AppRail />
     <AgentList />
     <Conversation />
