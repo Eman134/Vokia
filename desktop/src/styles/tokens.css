@@ -1,4 +1,4 @@
-@theme {
+@theme static {
   --color-*: initial;
   --radius-*: initial;
   --text-*: initial;
@@ -38,6 +38,8 @@
   --radius-panel: 18px;
   --radius-dialog: 24px;
 
+  --container-bar: 760px;
+
   --text-title: 44px;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.035em;
@@ -66,7 +68,7 @@
   --text-tiny--line-height: normal;
   --leading-note: 1.45;
 
-  --font-sans: 'Geist Variable', Geist, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Geist', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', 'Geist Mono', ui-monospace, monospace;
   --font-hand: Caveat, cursive;
 
