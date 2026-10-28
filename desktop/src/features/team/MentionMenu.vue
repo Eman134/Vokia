@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
 import type { AgentProfile } from './useTeam'
 
 defineProps<{
@@ -26,11 +28,8 @@ const emit = defineEmits<{
         @mousedown.prevent
         @click="emit('choose', agent)"
       >
-        <span
-          class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-          aria-hidden="true"
-        >
-          {{ agent.name.charAt(0) }}
+        <span class="flex shrink-0" aria-hidden="true">
+          <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.chat" />
         </span>
         <span class="min-w-0">
           <span class="block text-label font-semibold text-ink">{{ agent.name }}</span>
