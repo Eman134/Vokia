@@ -2,6 +2,16 @@
 
 Requisitos derivados do protótipo [Design.html](prototipo/Design.html) e [Fora do app.html](prototipo/Fora%20do%20app.html) e do diagrama de estados [barra-de-acao.puml](diagramas/barra-de-acao.puml). Levantamento de 2026-10-26. Cada requisito tem um documento com objetivo, comportamento, estados, critérios de aceite, referências, dependências e pendências.
 
+## Estado de implementação
+
+Conferido no código em 2026-10-27, em `desktop/src`. Os demais requisitos ainda não têm implementação concluída.
+
+| ID | Estado | Falta | Documento |
+| --- | --- | --- | --- |
+| 022 | ✅ Concluída | Destinos das páginas e persistência do modo | [022](backlog/022.md) |
+| 023 | Parcial | Anel e linha do GPT (sem fonte real do Codex) e destinos dos links | [023](backlog/023.md) |
+| 028 | ✅ Concluída | Fonte Caveat e escala "à mão · 20" | [028](backlog/028.md) |
+
 ## A1 · Barra: estrutura e estado
 
 | ID | Nome | O que faz | Documento |
