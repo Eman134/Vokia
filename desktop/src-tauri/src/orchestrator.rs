@@ -4,14 +4,18 @@ use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter};
 
-use crate::claude::{self, ClaudeError};
-use crate::events::{Agent, AgentState, Speaker, VokiaEvent, EVENT_NAME};
+use crate::claude::{self, ClaudeError, LimitWindow};
+use crate::events::{Agent, AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 use crate::state::AppState;
 
-const IARA_ROLE: &str = "Você é Iara, tech lead do time. Responda em português, em no máximo 3 frases. Quando precisar do Davi, termine a resposta com uma linha exatamente assim: @Davi: <pedido>.";
+const PERCENT_SCALE: f64 = 100.0;
+const IARA_ROLE: &str = "Você é Iara, tech lead do time. Responda em português, em no máximo 3 frases. Ao receber um cumprimento, apresente-se como tech lead.";
 const DAVI_ROLE: &str = "Você é Davi, dev frontend. Responda em português, em no máximo 3 frases.";
-const DELEGATION_PREFIX: &str = "@Davi:";
-const DAVI_REPLY_PREFIX: &str = "O Davi respondeu: ";
+const TEAM_ROSTER: &str = "Time desta sessão: Iara (tech lead) e Davi (dev frontend).";
+const DELEGATION_RULE: &str = "Quando precisar de outro agente do time, termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>.";
+const DELEGATION_MARK: char = '@';
+const DELEGATION_SEPARATOR: char = ':';
+const REPLY_PREFIX: &str = " respondeu: ";
 
 #[derive(Debug)]
 pub enum FlowError {
@@ -61,49 +65,45 @@ pub async fn handle_request(
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
-    match recipient {
-        Agent::Iara => handle_iara_request(app, state, cli, request).await,
-        Agent::Davi => handle_davi_request(app, state, cli, request).await,
-    }
+    handle_agent_request(app, state, cli, recipient, request).await
 }
 
-async fn handle_davi_request(
+async fn handle_agent_request(
     app: &AppHandle,
     state: &AppState,
     cli: &Path,
+    agent: Agent,
     request: &str,
 ) -> Result<(), FlowError> {
-    emit_message(app, Speaker::User, Speaker::Davi, request)?;
-    let davi_reply = ask_agent(app, state, cli, Agent::Davi, request).await?;
-    emit_state(app, Agent::Davi, AgentState::Idle)?;
-    emit_message(app, Speaker::Davi, Speaker::User, &davi_reply)
-}
-
-async fn handle_iara_request(
-    app: &AppHandle,
-    state: &AppState,
-    cli: &Path,
-    request: &str,
-) -> Result<(), FlowError> {
-    emit_message(app, Speaker::User, Speaker::Iara, request)?;
-    let iara_reply = ask_agent(app, state, cli, Agent::Iara, request).await?;
-    let Some(davi_request) = delegation(&iara_reply) else {
-        emit_message(app, Speaker::Iara, Speaker::User, &iara_reply)?;
-        return emit_state(app, Agent::Iara, AgentState::Idle);
+    emit_message(app, Speaker::User, Speaker::from(agent), request)?;
+    let reply = ask_agent(app, state, cli, agent, request, true).await?;
+    let Some((helper, helper_request)) = delegation(&reply, agent) else {
+        emit_message(app, Speaker::from(agent), Speaker::User, &reply)?;
+        return emit_state(app, agent, AgentState::Idle);
     };
-    let visible_reply = without_delegation(&iara_reply);
+    let visible_reply = without_delegation(&reply, agent);
     if !visible_reply.is_empty() {
-        emit_message(app, Speaker::Iara, Speaker::User, &visible_reply)?;
+        emit_message(app, Speaker::from(agent), Speaker::User, &visible_reply)?;
     }
-    emit_state(app, Agent::Iara, AgentState::Waiting)?;
-    emit_message(app, Speaker::Iara, Speaker::Davi, &davi_request)?;
-    let davi_reply = ask_agent(app, state, cli, Agent::Davi, &davi_request).await?;
-    emit_state(app, Agent::Davi, AgentState::Idle)?;
-    emit_message(app, Speaker::Davi, Speaker::Iara, &davi_reply)?;
-    let summary_request = format!("{DAVI_REPLY_PREFIX}{davi_reply}");
-    let summary = ask_agent(app, state, cli, Agent::Iara, &summary_request).await?;
-    emit_state(app, Agent::Iara, AgentState::Idle)?;
-    emit_message(app, Speaker::Iara, Speaker::User, &summary)
+    emit_state(app, agent, AgentState::Waiting)?;
+    emit_message(
+        app,
+        Speaker::from(agent),
+        Speaker::from(helper),
+        &helper_request,
+    )?;
+    let helper_reply = ask_agent(app, state, cli, helper, &helper_request, false).await?;
+    emit_state(app, helper, AgentState::Idle)?;
+    emit_message(
+        app,
+        Speaker::from(helper),
+        Speaker::from(agent),
+        &helper_reply,
+    )?;
+    let summary_request = format!("{}{REPLY_PREFIX}{helper_reply}", helper.name());
+    let summary = ask_agent(app, state, cli, agent, &summary_request, false).await?;
+    emit_state(app, agent, AgentState::Idle)?;
+    emit_message(app, Speaker::from(agent), Speaker::User, &summary)
 }
 
 pub fn report_failure(app: &AppHandle, error: &FlowError) -> Result<(), FlowError> {
@@ -123,16 +123,41 @@ async fn ask_agent(
     cli: &Path,
     agent: Agent,
     message: &str,
+    can_delegate: bool,
 ) -> Result<String, FlowError> {
     emit_state(app, agent, AgentState::Thinking)?;
     let session_id = stored_session(state, agent)?;
-    let reply = claude::ask(cli, message, role(agent), session_id.as_deref()).await?;
+    let reply = claude::ask(
+        cli,
+        message,
+        &role(agent, can_delegate),
+        session_id.as_deref(),
+    )
+    .await?;
+    if let Some(limits) = reply.limits {
+        emit(
+            app,
+            VokiaEvent::PlanUsage {
+                five_hour: usage_window(limits.five_hour),
+                seven_day: usage_window(limits.seven_day),
+            },
+        )?;
+    }
     state
         .sessions
         .lock()
         .map_err(|_| FlowError::SessionsPoisoned)?
         .insert(agent, reply.session_id);
     Ok(reply.text)
+}
+
+fn usage_window(window: LimitWindow) -> UsageWindow {
+    UsageWindow {
+        percent: (window.utilization * PERCENT_SCALE)
+            .round()
+            .clamp(0.0, PERCENT_SCALE) as u8,
+        resets_at: window.resets_at,
+    }
 }
 
 fn stored_session(state: &AppState, agent: Agent) -> Result<Option<String>, FlowError> {
@@ -143,31 +168,40 @@ fn stored_session(state: &AppState, agent: Agent) -> Result<Option<String>, Flow
     Ok(sessions.get(&agent).cloned())
 }
 
-fn role(agent: Agent) -> &'static str {
-    match agent {
+fn role(agent: Agent, can_delegate: bool) -> String {
+    let base = match agent {
         Agent::Iara => IARA_ROLE,
         Agent::Davi => DAVI_ROLE,
+    };
+    if can_delegate {
+        format!("{base} {TEAM_ROSTER} {DELEGATION_RULE}")
+    } else {
+        format!("{base} {TEAM_ROSTER}")
     }
 }
 
-fn delegation_request(line: &str) -> Option<&str> {
-    line.trim().strip_prefix(DELEGATION_PREFIX)
+fn delegation_request(line: &str, from: Agent) -> Option<(Agent, &str)> {
+    let rest = line.trim().strip_prefix(DELEGATION_MARK)?;
+    let (name, request) = rest.split_once(DELEGATION_SEPARATOR)?;
+    let agent = Agent::ALL
+        .into_iter()
+        .find(|agent| agent.name().eq_ignore_ascii_case(name.trim()))?;
+    let request = request.trim();
+    (agent != from && !request.is_empty()).then_some((agent, request))
 }
 
-fn delegation(reply: &str) -> Option<String> {
+fn delegation(reply: &str, from: Agent) -> Option<(Agent, String)> {
     reply
         .lines()
         .rev()
-        .filter_map(delegation_request)
-        .map(str::trim)
-        .find(|request| !request.is_empty())
-        .map(str::to_string)
+        .find_map(|line| delegation_request(line, from))
+        .map(|(agent, request)| (agent, request.to_string()))
 }
 
-fn without_delegation(reply: &str) -> String {
+fn without_delegation(reply: &str, from: Agent) -> String {
     reply
         .lines()
-        .filter(|line| delegation_request(line).is_none())
+        .filter(|line| delegation_request(line, from).is_none())
         .collect::<Vec<_>>()
         .join("\n")
         .trim()

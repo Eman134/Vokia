@@ -60,6 +60,17 @@ export function parseMention(text: string): ParsedMention | null {
   return { agent: profile.id, text: text.slice(mention.length) }
 }
 
+export function findNamedAgent(text: string): Agent | null {
+  let found: { agent: Agent; index: number } | null = null
+  for (const profile of AGENTS) {
+    const index = text.search(new RegExp(`(?<!\\p{L})${profile.name}(?!\\p{L})`, 'iu'))
+    if (index !== -1 && (found === null || index < found.index)) {
+      found = { agent: profile.id, index }
+    }
+  }
+  return found?.agent ?? null
+}
+
 export const useTeam = defineStore('team', () => {
   const cliChecked = ref(false)
   const cliProblem = ref<CliProblem | null>(null)
@@ -154,6 +165,8 @@ export const useTeam = defineStore('team', () => {
       case 'agent-state':
         states.value[event.agent] = event.state
         break
+      case 'plan-usage':
+        break
     }
   }
 
@@ -184,7 +197,7 @@ export const useTeam = defineStore('team', () => {
     }
     busy.value = true
     try {
-      await sendRequest(body, recipient.value ?? DEFAULT_RECIPIENT)
+      await sendRequest(body, recipient.value ?? findNamedAgent(body) ?? DEFAULT_RECIPIENT)
     } catch (error) {
       feed.value.push({ type: 'error', message: String(error) })
     } finally {

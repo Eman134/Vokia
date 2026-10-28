@@ -25,7 +25,18 @@ export interface VokiaError {
   message: string
 }
 
-export type VokiaEvent = VokiaMessage | VokiaAgentState | VokiaError
+export interface UsageWindow {
+  percent: number
+  resetsAt: number
+}
+
+export interface VokiaPlanUsage {
+  type: 'plan-usage'
+  fiveHour: UsageWindow
+  sevenDay: UsageWindow
+}
+
+export type VokiaEvent = VokiaMessage | VokiaAgentState | VokiaError | VokiaPlanUsage
 
 export interface CliProblem {
   reason: string

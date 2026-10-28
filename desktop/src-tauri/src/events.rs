@@ -9,6 +9,17 @@ pub enum Agent {
     Davi,
 }
 
+impl Agent {
+    pub const ALL: [Agent; 2] = [Agent::Iara, Agent::Davi];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Agent::Iara => "Iara",
+            Agent::Davi => "Davi",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Speaker {
@@ -34,6 +45,13 @@ pub enum AgentState {
     Idle,
 }
 
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWindow {
+    pub percent: u8,
+    pub resets_at: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum VokiaEvent {
@@ -49,5 +67,10 @@ pub enum VokiaEvent {
     },
     Error {
         message: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    PlanUsage {
+        five_hour: UsageWindow,
+        seven_day: UsageWindow,
     },
 }
