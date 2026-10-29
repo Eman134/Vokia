@@ -29,7 +29,7 @@ const team = useTeam()
           class="flex w-full cursor-pointer items-center gap-3 rounded-card border p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
           :class="team.recipient === agent.id ? 'border-accent bg-accent-soft' : 'border-line'"
           :aria-pressed="team.recipient === agent.id"
-          :disabled="team.busy || team.checking"
+          :disabled="team.checking"
           @click="team.chooseRecipient(agent.id)"
         >
           <span class="flex shrink-0" aria-hidden="true">

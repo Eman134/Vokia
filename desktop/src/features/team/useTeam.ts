@@ -29,6 +29,12 @@ export interface AgentProfile {
 
 export type FeedEntry = VokiaMessage | VokiaError
 
+export interface QueuedRequest {
+  id: number
+  text: string
+  to: Agent
+}
+
 export const AGENTS: readonly AgentProfile[] = [
   { id: 'iara', name: 'Iara', role: 'Tech lead' },
   { id: 'davi', name: 'Davi', role: 'Dev frontend' },
@@ -77,15 +83,17 @@ export const useTeam = defineStore('team', () => {
   const startupError = ref<string | null>(null)
   const feed = ref<FeedEntry[]>([])
   const states = ref<Record<Agent, AgentState>>({ iara: 'idle', davi: 'idle' })
-  const busy = ref(false)
   const online = ref(true)
   const checking = ref(false)
   const recipient = ref<Agent | null>(null)
+  const queue = ref<QueuedRequest[]>([])
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let pendingCheck: Promise<boolean> | null = null
+  let nextQueueId = 0
+  let draining = false
 
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     AGENTS.find((agent) => states.value[agent.id] === 'thinking'),
@@ -178,6 +186,29 @@ export const useTeam = defineStore('team', () => {
     recipient.value = null
   }
 
+  function queuedFor(agent: Agent): QueuedRequest[] {
+    return queue.value.filter((request) => request.to === agent)
+  }
+
+  // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
+  async function drain(): Promise<void> {
+    if (draining) {
+      return
+    }
+    draining = true
+    try {
+      for (let next = queue.value.shift(); next !== undefined; next = queue.value.shift()) {
+        try {
+          await sendRequest(next.text, next.to)
+        } catch (error) {
+          feed.value.push({ type: 'error', message: String(error) })
+        }
+      }
+    } finally {
+      draining = false
+    }
+  }
+
   async function send(text: string): Promise<boolean> {
     const mention = parseMention(text)
     const body = mention?.text ?? text
@@ -195,14 +226,12 @@ export const useTeam = defineStore('team', () => {
     if (mention !== null) {
       recipient.value = mention.agent
     }
-    busy.value = true
-    try {
-      await sendRequest(body, recipient.value ?? findNamedAgent(body) ?? DEFAULT_RECIPIENT)
-    } catch (error) {
-      feed.value.push({ type: 'error', message: String(error) })
-    } finally {
-      busy.value = false
-    }
+    queue.value.push({
+      id: ++nextQueueId,
+      text: body,
+      to: recipient.value ?? findNamedAgent(body) ?? DEFAULT_RECIPIENT,
+    })
+    void drain()
     return true
   }
 
@@ -213,10 +242,11 @@ export const useTeam = defineStore('team', () => {
     feed,
     timeline,
     states,
-    busy,
     online,
     checking,
     recipient,
+    queue,
+    queuedFor,
     thinkingAgent,
     statusText,
     start,
