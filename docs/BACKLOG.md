@@ -4,13 +4,26 @@ Requisitos derivados do protótipo [Design.html](prototipo/Design.html) e [Fora 
 
 ## Estado de implementação
 
-Conferido no código em 2026-10-27, em `desktop/src`. Os demais requisitos ainda não têm implementação concluída.
+Conferido no código em 2026-10-28, em `desktop/src`, para os itens ligados às etapas concluídas do Plano Roadmap (1, C1, F1, 2, 3, 4, 5, 6, 6R, 7, 7B, 7C, 7D, 8, 8R, 9, 10, 11 e 30). Os demais requisitos não foram conferidos aqui.
 
 | ID | Estado | Falta | Documento |
 | --- | --- | --- | --- |
-| 022 | ✅ Concluída | Destinos das páginas e persistência do modo | [022](backlog/022.md) |
-| 023 | Parcial | Anel e linha do GPT (sem fonte real do Codex) e destinos dos links | [023](backlog/023.md) |
-| 028 | ✅ Concluída | Fonte Caveat e escala "à mão · 20" | [028](backlog/028.md) |
+| 001 | Parcial | Parte "/" (Etapa 14) e painel de decisões (Etapa 17) | [001](backlog/001.md) |
+| 002 | Parcial | Contador de decisões na barra compacta (Etapa 17) | [002](backlog/002.md) |
+| 003 | Parcial | "Precisa de você" (Etapa 17) e progresso no anel | [003](backlog/003.md) |
+| 004 | Parcial | Chama no balão de limite de plano (Etapa 21) | [004](backlog/004.md) |
+| 005 | Parcial | ⌥2 não abre o compositor (Etapa 15) | [005](backlog/005.md) |
+| 006 | Parcial | Placeholder por página (Projetos e Chat) | [006](backlog/006.md) |
+| 007 | ✅ Concluído | Lista mostra os agentes do time, não os do quadro | [007](backlog/007.md) |
+| 022 | ✅ Concluído | Só a página Conversas tem tela (demais: Etapas 31 a 44) | [022](backlog/022.md) |
+| 023 | Parcial | Anel e linha do GPT (sem fonte real do Codex) | [023](backlog/023.md) |
+| 027 | ✅ Concluído | — | [027](backlog/027.md) |
+| 028 | ✅ Concluído | Fonte Caveat e escala "à mão · 20" | [028](backlog/028.md) |
+| 029 | Parcial | Formas à mão do canvas; abas e dados (Etapa 2B, em revisão) | [029](backlog/029.md) |
+| 030 | Parcial | Área livre do símbolo (`VokiaSignature.vue:13`) a confirmar | [030](backlog/030.md) |
+| 031 | ✅ Concluído | — | [031](backlog/031.md) |
+| 032 | ✅ Concluído | 5 famílias extras do quadro (pendentes na Etapa 5) | [032](backlog/032.md) |
+| 033 | Parcial | Splash sem "e Codex"; tela de vazio sem features | [033](backlog/033.md) |
 
 ## A1 · Barra: estrutura e estado
 
@@ -79,6 +92,18 @@ Conferido no código em 2026-10-27, em `desktop/src`. Os demais requisitos ainda
 | 031 | Mascote da Vokia | Define o desenho do mascote, a chama com rosto, braços e pernas, com poses e estados visuais. | [031](backlog/031.md) |
 | 032 | Biblioteca de identidades visuais | Define avatares, emblemas e símbolos de agentes, projetos, documentos e recursos, com marcas de estado além da cor. | [032](backlog/032.md) |
 | 033 | Telas de sistema: splash, atualização, vazio e CLI ausente | Define as quatro telas de sistema: splash, atualização pronta, vazio sem features e CLI não encontrada. | [033](backlog/033.md) |
+
+## E · Conversa do time
+
+| ID | Nome | O que faz | Documento |
+| --- | --- | --- | --- |
+| 034 | Menção @todos e reações nas mensagens | Envia um pedido a todos os agentes de uma vez com @todos e permite reagir com emoji às mensagens, sem poluir o feed. | [034](backlog/034.md) |
+
+## F · Agentes e time
+
+| ID | Nome | O que faz | Documento |
+| --- | --- | --- | --- |
+| 035 | Criação de agentes pela interface | Permite criar agentes pela interface, ao lado da Iara e do Davi, com nome, papel, retrato, CLI, modelo, skills e permissões. | [035](backlog/035.md) |
 
 ## Pendências do diagrama
 
