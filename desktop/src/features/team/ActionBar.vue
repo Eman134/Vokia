@@ -241,7 +241,7 @@ function onPointerLeave(): void {
           :class="team.states[agent.id] === 'waiting' ? 'bg-warn' : 'bg-ok'"
         />
       </span>
-      <span class="w-32 shrink-0 truncate text-label font-semibold text-muted">{{ statusStore.statusText }}</span>
+      <span class="min-w-0 truncate text-label font-semibold text-muted">{{ statusStore.statusText }}</span>
       <template v-if="expanded">
         <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
         <UiButton
