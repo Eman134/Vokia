@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  ACTIVE_PAGE,
   CURRENT_PROJECT,
+  PAGE_LABELS,
   PROJECT_TOOLS,
   PROJECTS,
   RAIL_COLLAPSED_WIDTH,
   RAIL_EXPANDED_WIDTH,
   WORKSPACE_ITEMS,
-  type RailPage,
+  type AppPage,
 } from './railNav'
+import { useNavigation } from './useNavigation'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
 
-const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap'
+const PROJECT_LIST_PAGE: AppPage = 'projetos'
+const NEW_PROJECT_PAGE: AppPage = 'onboarding'
+
+const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap text-left'
 const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
 const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
@@ -23,15 +27,20 @@ const TOGGLE = 'cursor-pointer bg-transparent text-ink'
 const CARD = 'flex flex-col gap-0.5 rounded-card border border-line bg-surface p-1.25 shadow-float'
 const LABEL = 'overflow-hidden text-ellipsis text-label'
 
+const navigation = useNavigation()
+// Novo projeto é página fora do trilho: o item Projetos segue ativo enquanto ela aparece.
+const railPage = computed<AppPage>(() =>
+  navigation.page === 'novo-projeto' ? PROJECT_LIST_PAGE : navigation.page,
+)
 const expanded = ref(false)
-const inProject = computed(() => PROJECT_TOOLS.some((item) => item.id === ACTIVE_PAGE))
+const inProject = computed(() => PROJECT_TOOLS.some((item) => item.page === railPage.value))
 const itemSize = computed(() => [ITEM, expanded.value && ITEM_EXPANDED_PAD])
 const toggleLabel = computed(() => (expanded.value ? 'Recolher menu' : 'Expandir menu'))
 const projectSwitchLabel = `Trocar de projeto: ${CURRENT_PROJECT}`
 const projectSwitchTitle = `${CURRENT_PROJECT} · trocar`
 
-function isActive(id: RailPage) {
-  return id === ACTIVE_PAGE
+function isActive(page: AppPage) {
+  return page === railPage.value
 }
 
 function toggle() {
@@ -49,24 +58,28 @@ function toggle() {
       :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
     >
       <div class="flex items-center gap-2.5 pl-1.25">
-        <a
+        <button
+          type="button"
           class="grid size-10 flex-none place-items-center rounded-control-lg bg-ink text-bg [--logo-cut:var(--color-ink)]"
           aria-label="Vokia, início"
           title="Vokia"
+          @click="navigation.goTo(PROJECT_LIST_PAGE)"
         >
           <VokiaLogo variant="cheio" :size="24" />
-        </a>
+        </button>
         <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
       </div>
 
       <nav aria-label="Workspace" :class="[CARD, expanded && 'w-full']">
-        <a
+        <button
           v-for="item in WORKSPACE_ITEMS"
-          :key="item.id"
-          :class="[itemSize, isActive(item.id) ? ITEM_ON : ITEM_OFF]"
-          :aria-current="isActive(item.id) ? 'page' : undefined"
+          :key="item.page"
+          type="button"
+          :class="[itemSize, isActive(item.page) ? ITEM_ON : ITEM_OFF]"
+          :aria-current="isActive(item.page) ? 'page' : undefined"
           :aria-label="item.label"
           :title="item.label"
+          @click="navigation.goTo(item.page)"
         >
           <span :class="ICON_BOX">
             <svg
@@ -83,14 +96,16 @@ function toggle() {
             </svg>
           </span>
           <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
-        </a>
+        </button>
       </nav>
 
       <nav v-if="inProject" :aria-label="`Projeto ${CURRENT_PROJECT}`" :class="[CARD, expanded && 'w-full']">
-        <a
+        <button
+          type="button"
           :class="[ITEM, expanded && ITEM_EXPANDED_PAD, 'bg-surface-2']"
           :aria-label="projectSwitchLabel"
           :title="projectSwitchTitle"
+          @click="navigation.goTo(PROJECT_LIST_PAGE)"
         >
           <span :class="ICON_BOX">
             <svg class="size-4 flex-none" viewBox="0 0 18 18" aria-hidden="true">
@@ -102,15 +117,17 @@ function toggle() {
             <b class="text-label font-semibold text-ink">{{ CURRENT_PROJECT }}</b>
             <span class="text-tiny text-muted">trocar de projeto</span>
           </span>
-        </a>
+        </button>
         <span class="mx-1.5 my-0.75 h-px bg-line" />
-        <a
+        <button
           v-for="item in PROJECT_TOOLS"
-          :key="item.id"
-          :class="[itemSize, isActive(item.id) ? ITEM_ON : ITEM_OFF]"
-          :aria-current="isActive(item.id) ? 'page' : undefined"
+          :key="item.page"
+          type="button"
+          :class="[itemSize, isActive(item.page) ? ITEM_ON : ITEM_OFF]"
+          :aria-current="isActive(item.page) ? 'page' : undefined"
           :aria-label="item.label"
           :title="item.label"
+          @click="navigation.goTo(item.page)"
         >
           <span :class="ICON_BOX">
             <svg
@@ -127,16 +144,18 @@ function toggle() {
             </svg>
           </span>
           <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
-        </a>
+        </button>
       </nav>
 
       <nav v-else aria-label="Projetos" :class="[CARD, expanded && 'w-full']">
-        <a
+        <button
           v-for="project in PROJECTS"
           :key="project.name"
+          type="button"
           :class="[itemSize, ITEM_OFF]"
           :aria-label="`${project.name} · ${project.working} trabalhando`"
           :title="`${project.name} · ${project.working} trabalhando`"
+          @click="navigation.goTo(project.page)"
         >
           <span :class="ICON_BOX">
             <svg
@@ -159,9 +178,15 @@ function toggle() {
               expanded ? 'ml-auto' : 'absolute bottom-1.5 right-1.5',
             ]"
           />
-        </a>
+        </button>
         <span class="mx-1.5 my-0.75 h-px bg-line" />
-        <a :class="[itemSize, ITEM_OFF]" aria-label="Novo projeto" title="Novo projeto">
+        <button
+          type="button"
+          :class="[itemSize, ITEM_OFF]"
+          aria-label="Novo projeto"
+          title="Novo projeto"
+          @click="navigation.goTo(NEW_PROJECT_PAGE)"
+        >
           <span :class="ICON_BOX">
             <svg
               class="size-4"
@@ -176,15 +201,17 @@ function toggle() {
             </svg>
           </span>
           <span v-if="expanded" :class="LABEL">Novo projeto</span>
-        </a>
+        </button>
       </nav>
 
       <div class="mt-2 flex flex-col items-start gap-1 pl-1.5">
-        <a
+        <button
+          type="button"
           :class="[itemSize, isActive('config') ? ITEM_ON : ITEM_OFF]"
           :aria-current="isActive('config') ? 'page' : undefined"
-          aria-label="Configurações"
-          title="Configurações"
+          :aria-label="PAGE_LABELS.config"
+          :title="PAGE_LABELS.config"
+          @click="navigation.goTo('config')"
         >
           <span :class="ICON_BOX">
             <svg
@@ -202,8 +229,8 @@ function toggle() {
               />
             </svg>
           </span>
-          <span v-if="expanded" :class="LABEL">Configurações</span>
-        </a>
+          <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS.config }}</span>
+        </button>
         <button
           type="button"
           :class="[itemSize, TOGGLE]"
