@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { AGENTS, useTeam, type AgentProfile } from './useTeam'
 import { useTeamStatus } from './useTeamStatus'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
+import { placeholderFor, type PlaceholderRecipient } from './composerPlaceholder'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import MentionMenu from './MentionMenu.vue'
@@ -58,8 +59,13 @@ const pageActions = computed<readonly PageAction[]>(() =>
 
 const locked = computed(() => team.checking)
 const recipientProfile = computed(() => AGENTS.find((agent) => agent.id === team.recipient))
+const recipientPlaceholder = computed<PlaceholderRecipient | null>(() =>
+  recipientProfile.value
+    ? { name: recipientProfile.value.name, busy: team.states[recipientProfile.value.id] !== 'idle' }
+    : null,
+)
 const placeholder = computed(() =>
-  recipientProfile.value ? `Mensagem para ${recipientProfile.value.name}` : statusStore.placeholder,
+  placeholderFor(railPage.value, statusStore.status, statusStore.placeholder, recipientPlaceholder.value),
 )
 const mentionQuery = computed<string | null>(() => MENTION_QUERY_PATTERN.exec(draft.value)?.[1] ?? null)
 const mentionMatches = computed<AgentProfile[]>(() => {
