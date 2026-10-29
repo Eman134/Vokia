@@ -1,5 +1,11 @@
+<script lang="ts">
+export const UPDATE_READY_HINT = 'instala quando reiniciar'
+export const RESTART_LABEL = 'Reiniciar'
+</script>
+
 <script setup lang="ts">
 import { computed } from 'vue'
+import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useUpdater } from './useUpdater'
 
 const DATE_LOCALE = 'pt-BR'
@@ -41,22 +47,39 @@ const installLabel = computed<string>(() => {
       aria-labelledby="update-prompt-title"
       class="w-130 max-w-full rounded-dialog border border-line bg-surface p-6 shadow-float"
     >
-      <h2 id="update-prompt-title" class="text-section text-ink">Nova versão disponível</h2>
-      <p class="mt-1 text-caption text-muted">
-        Vokia {{ updater.version }} · instalada: {{ updater.currentVersion }}
-      </p>
-      <p v-if="releaseDate" class="text-caption text-muted">Publicada em {{ releaseDate }}</p>
+      <template v-if="updater.status === 'ready'">
+        <div class="flex flex-col items-center gap-3 text-center">
+          <VokiaMascot look="atualizacao-pronta" />
+          <h2 id="update-prompt-title" class="text-section text-ink">{{ updater.readyText }}</h2>
+          <p class="text-caption text-muted">{{ UPDATE_READY_HINT }}</p>
+        </div>
+      </template>
+      <template v-else>
+        <h2 id="update-prompt-title" class="text-section text-ink">Nova versão disponível</h2>
+        <p class="mt-1 text-caption text-muted">
+          Vokia {{ updater.version }} · instalada: {{ updater.currentVersion }}
+        </p>
+        <p v-if="releaseDate" class="text-caption text-muted">Publicada em {{ releaseDate }}</p>
 
-      <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3">
-        <p v-if="updater.notes" class="whitespace-pre-wrap text-control text-ink">{{ updater.notes }}</p>
-        <p v-else class="text-control text-muted">Sem notas de versão.</p>
-      </div>
+        <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3">
+          <p v-if="updater.notes" class="whitespace-pre-wrap text-control text-ink">{{ updater.notes }}</p>
+          <p v-else class="text-control text-muted">Sem notas de versão.</p>
+        </div>
+      </template>
 
       <p v-if="updater.installError" class="mt-4 text-small text-danger">{{ updater.installError }}</p>
 
       <div class="mt-6 flex justify-end gap-2">
         <button
-          v-if="updater.status === 'failed'"
+          v-if="updater.status === 'ready'"
+          type="button"
+          class="h-9 rounded-control bg-ink px-3.5 text-control font-medium text-bg"
+          @click="updater.restart()"
+        >
+          {{ RESTART_LABEL }}
+        </button>
+        <button
+          v-else-if="updater.status === 'failed'"
           type="button"
           class="h-9 rounded-control bg-surface-2 px-3.5 text-control font-medium text-ink"
           @click="updater.dismissUpdate()"

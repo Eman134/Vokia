@@ -5,7 +5,7 @@ import { checkForUpdate, relaunchApp, type DownloadEvent, type Update } from './
 const UPDATE_CHECK_TIMEOUT_MS = 10_000
 const PERCENT = 100
 
-export type UpdateStatus = 'idle' | 'available' | 'downloading' | 'installing' | 'failed'
+export type UpdateStatus = 'idle' | 'available' | 'downloading' | 'installing' | 'ready' | 'failed'
 
 export const useUpdater = defineStore('updater', () => {
   const status = ref<UpdateStatus>('idle')
@@ -21,6 +21,9 @@ export const useUpdater = defineStore('updater', () => {
   const currentVersion = computed<string | null>(() => update.value?.currentVersion ?? null)
   const releaseDate = computed<string | null>(() => update.value?.date ?? null)
   const notes = computed<string | null>(() => update.value?.body?.trim() ?? null)
+  const readyText = computed<string | null>(() =>
+    version.value === null ? null : `Versão ${version.value} pronta`,
+  )
   const progressPercent = computed<number | null>(() =>
     totalBytes.value ? Math.round((downloadedBytes.value / totalBytes.value) * PERCENT) : null,
   )
@@ -63,10 +66,18 @@ export const useUpdater = defineStore('updater', () => {
       await current.download(trackDownload)
       status.value = 'installing'
       await current.install()
-      await relaunchApp()
+      status.value = 'ready'
     } catch (error) {
       status.value = 'failed'
       installError.value = `Não foi possível atualizar: ${String(error)}`
+    }
+  }
+
+  async function restart(): Promise<void> {
+    try {
+      await relaunchApp()
+    } catch (error) {
+      installError.value = `Não foi possível reiniciar: ${String(error)}`
     }
   }
 
@@ -93,11 +104,13 @@ export const useUpdater = defineStore('updater', () => {
     currentVersion,
     releaseDate,
     notes,
+    readyText,
     progressPercent,
     checkError,
     installError,
     check,
     install,
+    restart,
     dismissUpdate,
     dismissCheckError,
   }
