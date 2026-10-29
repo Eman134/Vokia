@@ -98,9 +98,6 @@ export const useTeam = defineStore('team', () => {
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     AGENTS.find((agent) => states.value[agent.id] === 'thinking'),
   )
-  const statusText = computed<string>(() =>
-    thinkingAgent.value ? `${thinkingAgent.value.name} pensando` : 'Tudo em dia',
-  )
   const timeline = computed<TimelineItem[]>(() => {
     const items: TimelineItem[] = []
     feed.value.forEach((entry, index) => {
@@ -151,6 +148,12 @@ export const useTeam = defineStore('team', () => {
     } catch (error) {
       startupError.value = `Não foi possível iniciar a Vokia: ${String(error)}`
     }
+  }
+
+  async function recheckCli(): Promise<void> {
+    cliProblem.value = null
+    cliChecked.value = false
+    await start()
   }
 
   function stop(): void {
@@ -248,8 +251,8 @@ export const useTeam = defineStore('team', () => {
     queue,
     queuedFor,
     thinkingAgent,
-    statusText,
     start,
+    recheckCli,
     stop,
     chooseRecipient,
     clearRecipient,

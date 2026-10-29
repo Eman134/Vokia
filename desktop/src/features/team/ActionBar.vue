@@ -26,7 +26,7 @@ const BAR_WRAP_CLASSES =
 // `relative` ancora o menu de @ (MentionMenu é absolute) à pílula, não ao invólucro.
 const PILL_CLASSES =
   'pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float transition-[width] duration-180 ease-out'
-const COMPACT_WIDTH_CLASS = 'w-80'
+const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
 const EXPANDED_WIDTH_CLASS = 'w-full'
 const CHIP_CLASSES =
   'flex h-7 shrink-0 items-center gap-1 rounded-full bg-accent-soft py-0.5 pl-3 pr-1 text-label font-semibold text-accent'
@@ -241,7 +241,12 @@ function onPointerLeave(): void {
           :class="team.states[agent.id] === 'waiting' ? 'bg-warn' : 'bg-ok'"
         />
       </span>
-      <span class="min-w-0 truncate text-label font-semibold text-muted">{{ statusStore.statusText }}</span>
+      <span
+        class="min-w-0 truncate text-label font-semibold text-muted"
+        :class="expanded ? undefined : 'pr-2'"
+      >
+        {{ statusStore.statusText }}
+      </span>
       <template v-if="expanded">
         <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
         <UiButton
