@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { AGENTS, useTeam, type AgentProfile } from './useTeam'
+import { useTeamStatus } from './useTeamStatus'
+import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
+import type { RailPage } from '../../shell/railNav'
+import { useNavigation } from '../../shell/useNavigation'
 import MentionMenu from './MentionMenu.vue'
+import ActionMenu from './ActionMenu.vue'
+import Balloon from '../balloon/Balloon.vue'
 import UiButton from '../../ui/UiButton.vue'
 
 const RING_BOX = 28
@@ -25,10 +31,15 @@ const CHIP_CLASSES =
   'flex h-7 shrink-0 items-center gap-1 rounded-full bg-accent-soft py-0.5 pl-3 pr-1 text-label font-semibold text-accent'
 const CHIP_REMOVE_CLASSES =
   'grid size-5 cursor-pointer place-items-center rounded-full hover:bg-surface focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40'
-const DEFAULT_PLACEHOLDER = 'Peça algo ao time'
 const MENTION_QUERY_PATTERN = /^@(\S*)$/
+const ACTION_SHORTCUT_CODES = ['Digit1', 'Digit2']
+
+const emit = defineEmits<{
+  compose: [size: ComposeSize]
+}>()
 
 const team = useTeam()
+const statusStore = useTeamStatus()
 const draft = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
 const listboxId = useId()
@@ -36,11 +47,19 @@ const menuDismissed = ref(false)
 const highlightedIndex = ref(0)
 const hovered = ref(false)
 const focusWithin = ref(false)
+const actionMenuOpen = ref(false)
+const navigation = useNavigation()
+const railPage = computed<RailPage | null>(() =>
+  navigation.page === 'novo-projeto' || navigation.page === 'onboarding' ? null : navigation.page,
+)
+const pageActions = computed<readonly PageAction[]>(() =>
+  railPage.value === null ? [] : PAGE_ACTIONS[railPage.value],
+)
 
-const locked = computed(() => team.busy || team.checking)
+const locked = computed(() => team.checking)
 const recipientProfile = computed(() => AGENTS.find((agent) => agent.id === team.recipient))
 const placeholder = computed(() =>
-  recipientProfile.value ? `Mensagem para ${recipientProfile.value.name}` : DEFAULT_PLACEHOLDER,
+  recipientProfile.value ? `Mensagem para ${recipientProfile.value.name}` : statusStore.placeholder,
 )
 const mentionQuery = computed<string | null>(() => MENTION_QUERY_PATTERN.exec(draft.value)?.[1] ?? null)
 const mentionMatches = computed<AgentProfile[]>(() => {
@@ -53,7 +72,7 @@ const mentionMatches = computed<AgentProfile[]>(() => {
 })
 const highlightedAgent = computed(() => mentionMatches.value.at(highlightedIndex.value))
 const menuOpen = computed(() => mentionQuery.value !== null && !menuDismissed.value && !locked.value)
-const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value)
+const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value)
 const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.id] !== 'idle'))
 const activeOptionId = computed(() =>
   menuOpen.value && highlightedAgent.value ? `${listboxId}-${highlightedAgent.value.id}` : undefined,
@@ -64,10 +83,19 @@ watch(mentionQuery, () => {
   highlightedIndex.value = 0
 })
 
+watch(menuOpen, (open) => {
+  if (open) {
+    actionMenuOpen.value = false
+  }
+})
+
 watch(
   () => team.recipient,
   () => inputRef.value?.focus(),
 )
+
+onMounted(() => window.addEventListener('keydown', onShortcut))
+onUnmounted(() => window.removeEventListener('keydown', onShortcut))
 
 async function submit(): Promise<void> {
   const text = draft.value.trim()
@@ -143,14 +171,39 @@ function onKeydown(event: KeyboardEvent): void {
     team.clearRecipient()
   }
 }
+
+function runAction(action: PageAction): void {
+  actionMenuOpen.value = false
+  if (action.size !== undefined) {
+    emit('compose', action.size)
+  }
+}
+
+function onShortcut(event: KeyboardEvent): void {
+  const index = ACTION_SHORTCUT_CODES.indexOf(event.code)
+  const action = index >= 0 ? pageActions.value[index] : undefined
+  if (action === undefined || !event.getModifierState(ACTION_SHORTCUT_MODIFIER)) {
+    return
+  }
+  event.preventDefault()
+  runAction(action)
+}
+
+function onPointerLeave(): void {
+  hovered.value = false
+  if (document.activeElement !== inputRef.value) {
+    actionMenuOpen.value = false
+  }
+}
 </script>
 
 <template>
   <div v-if="team.online" :class="BAR_WRAP_CLASSES">
+    <Balloon />
     <form
       :class="[PILL_CLASSES, expanded ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS]"
       @pointerenter="hovered = true"
-      @pointerleave="hovered = false"
+      @pointerleave="onPointerLeave"
       @focusin="focusWithin = true"
       @focusout="onFocusOut"
       @submit.prevent="submit"
@@ -158,7 +211,7 @@ function onKeydown(event: KeyboardEvent): void {
       <svg
         v-if="activeAgents.length < 2"
         class="size-6.5 shrink-0"
-        :class="{ 'animate-spin': team.thinkingAgent }"
+        :class="{ 'animate-spin': statusStore.status === 'working' }"
         :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
         fill="none"
         :stroke-width="RING_STROKE"
@@ -169,9 +222,9 @@ function onKeydown(event: KeyboardEvent): void {
           :cx="RING_CENTER"
           :cy="RING_CENTER"
           :r="RING_RADIUS"
-          class="stroke-ok"
+          :class="statusStore.ring"
           stroke-linecap="round"
-          :stroke-dasharray="team.thinkingAgent ? SPINNING_RING_DASH : FULL_RING_DASH"
+          :stroke-dasharray="statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH"
         />
       </svg>
       <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
@@ -182,10 +235,19 @@ function onKeydown(event: KeyboardEvent): void {
           :class="team.states[agent.id] === 'waiting' ? 'bg-warn' : 'bg-ok'"
         />
       </span>
-      <span class="w-32 shrink-0 truncate text-label font-semibold text-muted">{{ team.statusText }}</span>
+      <span class="w-32 shrink-0 truncate text-label font-semibold text-muted">{{ statusStore.statusText }}</span>
       <template v-if="expanded">
         <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
-        <UiButton variant="quiet" size="sm" disabled aria-label="Ações da página">☰</UiButton>
+        <UiButton
+          variant="quiet"
+          size="sm"
+          aria-label="Ações da página"
+          aria-haspopup="menu"
+          :aria-expanded="actionMenuOpen"
+          @press="actionMenuOpen = !actionMenuOpen"
+        >
+          ☰
+        </UiButton>
         <span v-if="recipientProfile" :class="CHIP_CLASSES">
           {{ recipientProfile.name }}
           <button
@@ -223,6 +285,12 @@ function onKeydown(event: KeyboardEvent): void {
         :agents="mentionMatches"
         :active-index="highlightedIndex"
         @choose="chooseMentionAgent"
+      />
+      <ActionMenu
+        v-if="actionMenuOpen && railPage !== null"
+        :page="railPage"
+        @run="runAction"
+        @close="actionMenuOpen = false"
       />
     </form>
   </div>
