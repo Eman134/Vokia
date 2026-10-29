@@ -25,7 +25,6 @@ export interface RailProject {
   working: number
   dot: 'warn' | 'ok'
   path: string
-  page: RailPage
 }
 
 export const PAGE_LABELS: Record<AppPage, string> = {
@@ -121,20 +120,17 @@ export const PROJECTS: readonly RailProject[] = [
     working: 5,
     dot: 'warn',
     path: 'M9 2.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13zM9 7a2 2 0 110 4 2 2 0 010-4z',
-    page: 'projetos',
   },
   {
     name: 'app-agenda',
     working: 2,
     dot: 'warn',
     path: 'M9 3l6.5 12h-13z',
-    page: 'projetos',
   },
   {
     name: 'site-estudio',
     working: 2,
     dot: 'ok',
     path: 'M3.5 3.5h11v11h-11z',
-    page: 'projetos',
   },
 ]
