@@ -75,7 +75,6 @@ impl fmt::Display for ClaudeError {
 
 pub struct Reply {
     pub text: String,
-    pub session_id: String,
     pub limits: Option<RateLimits>,
 }
 
@@ -151,7 +150,6 @@ struct CliResponse {
     result: String,
     #[serde(default)]
     subtype: String,
-    session_id: String,
     is_error: bool,
 }
 
@@ -188,12 +186,7 @@ async fn ensure_logged_in(cli: &Path) -> Result<(), CliProblem> {
     }
 }
 
-pub async fn ask(
-    cli: &Path,
-    message: &str,
-    role: &str,
-    session_id: Option<&str>,
-) -> Result<Reply, ClaudeError> {
+pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeError> {
     let mut command = base_command(cli);
     command.kill_on_drop(true);
     command.args([
@@ -211,9 +204,6 @@ pub async fn ask(
         "--append-system-prompt",
         role,
     ]);
-    if let Some(id) = session_id {
-        command.args(["--resume", id]);
-    }
     let output = timeout(CLI_TIMEOUT, command.output())
         .await
         .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))?
@@ -235,7 +225,6 @@ pub async fn ask(
     }
     Ok(Reply {
         text: response.result,
-        session_id: response.session_id,
         limits,
     })
 }

@@ -1,19 +1,22 @@
 // Sem isso o executável release abre uma janela de console junto com a do app no Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod cache;
 mod claude;
 mod commands;
 mod connectivity;
 mod events;
 mod orchestrator;
 mod state;
+mod task;
 mod tray;
 mod window;
 
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use state::AppState;
+use cache::Cache;
+use state::{AppState, FlowQueue};
 
 fn main() {
     let cli = tauri::async_runtime::block_on(claude::locate());
@@ -23,7 +26,12 @@ fn main() {
         ))
         .manage(AppState {
             cli,
-            sessions: Mutex::new(HashMap::new()),
+            cache: Mutex::new(Cache::default()),
+            flow: Mutex::new(FlowQueue {
+                active: false,
+                pending: VecDeque::new(),
+            }),
+            archive: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::cli_problem,
