@@ -1,22 +1,31 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
-use crate::cache::{parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_VAR};
-use crate::claude::{self, ClaudeError, LimitWindow, RateLimits};
+use crate::cache::{
+    parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
+    RECOVERY_CONVERSATION_ITEMS,
+};
+use crate::claude::{self, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
 use crate::events::{Agent, AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 use crate::state::AppState;
 use crate::task::{
-    agent_named, parse_definition, ActiveTask, TaskDefinition, TaskOutcome, TaskRecord,
+    agent_named, call_mode, degrades_to_fresh, is_live_task, long_request_text, parse_definition,
+    ActiveTask, CallMode, TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS,
+    SESSION_IDLE_LIMIT_SECS, SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
 };
 
 const PERCENT_SCALE: f64 = 100.0;
+const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
+const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
+const NO_CONVERSATION: usize = 0;
 const TEAM_ROSTER: &str = "Time desta sessão: Iara (tech lead) e Davi (dev frontend).";
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
-const DELEGATION_RULE: &str = "Quando precisar de outro agente do time, termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Quando a tarefa estiver concluída, responda sem essa linha.";
+const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const DELEGATION_MARK: char = '@';
 const DELEGATION_SEPARATOR: char = ':';
 const REPLY_PREFIX: &str = " respondeu: ";
@@ -26,10 +35,11 @@ const LOOP_REPEAT_LIMIT: u32 = 3;
 const LOOP_MESSAGE: &str = "A conversa entre os agentes parou: a mesma mensagem se repetiu em turnos seguidos sem avançar a tarefa.";
 const STALL_LIMIT: u32 = 3;
 const USER_LABEL: &str = "Usuário";
+const ARCHIVE_LIMIT: usize = 20;
+const ARCHIVE_FILE: &str = "tasks-archive.json";
 const NO_NAMES: &str = "nenhuma";
 const NO_VARIABLES: &str = "- nenhuma";
-const INTERPRETER_ROLE: &str = "Você extrai a definição de uma tarefa e não conversa. Responda somente com um objeto JSON, sem texto fora dele, com os campos: nova_tarefa (true se o pedido inicia um assunto diferente do anterior, false se continua o anterior); objetivo (frase curta); participantes (Iara e/ou Davi, o destinatário primeiro); alternar (true se os participantes devem se revezar a cada turno); variaveis (lista de {\"nome\", \"tipo\": \"numero\" | \"texto\" | \"lista\", \"valor\", \"regra\": \"livre\" | \"mais_um\" | \"so_leitura\"}); parada ({\"variavel\", \"alcanca\": nome de uma variável numérica ou inteiro}, ou null). Exemplos: \"contem até 20 alternadamente\" → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20 alternadamente\",\"participantes\":[\"Iara\",\"Davi\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"contagem\",\"tipo\":\"numero\",\"valor\":0,\"regra\":\"mais_um\"},{\"nome\":\"limite\",\"tipo\":\"numero\",\"valor\":20,\"regra\":\"so_leitura\"}],\"parada\":{\"variavel\":\"contagem\",\"alcanca\":\"limite\"}}. \"fale um animal alternadamente, você e o davi\" → {\"nova_tarefa\":true,\"objetivo\":\"alternar animais\",\"participantes\":[\"Davi\",\"Iara\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"animais\",\"tipo\":\"lista\",\"valor\":[],\"regra\":\"livre\"}],\"parada\":null}. \"quanto é 1+1?\" → {\"nova_tarefa\":true,\"objetivo\":\"responder 1+1\",\"participantes\":[\"Iara\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}.";
-const ARCHIVE_LIMIT: usize = 20;
+const INTERPRETER_ROLE: &str = "Você extrai a definição de uma tarefa e não conversa. Responda somente com um objeto JSON, sem texto fora dele, com os campos: nova_tarefa (true se o pedido inicia um assunto diferente do anterior, false se continua o anterior); objetivo (frase curta); participantes (só quem precisa agir: por padrão o destinatário, ou o agente que o pedido cita; inclua os dois apenas quando o pedido mandar os dois agirem); alternar (true somente se o pedido pedir revezamento explícito entre os dois, como alternadamente, um de cada vez ou revezando; sem esse pedido é false, e então variaveis é [] e parada é null); variaveis (lista de {\"nome\", \"tipo\": \"numero\" | \"texto\" | \"lista\", \"valor\", \"regra\": \"livre\" | \"mais_um\" | \"so_leitura\"}); parada ({\"variavel\", \"alcanca\": nome de uma variável numérica ou inteiro}, ou null). Exemplos: \"contem até 20 alternadamente\" → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20 alternadamente\",\"participantes\":[\"Iara\",\"Davi\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"contagem\",\"tipo\":\"numero\",\"valor\":0,\"regra\":\"mais_um\"},{\"nome\":\"limite\",\"tipo\":\"numero\",\"valor\":20,\"regra\":\"so_leitura\"}],\"parada\":{\"variavel\":\"contagem\",\"alcanca\":\"limite\"}}. \"fale um animal alternadamente, você e o davi\" → {\"nova_tarefa\":true,\"objetivo\":\"alternar animais\",\"participantes\":[\"Davi\",\"Iara\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"animais\",\"tipo\":\"lista\",\"valor\":[],\"regra\":\"livre\"}],\"parada\":null}. \"quanto é 1+1?\" → {\"nova_tarefa\":true,\"objetivo\":\"responder 1+1\",\"participantes\":[\"Iara\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}. \"conte até 20\" para o Davi, sem pedir revezamento → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20\",\"participantes\":[\"Davi\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}.";
 
 #[derive(Debug)]
 pub enum FlowError {
@@ -40,6 +50,9 @@ pub enum FlowError {
     Cache(String),
     QueuePoisoned,
     ArchivePoisoned,
+    ArchivePath(tauri::Error),
+    ArchiveIo(std::io::Error),
+    ArchiveJson(serde_json::Error),
     Clock(SystemTimeError),
 }
 
@@ -62,6 +75,19 @@ impl fmt::Display for FlowError {
                 f,
                 "O arquivo de tarefas ficou inconsistente após uma falha anterior."
             ),
+            FlowError::ArchivePath(error) => write!(
+                f,
+                "Não foi possível localizar a pasta de dados do app: {error}"
+            ),
+            FlowError::ArchiveIo(error) => {
+                write!(f, "Não foi possível gravar o arquivo de tarefas: {error}")
+            }
+            FlowError::ArchiveJson(error) => {
+                write!(
+                    f,
+                    "Não foi possível serializar o arquivo de tarefas: {error}"
+                )
+            }
             FlowError::Clock(error) => {
                 write!(f, "O relógio do sistema está antes de 1970: {error}")
             }
@@ -143,18 +169,20 @@ async fn run_exchange(
     origin: Agent,
 ) -> Result<(), FlowError> {
     let definition = interpret_task(app, state, cli, request, origin).await?;
-    begin_task(state, &definition)?;
+    begin_task(app, state, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
-    let result = run_turns(
+    let exchange = Exchange {
         app,
         state,
         cli,
         request,
         origin,
-        &definition,
-        &mut transcript,
-    )
-    .await;
+        definition: &definition,
+        live_task: is_live_task(&definition, request),
+    };
+    let mut pool = SessionPool::default();
+    let result = run_turns(&exchange, &mut pool, &mut transcript).await;
+    pool.close_all().await;
     let outcome = match &result {
         Ok(outcome) => *outcome,
         Err(_) => TaskOutcome::Failed,
@@ -186,7 +214,12 @@ async fn interpret_task(
     Ok(parse_definition(&reply.text, origin, request))
 }
 
-fn begin_task(state: &AppState, definition: &TaskDefinition) -> Result<(), FlowError> {
+fn begin_task(
+    app: &AppHandle,
+    state: &AppState,
+    definition: &TaskDefinition,
+    request: &str,
+) -> Result<(), FlowError> {
     let archived = with_cache(state, |cache| {
         let archived = if definition.nova_tarefa {
             cache.archive()
@@ -196,13 +229,14 @@ fn begin_task(state: &AppState, definition: &TaskDefinition) -> Result<(), FlowE
         let task = ActiveTask {
             objetivo: definition.objetivo.clone(),
             participants: definition.participants.clone(),
+            long_request: long_request_text(request),
             outcome: None,
         };
         cache.start_task(task, definition.variables.clone())?;
         Ok(archived)
     })?;
     match archived {
-        Some(record) => archive_task(state, record),
+        Some(record) => archive_task(app, state, record),
         None => Ok(()),
     }
 }
@@ -219,29 +253,44 @@ fn close_task(
     })
 }
 
-async fn run_turns(
-    app: &AppHandle,
-    state: &AppState,
-    cli: &Path,
-    request: &str,
+#[derive(Clone, Copy)]
+struct Exchange<'a> {
+    app: &'a AppHandle,
+    state: &'a AppState,
+    cli: &'a Path,
+    request: &'a str,
     origin: Agent,
-    definition: &TaskDefinition,
+    definition: &'a TaskDefinition,
+    live_task: bool,
+}
+
+async fn run_turns(
+    exchange: &Exchange<'_>,
+    pool: &mut SessionPool,
     transcript: &mut Vec<String>,
 ) -> Result<TaskOutcome, FlowError> {
+    let Exchange {
+        app,
+        state,
+        request,
+        origin,
+        definition,
+        ..
+    } = *exchange;
     let mut turn = Turn::first(definition, origin, request);
     let mut loop_guard = LoopGuard::default();
     let mut stalled = 0;
     loop {
         let instruction = turn.instruction();
-        let prompt = with_cache(state, |cache| {
-            Ok(step_prompt(
-                &definition.objetivo,
+        let prompts = with_cache(state, |cache| {
+            Ok(StepPrompts::build(
                 cache,
+                definition,
                 turn.speaker,
                 &instruction,
             ))
         })?;
-        let reply = ask_fresh(app, cli, turn.speaker, &prompt, &role(turn.speaker)).await?;
+        let reply = ask_step(exchange, pool, turn.speaker, &prompts).await?;
         let ParsedReply {
             visible,
             delegation,
@@ -251,15 +300,16 @@ async fn run_turns(
         let delegation = delegation.filter(|_| !definition.alternate);
         if !applied.rejected.is_empty() {
             if !visible.is_empty() {
-                let to = next_turn(definition, origin, turn.speaker, &visible, None)
+                let to = next_turn(definition, &turn, &visible, None)
                     .map_or(Speaker::User, |next| Speaker::from(next.speaker));
-                say(app, transcript, turn.speaker, to, &visible)?;
+                emit_message(app, Speaker::from(turn.speaker), to, &visible)?;
             }
             stalled += 1;
             if stalled == STALL_LIMIT {
                 stop_with_error(app, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
+            pool.review(turn.speaker, stalled, 0).await;
             turn.rejection = Some(applied.rejected.join("; "));
             continue;
         }
@@ -290,12 +340,12 @@ async fn run_turns(
                 stop_with_error(app, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
+            pool.review(turn.speaker, stalled, 0).await;
         }
 
         let next = next_turn(
             definition,
-            origin,
-            turn.speaker,
+            &turn,
             feed.as_deref().unwrap_or_default(),
             delegation.as_ref(),
         );
@@ -322,10 +372,12 @@ async fn run_turns(
         emit_state(app, turn.speaker, speaker_state)?;
         match next {
             Some(next) => {
-                if loop_guard.register(next.speaker, &next.received) {
+                let repeats = loop_guard.register(next.speaker, &next.received);
+                if repeats >= LOOP_REPEAT_LIMIT {
                     stop_with_error(app, LOOP_MESSAGE.to_string())?;
                     return Ok(TaskOutcome::Stalled);
                 }
+                pool.review(next.speaker, 0, repeats).await;
                 turn = next;
             }
             None => return Ok(TaskOutcome::Finished),
@@ -338,21 +390,28 @@ struct Turn {
     base: String,
     rejection: Option<String>,
     received: String,
+    requesters: Vec<Agent>,
 }
 
 impl Turn {
-    fn new(speaker: Agent, base: &str, received: &str) -> Self {
+    fn new(speaker: Agent, base: &str, received: &str, requesters: Vec<Agent>) -> Self {
         Self {
             speaker,
             base: base.to_string(),
             rejection: None,
             received: received.to_string(),
+            requesters,
         }
     }
 
     fn first(definition: &TaskDefinition, origin: Agent, request: &str) -> Self {
         let speaker = definition.participants.first().copied().unwrap_or(origin);
-        Self::new(speaker, &format!("Pedido do usuário: {request}"), request)
+        Self::new(
+            speaker,
+            &format!("Pedido do usuário: {request}"),
+            request,
+            Vec::new(),
+        )
     }
 
     fn instruction(&self) -> String {
@@ -365,23 +424,28 @@ impl Turn {
 
 fn next_turn(
     definition: &TaskDefinition,
-    origin: Agent,
-    speaker: Agent,
+    turn: &Turn,
     feed: &str,
     delegation: Option<&(Agent, String)>,
 ) -> Option<Turn> {
+    let speaker = turn.speaker;
     if definition.alternate {
         let agent = next_participant(&definition.participants, speaker);
-        return Some(Turn::new(agent, ALTERNATE_INSTRUCTION, feed));
+        return Some(Turn::new(agent, ALTERNATE_INSTRUCTION, feed, Vec::new()));
     }
     if let Some((helper, request)) = delegation {
-        return Some(Turn::new(*helper, request, request));
+        let mut requesters = turn.requesters.clone();
+        requesters.push(speaker);
+        return Some(Turn::new(*helper, request, request, requesters));
     }
-    if speaker == origin {
-        return None;
-    }
+    let (requester, remaining) = turn.requesters.split_last()?;
     let message = format!("{}{REPLY_PREFIX}{feed}", speaker.name());
-    Some(Turn::new(origin, &message, &message))
+    Some(Turn::new(
+        *requester,
+        &message,
+        &message,
+        remaining.to_vec(),
+    ))
 }
 
 fn next_participant(participants: &[Agent], speaker: Agent) -> Agent {
@@ -422,20 +486,81 @@ fn with_cache<T>(
     action(&mut cache).map_err(FlowError::Cache)
 }
 
-fn step_prompt(objective: &str, cache: &Cache, agent: Agent, instruction: &str) -> String {
-    let variables = cache.visible_to(agent);
-    let listing = if variables.is_empty() {
+struct StepPrompts {
+    opening: String,
+    follow_up: String,
+    minimal: String,
+}
+
+impl StepPrompts {
+    fn build(cache: &Cache, definition: &TaskDefinition, agent: Agent, instruction: &str) -> Self {
+        let prompt = |conversation_items, with_request| {
+            step_prompt(
+                cache,
+                definition,
+                agent,
+                instruction,
+                conversation_items,
+                with_request,
+            )
+        };
+        Self {
+            opening: prompt(CONVERSATION_ITEMS, true),
+            follow_up: prompt(NO_CONVERSATION, false),
+            minimal: prompt(RECOVERY_CONVERSATION_ITEMS, true),
+        }
+    }
+}
+
+// O estado compartilhado só entra quando há revezamento; fora dele o agente recebe o pedido puro.
+fn step_prompt(
+    cache: &Cache,
+    definition: &TaskDefinition,
+    agent: Agent,
+    instruction: &str,
+    conversation_items: usize,
+    with_request: bool,
+) -> String {
+    let mut sections = vec![format!("Objetivo: {}", definition.objetivo)];
+    if let Some(request) = cache.long_request().filter(|_| with_request) {
+        sections.push(format!(
+            "Pedido original:
+{request}"
+        ));
+    }
+    if definition.alternate {
+        sections.push(format!(
+            "Variáveis visíveis:\n{}",
+            variables_listing(cache, agent)
+        ));
+    }
+    let conversation = cache.recent_conversation(conversation_items);
+    if !conversation.is_empty() {
+        let entries: Vec<String> = conversation
+            .into_iter()
+            .map(|entry| format!("- {entry}"))
+            .collect();
+        sections.push(format!("Conversa recente:\n{}", entries.join("\n")));
+    }
+    sections.push(format!("Instrução: {instruction}"));
+    if definition.alternate {
+        sections.push(PROMPT_RULES.to_string());
+    }
+    sections.join("\n")
+}
+
+fn variables_listing(cache: &Cache, agent: Agent) -> String {
+    let lines: Vec<String> = cache
+        .visible_to(agent)
+        .into_iter()
+        .filter(|variable| variable.name != CONVERSATION_VAR)
+        .map(describe_variable)
+        .collect();
+    if lines.is_empty() {
         NO_VARIABLES.to_string()
     } else {
-        variables
-            .into_iter()
-            .map(describe_variable)
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    format!(
-        "Objetivo: {objective}\nVariáveis visíveis:\n{listing}\nInstrução: {instruction}\nA variável {CONVERSATION_VAR} é somente leitura: não escreva nela.\n{PROMPT_RULES}"
-    )
+        lines.join("\n")
+    }
 }
 
 fn describe_variable(variable: &Variable) -> String {
@@ -460,7 +585,7 @@ fn scope_label(scope: Scope) -> &'static str {
     }
 }
 
-fn archive_task(state: &AppState, record: TaskRecord) -> Result<(), FlowError> {
+fn archive_task(app: &AppHandle, state: &AppState, record: TaskRecord) -> Result<(), FlowError> {
     let mut archive = state
         .archive
         .lock()
@@ -469,7 +594,20 @@ fn archive_task(state: &AppState, record: TaskRecord) -> Result<(), FlowError> {
     if archive.len() > ARCHIVE_LIMIT {
         archive.remove(0);
     }
-    Ok(())
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(FlowError::ArchivePath)?
+        .join(ARCHIVE_FILE);
+    write_archive(&path, &archive)
+}
+
+fn write_archive(path: &Path, records: &[TaskRecord]) -> Result<(), FlowError> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(FlowError::ArchiveIo)?;
+    }
+    let json = serde_json::to_vec(records).map_err(FlowError::ArchiveJson)?;
+    fs::write(path, json).map_err(FlowError::ArchiveIo)
 }
 
 #[derive(Default)]
@@ -478,7 +616,7 @@ struct LoopGuard {
 }
 
 impl LoopGuard {
-    fn register(&mut self, agent: Agent, message: &str) -> bool {
+    fn register(&mut self, agent: Agent, message: &str) -> u32 {
         let normalized = normalize_message(message);
         let (last, repeats) = self
             .last
@@ -490,7 +628,7 @@ impl LoopGuard {
             *last = normalized;
             *repeats = 1;
         }
-        *repeats == LOOP_REPEAT_LIMIT
+        *repeats
     }
 }
 
@@ -515,17 +653,198 @@ fn stop_with_error(app: &AppHandle, message: String) -> Result<(), FlowError> {
     emit_state(app, Agent::Davi, AgentState::Idle)
 }
 
-async fn ask_fresh(
-    app: &AppHandle,
-    cli: &Path,
+async fn ask_step(
+    exchange: &Exchange<'_>,
+    pool: &mut SessionPool,
     agent: Agent,
-    message: &str,
-    role: &str,
+    prompts: &StepPrompts,
 ) -> Result<String, FlowError> {
-    emit_state(app, agent, AgentState::Thinking)?;
-    let reply = claude::ask(cli, message, role).await?;
-    report_limits(app, reply.limits)?;
+    emit_state(exchange.app, agent, AgentState::Thinking)?;
+    let agent_role = role(agent);
+    let live = match call_mode(exchange.live_task, pool.is_fresh_only(agent)) {
+        CallMode::Live => {
+            pool.live_reply(exchange.cli, agent, &agent_role, prompts)
+                .await?
+        }
+        CallMode::Fresh => None,
+    };
+    let reply = match live {
+        Some(reply) => reply,
+        None => claude::ask(exchange.cli, &prompts.opening, &agent_role).await?,
+    };
+    report_limits(exchange.app, reply.limits)?;
     Ok(reply.text)
+}
+
+#[derive(Default)]
+struct SessionPool {
+    agents: HashMap<Agent, AgentSession>,
+}
+
+impl SessionPool {
+    fn is_fresh_only(&self, agent: Agent) -> bool {
+        self.agents
+            .get(&agent)
+            .is_some_and(|session| session.fresh_only)
+    }
+
+    async fn live_reply(
+        &mut self,
+        cli: &Path,
+        agent: Agent,
+        role: &str,
+        prompts: &StepPrompts,
+    ) -> Result<Option<Reply>, FlowError> {
+        self.agents
+            .entry(agent)
+            .or_default()
+            .reply(cli, role, prompts)
+            .await
+    }
+
+    async fn review(&mut self, agent: Agent, stalls: u32, repeats: u32) {
+        let Some(session) = self.agents.get_mut(&agent) else {
+            return;
+        };
+        if degrades_to_fresh(stalls, repeats, session.recoveries) {
+            session.degrade().await;
+        }
+    }
+
+    async fn close_all(self) {
+        for mut session in self.agents.into_values() {
+            session.close_live().await;
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Attempt {
+    Reuse,
+    Open,
+    Resume,
+    Minimal,
+}
+
+#[derive(Default)]
+struct AgentSession {
+    live: Option<LiveSession>,
+    session_id: Option<String>,
+    messages: u32,
+    recoveries: u32,
+    fresh_only: bool,
+    last_used: Option<Instant>,
+}
+
+impl AgentSession {
+    async fn reply(
+        &mut self,
+        cli: &Path,
+        role: &str,
+        prompts: &StepPrompts,
+    ) -> Result<Option<Reply>, FlowError> {
+        let mut next = self.first_attempt().await;
+        while let Some(attempt) = next {
+            match self.attempt(cli, role, attempt, prompts).await {
+                Ok(reply) => return Ok(Some(reply)),
+                Err(error) if error.is_session_loss() => next = self.after_loss(attempt),
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(None)
+    }
+
+    async fn first_attempt(&mut self) -> Option<Attempt> {
+        if self.live.is_none() {
+            return Some(Attempt::Open);
+        }
+        if self.messages >= SESSION_ROTATE_MESSAGES {
+            self.close_live().await;
+            self.session_id = None;
+            return Some(Attempt::Open);
+        }
+        if self
+            .last_used
+            .is_some_and(|used| used.elapsed() >= SESSION_IDLE_LIMIT)
+        {
+            self.close_live().await;
+            return self.after_loss(Attempt::Reuse);
+        }
+        Some(Attempt::Reuse)
+    }
+
+    async fn attempt(
+        &mut self,
+        cli: &Path,
+        role: &str,
+        attempt: Attempt,
+        prompts: &StepPrompts,
+    ) -> Result<Reply, ClaudeError> {
+        let message = match attempt {
+            Attempt::Open => &prompts.opening,
+            Attempt::Reuse | Attempt::Resume => &prompts.follow_up,
+            Attempt::Minimal => &prompts.minimal,
+        };
+        let mut live = match (attempt, self.live.take()) {
+            (Attempt::Reuse, Some(live)) => live,
+            (_, previous) => {
+                if let Some(previous) = previous {
+                    previous.close(SESSION_CLOSE_GRACE).await;
+                }
+                let resume = match attempt {
+                    Attempt::Resume => self.session_id.as_deref(),
+                    _ => None,
+                };
+                LiveSession::open(cli, role, resume)?
+            }
+        };
+        match live.send(message).await {
+            Ok(reply) => {
+                self.session_id = live.session_id().map(str::to_string);
+                self.live = Some(live);
+                self.messages = match attempt {
+                    Attempt::Open | Attempt::Minimal => 1,
+                    Attempt::Reuse | Attempt::Resume => self.messages + 1,
+                };
+                self.last_used = Some(Instant::now());
+                Ok(reply)
+            }
+            Err(error) => {
+                live.close(SESSION_CLOSE_GRACE).await;
+                Err(error)
+            }
+        }
+    }
+
+    fn after_loss(&mut self, failed: Attempt) -> Option<Attempt> {
+        if failed == Attempt::Resume {
+            return Some(Attempt::Minimal);
+        }
+        self.recoveries += 1;
+        if self.recoveries >= SESSION_RECOVERY_LIMIT {
+            self.fresh_only = true;
+            return None;
+        }
+        match failed {
+            Attempt::Minimal => {
+                self.fresh_only = true;
+                None
+            }
+            _ if self.session_id.is_some() => Some(Attempt::Resume),
+            _ => Some(Attempt::Minimal),
+        }
+    }
+
+    async fn degrade(&mut self) {
+        self.fresh_only = true;
+        self.close_live().await;
+    }
+
+    async fn close_live(&mut self) {
+        if let Some(live) = self.live.take() {
+            live.close(SESSION_CLOSE_GRACE).await;
+        }
+    }
 }
 
 fn report_limits(app: &AppHandle, limits: Option<RateLimits>) -> Result<(), FlowError> {
@@ -556,7 +875,7 @@ fn role(agent: Agent) -> String {
         Agent::Davi => "dev frontend",
     };
     format!(
-        "Você é {}, {title}. {TEAM_ROSTER} Responda em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE}",
+        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE}",
         agent.name()
     )
 }

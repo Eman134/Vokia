@@ -4,9 +4,14 @@ use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
 
+const USER_MESSAGE_KIND: &str = "user";
+const USER_ROLE: &str = "user";
+const PIPE_MISSING: &str = "o pipe do processo não ficou disponível";
+const SESSION_EOF: &str = "o processo encerrou antes de enviar o resultado";
 const CLI_NAME: &str = "claude";
 const MODEL: &str = "haiku";
 const MAX_TURNS: &str = "3";
@@ -34,6 +39,16 @@ pub enum ClaudeError {
     MissingResult,
     Reported(String),
     Timeout(Duration),
+    SessionClosed(String),
+}
+
+impl ClaudeError {
+    pub fn is_session_loss(&self) -> bool {
+        matches!(
+            self,
+            ClaudeError::SessionClosed(_) | ClaudeError::Timeout(_)
+        )
+    }
 }
 
 impl fmt::Display for ClaudeError {
@@ -69,6 +84,9 @@ impl fmt::Display for ClaudeError {
                 )
             }
             ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
+            ClaudeError::SessionClosed(reason) => {
+                write!(f, "A sessão da CLI claude foi encerrada: {reason}")
+            }
         }
     }
 }
@@ -150,6 +168,8 @@ struct CliResponse {
     result: String,
     #[serde(default)]
     subtype: String,
+    #[serde(default)]
+    session_id: String,
     is_error: bool,
 }
 
@@ -187,23 +207,7 @@ async fn ensure_logged_in(cli: &Path) -> Result<(), CliProblem> {
 }
 
 pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeError> {
-    let mut command = base_command(cli);
-    command.kill_on_drop(true);
-    command.args([
-        "-p",
-        message,
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--model",
-        MODEL,
-        "--tools",
-        "",
-        "--max-turns",
-        MAX_TURNS,
-        "--append-system-prompt",
-        role,
-    ]);
+    let mut command = agent_command(cli, &["-p", message], role);
     let output = timeout(CLI_TIMEOUT, command.output())
         .await
         .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))?
@@ -215,6 +219,10 @@ pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeE
         });
     }
     let (response, limits) = parse_stream(&output.stdout)?;
+    into_reply(response, limits)
+}
+
+fn into_reply(response: CliResponse, limits: Option<RateLimits>) -> Result<Reply, ClaudeError> {
     if response.is_error {
         let message = if response.result.is_empty() {
             format!("sem texto (subtype: {})", response.subtype)
@@ -229,30 +237,157 @@ pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeE
     })
 }
 
-fn parse_stream(stdout: &[u8]) -> Result<(CliResponse, Option<RateLimits>), ClaudeError> {
-    let mut response: Option<CliResponse> = None;
-    let mut limits: Option<RateLimits> = None;
-    for line in stdout
-        .split(|byte| *byte == b'\n')
-        .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
-    {
+pub struct LiveSession {
+    child: Child,
+    stdin: ChildStdin,
+    lines: Lines<BufReader<ChildStdout>>,
+    session_id: Option<String>,
+}
+
+impl LiveSession {
+    pub fn open(cli: &Path, role: &str, resume: Option<&str>) -> Result<Self, ClaudeError> {
+        let mut command = agent_command(cli, &["-p", "--input-format", "stream-json"], role);
+        if let Some(session_id) = resume {
+            command.args(["--resume", session_id]);
+        }
+        // Sem leitor, o stderr cheio travaria o processo no meio de uma resposta.
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut child = command.spawn().map_err(ClaudeError::Spawn)?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ClaudeError::SessionClosed(PIPE_MISSING.to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ClaudeError::SessionClosed(PIPE_MISSING.to_string()))?;
+        Ok(Self {
+            child,
+            stdin,
+            lines: BufReader::new(stdout).lines(),
+            session_id: resume.map(str::to_string),
+        })
+    }
+
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub async fn send(&mut self, message: &str) -> Result<Reply, ClaudeError> {
+        let (response, limits) = timeout(CLI_TIMEOUT, self.exchange(message))
+            .await
+            .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))??;
+        if !response.session_id.is_empty() {
+            self.session_id = Some(response.session_id.clone());
+        }
+        into_reply(response, limits)
+    }
+
+    async fn exchange(
+        &mut self,
+        message: &str,
+    ) -> Result<(CliResponse, Option<RateLimits>), ClaudeError> {
+        let payload = serde_json::json!({
+            "type": USER_MESSAGE_KIND,
+            "message": { "role": USER_ROLE, "content": message },
+        });
+        self.stdin
+            .write_all(format!("{payload}\n").as_bytes())
+            .await
+            .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
+        self.stdin
+            .flush()
+            .await
+            .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
+        let mut accumulator = StreamAccumulator::default();
+        loop {
+            let line = self
+                .lines
+                .next_line()
+                .await
+                .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?
+                .ok_or_else(|| ClaudeError::SessionClosed(SESSION_EOF.to_string()))?;
+            if accumulator.push_line(line.as_bytes())? {
+                return accumulator.finish();
+            }
+        }
+    }
+
+    pub async fn close(mut self, grace: Duration) {
+        drop(self.stdin);
+        if timeout(grace, self.child.wait()).await.is_err() {
+            // O kill só falha se o processo já saiu, que é o resultado desejado.
+            let _ = self.child.kill().await;
+        }
+    }
+}
+
+#[derive(Default)]
+struct StreamAccumulator {
+    response: Option<CliResponse>,
+    limits: Option<RateLimits>,
+}
+
+impl StreamAccumulator {
+    fn push_line(&mut self, line: &[u8]) -> Result<bool, ClaudeError> {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            return Ok(false);
+        }
         let stream_line: StreamLine =
             serde_json::from_slice(line).map_err(ClaudeError::InvalidJson)?;
         match stream_line.kind.as_str() {
             RESULT_KIND => {
-                response = Some(serde_json::from_slice(line).map_err(ClaudeError::InvalidJson)?);
+                self.response =
+                    Some(serde_json::from_slice(line).map_err(ClaudeError::InvalidJson)?);
+                return Ok(true);
             }
             // Um formato novo de limite não pode derrubar a conversa: a linha é ignorada.
             RATE_LIMIT_KIND => {
                 if let Ok(rate_limit_line) = serde_json::from_slice::<RateLimitLine>(line) {
-                    limits = Some(rate_limit_line.rate_limit_info.unified_windows.into());
+                    self.limits = Some(rate_limit_line.rate_limit_info.unified_windows.into());
                 }
             }
             _ => {}
         }
+        Ok(false)
     }
-    let response = response.ok_or(ClaudeError::MissingResult)?;
-    Ok((response, limits))
+
+    fn finish(self) -> Result<(CliResponse, Option<RateLimits>), ClaudeError> {
+        let response = self.response.ok_or(ClaudeError::MissingResult)?;
+        Ok((response, self.limits))
+    }
+}
+
+fn parse_stream(stdout: &[u8]) -> Result<(CliResponse, Option<RateLimits>), ClaudeError> {
+    let mut accumulator = StreamAccumulator::default();
+    for line in stdout.split(|byte| *byte == b'\n') {
+        accumulator.push_line(line)?;
+    }
+    accumulator.finish()
+}
+
+fn agent_command(cli: &Path, leading: &[&str], role: &str) -> Command {
+    let mut command = base_command(cli);
+    command.kill_on_drop(true);
+    // A mensagem de `-p` vem antes de `--tools`, que é variádico e a engoliria.
+    command.args(leading);
+    command.args([
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--model",
+        MODEL,
+        "--tools",
+        "",
+        "--max-turns",
+        MAX_TURNS,
+        "--append-system-prompt",
+        role,
+    ]);
+    command
 }
 
 fn base_command(cli: &Path) -> Command {

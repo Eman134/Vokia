@@ -1,3 +1,4 @@
+use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::cache::{
@@ -11,6 +12,15 @@ const LIST_TYPE: &str = "lista";
 const FREE_RULE: &str = "livre";
 const INCREMENT_RULE: &str = "mais_um";
 const READ_ONLY_RULE: &str = "so_leitura";
+const MULTI_AGENT_MIN_PARTICIPANTS: usize = 2;
+const LONG_REQUEST_CHARS: usize = 1200;
+const REQUEST_PROMPT_MAX: usize = 8000;
+const REQUEST_TRUNCATED: &str = " (pedido truncado)";
+pub const FRESH_AFTER_STALLS: u32 = 2;
+pub const SESSION_RECOVERY_LIMIT: u32 = 2;
+pub const SESSION_ROTATE_MESSAGES: u32 = 30;
+pub const SESSION_IDLE_LIMIT_SECS: u64 = 600;
+pub const SESSION_CLOSE_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Debug)]
 pub struct TaskDefinition {
@@ -51,23 +61,62 @@ impl StopCondition {
 pub struct ActiveTask {
     pub objetivo: String,
     pub participants: Vec<Agent>,
+    pub long_request: Option<String>,
     pub outcome: Option<TaskOutcome>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum TaskOutcome {
     Finished,
     Stalled,
     Failed,
 }
 
-// Só a escrita existe por enquanto: nenhuma tela lê o arquivo, então os campos ficariam sem leitor.
-#[allow(dead_code)]
+#[derive(Serialize)]
 pub struct TaskRecord {
     pub objetivo: String,
     pub participants: Vec<Agent>,
     pub variables: Vec<(String, VarValue)>,
     pub outcome: TaskOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallMode {
+    Fresh,
+    Live,
+}
+
+fn is_long_request(request: &str) -> bool {
+    request.chars().count() > LONG_REQUEST_CHARS
+}
+
+pub fn long_request_text(request: &str) -> Option<String> {
+    if !is_long_request(request) {
+        return None;
+    }
+    if request.chars().count() <= REQUEST_PROMPT_MAX {
+        return Some(request.to_string());
+    }
+    let head: String = request.chars().take(REQUEST_PROMPT_MAX).collect();
+    Some(format!("{head}{REQUEST_TRUNCATED}"))
+}
+
+pub fn is_live_task(definition: &TaskDefinition, request: &str) -> bool {
+    definition.participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS || is_long_request(request)
+}
+
+pub fn call_mode(live_task: bool, fresh_only: bool) -> CallMode {
+    if live_task && !fresh_only {
+        CallMode::Live
+    } else {
+        CallMode::Fresh
+    }
+}
+
+pub fn degrades_to_fresh(stalls: u32, repeats: u32, recoveries: u32) -> bool {
+    stalls >= FRESH_AFTER_STALLS
+        || repeats >= FRESH_AFTER_STALLS
+        || recoveries >= SESSION_RECOVERY_LIMIT
 }
 
 pub fn agent_named(name: &str) -> Option<Agent> {
@@ -101,12 +150,20 @@ fn definition_from_json(reply: &str, origin: Agent) -> Option<TaskDefinition> {
     }
     let variables = variables_from_json(json.get("variaveis")?.as_array()?);
     let participants = participants_from_json(json.get("participantes")?.as_array()?, origin);
-    let stop = stop_from_json(json.get("parada"), &variables);
+    let alternate =
+        json.get("alternar")?.as_bool()? && participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS;
+    // Sem revezamento não há estado compartilhado: variáveis e parada ficariam sem uso.
+    let (variables, stop) = if alternate {
+        let stop = stop_from_json(json.get("parada"), &variables);
+        (variables, stop)
+    } else {
+        (Vec::new(), None)
+    };
     Some(TaskDefinition {
         nova_tarefa: json.get("nova_tarefa")?.as_bool()?,
         objetivo: objetivo.to_string(),
         participants,
-        alternate: json.get("alternar")?.as_bool()?,
+        alternate,
         variables,
         stop,
     })

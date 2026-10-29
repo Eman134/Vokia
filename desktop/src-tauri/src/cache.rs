@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::events::Agent;
 use crate::task::{ActiveTask, TaskOutcome, TaskRecord};
 
@@ -7,13 +9,15 @@ pub const LIST_MAX_ITEMS: usize = 50;
 pub const CACHE_MAX_VARS: usize = 20;
 pub const CONVERSATION_ITEMS: usize = 6;
 pub const CONVERSATION_VAR: &str = "conversa";
+pub const CONVERSATION_ITEM_MAX_CHARS: usize = 300;
+pub const RECOVERY_CONVERSATION_ITEMS: usize = 3;
 const MARKER: char = '$';
 const NAME_DELIMITERS: [char; 3] = ['=', '+', '@'];
 const ASSIGN_MARK: char = '=';
 const APPEND_MARK: &str = "+=";
 const SHARE_MARK: &str = "@time";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum VarValue {
     Number(i64),
     Text(String),
@@ -154,6 +158,23 @@ impl Cache {
             .collect()
     }
 
+    pub fn long_request(&self) -> Option<&str> {
+        self.task.as_ref()?.long_request.as_deref()
+    }
+
+    pub fn recent_conversation(&self, count: usize) -> Vec<String> {
+        let Some(VarValue::List(items)) =
+            self.find(CONVERSATION_VAR).map(|variable| &variable.value)
+        else {
+            return Vec::new();
+        };
+        let skip = items.len().saturating_sub(count);
+        items[skip..]
+            .iter()
+            .map(|item| truncate(item, CONVERSATION_ITEM_MAX_CHARS))
+            .collect()
+    }
+
     pub fn start_task(&mut self, task: ActiveTask, variables: Vec<Variable>) -> Result<(), String> {
         let new: Vec<Variable> = variables
             .into_iter()
@@ -202,11 +223,7 @@ impl Cache {
         else {
             return;
         };
-        items.extend(
-            lines
-                .into_iter()
-                .map(|line| line.chars().take(VAR_VALUE_MAX).collect::<String>()),
-        );
+        items.extend(lines.into_iter().map(|line| truncate(&line, VAR_VALUE_MAX)));
         let excess = items.len().saturating_sub(CONVERSATION_ITEMS);
         items.drain(..excess);
     }
@@ -387,6 +404,10 @@ pub fn validate_value(value: &VarValue) -> Result<(), String> {
             items.iter().try_for_each(|item| check_text(item))
         }
     }
+}
+
+fn truncate(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
 }
 
 fn check_text(text: &str) -> Result<(), String> {
