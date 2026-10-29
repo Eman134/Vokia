@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useTeam } from './features/team/useTeam'
 import AppRail from './shell/AppRail.vue'
 import { RAIL_COLLAPSED_WIDTH } from './shell/railNav'
+import { useNavigation } from './shell/useNavigation'
 import AgentList from './features/team/AgentList.vue'
 import Conversation from './features/team/Conversation.vue'
 import ActionBar from './features/team/ActionBar.vue'
@@ -11,8 +12,10 @@ import { useUpdater } from './features/updater/useUpdater'
 import { useUsage } from './features/usage/useUsage'
 
 const team = useTeam()
+const navigation = useNavigation()
 const updater = useUpdater()
 const usage = useUsage()
+const showRail = computed(() => navigation.page !== 'onboarding')
 
 onMounted(team.start)
 onMounted(updater.check)
@@ -39,8 +42,8 @@ onUnmounted(usage.stop)
       {{ team.cliProblem.fixCommand }}
     </code>
   </main>
-  <div v-else-if="team.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${RAIL_COLLAPSED_WIDTH}px` }">
-    <AppRail />
+  <div v-else-if="team.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${showRail ? RAIL_COLLAPSED_WIDTH : 0}px` }">
+    <AppRail v-if="showRail" />
     <AgentList />
     <Conversation />
     <ActionBar />
