@@ -15,9 +15,10 @@ import {
   STATE_CHIP,
   TAG_COLOR,
   TAG_LABEL,
+  TAG_TEXT_COLOR,
   TRIAGE_STEP_COUNT,
-  YOU_INITIAL,
 } from './backlogLabels'
+import { YOU_INITIAL } from '../team/portraitArt'
 import type { BacklogCardAction, BacklogCardDensity, BacklogItem, BacklogTag } from './backlogTypes'
 
 const props = withDefaults(defineProps<{ item: BacklogItem; density?: BacklogCardDensity }>(), {
@@ -65,8 +66,11 @@ const authorInitial = computed(() => (props.item.who === VOCE ? YOU_INITIAL : pr
 const showPlan = computed(() => !isCompact.value && props.item.state !== 'vazio' && Boolean(props.item.plan))
 
 function tagPillStyle(tag: BacklogTag) {
-  const color = colorVar(TAG_COLOR[tag])
-  return { color, backgroundColor: `color-mix(in srgb, ${color} ${TAG_TINT_PERCENT}%, transparent)` }
+  const token = colorVar(TAG_COLOR[tag])
+  return {
+    color: colorVar(TAG_TEXT_COLOR[tag] ?? TAG_COLOR[tag]),
+    backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)`,
+  }
 }
 </script>
 
@@ -127,13 +131,15 @@ function tagPillStyle(tag: BacklogTag) {
       </div>
     </div>
 
-    <footer v-if="!isCompact" class="flex items-center gap-2 text-caption text-muted">
-      <span
-        class="grid size-5 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-tiny font-semibold text-ink"
-      >
-        {{ authorInitial }}
-      </span>
-      <span>{{ item.by }}</span>
+    <footer v-if="!isCompact || action" class="flex items-center gap-2 text-caption text-muted">
+      <template v-if="!isCompact">
+        <span
+          class="grid size-5 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-tiny font-semibold text-ink"
+        >
+          {{ authorInitial }}
+        </span>
+        <span>{{ item.by }}</span>
+      </template>
       <UiButton v-if="action" class="ml-auto" variant="primary" size="sm" @click.stop @press="emit('action', action.id)">
         {{ action.label }}
       </UiButton>

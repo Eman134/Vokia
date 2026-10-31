@@ -9,7 +9,7 @@
   --color-surface-2: light-dark(#f3f3f5, #232328);
   --color-line: light-dark(#e6e6ea, #2f2f36);
   --color-ink: light-dark(#1c1c21, #ececf0);
-  --color-muted: light-dark(#6b6b76, #a1a1ac);
+  --color-muted: light-dark(#6a6a75, #a1a1ac);
   --color-faint: light-dark(#a6a6b0, #686873);
   --color-accent: light-dark(#5b57d1, #a8a5ff);
   --color-accent-soft: light-dark(#eeedfb, #262540);
@@ -17,15 +17,16 @@
   --color-ok: light-dark(#2f9e5b, #5fd08e);
   --color-ok-soft: light-dark(#e7f5ec, #1b2e23);
   --color-warn: light-dark(#e07b24, #ffa257);
+  --color-warn-text: light-dark(#a55917, #ffa257);
   --color-warn-soft: light-dark(#fdf0e4, #33251a);
-  --color-danger: light-dark(#cf4a3c, #ff7f70);
+  --color-danger: light-dark(#be3c2f, #ff7f70);
   --color-dot: light-dark(#e3e3e8, #26262c);
   --color-sticky: light-dark(#fff1a8, #e8dc8f);
   --color-overlay: light-dark(rgb(24 22 31 / 36%), rgb(24 22 31 / 36%));
 
-  /* O quadro do protótipo só tem valores claros; o escuro repete o mesmo hex. */
-  --color-feature-blue: light-dark(#2a78d6, #2a78d6);
-  --color-feature-green: light-dark(#1baf7a, #1baf7a);
+  /* O quadro do protótipo só tem valores claros; o escuro repete o mesmo hex. Blue e green claros foram escurecidos para a etiqueta chegar a 4,5:1. */
+  --color-feature-blue: light-dark(#256abe, #2a78d6);
+  --color-feature-green: light-dark(#137954, #1baf7a);
   --color-feature-orange: light-dark(#eb6834, #eb6834);
   --color-feature-purple: light-dark(#6250d6, #6250d6);
   --color-client: light-dark(#c2185b, #c2185b);

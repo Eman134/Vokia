@@ -49,6 +49,10 @@ export const TAG_COLOR: Record<BacklogTag, string> = {
   divida: 'muted',
   cliente: 'client',
 }
+// O texto do pill usa o token de texto; o fundo continua com o token da cor.
+export const TAG_TEXT_COLOR: Partial<Record<BacklogTag, string>> = {
+  urgente: 'warn-text',
+}
 
 export const STATE_ACTION: Partial<Record<BacklogState, Exclude<ActionLabel, 'Ver diff'>>> = {
   vazio: 'Triar',
@@ -69,7 +73,6 @@ export const FEATURE_COLOR: Record<string, string> = {
 export const DEFAULT_FEATURE_COLOR = 'accent'
 
 export const TRIAGE_STEP_COUNT = 3
-export const YOU_INITIAL = 'K'
 
 export function colorVar(token: string): string {
   return `var(--color-${token})`

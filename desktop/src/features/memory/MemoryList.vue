@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AgentPortrait from '../team/AgentPortrait.vue'
-import { YOU_INITIAL } from '../backlog/backlogLabels'
+import { YOU_INITIAL } from '../team/portraitArt'
 import UiButton from '../../ui/UiButton.vue'
 import UiMemoryCard from '../../ui/UiMemoryCard.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
