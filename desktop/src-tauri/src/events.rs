@@ -28,6 +28,24 @@ pub enum Speaker {
     Davi,
 }
 
+impl Speaker {
+    pub const ALL: [Speaker; 3] = [Speaker::User, Speaker::Iara, Speaker::Davi];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Speaker::User => "user",
+            Speaker::Iara => "iara",
+            Speaker::Davi => "davi",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Speaker> {
+        Speaker::ALL
+            .into_iter()
+            .find(|speaker| speaker.as_str() == value)
+    }
+}
+
 impl From<Agent> for Speaker {
     fn from(agent: Agent) -> Self {
         match agent {

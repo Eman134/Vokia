@@ -15,3 +15,4 @@ which = "8"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
+rusqlite = { version = "0.41", features = ["bundled"] }

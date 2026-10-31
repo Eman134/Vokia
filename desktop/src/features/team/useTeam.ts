@@ -16,6 +16,7 @@ import {
   sendRequest,
   type UnlistenFn,
 } from './teamApi'
+import { fetchDbProblem, listProjects, loadHistory } from '../projects/projectsApi'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
@@ -110,10 +111,30 @@ export const useTeam = defineStore('team', () => {
     return pendingCheck
   }
 
+  async function restoreHistory(): Promise<void> {
+    try {
+      const problem = await fetchDbProblem()
+      if (problem !== null) {
+        feed.value.push({ type: 'error', message: problem.reason })
+        return
+      }
+      const selected = (await listProjects()).find((project) => project.selected)
+      if (selected !== undefined) {
+        feed.value = await loadHistory(selected.id)
+      }
+    } catch (error) {
+      feed.value.push({
+        type: 'error',
+        message: `Não foi possível carregar o histórico: ${String(error)}`,
+      })
+    }
+  }
+
   async function start(): Promise<void> {
     try {
       cliProblem.value = await fetchCliProblem()
       if (cliProblem.value === null) {
+        await restoreHistory()
         unlisten = await listenTeamEvents(apply)
         stopListeningConnection = listenConnectionChanges(
           () => void refreshConnection(),

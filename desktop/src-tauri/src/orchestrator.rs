@@ -11,6 +11,7 @@ use crate::cache::{
     RECOVERY_CONVERSATION_ITEMS,
 };
 use crate::claude::{self, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
+use crate::db::{DbError, DbState};
 use crate::events::{Agent, AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 use crate::state::AppState;
 use crate::task::{
@@ -54,6 +55,7 @@ pub enum FlowError {
     ArchiveIo(std::io::Error),
     ArchiveJson(serde_json::Error),
     Clock(SystemTimeError),
+    History(DbError),
 }
 
 impl fmt::Display for FlowError {
@@ -91,6 +93,9 @@ impl fmt::Display for FlowError {
             FlowError::Clock(error) => {
                 write!(f, "O relógio do sistema está antes de 1970: {error}")
             }
+            FlowError::History(error) => {
+                write!(f, "Não foi possível gravar o histórico: {error}")
+            }
         }
     }
 }
@@ -104,6 +109,12 @@ impl From<ClaudeError> for FlowError {
 impl From<tauri::Error> for FlowError {
     fn from(error: tauri::Error) -> Self {
         FlowError::Emit(error)
+    }
+}
+
+impl From<DbError> for FlowError {
+    fn from(error: DbError) -> Self {
+        FlowError::History(error)
     }
 }
 
@@ -915,13 +926,17 @@ fn delegation_request(line: &str, from: Agent) -> Option<(Agent, &str)> {
 }
 
 fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Result<(), FlowError> {
+    let time = now_millis()?;
+    if let Some(db) = app.state::<DbState>().db() {
+        db.insert_message(from, to, text, time)?;
+    }
     emit(
         app,
         VokiaEvent::Message {
             from,
             to,
             text: text.to_string(),
-            time: now_millis()?,
+            time,
         },
     )
 }
