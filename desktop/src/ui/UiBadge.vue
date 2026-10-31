@@ -17,7 +17,7 @@ const HIGHLIGHT_KEY = 'ui-badge'
 const BASE_CLASSES = 'inline-flex h-6 shrink-0 items-center rounded-chip px-2 text-caption font-medium'
 const TEXT_CLASSES: Record<BadgeStatus, string> = {
   trabalhando: 'text-ok',
-  'precisa de você': 'text-warn',
+  'precisa de você': 'text-warn-text',
   livre: 'text-faint',
   erro: 'text-danger',
   backlog: 'text-muted',

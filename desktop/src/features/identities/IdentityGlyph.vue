@@ -17,7 +17,7 @@ const MARK_MIN_FONT_SIZE = 7
 
 const STATE_CLASSES: Record<IdentityState, string> = {
   executando: 'bg-ok',
-  esperando: 'bg-warn',
+  esperando: 'bg-warn-text',
   concluido: 'bg-ok',
   falha: 'bg-danger',
   pausado: 'bg-muted',

@@ -6,7 +6,7 @@ import StepHeading from './StepHeading.vue'
 const CARD_CLASSES = 'flex items-center gap-3.5 rounded-card border border-line bg-surface px-4 py-3.5'
 const ICON_CLASSES =
   'grid size-10 flex-none place-items-center rounded-control-lg bg-surface-2 font-mono text-[13px] font-medium'
-const STATUS_TEXT_CLASSES: Record<CliStatus, string> = { connected: 'text-ok', pending: 'text-warn' }
+const STATUS_TEXT_CLASSES: Record<CliStatus, string> = { connected: 'text-ok', pending: 'text-warn-text' }
 const STATUS_DOT_CLASSES: Record<CliStatus, string> = { connected: 'bg-ok', pending: 'bg-warn' }
 </script>
 

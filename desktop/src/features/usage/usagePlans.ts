@@ -19,7 +19,7 @@ export const PLANS: readonly PlanInfo[] = [{ id: 'cc', short: 'Claude', name: 'C
 
 export const TONE_TEXT: Record<UsageTone | 'muted', string> = {
   ink: 'text-ink',
-  warn: 'text-warn',
+  warn: 'text-warn-text',
   danger: 'text-danger',
   muted: 'text-muted',
 }
