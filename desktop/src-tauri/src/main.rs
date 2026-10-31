@@ -45,7 +45,9 @@ fn main() {
             commands::list_projects,
             commands::select_project,
             commands::add_project,
-            commands::load_history
+            commands::load_history,
+            commands::get_settings,
+            commands::set_setting
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,9 +14,14 @@ const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
 const DEFAULT_PROJECT_PATH: &str = "";
 const HISTORY_LIMIT: i64 = 500;
 const PROJECT_COLUMNS: &str = "id, name, path, selected, created_at";
+const SETTING_THEME: &str = "theme";
+// Espelha THEME_CHOICES de src/features/theme/useTheme.ts.
+const THEME_VALUES: &[&str] = &["light", "dark", "system"];
+const SETTINGS_SCHEMA: &[(&str, &[&str])] = &[(SETTING_THEME, THEME_VALUES)];
 
 // Cada item é uma migração; a versão é a posição + 1. Nunca editar um item já publicado: acrescentar outro.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -33,7 +39,14 @@ const MIGRATIONS: &[&str] = &["
         created_at INTEGER NOT NULL
     );
     CREATE INDEX messages_by_project ON messages(project_id, id);
-"];
+",
+    "
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+",
+];
 
 #[derive(Debug)]
 pub enum DbError {
@@ -48,6 +61,7 @@ pub enum DbError {
     ProjectPathTaken(String),
     InvalidProject(&'static str),
     InvalidSpeaker(String),
+    InvalidSetting(String, String),
 }
 
 impl fmt::Display for DbError {
@@ -82,6 +96,9 @@ impl fmt::Display for DbError {
             DbError::InvalidProject(reason) => write!(f, "{reason}"),
             DbError::InvalidSpeaker(value) => {
                 write!(f, "O histórico guarda um remetente desconhecido: {value}.")
+            }
+            DbError::InvalidSetting(key, value) => {
+                write!(f, "A configuração {key} não aceita o valor {value:?}.")
             }
         }
     }
@@ -252,10 +269,45 @@ impl Db {
         })
         .collect()
     }
+
+    pub fn load_settings(&self) -> Result<HashMap<String, String>, DbError> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare("SELECT key, value FROM settings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut settings = HashMap::new();
+        for row in rows {
+            let (key, value) = row?;
+            if is_valid_setting(&key, &value) {
+                settings.insert(key, value);
+            }
+        }
+        Ok(settings)
+    }
+
+    pub fn save_setting(&self, key: &str, value: &str) -> Result<(), DbError> {
+        if !is_valid_setting(key, value) {
+            return Err(DbError::InvalidSetting(key.to_string(), value.to_string()));
+        }
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
 }
 
 fn parse_speaker(value: &str) -> Result<Speaker, DbError> {
     Speaker::parse(value).ok_or_else(|| DbError::InvalidSpeaker(value.to_string()))
+}
+
+fn is_valid_setting(key: &str, value: &str) -> bool {
+    SETTINGS_SCHEMA
+        .iter()
+        .any(|(known, allowed)| *known == key && allowed.contains(&value))
 }
 
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

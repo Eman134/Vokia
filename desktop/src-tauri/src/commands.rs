@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use tauri::{AppHandle, State};
 
 use crate::claude::CliProblem;
@@ -62,5 +64,18 @@ pub fn add_project(
 pub fn load_history(state: State<'_, DbState>, project_id: i64) -> Result<Vec<VokiaEvent>, String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.load_history(project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, DbState>) -> Result<HashMap<String, String>, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.load_settings().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.save_setting(&key, &value)
         .map_err(|error| error.to_string())
 }
