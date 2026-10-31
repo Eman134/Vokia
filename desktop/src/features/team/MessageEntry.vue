@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { AGENTS, DEFAULT_RECIPIENT, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
+import { mentionSegments, mentionSpans, type MentionSegment } from './composerMentions'
 import type { Speaker, VokiaMessage } from './events'
 
 defineProps<{ entry: FeedEntry }>()
@@ -23,6 +24,11 @@ function author(message: VokiaMessage): string {
 function profile(speaker: Speaker): AgentProfile | undefined {
   return AGENTS.find((agent) => agent.id === speaker)
 }
+
+function highlightedSegments(message: VokiaMessage): MentionSegment[] {
+  const recipient = message.to === 'user' ? [] : [message.to]
+  return mentionSegments(message.text, mentionSpans(message.text, new Set(recipient)))
+}
 </script>
 
 <template>
@@ -34,7 +40,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <p
         class="wrap-break-word whitespace-pre-wrap rounded-card rounded-tr-tail bg-surface-2 px-4 py-3 text-control text-ink"
       >
-        {{ entry.text }}
+        <span
+          v-for="(segment, index) in highlightedSegments(entry)"
+          :key="index"
+          :class="segment.agent === null ? undefined : 'text-accent'"
+          >{{ segment.text }}</span
+        >
       </p>
     </div>
     <span class="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-small font-semibold text-bg">

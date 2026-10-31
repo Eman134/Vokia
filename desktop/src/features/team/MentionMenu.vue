@@ -7,6 +7,7 @@ defineProps<{
   id: string
   agents: readonly AgentProfile[]
   activeIndex: number
+  left: number
 }>()
 
 const emit = defineEmits<{
@@ -15,25 +16,28 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="absolute bottom-full left-0 mb-2 w-60 rounded-popover border border-line bg-surface p-1.5 shadow-float">
-    <ul v-if="agents.length > 0" :id="id" role="listbox" aria-label="Agentes" class="flex flex-col gap-0.5">
+  <div
+    class="absolute bottom-full mb-2 w-65 rounded-xl border border-line bg-surface p-1.25 shadow-float"
+    :style="{ left: `${left}px` }"
+  >
+    <ul v-if="agents.length > 0" :id="id" role="listbox" aria-label="Agentes" class="flex flex-col gap-px">
       <li
         v-for="(agent, index) in agents"
         :id="`${id}-${agent.id}`"
         :key="agent.id"
         role="option"
         :aria-selected="index === activeIndex"
-        class="flex cursor-pointer items-center gap-2.5 rounded-control px-2 py-1.5"
-        :class="index === activeIndex ? 'bg-surface-2' : undefined"
+        class="flex cursor-pointer items-center gap-2.25 rounded-lg px-2 py-1.5"
+        :class="index === activeIndex ? 'bg-accent-soft' : undefined"
         @mousedown.prevent
         @click="emit('choose', agent)"
       >
         <span class="flex shrink-0" aria-hidden="true">
-          <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.chat" />
+          <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.mention" />
         </span>
-        <span class="min-w-0">
-          <span class="block text-label font-semibold text-ink">{{ agent.name }}</span>
-          <span class="block text-caption text-muted">{{ agent.role }}</span>
+        <span class="text-label">
+          <b class="font-medium text-ink">{{ agent.name }}</b>
+          <span class="text-muted"> {{ agent.role }}</span>
         </span>
       </li>
     </ul>

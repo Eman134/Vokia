@@ -19,7 +19,6 @@ import {
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
-const MENTION_PATTERN = /^@(\S+)(?:\s+|$)/
 
 export interface AgentProfile {
   id: Agent
@@ -48,24 +47,6 @@ export function isBetweenAgents(message: VokiaMessage): boolean {
   return message.from !== 'user' && message.to !== 'user'
 }
 
-export interface ParsedMention {
-  agent: Agent
-  text: string
-}
-
-export function parseMention(text: string): ParsedMention | null {
-  const match = MENTION_PATTERN.exec(text)
-  if (match === null) {
-    return null
-  }
-  const [mention, name] = match
-  const profile = AGENTS.find((agent) => agent.name.toLowerCase() === name.toLowerCase())
-  if (profile === undefined) {
-    return null
-  }
-  return { agent: profile.id, text: text.slice(mention.length) }
-}
-
 export function findNamedAgent(text: string): Agent | null {
   let found: { agent: Agent; index: number } | null = null
   for (const profile of AGENTS) {
@@ -85,7 +66,7 @@ export const useTeam = defineStore('team', () => {
   const states = ref<Record<Agent, AgentState>>({ iara: 'idle', davi: 'idle' })
   const online = ref(true)
   const checking = ref(false)
-  const recipient = ref<Agent | null>(null)
+  const pendingMention = ref<Agent | null>(null)
   const queue = ref<QueuedRequest[]>([])
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
@@ -181,12 +162,14 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
-  function chooseRecipient(agent: Agent): void {
-    recipient.value = agent
+  function requestMention(agent: Agent): void {
+    pendingMention.value = agent
   }
 
-  function clearRecipient(): void {
-    recipient.value = null
+  function takePendingMention(): Agent | null {
+    const agent = pendingMention.value
+    pendingMention.value = null
+    return agent
   }
 
   function queuedFor(agent: Agent): QueuedRequest[] {
@@ -212,10 +195,8 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
-  async function send(text: string): Promise<boolean> {
-    const mention = parseMention(text)
-    const body = mention?.text ?? text
-    if (body.trim() === '') {
+  async function send(text: string, to: Agent | null): Promise<boolean> {
+    if (text.trim() === '') {
       return false
     }
     checking.value = true
@@ -226,13 +207,10 @@ export const useTeam = defineStore('team', () => {
     } finally {
       checking.value = false
     }
-    if (mention !== null) {
-      recipient.value = mention.agent
-    }
     queue.value.push({
       id: ++nextQueueId,
-      text: body,
-      to: recipient.value ?? findNamedAgent(body) ?? DEFAULT_RECIPIENT,
+      text,
+      to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
     })
     void drain()
     return true
@@ -247,15 +225,15 @@ export const useTeam = defineStore('team', () => {
     states,
     online,
     checking,
-    recipient,
+    pendingMention,
     queue,
     queuedFor,
     thinkingAgent,
     start,
     recheckCli,
     stop,
-    chooseRecipient,
-    clearRecipient,
+    requestMention,
+    takePendingMention,
     send,
   }
 })

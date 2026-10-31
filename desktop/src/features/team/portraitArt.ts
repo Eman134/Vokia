@@ -2,7 +2,7 @@ export const PORTRAIT_IDS = ['iara', 'davi', 'bia', 'nina', 'leo', 'teo', 'rui']
 export type PortraitId = (typeof PORTRAIT_IDS)[number]
 export const DEFAULT_PORTRAIT: PortraitId = 'nina'
 export const DEFAULT_PORTRAIT_SIZE = 96
-export const PORTRAIT_SIZES = { badge: 72, list: 40, chat: 28, stack: 24 } as const
+export const PORTRAIT_SIZES = { badge: 72, list: 40, chat: 28, stack: 24, mention: 22 } as const
 
 export const PORTRAIT_META: Record<PortraitId, { name: string; role: string }> = {
   iara: { name: 'Iara', role: 'Tech Lead' },

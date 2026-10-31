@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { AGENTS, useTeam, type AgentProfile } from './useTeam'
 import { useTeamStatus } from './useTeamStatus'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
-import { placeholderFor, type PlaceholderRecipient } from './composerPlaceholder'
+import { placeholderFor, QUEUE_SUFFIX } from './composerPlaceholder'
+import {
+  findTrigger,
+  insertMention,
+  mentionSegments,
+  mentionSpans,
+  MENTION_TRIGGER,
+  type TriggerMatch,
+} from './composerMentions'
+import type { Agent } from './events'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import MentionMenu from './MentionMenu.vue'
@@ -28,11 +37,10 @@ const PILL_CLASSES =
   'pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float transition-[width] duration-180 ease-out'
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
 const EXPANDED_WIDTH_CLASS = 'w-full'
-const CHIP_CLASSES =
-  'flex h-7 shrink-0 items-center gap-1 rounded-full bg-accent-soft py-0.5 pl-3 pr-1 text-label font-semibold text-accent'
-const CHIP_REMOVE_CLASSES =
-  'grid size-5 cursor-pointer place-items-center rounded-full hover:bg-surface focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40'
-const MENTION_QUERY_PATTERN = /^@(\S*)$/
+// Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
+const FIELD_PADDING_X = 14
+// Deve casar com o w-65 do MentionMenu.
+const MENU_WIDTH = 260
 const ACTION_SHORTCUT_CODES = ['Digit1', 'Digit2']
 
 const emit = defineEmits<{
@@ -42,7 +50,14 @@ const emit = defineEmits<{
 const team = useTeam()
 const statusStore = useTeamStatus()
 const draft = ref('')
+const caret = ref(0)
+const scrollLeft = ref(0)
+const menuLeft = ref(0)
+const confirmed = ref<Set<Agent>>(new Set())
 const inputRef = ref<HTMLInputElement | null>(null)
+const wrapperRef = ref<HTMLElement | null>(null)
+const measureRef = ref<HTMLElement | null>(null)
+const pillRef = ref<HTMLElement | null>(null)
 const listboxId = useId()
 const menuDismissed = ref(false)
 const highlightedIndex = ref(0)
@@ -58,16 +73,9 @@ const pageActions = computed<readonly PageAction[]>(() =>
 )
 
 const locked = computed(() => team.checking)
-const recipientProfile = computed(() => AGENTS.find((agent) => agent.id === team.recipient))
-const recipientPlaceholder = computed<PlaceholderRecipient | null>(() =>
-  recipientProfile.value
-    ? { name: recipientProfile.value.name, busy: team.states[recipientProfile.value.id] !== 'idle' }
-    : null,
-)
-const placeholder = computed(() =>
-  placeholderFor(railPage.value, statusStore.status, statusStore.placeholder, recipientPlaceholder.value),
-)
-const mentionQuery = computed<string | null>(() => MENTION_QUERY_PATTERN.exec(draft.value)?.[1] ?? null)
+const placeholder = computed(() => placeholderFor(railPage.value, statusStore.status, statusStore.placeholder))
+const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
+const mentionQuery = computed<string | null>(() => mentionMatch.value?.query ?? null)
 const mentionMatches = computed<AgentProfile[]>(() => {
   const query = mentionQuery.value
   if (query === null) {
@@ -83,6 +91,17 @@ const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.i
 const activeOptionId = computed(() =>
   menuOpen.value && highlightedAgent.value ? `${listboxId}-${highlightedAgent.value.id}` : undefined,
 )
+const spans = computed(() => mentionSpans(draft.value, confirmed.value))
+const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
+const segments = computed(() => mentionSegments(draft.value, spans.value))
+const queueHint = computed(() => {
+  const target = recipient.value
+  if (target === null || team.states[target] === 'idle') {
+    return null
+  }
+  const onlyMentions = segments.value.every((segment) => segment.agent !== null || segment.text.trim() === '')
+  return onlyMentions ? QUEUE_SUFFIX : null
+})
 
 watch(mentionQuery, () => {
   menuDismissed.value = false
@@ -95,29 +114,92 @@ watch(menuOpen, (open) => {
   }
 })
 
+watch(draft, (text) => {
+  const present = new Set(mentionSpans(text, confirmed.value).map((span) => span.agent))
+  if (present.size !== confirmed.value.size) {
+    confirmed.value = present
+  }
+})
+
+watch([mentionMatch, scrollLeft], async () => {
+  await nextTick()
+  menuLeft.value = anchorLeft()
+})
+
 watch(
-  () => team.recipient,
-  () => inputRef.value?.focus(),
+  () => team.pendingMention,
+  () => {
+    const requestedId = team.takePendingMention()
+    const requested = AGENTS.find((agent) => agent.id === requestedId)
+    if (requested !== undefined) {
+      insertAtCaret(requested)
+    }
+  },
 )
 
 onMounted(() => window.addEventListener('keydown', onShortcut))
 onUnmounted(() => window.removeEventListener('keydown', onShortcut))
+
+function anchorLeft(): number {
+  const wrapper = wrapperRef.value
+  const measure = measureRef.value
+  const pill = pillRef.value
+  if (wrapper === null || measure === null || pill === null) {
+    return 0
+  }
+  const atX = wrapper.offsetLeft + FIELD_PADDING_X + measure.offsetWidth - scrollLeft.value
+  return Math.max(0, Math.min(atX, pill.clientWidth - MENU_WIDTH))
+}
+
+function syncCaret(): void {
+  caret.value = inputRef.value?.selectionStart ?? draft.value.length
+  scrollLeft.value = inputRef.value?.scrollLeft ?? 0
+}
 
 async function submit(): Promise<void> {
   const text = draft.value.trim()
   if (text === '' || locked.value) {
     return
   }
+  const to = recipient.value
   const pending = draft.value
+  // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
+  const pendingConfirmed = confirmed.value
   draft.value = ''
-  if (!(await team.send(text))) {
+  if (!(await team.send(text, to))) {
     draft.value = pending
+    confirmed.value = pendingConfirmed
   }
 }
 
+function applyMention(next: { text: string; caret: number }, agent: AgentProfile): void {
+  draft.value = next.text
+  caret.value = next.caret
+  confirmed.value = new Set(confirmed.value).add(agent.id)
+  void placeCaret(next.caret)
+}
+
+async function placeCaret(position: number): Promise<void> {
+  await nextTick()
+  inputRef.value?.focus()
+  inputRef.value?.setSelectionRange(position, position)
+  syncCaret()
+}
+
 function chooseMentionAgent(agent: AgentProfile): void {
-  team.chooseRecipient(agent.id)
-  draft.value = ''
+  const trigger = mentionMatch.value
+  if (trigger === null) {
+    return
+  }
+  applyMention(insertMention(draft.value, trigger, caret.value, agent.name), agent)
+}
+
+function insertAtCaret(agent: AgentProfile): void {
+  const before = draft.value.slice(0, caret.value)
+  const separator = before === '' || /\s$/.test(before) ? '' : ' '
+  const start = before.length + separator.length
+  const text = before + separator + draft.value.slice(caret.value)
+  applyMention(insertMention(text, { start, query: '' }, start, agent.name), agent)
 }
 
 function dismissMenu(): void {
@@ -171,10 +253,6 @@ function handleMentionKey(event: KeyboardEvent): void {
 function onKeydown(event: KeyboardEvent): void {
   if (menuOpen.value) {
     handleMentionKey(event)
-    return
-  }
-  if (event.key === 'Backspace' && draft.value === '' && team.recipient !== null) {
-    team.clearRecipient()
   }
 }
 
@@ -207,6 +285,7 @@ function onPointerLeave(): void {
   <div v-if="team.online" :class="BAR_WRAP_CLASSES">
     <Balloon />
     <form
+      ref="pillRef"
       :class="[PILL_CLASSES, expanded ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS]"
       @pointerenter="hovered = true"
       @pointerleave="onPointerLeave"
@@ -259,42 +338,54 @@ function onPointerLeave(): void {
         >
           ☰
         </UiButton>
-        <span v-if="recipientProfile" :class="CHIP_CLASSES">
-          {{ recipientProfile.name }}
-          <button
-            type="button"
-            :class="CHIP_REMOVE_CLASSES"
-            :aria-label="`Remover destinatário ${recipientProfile.name}`"
-            :disabled="locked"
-            @click="team.clearRecipient()"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        </span>
       </template>
-      <input
-        ref="inputRef"
-        v-model="draft"
-        role="combobox"
-        aria-autocomplete="list"
-        :aria-expanded="menuOpen"
-        :aria-controls="menuOpen && mentionMatches.length > 0 ? listboxId : undefined"
-        :aria-activedescendant="activeOptionId"
-        class="h-8.5 min-w-0 flex-1 truncate rounded-full bg-surface-2 px-3.5 text-label text-ink outline-none placeholder:text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+      <div
+        ref="wrapperRef"
+        class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
         :class="{ 'sr-only': !expanded }"
-        :placeholder="placeholder"
-        :disabled="locked"
-        @keydown="onKeydown"
-        @blur="dismissMenu"
-      />
-      <UiButton v-if="expanded" variant="quiet" size="sm" disabled aria-label="Decisões">
-        Decisões <span class="font-mono">0</span>
-      </UiButton>
+      >
+        <div
+          aria-hidden="true"
+          class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3.5 text-label"
+          :style="{ transform: `translateX(${-scrollLeft}px)` }"
+        >
+          <span
+            v-for="(segment, index) in segments"
+            :key="index"
+            :class="segment.agent === null ? 'text-ink' : 'text-accent'"
+            >{{ segment.text }}</span
+          >
+          <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
+          <span ref="measureRef" class="invisible absolute whitespace-pre">{{
+            draft.slice(0, mentionMatch?.start ?? 0)
+          }}</span>
+        </div>
+        <input
+          ref="inputRef"
+          v-model="draft"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="menuOpen"
+          :aria-controls="menuOpen && mentionMatches.length > 0 ? listboxId : undefined"
+          :aria-activedescendant="activeOptionId"
+          class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent-soft focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+          :placeholder="placeholder"
+          :disabled="locked"
+          @keydown="onKeydown"
+          @input="syncCaret"
+          @click="syncCaret"
+          @keyup="syncCaret"
+          @select="syncCaret"
+          @scroll="syncCaret"
+          @blur="dismissMenu"
+        />
+      </div>
       <MentionMenu
         v-if="menuOpen"
         :id="listboxId"
         :agents="mentionMatches"
         :active-index="highlightedIndex"
+        :left="menuLeft"
         @choose="chooseMentionAgent"
       />
       <ActionMenu

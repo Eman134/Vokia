@@ -26,11 +26,10 @@ const team = useTeam()
       <li v-for="agent in AGENTS" :key="agent.id">
         <button
           type="button"
-          class="flex w-full cursor-pointer items-center gap-3 rounded-card border p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-          :class="team.recipient === agent.id ? 'border-accent bg-accent-soft' : 'border-line'"
-          :aria-pressed="team.recipient === agent.id"
+          class="flex w-full cursor-pointer items-center gap-3 rounded-card border border-line p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+          :aria-label="`Mencionar ${agent.name}`"
           :disabled="team.checking"
-          @click="team.chooseRecipient(agent.id)"
+          @click="team.requestMention(agent.id)"
         >
           <span class="flex shrink-0" aria-hidden="true">
             <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.list" />
