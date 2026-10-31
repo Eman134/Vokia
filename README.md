@@ -17,7 +17,7 @@ MVP. O instalador atual é para Windows x64, no formato NSIS.
 ```bash
 cd desktop
 npm install
-npm run tauri dev
+npm run tauri:dev
 ```
 
 Em desenvolvimento, a checagem de atualização não roda.

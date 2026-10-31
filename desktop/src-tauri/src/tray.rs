@@ -10,7 +10,7 @@ const TRAY_OPEN_ID: &str = "open";
 const TRAY_QUIT_ID: &str = "quit";
 const TRAY_OPEN_LABEL: &str = "Abrir Vokia";
 const TRAY_QUIT_LABEL: &str = "Sair";
-const TRAY_TOOLTIP: &str = "Vokia";
+const TRAY_TOOLTIP: &str = if cfg!(debug_assertions) { "Vokia (dev)" } else { "Vokia" };
 const QUIT_EXIT_CODE: i32 = 0;
 
 pub(crate) fn setup_tray(app: &App) -> Result<(), Box<dyn Error>> {

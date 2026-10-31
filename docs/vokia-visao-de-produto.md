@@ -150,7 +150,7 @@ O app é **todo local**: roda, guarda dados e executa os agentes só na máquina
 - **Falhas:** erro de rede, resposta 404, JSON inválido ou assinatura inválida aparecem como aviso discreto e dispensável. O app segue na versão instalada e nunca trava. A checagem tem limite de 10 segundos e roda depois que a tela principal carrega, sem atrasar a abertura.
 - **Windows sem assinatura de código:** o SmartScreen pode alertar na primeira instalação. As atualizações seguintes são feitas pelo próprio app, sem passar pelo navegador.
 - **App na bandeja:** o app que fica na bandeja do sistema só checa atualização ao abrir. Dias na bandeja significam nenhuma nova checagem.
-- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull`, `npm install` e `npm run tauri dev` dentro de `desktop/`. Não é o caminho para usuários finais, e a checagem de atualização não roda nesse modo.
+- **Modo desenvolvimento** (quem contribui): rodar direto do repositório com `git pull`, `npm install` e `npm run tauri:dev` dentro de `desktop/`. Não é o caminho para usuários finais, e a checagem de atualização não roda nesse modo.
 - **Configurações (ainda não implementado):** a versão instalada na tela, "Procurar atualização agora" e um interruptor para desligar a busca ao iniciar.
 
 ---

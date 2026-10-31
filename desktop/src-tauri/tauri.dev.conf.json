@@ -1,0 +1,24 @@
+{
+  "productName": "Vokia Dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vokia (dev)",
+        "width": 1200,
+        "height": 891,
+        "minWidth": 900,
+        "minHeight": 891
+      }
+    ]
+  },
+  "bundle": {
+    "icon": [
+      "icons-dev/32x32.png",
+      "icons-dev/128x128.png",
+      "icons-dev/128x128@2x.png",
+      "icons-dev/icon.icns",
+      "icons-dev/icon.ico"
+    ]
+  }
+}
