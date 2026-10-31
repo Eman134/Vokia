@@ -55,15 +55,23 @@ export function mentionSegments(text: string, spans: readonly MentionSpan[]): Me
   return segments
 }
 
+export function replaceTrigger(
+  text: string,
+  match: TriggerMatch,
+  caret: number,
+  token: string,
+): { text: string; caret: number } {
+  return {
+    text: text.slice(0, match.start) + token + text.slice(caret),
+    caret: match.start + token.length,
+  }
+}
+
 export function insertMention(
   text: string,
   match: TriggerMatch,
   caret: number,
   name: string,
 ): { text: string; caret: number } {
-  const token = `${MENTION_TRIGGER}${name} `
-  return {
-    text: text.slice(0, match.start) + token + text.slice(caret),
-    caret: match.start + token.length,
-  }
+  return replaceTrigger(text, match, caret, `${MENTION_TRIGGER}${name} `)
 }

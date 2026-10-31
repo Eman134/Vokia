@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import { AGENTS, useTeam, type AgentProfile } from './useTeam'
+import { AGENTS, DEFAULT_RECIPIENT, useTeam, type AgentProfile } from './useTeam'
 import { useTeamStatus } from './useTeamStatus'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
 import { placeholderFor, QUEUE_SUFFIX } from './composerPlaceholder'
@@ -10,12 +10,21 @@ import {
   mentionSegments,
   mentionSpans,
   MENTION_TRIGGER,
+  replaceTrigger,
   type TriggerMatch,
 } from './composerMentions'
+import {
+  COMMAND_TRIGGER,
+  expandCommand,
+  findCommandTrigger,
+  SLASH_COMMANDS,
+  type SlashCommand,
+} from './slashCommands'
 import type { Agent } from './events'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import MentionMenu from './MentionMenu.vue'
+import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
 import Balloon from '../balloon/Balloon.vue'
 import UiButton from '../../ui/UiButton.vue'
@@ -39,8 +48,8 @@ const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
 const EXPANDED_WIDTH_CLASS = 'w-full'
 // Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
 const FIELD_PADDING_X = 14
-// Deve casar com o w-65 do MentionMenu.
-const MENU_WIDTH = 260
+// Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
+const MENU_WIDTH_BY_KIND = { mention: 260, command: 300 } as const
 const ACTION_SHORTCUT_CODES = ['Digit1', 'Digit2']
 
 const emit = defineEmits<{
@@ -75,6 +84,11 @@ const pageActions = computed<readonly PageAction[]>(() =>
 const locked = computed(() => team.checking)
 const placeholder = computed(() => placeholderFor(railPage.value, statusStore.status, statusStore.placeholder))
 const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
+const commandMatch = computed<TriggerMatch | null>(() => findCommandTrigger(draft.value, caret.value))
+const menuKind = computed<'command' | 'mention' | null>(() =>
+  commandMatch.value ? 'command' : mentionMatch.value ? 'mention' : null,
+)
+const activeMatch = computed(() => commandMatch.value ?? mentionMatch.value)
 const mentionQuery = computed<string | null>(() => mentionMatch.value?.query ?? null)
 const mentionMatches = computed<AgentProfile[]>(() => {
   const query = mentionQuery.value
@@ -84,12 +98,25 @@ const mentionMatches = computed<AgentProfile[]>(() => {
   const prefix = query.toLowerCase()
   return AGENTS.filter((agent) => agent.name.toLowerCase().startsWith(prefix))
 })
-const highlightedAgent = computed(() => mentionMatches.value.at(highlightedIndex.value))
-const menuOpen = computed(() => mentionQuery.value !== null && !menuDismissed.value && !locked.value)
+const commandMatches = computed<SlashCommand[]>(() => {
+  const match = commandMatch.value
+  if (match === null) {
+    return []
+  }
+  const prefix = match.query.toLowerCase()
+  return SLASH_COMMANDS.filter((command) => command.id.startsWith(prefix))
+})
+const menuCount = computed(() => (menuKind.value === 'command' ? commandMatches.value : mentionMatches.value).length)
+const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
+  menuKind.value === 'command'
+    ? commandMatches.value.at(highlightedIndex.value)
+    : mentionMatches.value.at(highlightedIndex.value),
+)
+const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
 const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value)
 const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.id] !== 'idle'))
 const activeOptionId = computed(() =>
-  menuOpen.value && highlightedAgent.value ? `${listboxId}-${highlightedAgent.value.id}` : undefined,
+  menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
 )
 const spans = computed(() => mentionSpans(draft.value, confirmed.value))
 const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
@@ -103,7 +130,7 @@ const queueHint = computed(() => {
   return onlyMentions ? QUEUE_SUFFIX : null
 })
 
-watch(mentionQuery, () => {
+watch([menuKind, () => activeMatch.value?.query], () => {
   menuDismissed.value = false
   highlightedIndex.value = 0
 })
@@ -121,7 +148,7 @@ watch(draft, (text) => {
   }
 })
 
-watch([mentionMatch, scrollLeft], async () => {
+watch([activeMatch, scrollLeft], async () => {
   await nextTick()
   menuLeft.value = anchorLeft()
 })
@@ -148,7 +175,8 @@ function anchorLeft(): number {
     return 0
   }
   const atX = wrapper.offsetLeft + FIELD_PADDING_X + measure.offsetWidth - scrollLeft.value
-  return Math.max(0, Math.min(atX, pill.clientWidth - MENU_WIDTH))
+  const width = MENU_WIDTH_BY_KIND[menuKind.value ?? 'mention']
+  return Math.max(0, Math.min(atX, pill.clientWidth - width))
 }
 
 function syncCaret(): void {
@@ -162,11 +190,12 @@ async function submit(): Promise<void> {
     return
   }
   const to = recipient.value
+  const expandedCommand = expandCommand(text)
   const pending = draft.value
   // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
   const pendingConfirmed = confirmed.value
   draft.value = ''
-  if (!(await team.send(text, to))) {
+  if (!(await team.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to))) {
     draft.value = pending
     confirmed.value = pendingConfirmed
   }
@@ -194,6 +223,25 @@ function chooseMentionAgent(agent: AgentProfile): void {
   applyMention(insertMention(draft.value, trigger, caret.value, agent.name), agent)
 }
 
+function chooseCommand(command: SlashCommand): void {
+  const trigger = commandMatch.value
+  if (trigger === null || !command.enabled) {
+    return
+  }
+  const next = replaceTrigger(draft.value, trigger, caret.value, `${COMMAND_TRIGGER}${command.id} `)
+  draft.value = next.text
+  caret.value = next.caret
+  void placeCaret(next.caret)
+}
+
+function chooseHighlighted(item: AgentProfile | SlashCommand): void {
+  if ('role' in item) {
+    chooseMentionAgent(item)
+  } else {
+    chooseCommand(item)
+  }
+}
+
 function insertAtCaret(agent: AgentProfile): void {
   const before = draft.value.slice(0, caret.value)
   const separator = before === '' || /\s$/.test(before) ? '' : ' '
@@ -213,14 +261,14 @@ function onFocusOut(event: FocusEvent): void {
 }
 
 function moveHighlight(step: number): void {
-  const count = mentionMatches.value.length
+  const count = menuCount.value
   if (count === 0) {
     return
   }
   highlightedIndex.value = (highlightedIndex.value + step + count) % count
 }
 
-function handleMentionKey(event: KeyboardEvent): void {
+function handleMenuKey(event: KeyboardEvent): void {
   switch (event.key) {
     case 'ArrowDown':
       event.preventDefault()
@@ -232,14 +280,14 @@ function handleMentionKey(event: KeyboardEvent): void {
       break
     case 'Enter':
     case 'Tab': {
-      const agent = highlightedAgent.value
-      if (agent === undefined && event.key === 'Tab') {
+      const item = highlighted.value
+      if (item === undefined && event.key === 'Tab') {
         break
       }
       // Enter com a lista aberta nunca envia, mesmo sem resultado.
       event.preventDefault()
-      if (agent !== undefined) {
-        chooseMentionAgent(agent)
+      if (item !== undefined) {
+        chooseHighlighted(item)
       }
       break
     }
@@ -252,7 +300,7 @@ function handleMentionKey(event: KeyboardEvent): void {
 
 function onKeydown(event: KeyboardEvent): void {
   if (menuOpen.value) {
-    handleMentionKey(event)
+    handleMenuKey(event)
   }
 }
 
@@ -357,7 +405,7 @@ function onPointerLeave(): void {
           >
           <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
           <span ref="measureRef" class="invisible absolute whitespace-pre">{{
-            draft.slice(0, mentionMatch?.start ?? 0)
+            draft.slice(0, activeMatch?.start ?? 0)
           }}</span>
         </div>
         <input
@@ -366,7 +414,7 @@ function onPointerLeave(): void {
           role="combobox"
           aria-autocomplete="list"
           :aria-expanded="menuOpen"
-          :aria-controls="menuOpen && mentionMatches.length > 0 ? listboxId : undefined"
+          :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
           :aria-activedescendant="activeOptionId"
           class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent-soft focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
           :placeholder="placeholder"
@@ -380,8 +428,16 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
+      <CommandMenu
+        v-if="menuOpen && menuKind === 'command'"
+        :id="listboxId"
+        :commands="commandMatches"
+        :active-index="highlightedIndex"
+        :left="menuLeft"
+        @choose="chooseCommand"
+      />
       <MentionMenu
-        v-if="menuOpen"
+        v-else-if="menuOpen"
         :id="listboxId"
         :agents="mentionMatches"
         :active-index="highlightedIndex"
