@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import VokiaMascot from '../../brand/VokiaMascot.vue'
-import ThemeSwitch from '../../theme/ThemeSwitch.vue'
 import StepHeading from './StepHeading.vue'
 
 const MASCOT_SIZE = 84
@@ -16,9 +15,5 @@ const MASCOT_SIZE = 84
         <VokiaMascot look="feliz" :size="MASCOT_SIZE" />
       </template>
     </StepHeading>
-    <div class="flex items-center justify-center gap-3">
-      <span class="text-label text-muted">Tema</span>
-      <ThemeSwitch />
-    </div>
   </div>
 </template>

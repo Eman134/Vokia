@@ -6,7 +6,6 @@ export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { AGENTS, useTeam } from './useTeam'
-import ThemeSwitch from '../theme/ThemeSwitch.vue'
 import MessageEntry from './MessageEntry.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
@@ -45,7 +44,6 @@ onMounted(followEnd)
   <section ref="scroller" class="flex-1 overflow-y-auto px-8 pb-40 pt-6" @scroll="onScroll">
     <header class="mb-6 flex items-center justify-between gap-4">
       <h1 class="text-title text-ink">Conversas</h1>
-      <ThemeSwitch />
     </header>
     <UiEmpty v-if="team.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
       <template #mascot>
