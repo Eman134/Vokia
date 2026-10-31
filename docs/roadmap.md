@@ -174,6 +174,7 @@ A Vokia é um app desktop local (Tauri 2 com Vue 3 e Rust) que orquestra agentes
 10. **S10 · Backlog e plano do item (024, 025, 026).** São componentes de tela que usam S1 e o retrato (S2). Vêm depois da barra porque a visão de produto põe a barra em todas as telas e o kanban na fase 1, depois da base.
 11. **S11 · Barra fora do app (018, 019, 020, 021).** Repete o estado (003), as decisões (011/012) e os limites (023) fora da janela. Depende de S3, S4 e S7.
 12. **S12 · Telas de sistema (033).** Usa o mascote (031) e o bloco "Vazio" dos componentes base (029). Pode avançar assim que S1 e S2 estiverem prontos. Fica no fim porque a visão de produto a põe na fase de acabamento.
+13. **S13 · Agentes no projeto e persistência (decisão do usuário, 2026-10-31; sem requisito no backlog).** Torna o Vokia capaz de desenvolver projetos de verdade, inclusive ele mesmo: SQLite para projeto, histórico, backlog e planos; agentes com ferramentas dentro da pasta do projeto selecionado (padrão: tudo liberado nessa pasta); nível de permissão escolhido pelo usuário; rodar um card do backlog. Não depende da barra (S4 a S9): 51A e 52 podem começar já; 51B e 54 esperam S10.
 
 ## 3. Execuções
 
@@ -182,7 +183,7 @@ Convenções para todas as etapas:
 - **Nota da etapa:** `Etapa N - <título>` no fichário `plan`. O Planejador cria a nota quando o Maestro pede o plano da etapa.
 - **Terminal:** o Maestro preenche ao distribuir. "a definir" é o placeholder.
 - **Verificação do contrato** (README, seção Verificações), nesta ordem: `cd desktop/src-tauri && cargo fmt --check && cargo clippy -- -D warnings` (só se mudou Rust), depois `cd desktop && npm run typecheck && npm run build`.
-- **E2E primeiro:** um roteiro na janela de `npm run tauri dev`, com o WebView2 em modo depuração (CDP na porta 9222), seguindo o padrão de `desktop/e2e/mencoes.cdp.mjs`. O resultado vai para `desktop/e2e/RESULTADO-<tema>.md`.
+- **E2E primeiro:** um roteiro na janela de `npm run tauri:dev`, com o WebView2 em modo depuração (CDP na porta 9222), seguindo o padrão de `desktop/e2e/mencoes.cdp.mjs`. O resultado vai para `desktop/e2e/RESULTADO-<tema>.md`.
 - **Camadas:** componente → store (`useX.ts`) → serviço (`xApi.ts`) → Tauri. Só os serviços importam `@tauri-apps`. Tokens só em `desktop/src/styles/tokens.css`.
 - **Não fazer em nenhuma etapa:** implementar comportamento que depende de uma PEN aberta. Nesse caso a etapa para e responde BLOQUEADO.
 
@@ -292,7 +293,7 @@ Convenções para todas as etapas:
 | 24 | Etapa 24 - Modal do item do backlog (025) | Implementador | a definir | Intermediário | 23 | ⏳ Pendente |
 | 25 | Etapa 25 - Plano do item (026) | Implementador | a definir | Intermediário | 24 | ⏳ Pendente |
 
-- *Não fazer:* PEN-060 a PEN-077. A persistência dos itens (SQLite, visão 6.4) não está no backlog (seção 6).
+- *Não fazer:* PEN-060 a PEN-077. A persistência dos itens fica na Etapa 51B (S13).
 
 ### S11 · Barra fora do app
 
@@ -312,6 +313,24 @@ Convenções para todas as etapas:
 | 30 | Etapa 30 - Splash, atualização, vazio e CLI ausente (033) | Implementador | a definir | Intermediário | 2, 4 | ⏳ Pendente |
 
 - **Etapa 30.** Completa a tela de CLI ausente que já existe e reaproveita `features/updater/UpdatePrompt.vue`. *Verificação:* E2E sem CLI no PATH, como em `RESULTADO.md` item 5. *Não fazer:* PEN-094, PEN-095.
+
+### S13 · Agentes no projeto e persistência
+
+| Etapa | Nota da etapa | Papel | Terminal | Nível | Dependências | Estado |
+| --- | --- | --- | --- | --- | --- | --- |
+| 51A | Etapa 51A - Persistência SQLite: base, projeto e histórico | Implementador | a definir | Intermediário | 6R | ⏳ Pendente |
+| 52 | Etapa 52 - Agentes com ferramentas na pasta do projeto | Implementador | a definir | Intermediário | 51A | ⏳ Pendente |
+| 53 | Etapa 53 - Níveis de permissão dos agentes | Implementador | a definir | Intermediário | 52 | ⏳ Pendente |
+| 51B | Etapa 51B - Persistência SQLite: backlog e planos | Implementador | a definir | Intermediário | 51A, 24, 25 | ⏳ Pendente |
+| 54 | Etapa 54 - Rodar card do backlog | Implementador | a definir | Intermediário | 51B, 52, 33 | ⏳ Pendente |
+
+- **Origem:** decisão do usuário de 2026-10-31: (a) o usuário escolhe o nível de permissão; o padrão é tudo liberado dentro da pasta do projeto selecionado; (b) persistência em SQLite (backlog, planos e histórico). Não há requisito em `backlog/`; os critérios de pronto estão nas notas das etapas.
+- **Etapa 51A.** Banco SQLite no diretório de dados do app, migrações versionadas, tabela de projetos (nome e pasta, um projeto selecionado) e histórico das conversas (feed). Base de 51B e da pasta usada pela 52. *Arquivos prováveis:* `desktop/src-tauri/src/db.rs` (novo), `main.rs`, `Cargo.toml`, serviço e store no front.
+- **Etapa 52.** Os agentes deixam de rodar com `--tools ""` (`claude.rs:383-384`): processo com `current_dir` na pasta do projeto selecionado e ferramentas liberadas nessa pasta (permissão padrão). Seleção da pasta pelo usuário quando não houver projeto. *Arquivos prováveis:* `claude.rs`, `orchestrator.rs`, `task.rs`.
+- **Etapa 53.** Níveis escolhidos pelo usuário e salvos no projeto (51A); o padrão é o da 52. Cada nível vira flags da CLI. Nível que pede aprovação por comando depende da origem das decisões (S7) e fica fora até essa decisão.
+- **Etapa 51B.** Tabelas de itens do backlog, micro-tarefas e planos; `useBacklog` (24) e `useItemPlan` (25) passam a carregar e salvar pelo serviço.
+- **Etapa 54.** Ação "Rodar" no card/modal: manda o item com o plano vinculado ao agente responsável e move o card (In progress ao começar, In review ao terminar) pelos eventos do orquestrador. *Não fazer:* execução paralela de vários cards (fila do front da 13 vale) e worktrees.
+- *Verificação:* contrato com Rust (`cargo fmt --check`, `cargo clippy -- -D warnings`) e E2E por etapa; a 52 e a 54 validam num projeto de teste descartável, nunca no repositório do Vokia.
 
 Cada etapa de implementação gera, na sequência, um pedido ao Tester (E2E) e outro ao Reviewer, com os prompts da seção 5.
 
@@ -374,7 +393,7 @@ RESPOSTA (máx. 15 linhas): primeira linha ESTADO: PRONTO|BLOQUEADO; depois Feit
 Você é o Tester. Não vê a conversa do usuário; este é o pedido completo.
 OBJETIVO: validar por E2E a '<Etapa N - título>' da nota de plano '<Plano X>', cobrindo as "Formas de falha para o Tester" da nota da etapa.
 DIRETÓRIO: <raiz do repositório Vokia>.
-ARQUIVOS: roteiro em desktop/e2e/<tema>.cdp.mjs, no padrão de desktop/e2e/mencoes.cdp.mjs (npm run tauri dev, WebView2 com CDP na porta 9222); resultado em desktop/e2e/RESULTADO-<tema>.md. Não altere código de produção.
+ARQUIVOS: roteiro em desktop/e2e/<tema>.cdp.mjs, no padrão de desktop/e2e/mencoes.cdp.mjs (npm run tauri:dev, WebView2 com CDP na porta 9222); resultado em desktop/e2e/RESULTADO-<tema>.md. Não altere código de produção.
 CRITÉRIO DE PRONTO: cada forma de falha com um cenário real e evidência; contrato rodado (cargo fmt --check, cargo clippy -- -D warnings, npm run typecheck, npm run build); artefato repetível. Sem testes de detalhe visual.
 NOTA DE STATUS: 'Status Terminais' (não leia nem escreva; o Maestro grava).
 RESPOSTA (máx. 15 linhas): primeira linha ESTADO: PASSOU|FALHOU|BLOQUEADO; depois Feito, Arquivos, Verificação (até 10 linhas de erro), Pendências/Dúvidas; linha 'Estado: <emoji> <estado>' e até 3 linhas em 'Detalhe:'.
@@ -403,7 +422,7 @@ RESPOSTA (máx. 25 linhas): primeira linha ESTADO: APROVADO|REPROVADO|BLOQUEADO;
 - **Fora do backlog, mas necessário** (não planejado; decisão do usuário):
   - A origem das decisões no backend: permissões e perguntas dos agentes chegando ao painel 011. Hoje `events.rs` só tem message, agent-state e error.
   - A fonte do uso de 5 h por plano (023/016): a visão de produto, seção 13, diz que depende do que a CLI expõe e precisa ser validada.
-  - A persistência (SQLite, visão 6.4) para o backlog, as decisões e as filas.
+  - A persistência das decisões e das filas. Backlog, planos e histórico entraram no roadmap como S13 (Etapas 51A e 51B), por decisão do usuário de 2026-10-31.
   - As páginas de destino do trilho e do ☰ (Projetos, Backlog, Configurações e outras), citadas nas PEN mas sem requisito próprio.
   - A pasta dos componentes base compartilhados (029): o README só prevê `features/<nome>/` e `shell/`.
   - A ordem relativa de S10 e S12 diante da barra: a visão de produto a sugere, mas o backlog não define prioridade.
