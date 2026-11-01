@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use crate::cache::Cache;
 use crate::claude::CliProblem;
 use crate::events::Agent;
+use crate::permissions::PermissionBroker;
 use crate::task::TaskRecord;
 
 pub struct AppState {
@@ -12,6 +13,7 @@ pub struct AppState {
     pub cache: Mutex<Cache>,
     pub flow: Mutex<FlowQueue>,
     pub archive: Mutex<Vec<TaskRecord>>,
+    pub permissions: PermissionBroker,
 }
 
 pub struct FlowQueue {

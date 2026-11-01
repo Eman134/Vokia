@@ -25,6 +25,19 @@ export interface VokiaError {
   message: string
 }
 
+export interface VokiaPermission {
+  type: 'permission'
+  id: string
+  agent: Agent
+  tool: string
+  detail: string
+}
+
+export interface VokiaPermissionClosed {
+  type: 'permission-closed'
+  id: string
+}
+
 export interface UsageWindow {
   percent: number
   resetsAt: number
@@ -36,7 +49,13 @@ export interface VokiaPlanUsage {
   sevenDay: UsageWindow
 }
 
-export type VokiaEvent = VokiaMessage | VokiaAgentState | VokiaError | VokiaPlanUsage
+export type VokiaEvent =
+  | VokiaMessage
+  | VokiaAgentState
+  | VokiaError
+  | VokiaPermission
+  | VokiaPermissionClosed
+  | VokiaPlanUsage
 
 export interface CliProblem {
   reason: string

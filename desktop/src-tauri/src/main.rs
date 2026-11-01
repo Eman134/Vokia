@@ -8,6 +8,7 @@ mod connectivity;
 mod db;
 mod events;
 mod orchestrator;
+mod permissions;
 mod projects;
 mod state;
 mod task;
@@ -21,6 +22,7 @@ use tauri::Manager;
 
 use cache::Cache;
 use db::DbState;
+use permissions::PermissionBroker;
 use state::{AppState, FlowQueue};
 
 fn main() {
@@ -37,10 +39,12 @@ fn main() {
                 pending: VecDeque::new(),
             }),
             archive: Mutex::new(Vec::new()),
+            permissions: PermissionBroker::default(),
         })
         .invoke_handler(tauri::generate_handler![
             commands::cli_problem,
             commands::send_request,
+            commands::answer_permission,
             commands::check_connection,
             commands::db_problem,
             commands::list_projects,

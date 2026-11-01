@@ -86,6 +86,15 @@ pub enum VokiaEvent {
     Error {
         message: String,
     },
+    Permission {
+        id: String,
+        agent: Agent,
+        tool: String,
+        detail: String,
+    },
+    PermissionClosed {
+        id: String,
+    },
     #[serde(rename_all = "camelCase")]
     PlanUsage {
         five_hour: UsageWindow,

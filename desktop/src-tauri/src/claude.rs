@@ -1,21 +1,67 @@
+use std::collections::VecDeque;
 use std::fmt;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 const USER_MESSAGE_KIND: &str = "user";
 const USER_ROLE: &str = "user";
 const PIPE_MISSING: &str = "o pipe do processo não ficou disponível";
+const STDERR_TAIL_LINES: usize = 5;
+const STDERR_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const SESSION_EOF: &str = "o processo encerrou antes de enviar o resultado";
 const CLI_NAME: &str = "claude";
 const MODEL: &str = "haiku";
-const MAX_TURNS: &str = "3";
+const TEXT_ONLY_MAX_TURNS: &str = "3";
+const PROJECT_MAX_TURNS: &str = "40";
 const CLI_TIMEOUT: Duration = Duration::from_secs(120);
+const PROJECT_CLI_TIMEOUT: Duration = Duration::from_secs(600);
+const PERMISSION_MODE: &str = "manual";
+// Ignora hooks e regras do usuário (um hook que reescreve o comando faz a regra não casar).
+const NO_SETTING_SOURCES: &str = "";
+const PERMISSION_PROMPT_TOOL: &str = "stdio";
+// Ferramentas de arquivo com padrão de caminho ficam na pasta do projeto (cwd); a regra sem padrão libera qualquer caminho, inclusive Glob e Grep.
+const FILE_TOOLS: [&str; 4] = ["Edit(./**)", "Write(./**)", "Glob(./**)", "Grep(./**)"];
+// Regra por prefixo não enxerga opções que gravam (`git diff --output`, `git branch novo`): esses comandos entram só na forma exata.
+const BASH_ALLOWLIST: [&str; 26] = [
+    "Bash(ls)",
+    "Bash(ls *)",
+    "Bash(cat *)",
+    "Bash(head *)",
+    "Bash(tail *)",
+    "Bash(pwd)",
+    "Bash(git status)",
+    "Bash(git status *)",
+    "Bash(git log)",
+    "Bash(git log --oneline)",
+    "Bash(git diff)",
+    "Bash(git diff --stat)",
+    "Bash(git show)",
+    "Bash(git branch)",
+    "Bash(git branch --list)",
+    "Bash(git rev-parse *)",
+    "Bash(npm test *)",
+    "Bash(npm run test *)",
+    "Bash(npm run build *)",
+    "Bash(npm run typecheck *)",
+    "Bash(npm run lint *)",
+    "Bash(cargo test *)",
+    "Bash(cargo build *)",
+    "Bash(cargo check *)",
+    "Bash(cargo fmt --check)",
+    "Bash(cargo clippy *)",
+];
+const CONTROL_REQUEST_KIND: &str = "control_request";
+const CAN_USE_TOOL_SUBTYPE: &str = "can_use_tool";
+const CONTROL_RESPONSE_KIND: &str = "control_response";
+const DENIED_MESSAGE: &str = "O usuário negou este comando.";
 const RESULT_KIND: &str = "result";
 const RATE_LIMIT_KIND: &str = "rate_limit_event";
 const INSTALL_COMMAND: &str = "npm install -g @anthropic-ai/claude-code";
@@ -206,11 +252,25 @@ async fn ensure_logged_in(cli: &Path) -> Result<(), CliProblem> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum Access<'a> {
+    TextOnly,
+    Project(&'a Path),
+}
+
+fn timeout_for(access: Access<'_>) -> Duration {
+    match access {
+        Access::TextOnly => CLI_TIMEOUT,
+        Access::Project(_) => PROJECT_CLI_TIMEOUT,
+    }
+}
+
 pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeError> {
-    let mut command = agent_command(cli, &["-p", message], role);
-    let output = timeout(CLI_TIMEOUT, command.output())
+    let mut command = agent_command(cli, &["-p", message], role, Access::TextOnly);
+    let limit = timeout_for(Access::TextOnly);
+    let output = timeout(limit, command.output())
         .await
-        .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))?
+        .map_err(|_| ClaudeError::Timeout(limit))?
         .map_err(ClaudeError::Spawn)?;
     if !output.status.success() {
         return Err(ClaudeError::Exit {
@@ -242,19 +302,32 @@ pub struct LiveSession {
     stdin: ChildStdin,
     lines: Lines<BufReader<ChildStdout>>,
     session_id: Option<String>,
+    timeout: Duration,
+    stderr_tail: Option<JoinHandle<String>>,
 }
 
 impl LiveSession {
-    pub fn open(cli: &Path, role: &str, resume: Option<&str>) -> Result<Self, ClaudeError> {
-        let mut command = agent_command(cli, &["-p", "--input-format", "stream-json"], role);
+    pub fn open(
+        cli: &Path,
+        role: &str,
+        access: Access<'_>,
+        resume: Option<&str>,
+    ) -> Result<Self, ClaudeError> {
+        let mut command =
+            agent_command(cli, &["-p", "--input-format", "stream-json"], role, access);
+        command.args([
+            "--permission-prompts",
+            "host",
+            "--permission-prompt-tool",
+            PERMISSION_PROMPT_TOOL,
+        ]);
         if let Some(session_id) = resume {
             command.args(["--resume", session_id]);
         }
-        // Sem leitor, o stderr cheio travaria o processo no meio de uma resposta.
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         let mut child = command.spawn().map_err(ClaudeError::Spawn)?;
         let stdin = child
             .stdin
@@ -264,11 +337,17 @@ impl LiveSession {
             .stdout
             .take()
             .ok_or_else(|| ClaudeError::SessionClosed(PIPE_MISSING.to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ClaudeError::SessionClosed(PIPE_MISSING.to_string()))?;
         Ok(Self {
             child,
             stdin,
             lines: BufReader::new(stdout).lines(),
             session_id: resume.map(str::to_string),
+            timeout: timeout_for(access),
+            stderr_tail: Some(tokio::spawn(read_stderr_tail(stderr))),
         })
     }
 
@@ -276,20 +355,27 @@ impl LiveSession {
         self.session_id.as_deref()
     }
 
-    pub async fn send(&mut self, message: &str) -> Result<Reply, ClaudeError> {
-        let (response, limits) = timeout(CLI_TIMEOUT, self.exchange(message))
-            .await
-            .map_err(|_| ClaudeError::Timeout(CLI_TIMEOUT))??;
+    pub async fn send<D, F>(&mut self, message: &str, decide: D) -> Result<Reply, ClaudeError>
+    where
+        D: Fn(PermissionRequest) -> F,
+        F: Future<Output = bool>,
+    {
+        let (response, limits) = self.exchange(message, decide).await?;
         if !response.session_id.is_empty() {
             self.session_id = Some(response.session_id.clone());
         }
         into_reply(response, limits)
     }
 
-    async fn exchange(
+    async fn exchange<D, F>(
         &mut self,
         message: &str,
-    ) -> Result<(CliResponse, Option<RateLimits>), ClaudeError> {
+        decide: D,
+    ) -> Result<(CliResponse, Option<RateLimits>), ClaudeError>
+    where
+        D: Fn(PermissionRequest) -> F,
+        F: Future<Output = bool>,
+    {
         let payload = serde_json::json!({
             "type": USER_MESSAGE_KIND,
             "message": { "role": USER_ROLE, "content": message },
@@ -304,24 +390,151 @@ impl LiveSession {
             .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
         let mut accumulator = StreamAccumulator::default();
         loop {
-            let line = self
-                .lines
-                .next_line()
+            // O limite vale entre linhas: a espera pela decisão do usuário não conta, e um agente que segue produzindo não estoura.
+            let line = timeout(self.timeout, self.lines.next_line())
                 .await
-                .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?
-                .ok_or_else(|| ClaudeError::SessionClosed(SESSION_EOF.to_string()))?;
-            if accumulator.push_line(line.as_bytes())? {
-                return accumulator.finish();
+                .map_err(|_| ClaudeError::Timeout(self.timeout))?
+                .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
+            let Some(line) = line else {
+                return Err(ClaudeError::SessionClosed(self.closing_reason().await));
+            };
+            match parse_control_request(line.as_bytes()) {
+                Some(ControlRequest::Permission(request)) => {
+                    let id = request.id.clone();
+                    let input = request.input.clone();
+                    let allowed = decide(request).await;
+                    self.answer_permission(&id, allowed.then_some(input))
+                        .await?;
+                }
+                Some(ControlRequest::Malformed(id)) => {
+                    self.answer_permission(&id, None).await?;
+                }
+                None => {
+                    if accumulator.push_line(line.as_bytes())? {
+                        return accumulator.finish();
+                    }
+                }
             }
         }
     }
 
+    async fn closing_reason(&mut self) -> String {
+        let Some(tail) = self.stderr_tail.take() else {
+            return SESSION_EOF.to_string();
+        };
+        match timeout(STDERR_DRAIN_TIMEOUT, tail).await {
+            Ok(Ok(text)) if !text.is_empty() => text,
+            _ => SESSION_EOF.to_string(),
+        }
+    }
+
+    async fn answer_permission(
+        &mut self,
+        request_id: &str,
+        allowed_input: Option<serde_json::Value>,
+    ) -> Result<(), ClaudeError> {
+        let decision = match allowed_input {
+            Some(input) => serde_json::json!({ "behavior": "allow", "updatedInput": input }),
+            None => serde_json::json!({ "behavior": "deny", "message": DENIED_MESSAGE }),
+        };
+        let payload = serde_json::json!({
+            "type": CONTROL_RESPONSE_KIND,
+            "response": { "subtype": "success", "request_id": request_id, "response": decision },
+        });
+        self.stdin
+            .write_all(
+                format!(
+                    "{payload}
+"
+                )
+                .as_bytes(),
+            )
+            .await
+            .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
+        self.stdin
+            .flush()
+            .await
+            .map_err(|error| ClaudeError::SessionClosed(error.to_string()))
+    }
+
     pub async fn close(mut self, grace: Duration) {
         drop(self.stdin);
+        if let Some(tail) = self.stderr_tail.take() {
+            tail.abort();
+        }
         if timeout(grace, self.child.wait()).await.is_err() {
             // O kill só falha se o processo já saiu, que é o resultado desejado.
             let _ = self.child.kill().await;
         }
+    }
+}
+
+// Sem leitor contínuo o stderr cheio travaria o processo no meio de uma resposta.
+async fn read_stderr_tail(stderr: ChildStderr) -> String {
+    let mut lines = BufReader::new(stderr).lines();
+    let mut tail = VecDeque::with_capacity(STDERR_TAIL_LINES);
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if tail.len() == STDERR_TAIL_LINES {
+            tail.pop_front();
+        }
+        tail.push_back(line);
+    }
+    Vec::from(tail).join(
+        "
+",
+    )
+}
+
+#[derive(Clone)]
+pub struct PermissionRequest {
+    pub id: String,
+    pub tool: String,
+    pub input: serde_json::Value,
+}
+
+enum ControlRequest {
+    Permission(PermissionRequest),
+    Malformed(String),
+}
+
+#[derive(Deserialize)]
+struct ControlLine {
+    #[serde(rename = "type")]
+    kind: String,
+    request_id: Option<String>,
+    request: Option<ControlBody>,
+}
+
+#[derive(Deserialize)]
+struct ControlBody {
+    subtype: String,
+    tool_name: Option<String>,
+    input: Option<serde_json::Value>,
+}
+
+// Pedido sem id é ignorado (não há a quem responder); com id mas incompleto, a resposta é negar, nunca permitir.
+fn parse_control_request(line: &[u8]) -> Option<ControlRequest> {
+    let parsed: ControlLine = serde_json::from_slice(line).ok()?;
+    if parsed.kind != CONTROL_REQUEST_KIND {
+        return None;
+    }
+    let id = parsed.request_id?;
+    let Some(body) = parsed
+        .request
+        .filter(|body| body.subtype == CAN_USE_TOOL_SUBTYPE)
+    else {
+        return Some(ControlRequest::Malformed(id));
+    };
+    match (body.tool_name, body.input) {
+        (Some(tool), Some(input)) => Some(ControlRequest::Permission(PermissionRequest {
+            id,
+            tool,
+            input,
+        })),
+        _ => Some(ControlRequest::Malformed(id)),
     }
 }
 
@@ -369,10 +582,11 @@ fn parse_stream(stdout: &[u8]) -> Result<(CliResponse, Option<RateLimits>), Clau
     accumulator.finish()
 }
 
-fn agent_command(cli: &Path, leading: &[&str], role: &str) -> Command {
+fn agent_command(cli: &Path, leading: &[&str], role: &str, access: Access<'_>) -> Command {
     let mut command = base_command(cli);
     command.kill_on_drop(true);
-    // A mensagem de `-p` vem antes de `--tools`, que é variádico e a engoliria.
+    // A mensagem de `-p` vem antes das opções variádicas (`--tools`, `--allowedTools`),
+    // que a engoliriam; `--append-system-prompt` fica por último pelo mesmo motivo.
     command.args(leading);
     command.args([
         "--output-format",
@@ -380,14 +594,33 @@ fn agent_command(cli: &Path, leading: &[&str], role: &str) -> Command {
         "--verbose",
         "--model",
         MODEL,
-        "--tools",
-        "",
-        "--max-turns",
-        MAX_TURNS,
-        "--append-system-prompt",
-        role,
     ]);
+    match access {
+        Access::TextOnly => {
+            command.args(["--tools", "", "--max-turns", TEXT_ONLY_MAX_TURNS]);
+        }
+        Access::Project(dir) => {
+            command.current_dir(dir);
+            command
+                .arg("--add-dir")
+                .arg(dir)
+                .args(["--permission-mode", PERMISSION_MODE])
+                .args(["--setting-sources", NO_SETTING_SOURCES])
+                .args(["--allowedTools", &allowed_tools()])
+                .args(["--max-turns", PROJECT_MAX_TURNS]);
+        }
+    }
+    command.args(["--append-system-prompt", role]);
     command
+}
+
+fn allowed_tools() -> String {
+    FILE_TOOLS
+        .iter()
+        .chain(BASH_ALLOWLIST.iter())
+        .copied()
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub(crate) fn base_command(cli: &Path) -> Command {

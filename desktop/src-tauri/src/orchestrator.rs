@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -10,9 +10,11 @@ use crate::cache::{
     parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
     RECOVERY_CONVERSATION_ITEMS,
 };
-use crate::claude::{self, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
+use crate::claude::{self, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
 use crate::db::{DbError, DbState};
 use crate::events::{Agent, AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
+use crate::permissions::PermissionGate;
+use crate::projects;
 use crate::state::AppState;
 use crate::task::{
     agent_named, call_mode, degrades_to_fresh, is_live_task, long_request_text, parse_definition,
@@ -27,6 +29,10 @@ const NO_CONVERSATION: usize = 0;
 const TEAM_ROSTER: &str = "Time desta sessão: Iara (tech lead) e Davi (dev frontend).";
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
+const NO_FOLDER_MESSAGE: &str =
+    "O projeto selecionado não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
+const PROJECT_RULE: &str =
+    "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
 const DELEGATION_MARK: char = '@';
 const DELEGATION_SEPARATOR: char = ':';
 const REPLY_PREFIX: &str = " respondeu: ";
@@ -56,6 +62,7 @@ pub enum FlowError {
     ArchiveJson(serde_json::Error),
     Clock(SystemTimeError),
     History(DbError),
+    ProjectFolder(String),
 }
 
 impl fmt::Display for FlowError {
@@ -96,6 +103,7 @@ impl fmt::Display for FlowError {
             FlowError::History(error) => {
                 write!(f, "Não foi possível gravar o histórico: {error}")
             }
+            FlowError::ProjectFolder(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -118,6 +126,25 @@ impl From<DbError> for FlowError {
     }
 }
 
+fn project_dir(app: &AppHandle) -> Result<PathBuf, FlowError> {
+    let state = app.state::<DbState>();
+    let db = state
+        .require()
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
+    let project = match db.selected_project() {
+        Ok(project) => project,
+        Err(DbError::NoSelectedProject) => {
+            return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()))
+        }
+        Err(error) => return Err(FlowError::ProjectFolder(error.to_string())),
+    };
+    if project.path.trim().is_empty() {
+        return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
+    }
+    projects::ensure_directory(&project.path)
+        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))
+}
+
 pub async fn handle_request(
     app: &AppHandle,
     state: &AppState,
@@ -128,6 +155,7 @@ pub async fn handle_request(
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
+    project_dir(app)?;
     emit_message(app, Speaker::User, Speaker::from(recipient), request)?;
     if !start_or_enqueue(state, request, recipient)? {
         return Ok(());
@@ -179,6 +207,7 @@ async fn run_exchange(
     request: &str,
     origin: Agent,
 ) -> Result<(), FlowError> {
+    let project_dir = project_dir(app)?;
     let definition = interpret_task(app, state, cli, request, origin).await?;
     begin_task(app, state, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
@@ -186,6 +215,7 @@ async fn run_exchange(
         app,
         state,
         cli,
+        project_dir: &project_dir,
         request,
         origin,
         definition: &definition,
@@ -269,6 +299,7 @@ struct Exchange<'a> {
     app: &'a AppHandle,
     state: &'a AppState,
     cli: &'a Path,
+    project_dir: &'a Path,
     request: &'a str,
     origin: Agent,
     definition: &'a TaskDefinition,
@@ -672,19 +703,48 @@ async fn ask_step(
 ) -> Result<String, FlowError> {
     emit_state(exchange.app, agent, AgentState::Thinking)?;
     let agent_role = role(agent);
+    let gate = PermissionGate {
+        app: exchange.app,
+        broker: &exchange.state.permissions,
+        agent,
+    };
     let live = match call_mode(exchange.live_task, pool.is_fresh_only(agent)) {
         CallMode::Live => {
-            pool.live_reply(exchange.cli, agent, &agent_role, prompts)
-                .await?
+            pool.live_reply(
+                exchange.cli,
+                exchange.project_dir,
+                gate,
+                &agent_role,
+                prompts,
+            )
+            .await?
         }
         CallMode::Fresh => None,
     };
     let reply = match live {
         Some(reply) => reply,
-        None => claude::ask(exchange.cli, &prompts.opening, &agent_role).await?,
+        None => fresh_reply(exchange, gate, &agent_role, &prompts.opening).await?,
     };
     report_limits(exchange.app, reply.limits)?;
     Ok(reply.text)
+}
+
+// Contexto novo a cada chamada, mas pela sessão viva: só ela tem canal para o usuário decidir comandos fora da allowlist.
+async fn fresh_reply(
+    exchange: &Exchange<'_>,
+    gate: PermissionGate<'_>,
+    role: &str,
+    message: &str,
+) -> Result<Reply, ClaudeError> {
+    let mut live = LiveSession::open(
+        exchange.cli,
+        role,
+        Access::Project(exchange.project_dir),
+        None,
+    )?;
+    let reply = live.send(message, |request| gate.decide(request)).await;
+    live.close(SESSION_CLOSE_GRACE).await;
+    reply
 }
 
 #[derive(Default)]
@@ -702,14 +762,15 @@ impl SessionPool {
     async fn live_reply(
         &mut self,
         cli: &Path,
-        agent: Agent,
+        project_dir: &Path,
+        gate: PermissionGate<'_>,
         role: &str,
         prompts: &StepPrompts,
     ) -> Result<Option<Reply>, FlowError> {
         self.agents
-            .entry(agent)
+            .entry(gate.agent)
             .or_default()
-            .reply(cli, role, prompts)
+            .reply(cli, project_dir, gate, role, prompts)
             .await
     }
 
@@ -751,12 +812,17 @@ impl AgentSession {
     async fn reply(
         &mut self,
         cli: &Path,
+        project_dir: &Path,
+        gate: PermissionGate<'_>,
         role: &str,
         prompts: &StepPrompts,
     ) -> Result<Option<Reply>, FlowError> {
         let mut next = self.first_attempt().await;
         while let Some(attempt) = next {
-            match self.attempt(cli, role, attempt, prompts).await {
+            match self
+                .attempt(cli, project_dir, gate, role, attempt, prompts)
+                .await
+            {
                 Ok(reply) => return Ok(Some(reply)),
                 Err(error) if error.is_session_loss() => next = self.after_loss(attempt),
                 Err(error) => return Err(error.into()),
@@ -787,6 +853,8 @@ impl AgentSession {
     async fn attempt(
         &mut self,
         cli: &Path,
+        project_dir: &Path,
+        gate: PermissionGate<'_>,
         role: &str,
         attempt: Attempt,
         prompts: &StepPrompts,
@@ -806,10 +874,10 @@ impl AgentSession {
                     Attempt::Resume => self.session_id.as_deref(),
                     _ => None,
                 };
-                LiveSession::open(cli, role, resume)?
+                LiveSession::open(cli, role, Access::Project(project_dir), resume)?
             }
         };
-        match live.send(message).await {
+        match live.send(message, |request| gate.decide(request)).await {
             Ok(reply) => {
                 self.session_id = live.session_id().map(str::to_string);
                 self.live = Some(live);
@@ -886,7 +954,7 @@ fn role(agent: Agent) -> String {
         Agent::Davi => "dev frontend",
     };
     format!(
-        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE}",
+        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {PROJECT_RULE}",
         agent.name()
     )
 }

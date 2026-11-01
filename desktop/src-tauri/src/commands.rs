@@ -34,6 +34,18 @@ pub async fn send_request(
 }
 
 #[tauri::command]
+pub fn answer_permission(
+    state: State<'_, AppState>,
+    id: String,
+    allow: bool,
+) -> Result<(), String> {
+    state
+        .permissions
+        .answer(&id, allow)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn db_problem(state: State<'_, DbState>) -> Option<DbProblem> {
     state.problem()
 }

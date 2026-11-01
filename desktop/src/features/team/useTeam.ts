@@ -7,8 +7,10 @@ import {
   type VokiaError,
   type VokiaEvent,
   type VokiaMessage,
+  type VokiaPermission,
 } from './events'
 import {
+  answerPermission,
   checkConnection,
   fetchCliProblem,
   listenConnectionChanges,
@@ -72,6 +74,7 @@ export const useTeam = defineStore('team', () => {
   const checking = ref(false)
   const pendingMention = ref<Agent | null>(null)
   const queue = ref<QueuedRequest[]>([])
+  const permissions = ref<VokiaPermission[]>([])
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -181,8 +184,23 @@ export const useTeam = defineStore('team', () => {
       case 'agent-state':
         states.value[event.agent] = event.state
         break
+      case 'permission':
+        permissions.value.push(event)
+        break
+      case 'permission-closed':
+        permissions.value = permissions.value.filter((permission) => permission.id !== event.id)
+        break
       case 'plan-usage':
         break
+    }
+  }
+
+  async function decidePermission(id: string, allow: boolean): Promise<void> {
+    try {
+      await answerPermission(id, allow)
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+      permissions.value = permissions.value.filter((permission) => permission.id !== id)
     }
   }
 
@@ -306,6 +324,8 @@ export const useTeam = defineStore('team', () => {
     checking,
     pendingMention,
     queue,
+    permissions,
+    decidePermission,
     queuedFor,
     startEdit,
     saveEdit,
