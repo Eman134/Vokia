@@ -1214,7 +1214,7 @@ fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {
     Ok(app.emit(EVENT_NAME, event)?)
 }
 
-fn now_millis() -> Result<u64, FlowError> {
+pub fn now_millis() -> Result<u64, FlowError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(FlowError::Clock)?;

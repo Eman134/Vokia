@@ -8,8 +8,9 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::claude::PermissionRequest;
-use crate::events::{Agent, VokiaEvent, EVENT_NAME};
-use crate::orchestrator::event_project_id;
+use crate::db::DbState;
+use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
+use crate::orchestrator::{event_project_id, now_millis};
 use crate::state::AppState;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
@@ -60,22 +61,62 @@ impl PermissionBroker {
             self.forget(&request.id);
             return false;
         };
+        let Ok(now) = now_millis() else {
+            self.forget(&request.id);
+            return false;
+        };
+        let command = detail(&request);
+        let db_state = app.state::<DbState>();
+        let db = db_state.db();
+        // Falha ao ler o contador não pode travar o pedido.
+        let approved_before = project_id
+            .zip(db)
+            .and_then(|(id, db)| db.approved_count(id, &request.tool, &command).ok())
+            .unwrap_or(0);
         let event = VokiaEvent::Permission {
             id: request.id.clone(),
             agent,
             tool: request.tool.clone(),
-            detail: detail(&request),
+            detail: command.clone(),
             project_id,
+            expires_at: now + PERMISSION_WAIT_LIMIT.as_millis() as u64,
+            approved_before,
         };
         if app.emit(EVENT_NAME, event).is_err() {
             self.forget(&request.id);
             return false;
         }
-        let allowed = matches!(timeout(PERMISSION_WAIT_LIMIT, receiver).await, Ok(Ok(true)));
+        emit_agent_state(app, agent, AgentState::Waiting, project_id);
+        let outcome = match timeout(PERMISSION_WAIT_LIMIT, receiver).await {
+            Ok(Ok(true)) => PermissionOutcome::Allowed,
+            Ok(Ok(false)) | Ok(Err(_)) => PermissionOutcome::Denied,
+            Err(_) => PermissionOutcome::Expired,
+        };
         self.forget(&request.id);
+        if outcome == PermissionOutcome::Allowed {
+            if let Some((id, db)) = project_id.zip(db) {
+                let recorded = now_millis()
+                    .map_err(|error| error.to_string())
+                    .and_then(|time| {
+                        db.record_approval(id, &request.tool, &command, time)
+                            .map_err(|error| error.to_string())
+                    });
+                if let Err(message) = recorded {
+                    let _ = app.emit(EVENT_NAME, VokiaEvent::Error { message });
+                }
+            }
+        }
         // Sem este aviso o balão ficaria aberto depois de negado por tempo.
-        let _ = app.emit(EVENT_NAME, VokiaEvent::PermissionClosed { id: request.id });
-        allowed
+        let _ = app.emit(
+            EVENT_NAME,
+            VokiaEvent::PermissionClosed {
+                id: request.id,
+                project_id,
+                outcome,
+            },
+        );
+        emit_agent_state(app, agent, AgentState::Thinking, project_id);
+        outcome == PermissionOutcome::Allowed
     }
 
     pub fn answer(&self, id: &str, allow: bool) -> Result<(), PermissionError> {
@@ -102,6 +143,17 @@ impl PermissionBroker {
             pending.remove(id);
         }
     }
+}
+
+fn emit_agent_state(app: &AppHandle, agent: Agent, state: AgentState, project_id: Option<i64>) {
+    let _ = app.emit(
+        EVENT_NAME,
+        VokiaEvent::AgentState {
+            agent,
+            state,
+            project_id,
+        },
+    );
 }
 
 fn detail(request: &PermissionRequest) -> String {

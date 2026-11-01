@@ -7,6 +7,7 @@ use crate::connectivity;
 use crate::db::{AgentPause, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
+use crate::permissions::PermissionError;
 use crate::projects::{self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectError};
 use crate::state::AppState;
 
@@ -39,10 +40,11 @@ pub fn answer_permission(
     id: String,
     allow: bool,
 ) -> Result<(), String> {
-    state
-        .permissions
-        .answer(&id, allow)
-        .map_err(|error| error.to_string())
+    match state.permissions.answer(&id, allow) {
+        // A outra superfície já decidiu ou o pedido expirou: nada a mostrar.
+        Ok(()) | Err(PermissionError::Unknown) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[tauri::command]

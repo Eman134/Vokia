@@ -103,6 +103,14 @@ pub struct UsageWindow {
     pub resets_at: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionOutcome {
+    Allowed,
+    Denied,
+    Expired,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum VokiaEvent {
@@ -130,9 +138,14 @@ pub enum VokiaEvent {
         tool: String,
         detail: String,
         project_id: Option<i64>,
+        expires_at: u64,
+        approved_before: u32,
     },
+    #[serde(rename_all = "camelCase")]
     PermissionClosed {
         id: String,
+        project_id: Option<i64>,
+        outcome: PermissionOutcome,
     },
     #[serde(rename_all = "camelCase")]
     Decision {
