@@ -7,6 +7,7 @@ use crate::connectivity;
 use crate::db::{DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
+use crate::projects::{self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectError};
 use crate::state::AppState;
 
 #[tauri::command]
@@ -50,14 +51,27 @@ pub fn select_project(state: State<'_, DbState>, id: i64) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub fn add_project(
+pub async fn pick_folder(app: AppHandle) -> Option<String> {
+    projects::pick_folder(&app)
+}
+
+#[tauri::command]
+pub async fn inspect_folder(path: String) -> Result<FolderInfo, ProjectError> {
+    projects::inspect_folder(&path).await
+}
+
+#[tauri::command]
+pub async fn inspect_github_repo(repo: String) -> Result<GithubRepoInfo, ProjectError> {
+    projects::inspect_github_repo(&repo).await
+}
+
+#[tauri::command]
+pub async fn create_project(
     state: State<'_, DbState>,
-    name: String,
-    path: String,
-) -> Result<Project, String> {
-    let db = state.require().map_err(|error| error.to_string())?;
-    db.add_project(&name, &path)
-        .map_err(|error| error.to_string())
+    input: NewProjectInput,
+) -> Result<Project, ProjectError> {
+    let db = state.require()?;
+    projects::create_project(db, input).await
 }
 
 #[tauri::command]

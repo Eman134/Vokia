@@ -8,6 +8,7 @@ mod connectivity;
 mod db;
 mod events;
 mod orchestrator;
+mod projects;
 mod state;
 mod task;
 mod tray;
@@ -44,13 +45,17 @@ fn main() {
             commands::db_problem,
             commands::list_projects,
             commands::select_project,
-            commands::add_project,
+            commands::pick_folder,
+            commands::inspect_folder,
+            commands::inspect_github_repo,
+            commands::create_project,
             commands::load_history,
             commands::get_settings,
             commands::set_setting
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             app.manage(DbState::open(&data_dir));

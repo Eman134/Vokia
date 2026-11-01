@@ -22,7 +22,7 @@ const BRANCH_CHIP_CLASSES = 'ml-auto rounded-control-sm bg-surface-2 px-2.25 py-
   <div class="flex w-full flex-col gap-7">
     <StepHeading
       title="Escolha um projeto"
-      text="Uma pasta com git ou um repositório do GitHub. Cada feature ganha uma branch e um worktree próprios."
+      text="Uma pasta no seu computador ou um repositório do GitHub. Cada feature ganha uma branch e um worktree próprios."
     />
     <div class="flex flex-col gap-3.5">
       <div class="flex justify-center">

@@ -390,7 +390,7 @@ fn agent_command(cli: &Path, leading: &[&str], role: &str) -> Command {
     command
 }
 
-fn base_command(cli: &Path) -> Command {
+pub(crate) fn base_command(cli: &Path) -> Command {
     let mut command = Command::new(cli);
     // Com stdin aberto a CLI espera 3 s por dados antes de responder.
     command.stdin(Stdio::null());

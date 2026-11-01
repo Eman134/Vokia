@@ -13,7 +13,10 @@ pub const DB_FILE: &str = "vokia.db";
 const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
 const DEFAULT_PROJECT_PATH: &str = "";
 const HISTORY_LIMIT: i64 = 500;
-const PROJECT_COLUMNS: &str = "id, name, path, selected, created_at";
+const PROJECT_COLUMNS: &str =
+    "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo";
+pub const ORIGIN_FOLDER: &str = "folder";
+pub const ORIGIN_GITHUB: &str = "github";
 const SETTING_THEME: &str = "theme";
 // Espelha THEME_CHOICES de src/features/theme/useTheme.ts.
 const THEME_VALUES: &[&str] = &["light", "dark", "system"];
@@ -45,6 +48,12 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+",
+    "
+    ALTER TABLE projects ADD COLUMN symbol TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'folder';
+    ALTER TABLE projects ADD COLUMN origin_repo TEXT;
 ",
 ];
 
@@ -136,6 +145,10 @@ pub struct Project {
     pub path: String,
     pub selected: bool,
     pub created_at: i64,
+    pub symbol: String,
+    pub description: String,
+    pub origin_kind: String,
+    pub origin_repo: Option<String>,
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -145,7 +158,41 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         path: row.get(2)?,
         selected: row.get(3)?,
         created_at: row.get(4)?,
+        symbol: row.get(5)?,
+        description: row.get(6)?,
+        origin_kind: row.get(7)?,
+        origin_repo: row.get(8)?,
     })
+}
+
+pub struct NewProject<'a> {
+    pub name: &'a str,
+    pub symbol: &'a str,
+    pub description: &'a str,
+    pub path: &'a str,
+    pub origin_kind: &'a str,
+    pub origin_repo: Option<&'a str>,
+}
+
+impl NewProject<'_> {
+    pub fn validate(&self) -> Result<(), DbError> {
+        if self.name.trim().is_empty() {
+            return Err(DbError::InvalidProject(
+                "O nome do projeto não pode ser vazio.",
+            ));
+        }
+        if self.path.trim().is_empty() {
+            return Err(DbError::InvalidProject(
+                "A pasta do projeto não pode ser vazia.",
+            ));
+        }
+        if self.symbol.trim().is_empty() {
+            return Err(DbError::InvalidProject(
+                "O ícone do projeto não pode ser vazio.",
+            ));
+        }
+        Ok(())
+    }
 }
 
 pub struct Db {
@@ -181,23 +228,33 @@ impl Db {
         Ok(projects)
     }
 
-    pub fn add_project(&self, name: &str, path: &str) -> Result<Project, DbError> {
-        let name = name.trim();
-        let path = path.trim();
-        if name.is_empty() {
-            return Err(DbError::InvalidProject(
-                "O nome do projeto não pode ser vazio.",
-            ));
-        }
-        if path.is_empty() {
-            return Err(DbError::InvalidProject(
-                "A pasta do projeto não pode ser vazia.",
-            ));
-        }
+    pub fn selected_project(&self) -> Result<Project, DbError> {
+        let conn = self.conn()?;
+        conn.query_row(
+            &format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE selected = 1"),
+            [],
+            project_from_row,
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => DbError::NoSelectedProject,
+            other => DbError::Sqlite(other),
+        })
+    }
+
+    pub fn insert_project(&self, new: &NewProject) -> Result<Project, DbError> {
+        new.validate()?;
+        let path = new.path.trim();
         let conn = self.conn()?;
         conn.execute(
-            "INSERT INTO projects(name, path) VALUES (?1, ?2)",
-            params![name, path],
+            "INSERT INTO projects(name, path, symbol, description, origin_kind, origin_repo)              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                new.name.trim(),
+                path,
+                new.symbol.trim(),
+                new.description.trim(),
+                new.origin_kind,
+                new.origin_repo
+            ],
         )
         .map_err(|error| match error.sqlite_error_code() {
             Some(ErrorCode::ConstraintViolation) => DbError::ProjectPathTaken(path.to_string()),
