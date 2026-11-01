@@ -43,10 +43,10 @@ export const useTeamStatus = defineStore('teamStatus', () => {
     if (status.value === 'working') {
       return workingCopy(team.activeAgents)
     }
-    return status.value === 'needs-you' ? needsYouCopy(decisions.pendingCount) : STATUS_COPY[status.value]
+    return status.value === 'needs-you' ? needsYouCopy() : STATUS_COPY[status.value]
   })
   const ring = computed(() => STATUS_RING[status.value])
-  const statusText = computed(() => `${copy.value.status} · ${copy.value.detail}`)
+  const statusText = computed(() => [copy.value.status, copy.value.detail].filter(Boolean).join(' · '))
   const placeholder = computed(() => copy.value.placeholder)
 
   function stopDoneTimer(): void {

@@ -5,6 +5,11 @@ export type CardKind = DecisionKind | 'permissao'
 export const UNDO_WINDOW_MS = 8000
 export const OTHER_OPTION = 'Outro…'
 export const PANEL_TITLE = 'Decisões'
+const PANEL_TITLE_SINGULAR = 'Decisão'
+
+export function panelTitleFor(count: number): string {
+  return count === 1 ? PANEL_TITLE_SINGULAR : PANEL_TITLE
+}
 export const RESOLVED_TITLE = 'Resolvidas agora'
 export const UNDO_LABEL = 'Desfazer'
 export const EMPTY_TITLE = 'Nada esperando você'

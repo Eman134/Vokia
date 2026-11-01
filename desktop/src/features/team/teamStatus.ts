@@ -57,10 +57,11 @@ export function resolveTeamStatus(input: TeamStatusInput): TeamStatus {
   return STATUS_PRIORITY.find((status) => active[status]) ?? 'rest'
 }
 
-export function needsYouCopy(count: number): StatusCopy {
+// O contador de decisões já mostra quantas esperam; repetir aqui só polui a barra.
+export function needsYouCopy(): StatusCopy {
   return {
     status: 'Precisa de você',
-    detail: count === 1 ? '1 decisão esperando' : `${count} decisões esperando`,
+    detail: '',
     placeholder: 'Responda ou mencione @alguém',
   }
 }

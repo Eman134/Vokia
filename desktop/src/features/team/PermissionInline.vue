@@ -9,9 +9,9 @@ const team = useTeam()
   <span
     v-if="team.permissions[0]"
     data-testid="permission-inline"
-    class="flex min-w-0 shrink items-center gap-2"
+    class="flex min-w-0 flex-1 items-center gap-2"
   >
-    <span class="min-w-0 truncate text-label text-ink" :title="team.permissions[0].detail">
+    <span class="min-w-0 flex-1 truncate text-label text-ink" :title="team.permissions[0].detail">
       {{ agentName(team.permissions[0].agent) }} quer: {{ team.permissions[0].detail }}
     </span>
     <span v-if="team.permissions.length > 1" class="shrink-0 text-caption text-muted">

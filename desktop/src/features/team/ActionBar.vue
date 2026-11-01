@@ -33,7 +33,7 @@ import ActionMenu from './ActionMenu.vue'
 import QueuePopover from './QueuePopover.vue'
 import PausedAgents from './PausedAgents.vue'
 import Balloon from '../balloon/Balloon.vue'
-import { PANEL_TITLE } from '../decisions/decisionCopy'
+import { panelTitleFor } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
 import PanelShell from '../panel/PanelShell.vue'
@@ -135,6 +135,8 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
 const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value)
+const inlinePermission = computed(() => expanded.value && team.permissions.length > 0)
+const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
 )
@@ -421,7 +423,7 @@ function onPointerLeave(): void {
       >
         {{ statusStore.statusText }}
       </span>
-      <PermissionInline v-if="expanded && team.permissions.length > 0" />
+      <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
@@ -429,12 +431,13 @@ function onPointerLeave(): void {
         :leave-active-class="REVEAL_LEAVE_ACTIVE_CLASS"
         :leave-to-class="REVEAL_LEAVE_TO_CLASS"
       >
-        <span v-if="expanded" class="flex shrink-0 items-center gap-3">
+        <span v-if="expanded && !inlinePermission" class="flex shrink-0 items-center gap-3">
           <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
           <UiButton
             variant="quiet"
             size="sm"
             aria-label="Ações da página"
+            title="Ações da página"
             aria-haspopup="menu"
             :aria-expanded="actionMenuOpen"
             @press="actionMenuOpen = !actionMenuOpen"
@@ -446,7 +449,7 @@ function onPointerLeave(): void {
       <div
         ref="wrapperRef"
         class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
-        :class="{ 'sr-only': !expanded }"
+        :class="{ 'sr-only': !expanded || (inlinePermission && draft === '') }"
       >
         <div
           aria-hidden="true"
@@ -487,7 +490,7 @@ function onPointerLeave(): void {
       <UiButton
         variant="quiet"
         size="sm"
-        :aria-label="PANEL_TITLE"
+        :aria-label="decisionsTitle"
         :aria-expanded="decisions.open"
         class="gap-1.75"
         data-testid="decisions-button"
@@ -512,7 +515,7 @@ function onPointerLeave(): void {
         >
           <path d="M2.5 8.5L6 12l7.5-8" />
         </svg>
-        <span v-if="expanded">{{ PANEL_TITLE }}</span>
+        <span v-if="expanded">{{ decisionsTitle }}</span>
       </UiButton>
       <UiButton
         v-if="team.queue.length > 0"
