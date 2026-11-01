@@ -17,7 +17,11 @@ const GH_PROGRAM: &str = "gh";
 const CLONE_TIMEOUT: Duration = Duration::from_secs(600);
 const INSPECT_TIMEOUT: Duration = Duration::from_secs(30);
 const STDERR_MAX_LINES: usize = 10;
-const GITHUB_PREFIXES: [&str; 2] = ["https://github.com/", "git@github.com:"];
+const GITHUB_PREFIXES: [&str; 3] = [
+    "https://github.com/",
+    "git@github.com:",
+    "ssh://git@github.com/",
+];
 const REPO_NOT_FOUND_MARKERS: [&str; 2] = ["Could not resolve to a Repository", "HTTP 404"];
 
 // Espelha as chaves de desktop/src/features/projects/projectIcons.ts.
@@ -117,6 +121,7 @@ pub struct FolderInfo {
     name: String,
     branch: Option<String>,
     remote_url: Option<String>,
+    github_repo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -230,11 +235,13 @@ pub async fn inspect_folder(raw: &str) -> Result<FolderInfo, ProjectError> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.clone());
+    let github_repo = remote_url.as_deref().and_then(github_repo_of);
     Ok(FolderInfo {
         path,
         name,
         branch,
         remote_url,
+        github_repo,
     })
 }
 
@@ -331,8 +338,12 @@ pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, 
                 symbol: &input.symbol,
                 description: &input.description,
                 path: &info.path,
-                origin_kind: ORIGIN_FOLDER,
-                origin_repo: None,
+                origin_kind: if info.github_repo.is_some() {
+                    ORIGIN_GITHUB
+                } else {
+                    ORIGIN_FOLDER
+                },
+                origin_repo: info.github_repo.as_deref(),
             };
             Ok(db.insert_project(&project)?)
         }
@@ -593,6 +604,18 @@ fn parse_repo_ref(raw: &str) -> Option<RepoRef> {
         owner: owner.to_string(),
         name: name.to_string(),
     })
+}
+
+// Só URLs com prefixo do GitHub viram repo: caminhos relativos (`a/b`) não podem ser tratados como owner/nome.
+fn github_repo_of(remote_url: &str) -> Option<String> {
+    let trimmed = remote_url.trim();
+    if !GITHUB_PREFIXES
+        .iter()
+        .any(|prefix| trimmed.starts_with(prefix))
+    {
+        return None;
+    }
+    parse_repo_ref(trimmed).map(|repo| repo.full_name())
 }
 
 fn is_ref_char(c: char) -> bool {
