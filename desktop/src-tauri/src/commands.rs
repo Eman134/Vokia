@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::claude::CliProblem;
 use crate::connectivity;
-use crate::db::{AgentPause, DbProblem, DbState, Project};
+use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
 use crate::permissions::PermissionError;
@@ -27,9 +27,11 @@ pub async fn send_request(
     state: State<'_, AppState>,
     text: String,
     to: Agent,
+    project_id: i64,
 ) -> Result<(), String> {
-    if let Err(error) = orchestrator::handle_request(&app, &state, &text, to).await {
-        orchestrator::report_failure(&app, &error).map_err(|emit_error| emit_error.to_string())?;
+    if let Err(error) = orchestrator::handle_request(&app, &state, &text, to, project_id).await {
+        orchestrator::report_failure(&app, project_id, &error)
+            .map_err(|emit_error| emit_error.to_string())?;
     }
     Ok(())
 }
@@ -71,9 +73,24 @@ pub fn list_projects(state: State<'_, DbState>) -> Result<Vec<Project>, String> 
 }
 
 #[tauri::command]
-pub fn select_project(state: State<'_, DbState>, id: i64) -> Result<(), String> {
+pub fn select_project(app: AppHandle, state: State<'_, DbState>, id: i64) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
-    db.select_project(id).map_err(|error| error.to_string())
+    let previous = match db.selected_project() {
+        Ok(project) => Some(project.id),
+        Err(DbError::NoSelectedProject) => None,
+        Err(error) => return Err(error.to_string()),
+    };
+    db.select_project(id).map_err(|error| error.to_string())?;
+    if let Some(previous) = previous.filter(|previous| *previous != id) {
+        // Fechar espera a mensagem em andamento do projeto anterior; a troca de seleção não deve esperar junto.
+        tauri::async_runtime::spawn(async move {
+            app.state::<AppState>()
+                .sessions
+                .close_project(previous)
+                .await;
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]

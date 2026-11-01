@@ -21,6 +21,7 @@ pub const SESSION_RECOVERY_LIMIT: u32 = 2;
 pub const SESSION_ROTATE_MESSAGES: u32 = 30;
 pub const SESSION_IDLE_LIMIT_SECS: u64 = 600;
 pub const SESSION_CLOSE_TIMEOUT_SECS: u64 = 3;
+pub const MAX_LIVE_SESSIONS: usize = 4;
 
 #[derive(Debug)]
 pub struct TaskDefinition {
@@ -101,15 +102,11 @@ pub fn long_request_text(request: &str) -> Option<String> {
     Some(format!("{head}{REQUEST_TRUNCATED}"))
 }
 
-pub fn is_live_task(definition: &TaskDefinition, request: &str) -> bool {
-    definition.participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS || is_long_request(request)
-}
-
-pub fn call_mode(live_task: bool, fresh_only: bool) -> CallMode {
-    if live_task && !fresh_only {
-        CallMode::Live
-    } else {
+pub fn call_mode(fresh_only: bool) -> CallMode {
+    if fresh_only {
         CallMode::Fresh
+    } else {
+        CallMode::Live
     }
 }
 

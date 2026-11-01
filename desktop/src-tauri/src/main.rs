@@ -10,19 +10,20 @@ mod events;
 mod orchestrator;
 mod permissions;
 mod projects;
+mod session_key;
 mod state;
 mod task;
 mod tray;
 mod window;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
-use cache::Cache;
 use db::DbState;
+use orchestrator::SessionPool;
 use permissions::PermissionBroker;
 use state::{AppState, FlowQueue};
 
@@ -34,12 +35,9 @@ fn main() {
         ))
         .manage(AppState {
             cli,
-            cache: Mutex::new(Cache::default()),
-            flow: Mutex::new(FlowQueue {
-                active: false,
-                project_id: None,
-                pending: VecDeque::new(),
-            }),
+            cache: Mutex::new(HashMap::new()),
+            flow: Mutex::new(FlowQueue::default()),
+            sessions: SessionPool::default(),
             archive: Mutex::new(Vec::new()),
             permissions: PermissionBroker::default(),
             decisions: Mutex::new(HashMap::new()),
@@ -73,6 +71,11 @@ fn main() {
             tray::setup_tray(app)
         })
         .on_window_event(window::hide_main_window_on_close)
-        .run(tauri::generate_context!())
-        .expect("falha ao iniciar o app Vokia");
+        .build(tauri::generate_context!())
+        .expect("falha ao iniciar o app Vokia")
+        .run(|app, event| {
+            if matches!(event, RunEvent::Exit) {
+                app.state::<AppState>().sessions.close_all();
+            }
+        });
 }

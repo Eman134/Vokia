@@ -1,27 +1,33 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::cache::{
     parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
     RECOVERY_CONVERSATION_ITEMS,
 };
-use crate::claude::{self, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
-use crate::db::{DbError, DbState};
+use crate::claude::{
+    self, kill_process_tree, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply,
+};
+use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{
     Agent, AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME,
 };
 use crate::permissions::PermissionGate;
 use crate::projects;
+use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
+use crate::task::MAX_LIVE_SESSIONS;
 use crate::task::{
-    agent_named, call_mode, degrades_to_fresh, is_live_task, long_request_text, parse_definition,
-    ActiveTask, CallMode, TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS,
+    agent_named, call_mode, degrades_to_fresh, long_request_text, parse_definition, ActiveTask,
+    CallMode, TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS,
     SESSION_IDLE_LIMIT_SECS, SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
 };
 
@@ -73,6 +79,9 @@ pub enum FlowError {
     ProjectFolder(String),
     DecisionsPoisoned,
     UnknownDecision,
+    SessionStore(DbError),
+    Settings(DbError),
+    SessionNotHeld(Agent),
 }
 
 impl fmt::Display for FlowError {
@@ -119,6 +128,19 @@ impl fmt::Display for FlowError {
                 "As decisões pendentes ficaram inconsistentes após uma falha anterior."
             ),
             FlowError::UnknownDecision => write!(f, "Esta decisão não existe mais."),
+            FlowError::SessionStore(error) => {
+                write!(f, "Não foi possível guardar a sessão do agente: {error}")
+            }
+            FlowError::Settings(error) => {
+                write!(f, "Não foi possível ler as configurações: {error}")
+            }
+            FlowError::SessionNotHeld(agent) => {
+                write!(
+                    f,
+                    "A sessão de {} não foi reservada para esta conversa.",
+                    agent.name()
+                )
+            }
         }
     }
 }
@@ -141,24 +163,19 @@ impl From<DbError> for FlowError {
     }
 }
 
-fn project_dir(app: &AppHandle) -> Result<(PathBuf, i64), FlowError> {
+fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
     let state = app.state::<DbState>();
     let db = state
         .require()
         .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
-    let project = match db.selected_project() {
-        Ok(project) => project,
-        Err(DbError::NoSelectedProject) => {
-            return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()))
-        }
-        Err(error) => return Err(FlowError::ProjectFolder(error.to_string())),
-    };
+    let project = db
+        .project(project_id)
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
     if project.path.trim().is_empty() {
         return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
     }
-    let dir = projects::ensure_directory(&project.path)
-        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))?;
-    Ok((dir, project.id))
+    projects::ensure_directory(&project.path)
+        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))
 }
 
 pub async fn handle_request(
@@ -166,23 +183,28 @@ pub async fn handle_request(
     state: &AppState,
     request: &str,
     recipient: Agent,
+    project_id: i64,
 ) -> Result<(), FlowError> {
     let cli = state
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
-    let (_, project_id) = project_dir(app)?;
-    emit_message_in(
+    project_dir(app, project_id)?;
+    emit_message(
         app,
-        Some(project_id),
+        project_id,
         Speaker::User,
         Speaker::from(recipient),
         request,
     )?;
-    if !start_or_enqueue(state, request, recipient)? {
+    let key = SessionKey {
+        project_id,
+        agent: recipient,
+    };
+    if !start_or_enqueue(state, key, request)? {
         return Ok(());
     }
-    run_flow(app, state, cli, request, recipient).await
+    run_flow(app, state, cli, key, request).await
 }
 
 pub async fn answer_decision(
@@ -201,72 +223,73 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    handle_request(app, state, &text, decision.agent).await
+    handle_request(app, state, &text, decision.agent, decision.project_id).await
 }
 
-fn start_or_enqueue(state: &AppState, request: &str, recipient: Agent) -> Result<bool, FlowError> {
+fn start_or_enqueue(state: &AppState, key: SessionKey, request: &str) -> Result<bool, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    if flow.active {
-        flow.pending.push_back((request.to_string(), recipient));
+    if let Some(pending) = flow.pending.get_mut(&key) {
+        pending.push_back(request.to_string());
         return Ok(false);
     }
-    flow.active = true;
+    flow.pending.insert(key, VecDeque::new());
     Ok(true)
 }
 
-fn next_job(state: &AppState) -> Result<Option<(String, Agent)>, FlowError> {
+fn next_job(state: &AppState, key: SessionKey) -> Result<Option<String>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    let next = flow.pending.pop_front();
-    flow.active = next.is_some();
+    let next = flow.pending.get_mut(&key).and_then(VecDeque::pop_front);
     if next.is_none() {
-        flow.project_id = None;
+        flow.pending.remove(&key);
     }
     Ok(next)
-}
-
-// Os eventos da troca levam o projeto de quando ela começou, mesmo que o usuário selecione outro depois.
-pub fn event_project_id(state: &AppState) -> Result<Option<i64>, FlowError> {
-    let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    Ok(flow.project_id)
-}
-
-fn begin_exchange_project(state: &AppState, project_id: i64) -> Result<(), FlowError> {
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    flow.project_id = Some(project_id);
-    Ok(())
 }
 
 async fn run_flow(
     app: &AppHandle,
     state: &AppState,
     cli: &Path,
+    key: SessionKey,
     request: &str,
-    agent: Agent,
 ) -> Result<(), FlowError> {
-    let mut job = (request.to_string(), agent);
+    let mut request = request.to_string();
     let mut outcome: Result<(), FlowError> = Ok(());
     loop {
-        if let Err(error) = run_exchange(app, state, cli, &job.0, job.1).await {
-            outcome = outcome.and(report_failure(app, &error));
+        if let Err(error) = run_exchange(app, state, cli, key, &request).await {
+            outcome = outcome.and(report_failure(app, key.project_id, &error));
         }
-        match next_job(state)? {
-            Some(next) => job = next,
+        match next_job(state, key)? {
+            Some(next) => request = next,
             None => return outcome,
         }
     }
 }
 
+// As sessões do projeto ficam reservadas até o fim da mensagem; a ordem fixa evita impasse entre fluxos.
 async fn run_exchange(
     app: &AppHandle,
     state: &AppState,
     cli: &Path,
+    key: SessionKey,
     request: &str,
-    origin: Agent,
 ) -> Result<(), FlowError> {
-    let (project_dir, project_id) = project_dir(app)?;
-    begin_exchange_project(state, project_id)?;
-    let definition = interpret_task(app, state, cli, request, origin).await?;
-    begin_task(app, state, &definition, request)?;
+    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id).await;
+    let result = exchange_turns(app, state, cli, key, request, &mut sessions).await;
+    sessions.release().await;
+    result
+}
+
+async fn exchange_turns(
+    app: &AppHandle,
+    state: &AppState,
+    cli: &Path,
+    key: SessionKey,
+    request: &str,
+    sessions: &mut ExchangeSessions,
+) -> Result<(), FlowError> {
+    let project_dir = project_dir(app, key.project_id)?;
+    let definition = interpret_task(app, state, cli, request, key).await?;
+    begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
     let exchange = Exchange {
         app,
@@ -274,18 +297,15 @@ async fn run_exchange(
         cli,
         project_dir: &project_dir,
         request,
-        origin,
+        key,
         definition: &definition,
-        live_task: is_live_task(&definition, request),
     };
-    let mut pool = SessionPool::default();
-    let result = run_turns(&exchange, &mut pool, &mut transcript).await;
-    pool.close_all().await;
+    let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {
         Ok(outcome) => *outcome,
         Err(_) => TaskOutcome::Failed,
     };
-    let closed = close_task(state, outcome, transcript);
+    let closed = close_task(state, key.project_id, outcome, transcript);
     result?;
     closed
 }
@@ -295,9 +315,10 @@ async fn interpret_task(
     state: &AppState,
     cli: &Path,
     request: &str,
-    origin: Agent,
+    key: SessionKey,
 ) -> Result<TaskDefinition, FlowError> {
-    let names = with_cache(state, |cache| Ok(cache.names().join(", ")))?;
+    let origin = key.agent;
+    let names = with_cache(state, key.project_id, |cache| Ok(cache.names().join(", ")))?;
     let names = if names.is_empty() {
         NO_NAMES.to_string()
     } else {
@@ -315,10 +336,11 @@ async fn interpret_task(
 fn begin_task(
     app: &AppHandle,
     state: &AppState,
+    project_id: i64,
     definition: &TaskDefinition,
     request: &str,
 ) -> Result<(), FlowError> {
-    let archived = with_cache(state, |cache| {
+    let archived = with_cache(state, project_id, |cache| {
         let archived = if definition.nova_tarefa {
             cache.archive()
         } else {
@@ -341,10 +363,11 @@ fn begin_task(
 
 fn close_task(
     state: &AppState,
+    project_id: i64,
     outcome: TaskOutcome,
     transcript: Vec<String>,
 ) -> Result<(), FlowError> {
-    with_cache(state, |cache| {
+    with_cache(state, project_id, |cache| {
         cache.finish_task(outcome);
         cache.push_conversation(transcript);
         Ok(())
@@ -358,30 +381,33 @@ struct Exchange<'a> {
     cli: &'a Path,
     project_dir: &'a Path,
     request: &'a str,
-    origin: Agent,
+    key: SessionKey,
     definition: &'a TaskDefinition,
-    live_task: bool,
 }
 
 async fn run_turns(
     exchange: &Exchange<'_>,
-    pool: &mut SessionPool,
+    sessions: &mut ExchangeSessions,
     transcript: &mut Vec<String>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
         app,
         state,
         request,
-        origin,
+        key,
         definition,
         ..
     } = *exchange;
+    let SessionKey {
+        project_id,
+        agent: origin,
+    } = key;
     let mut turn = Turn::first(definition, origin, request);
     let mut loop_guard = LoopGuard::default();
     let mut stalled = 0;
     loop {
         let instruction = turn.instruction();
-        let prompts = with_cache(state, |cache| {
+        let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,
                 definition,
@@ -389,7 +415,7 @@ async fn run_turns(
                 &instruction,
             ))
         })?;
-        let reply = ask_step(exchange, pool, turn.speaker, &prompts).await?;
+        let reply = ask_step(exchange, sessions, turn.speaker, &prompts).await?;
         if let Some(parsed) = parse_decision(&reply) {
             return raise_decision(exchange, transcript, &turn, parsed);
         }
@@ -398,27 +424,29 @@ async fn run_turns(
             delegation,
             updates,
         } = parse_reply(&reply, turn.speaker);
-        let applied = with_cache(state, |cache| Ok(cache.apply_reply(turn.speaker, updates)))?;
+        let applied = with_cache(state, project_id, |cache| {
+            Ok(cache.apply_reply(turn.speaker, updates))
+        })?;
         let delegation = delegation.filter(|_| !definition.alternate);
         if !applied.rejected.is_empty() {
             if !visible.is_empty() {
                 let to = next_turn(definition, &turn, &visible, None)
                     .map_or(Speaker::User, |next| Speaker::from(next.speaker));
-                emit_message(app, Speaker::from(turn.speaker), to, &visible)?;
+                emit_message(app, project_id, Speaker::from(turn.speaker), to, &visible)?;
             }
             stalled += 1;
             if stalled == STALL_LIMIT {
-                stop_with_error(app, stall_message())?;
+                stop_with_error(app, project_id, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
-            pool.review(turn.speaker, stalled, 0).await;
+            sessions.review(turn.speaker, stalled, 0)?.await;
             turn.rejection = Some(applied.rejected.join("; "));
             continue;
         }
 
         let progressed = !applied.accepted.is_empty();
         let feed = feed_text(&visible, &applied.accepted);
-        let finished = with_cache(state, |cache| {
+        let finished = with_cache(state, project_id, |cache| {
             Ok(definition
                 .stop
                 .as_ref()
@@ -426,11 +454,18 @@ async fn run_turns(
         })?;
         if finished {
             if let Some(text) = &feed {
-                say(app, transcript, turn.speaker, Speaker::User, text)?;
+                say(
+                    app,
+                    project_id,
+                    transcript,
+                    turn.speaker,
+                    Speaker::User,
+                    text,
+                )?;
             }
-            emit_state(app, turn.speaker, AgentState::Idle)?;
+            emit_state(app, project_id, turn.speaker, AgentState::Idle)?;
             let message = format!("Tarefa concluída: {}.", definition.objetivo);
-            say(app, transcript, origin, Speaker::User, &message)?;
+            say(app, project_id, transcript, origin, Speaker::User, &message)?;
             return Ok(TaskOutcome::Finished);
         }
 
@@ -439,10 +474,10 @@ async fn run_turns(
         } else if definition.alternate || delegation.is_some() {
             stalled += 1;
             if stalled == STALL_LIMIT {
-                stop_with_error(app, stall_message())?;
+                stop_with_error(app, project_id, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
-            pool.review(turn.speaker, stalled, 0).await;
+            sessions.review(turn.speaker, stalled, 0)?.await;
         }
 
         let next = next_turn(
@@ -455,11 +490,12 @@ async fn run_turns(
             .as_ref()
             .map_or(Speaker::User, |next| Speaker::from(next.speaker));
         if let Some(text) = &feed {
-            say(app, transcript, turn.speaker, to, text)?;
+            say(app, project_id, transcript, turn.speaker, to, text)?;
         }
         if let Some((helper, helper_request)) = &delegation {
             say(
                 app,
+                project_id,
                 transcript,
                 turn.speaker,
                 Speaker::from(*helper),
@@ -471,15 +507,15 @@ async fn run_turns(
         } else {
             AgentState::Idle
         };
-        emit_state(app, turn.speaker, speaker_state)?;
+        emit_state(app, project_id, turn.speaker, speaker_state)?;
         match next {
             Some(next) => {
                 let repeats = loop_guard.register(next.speaker, &next.received);
                 if repeats >= LOOP_REPEAT_LIMIT {
-                    stop_with_error(app, LOOP_MESSAGE.to_string())?;
+                    stop_with_error(app, project_id, LOOP_MESSAGE.to_string())?;
                     return Ok(TaskOutcome::Stalled);
                 }
-                pool.review(next.speaker, 0, repeats).await;
+                sessions.review(next.speaker, 0, repeats)?.await;
                 turn = next;
             }
             None => return Ok(TaskOutcome::Finished),
@@ -498,8 +534,10 @@ fn raise_decision(
         app,
         state,
         request,
+        key,
         ..
     } = *exchange;
+    let project_id = key.project_id;
     let ParsedDecision {
         kind,
         title,
@@ -510,7 +548,7 @@ fn raise_decision(
     let agent = turn.speaker;
     let visible = parse_reply(&visible, agent).visible;
     if !visible.is_empty() {
-        say(app, transcript, agent, Speaker::User, &visible)?;
+        say(app, project_id, transcript, agent, Speaker::User, &visible)?;
     }
     let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
     state
@@ -521,6 +559,7 @@ fn raise_decision(
             id,
             PendingDecision {
                 agent,
+                project_id,
                 title: title.clone(),
                 request: request.to_string(),
             },
@@ -534,13 +573,13 @@ fn raise_decision(
             title,
             detail,
             options,
-            project_id: event_project_id(state)?,
+            project_id: Some(project_id),
         },
     )?;
     for requester in &turn.requesters {
-        emit_state(app, *requester, AgentState::Idle)?;
+        emit_state(app, project_id, *requester, AgentState::Idle)?;
     }
-    emit_state(app, agent, AgentState::Waiting)?;
+    emit_state(app, project_id, agent, AgentState::Waiting)?;
     Ok(TaskOutcome::Finished)
 }
 
@@ -627,22 +666,24 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
 
 fn say(
     app: &AppHandle,
+    project_id: i64,
     transcript: &mut Vec<String>,
     from: Agent,
     to: Speaker,
     text: &str,
 ) -> Result<(), FlowError> {
-    emit_message(app, Speaker::from(from), to, text)?;
+    emit_message(app, project_id, Speaker::from(from), to, text)?;
     transcript.push(format!("{}: {text}", from.name()));
     Ok(())
 }
 
 fn with_cache<T>(
     state: &AppState,
+    project_id: i64,
     action: impl FnOnce(&mut Cache) -> Result<T, String>,
 ) -> Result<T, FlowError> {
-    let mut cache = state.cache.lock().map_err(|_| FlowError::CachePoisoned)?;
-    action(&mut cache).map_err(FlowError::Cache)
+    let mut caches = state.cache.lock().map_err(|_| FlowError::CachePoisoned)?;
+    action(caches.entry(project_id).or_default()).map_err(FlowError::Cache)
 }
 
 struct StepPrompts {
@@ -802,54 +843,110 @@ fn stall_message() -> String {
     format!("A tarefa parou: o estado não avançou em {STALL_LIMIT} turnos seguidos.")
 }
 
-pub fn report_failure(app: &AppHandle, error: &FlowError) -> Result<(), FlowError> {
-    stop_with_error(app, error.to_string())
+pub fn report_failure(
+    app: &AppHandle,
+    project_id: i64,
+    error: &FlowError,
+) -> Result<(), FlowError> {
+    stop_with_error(app, project_id, error.to_string())
 }
 
-fn stop_with_error(app: &AppHandle, message: String) -> Result<(), FlowError> {
+fn stop_with_error(app: &AppHandle, project_id: i64, message: String) -> Result<(), FlowError> {
     emit(app, VokiaEvent::Error { message })?;
-    emit_state(app, Agent::Iara, AgentState::Idle)?;
-    emit_state(app, Agent::Davi, AgentState::Idle)
+    emit_state(app, project_id, Agent::Iara, AgentState::Idle)?;
+    emit_state(app, project_id, Agent::Davi, AgentState::Idle)
 }
 
 async fn ask_step(
     exchange: &Exchange<'_>,
-    pool: &mut SessionPool,
+    sessions: &mut ExchangeSessions,
     agent: Agent,
     prompts: &StepPrompts,
 ) -> Result<String, FlowError> {
-    emit_state(exchange.app, agent, AgentState::Thinking)?;
+    let Exchange {
+        app,
+        state,
+        cli,
+        project_dir,
+        key,
+        ..
+    } = *exchange;
+    emit_state(app, key.project_id, agent, AgentState::Thinking)?;
     let agent_role = role(agent);
+    let first = sessions.opened.insert(agent);
+    let held = sessions.held(agent)?;
+    if first {
+        held.guard.begin_exchange();
+    }
+    if held.guard.live.is_none() {
+        state.sessions.make_room(&held.slot).await;
+    }
+    let grant_per_session = grants_per_session(app)?;
+    if !grant_per_session {
+        held.guard.forget_grants();
+    }
+    let granted = Arc::clone(&held.guard.granted);
     let gate = PermissionGate {
-        app: exchange.app,
-        broker: &exchange.state.permissions,
+        app,
+        broker: &state.permissions,
         agent,
+        project_id: key.project_id,
+        granted: &granted,
+        grant_per_session,
     };
-    let live = match call_mode(exchange.live_task, pool.is_fresh_only(agent)) {
+    let store = SessionStore {
+        app,
+        key: SessionKey {
+            project_id: key.project_id,
+            agent,
+        },
+    };
+    let live = match call_mode(held.guard.fresh_only) {
         CallMode::Live => {
-            pool.live_reply(
-                exchange.cli,
-                exchange.project_dir,
-                gate,
-                &agent_role,
-                prompts,
-            )
-            .await?
+            held.guard
+                .reply(cli, project_dir, gate, &store, &agent_role, prompts, first)
+                .await?
         }
         CallMode::Fresh => None,
     };
     let reply = match live {
         Some(reply) => reply,
-        None => fresh_reply(exchange, gate, &agent_role, &prompts.opening).await?,
+        None => {
+            // Sem sessão viva não há onde acumular aprovações: cada comando pergunta de novo.
+            let gate = PermissionGate {
+                grant_per_session: false,
+                ..gate
+            };
+            fresh_reply(
+                exchange,
+                gate,
+                &held.slot.pid,
+                &agent_role,
+                &prompts.opening,
+            )
+            .await?
+        }
     };
-    report_limits(exchange.app, reply.limits)?;
+    report_limits(app, reply.limits)?;
     Ok(reply.text)
+}
+
+fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(false);
+    };
+    let settings = db.load_settings().map_err(FlowError::Settings)?;
+    Ok(settings
+        .get(SETTING_PERMISSION_GRANT)
+        .is_some_and(|grant| grant == GRANT_SESSION))
 }
 
 // Contexto novo a cada chamada, mas pela sessão viva: só ela tem canal para o usuário decidir comandos fora da allowlist.
 async fn fresh_reply(
     exchange: &Exchange<'_>,
     gate: PermissionGate<'_>,
+    pid: &AtomicU32,
     role: &str,
     message: &str,
 ) -> Result<Reply, ClaudeError> {
@@ -859,50 +956,235 @@ async fn fresh_reply(
         Access::Project(exchange.project_dir),
         None,
     )?;
+    pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
     let reply = live.send(message, |request| gate.decide(request)).await;
     live.close(SESSION_CLOSE_GRACE).await;
+    pid.store(NO_PID, Ordering::SeqCst);
     reply
 }
 
-#[derive(Default)]
-struct SessionPool {
-    agents: HashMap<Agent, AgentSession>,
+const NO_PID: u32 = 0;
+
+// `closing` e `pid` ficam fora do lock da sessão: o fechamento pode ser marcado e o processo encerrado com uma mensagem em andamento.
+struct SessionSlot {
+    closing: AtomicBool,
+    pid: Arc<AtomicU32>,
+    session: Arc<Mutex<AgentSession>>,
 }
 
-impl SessionPool {
-    fn is_fresh_only(&self, agent: Agent) -> bool {
-        self.agents
-            .get(&agent)
-            .is_some_and(|session| session.fresh_only)
-    }
-
-    async fn live_reply(
-        &mut self,
-        cli: &Path,
-        project_dir: &Path,
-        gate: PermissionGate<'_>,
-        role: &str,
-        prompts: &StepPrompts,
-    ) -> Result<Option<Reply>, FlowError> {
-        self.agents
-            .entry(gate.agent)
-            .or_default()
-            .reply(cli, project_dir, gate, role, prompts)
-            .await
-    }
-
-    async fn review(&mut self, agent: Agent, stalls: u32, repeats: u32) {
-        let Some(session) = self.agents.get_mut(&agent) else {
-            return;
+impl SessionSlot {
+    fn new() -> Self {
+        let pid = Arc::new(AtomicU32::new(NO_PID));
+        let session = AgentSession {
+            pid: Arc::clone(&pid),
+            ..AgentSession::default()
         };
-        if degrades_to_fresh(stalls, repeats, session.recoveries) {
-            session.degrade().await;
+        Self {
+            closing: AtomicBool::new(false),
+            pid,
+            session: Arc::new(Mutex::new(session)),
         }
     }
 
-    async fn close_all(self) {
-        for mut session in self.agents.into_values() {
-            session.close_live().await;
+    fn is_live(&self) -> bool {
+        self.pid.load(Ordering::SeqCst) != NO_PID
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SessionPool {
+    slots: StdMutex<HashMap<SessionKey, Arc<SessionSlot>>>,
+}
+
+impl SessionPool {
+    fn slot(&self, key: SessionKey) -> Arc<SessionSlot> {
+        Arc::clone(
+            self.lock()
+                .entry(key)
+                .or_insert_with(|| Arc::new(SessionSlot::new())),
+        )
+    }
+
+    // O mapa só recebe inserções e remoções simples; um lock envenenado não deixa estado pela metade.
+    fn lock(&self) -> MutexGuard<'_, HashMap<SessionKey, Arc<SessionSlot>>> {
+        self.slots.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn matching(&self, belongs: impl Fn(&SessionKey) -> bool) -> Vec<Arc<SessionSlot>> {
+        self.lock()
+            .iter()
+            .filter(|(key, _)| belongs(key))
+            .map(|(_, slot)| Arc::clone(slot))
+            .collect()
+    }
+
+    // A mensagem em andamento termina e quem a roda fecha a sessão (ExchangeSessions::release);
+    // se nenhuma roda, o lock livre fecha aqui. A marca nunca reabre a sessão.
+    pub(crate) async fn close_project(&self, project_id: i64) {
+        end_slots(self.matching(|key| key.project_id == project_id)).await;
+    }
+
+    // Gancho da remoção do agente: a Etapa 50A ainda não existe para chamá-lo.
+    #[allow(dead_code)]
+    pub(crate) async fn close_agent(&self, db: &Db, agent: Agent) -> Result<(), DbError> {
+        let removed: Vec<Arc<SessionSlot>> = {
+            let mut slots = self.lock();
+            let keys: Vec<SessionKey> = slots
+                .keys()
+                .filter(|key| key.agent == agent)
+                .copied()
+                .collect();
+            keys.iter().filter_map(|key| slots.remove(key)).collect()
+        };
+        end_slots(removed).await;
+        db.clear_agent_sessions(agent)
+    }
+
+    // Na saída do app o processo é encerrado pelo pid, sem esperar o lock de um passo em andamento.
+    pub(crate) fn close_all(&self) {
+        for slot in self.matching(|_| true) {
+            let pid = slot.pid.swap(NO_PID, Ordering::SeqCst);
+            if pid != NO_PID {
+                kill_process_tree(pid);
+            }
+        }
+    }
+
+    // Abre espaço para um novo processo fechando a sessão ociosa menos recente; sessões em uso (lock tomado) ficam.
+    async fn make_room(&self, requester: &Arc<SessionSlot>) {
+        loop {
+            let live: Vec<Arc<SessionSlot>> = self
+                .matching(|_| true)
+                .into_iter()
+                .filter(|slot| !Arc::ptr_eq(slot, requester) && slot.is_live())
+                .collect();
+            if live.len() < MAX_LIVE_SESSIONS {
+                return;
+            }
+            let mut oldest: Option<OwnedMutexGuard<AgentSession>> = None;
+            for slot in &live {
+                let Ok(guard) = Arc::clone(&slot.session).try_lock_owned() else {
+                    continue;
+                };
+                if oldest
+                    .as_ref()
+                    .is_none_or(|current| guard.last_used < current.last_used)
+                {
+                    oldest = Some(guard);
+                }
+            }
+            let Some(mut idle) = oldest else {
+                return;
+            };
+            idle.end().await;
+        }
+    }
+}
+
+async fn end_slots(slots: Vec<Arc<SessionSlot>>) {
+    for slot in &slots {
+        slot.closing.store(true, Ordering::SeqCst);
+    }
+    for slot in slots {
+        let mut session = slot.session.lock().await;
+        if slot.closing.swap(false, Ordering::SeqCst) {
+            session.end().await;
+        }
+    }
+}
+
+struct Held {
+    slot: Arc<SessionSlot>,
+    guard: OwnedMutexGuard<AgentSession>,
+}
+
+struct ExchangeSessions {
+    held: Vec<(Agent, Held)>,
+    opened: HashSet<Agent>,
+}
+
+impl ExchangeSessions {
+    async fn acquire(pool: &SessionPool, project_id: i64) -> Self {
+        let mut held = Vec::new();
+        for agent in Agent::ALL {
+            let slot = pool.slot(SessionKey { project_id, agent });
+            let guard = Arc::clone(&slot.session).lock_owned().await;
+            held.push((agent, Held { slot, guard }));
+        }
+        Self {
+            held,
+            opened: HashSet::new(),
+        }
+    }
+
+    fn held(&mut self, agent: Agent) -> Result<&mut Held, FlowError> {
+        self.held
+            .iter_mut()
+            .find(|(held_agent, _)| *held_agent == agent)
+            .map(|(_, held)| held)
+            .ok_or(FlowError::SessionNotHeld(agent))
+    }
+
+    fn review(
+        &mut self,
+        agent: Agent,
+        stalls: u32,
+        repeats: u32,
+    ) -> Result<impl std::future::Future<Output = ()> + '_, FlowError> {
+        let session = &mut self.held(agent)?.guard;
+        Ok(async move {
+            if degrades_to_fresh(stalls, repeats, session.recoveries) {
+                session.degrade().await;
+            }
+        })
+    }
+
+    // Sessão marcada para fechar durante a mensagem fecha aqui, antes de qualquer outra mensagem usá-la.
+    async fn release(self) {
+        for (_, mut held) in self.held {
+            if held.slot.closing.swap(false, Ordering::SeqCst) {
+                held.guard.end().await;
+            }
+        }
+    }
+}
+
+struct SessionStore<'a> {
+    app: &'a AppHandle,
+    key: SessionKey,
+}
+
+impl SessionStore<'_> {
+    fn load(&self) -> Result<Option<String>, FlowError> {
+        let state = self.app.state::<DbState>();
+        let Some(db) = state.db() else {
+            return Ok(None);
+        };
+        db.agent_session(&self.key).map_err(FlowError::SessionStore)
+    }
+
+    fn save(&self, session_id: &str) -> Result<(), FlowError> {
+        self.write(|db| db.save_agent_session(&self.key, session_id))
+    }
+
+    fn clear(&self) -> Result<(), FlowError> {
+        self.write(|db| db.clear_agent_session(&self.key))
+    }
+
+    // Falha ao gravar não derruba a resposta: a sessão segue viva e o usuário é avisado.
+    fn write(&self, action: impl FnOnce(&Db) -> Result<(), DbError>) -> Result<(), FlowError> {
+        let state = self.app.state::<DbState>();
+        let Some(db) = state.db() else {
+            return Ok(());
+        };
+        match action(db) {
+            Ok(()) => Ok(()),
+            Err(error) => emit(
+                self.app,
+                VokiaEvent::Error {
+                    message: FlowError::SessionStore(error).to_string(),
+                },
+            ),
         }
     }
 }
@@ -923,50 +1205,96 @@ struct AgentSession {
     recoveries: u32,
     fresh_only: bool,
     last_used: Option<Instant>,
+    granted: Arc<StdMutex<HashSet<String>>>,
+    pid: Arc<AtomicU32>,
 }
 
 impl AgentSession {
+    // A degradação e as falhas contam por mensagem; a sessão, ao contrário do pool antigo, atravessa várias.
+    fn begin_exchange(&mut self) {
+        self.recoveries = 0;
+        self.fresh_only = false;
+    }
+
+    fn forget_grants(&self) {
+        if let Ok(mut granted) = self.granted.lock() {
+            granted.clear();
+        }
+    }
+
+    // Fecha só o processo: o session_id fica para o próximo --resume.
+    async fn end(&mut self) {
+        self.close_live().await;
+        self.forget_grants();
+    }
+
+    #[allow(clippy::too_many_arguments)]
     async fn reply(
         &mut self,
         cli: &Path,
         project_dir: &Path,
         gate: PermissionGate<'_>,
+        store: &SessionStore<'_>,
         role: &str,
         prompts: &StepPrompts,
+        first: bool,
     ) -> Result<Option<Reply>, FlowError> {
-        let mut next = self.first_attempt().await;
+        let mut next = self.first_attempt(store).await?;
         while let Some(attempt) = next {
             match self
-                .attempt(cli, project_dir, gate, role, attempt, prompts)
+                .attempt(cli, project_dir, gate, role, attempt, prompts, first)
                 .await
             {
-                Ok(reply) => return Ok(Some(reply)),
-                Err(error) if error.is_session_loss() => next = self.after_loss(attempt),
+                Ok(reply) => {
+                    if let Some(session_id) = &self.session_id {
+                        store.save(session_id)?;
+                    }
+                    return Ok(Some(reply));
+                }
+                Err(error) if error.is_session_loss() => {
+                    if attempt == Attempt::Resume {
+                        self.session_id = None;
+                        store.clear()?;
+                    }
+                    next = self.after_loss(attempt);
+                }
                 Err(error) => return Err(error.into()),
             }
         }
         Ok(None)
     }
 
-    async fn first_attempt(&mut self) -> Option<Attempt> {
+    async fn first_attempt(
+        &mut self,
+        store: &SessionStore<'_>,
+    ) -> Result<Option<Attempt>, FlowError> {
         if self.live.is_none() {
-            return Some(Attempt::Open);
+            if self.session_id.is_none() {
+                self.session_id = store.load()?;
+            }
+            let attempt = if self.session_id.is_some() {
+                Attempt::Resume
+            } else {
+                Attempt::Open
+            };
+            return Ok(Some(attempt));
         }
         if self.messages >= SESSION_ROTATE_MESSAGES {
             self.close_live().await;
             self.session_id = None;
-            return Some(Attempt::Open);
+            return Ok(Some(Attempt::Open));
         }
         if self
             .last_used
             .is_some_and(|used| used.elapsed() >= SESSION_IDLE_LIMIT)
         {
             self.close_live().await;
-            return self.after_loss(Attempt::Reuse);
+            return Ok(self.after_loss(Attempt::Reuse));
         }
-        Some(Attempt::Reuse)
+        Ok(Some(Attempt::Reuse))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn attempt(
         &mut self,
         cli: &Path,
@@ -975,9 +1303,11 @@ impl AgentSession {
         role: &str,
         attempt: Attempt,
         prompts: &StepPrompts,
+        first: bool,
     ) -> Result<Reply, ClaudeError> {
         let message = match attempt {
             Attempt::Open => &prompts.opening,
+            Attempt::Reuse | Attempt::Resume if first => &prompts.opening,
             Attempt::Reuse | Attempt::Resume => &prompts.follow_up,
             Attempt::Minimal => &prompts.minimal,
         };
@@ -986,6 +1316,7 @@ impl AgentSession {
             (_, previous) => {
                 if let Some(previous) = previous {
                     previous.close(SESSION_CLOSE_GRACE).await;
+                    self.pid.store(NO_PID, Ordering::SeqCst);
                 }
                 let resume = match attempt {
                     Attempt::Resume => self.session_id.as_deref(),
@@ -994,6 +1325,8 @@ impl AgentSession {
                 LiveSession::open(cli, role, Access::Project(project_dir), resume)?
             }
         };
+        self.pid
+            .store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
         match live.send(message, |request| gate.decide(request)).await {
             Ok(reply) => {
                 self.session_id = live.session_id().map(str::to_string);
@@ -1007,6 +1340,7 @@ impl AgentSession {
             }
             Err(error) => {
                 live.close(SESSION_CLOSE_GRACE).await;
+                self.pid.store(NO_PID, Ordering::SeqCst);
                 Err(error)
             }
         }
@@ -1039,6 +1373,7 @@ impl AgentSession {
     async fn close_live(&mut self) {
         if let Some(live) = self.live.take() {
             live.close(SESSION_CLOSE_GRACE).await;
+            self.pid.store(NO_PID, Ordering::SeqCst);
         }
     }
 }
@@ -1170,21 +1505,16 @@ fn delegation_request(line: &str, from: Agent) -> Option<(Agent, &str)> {
     (agent != from && !request.is_empty()).then_some((agent, request))
 }
 
-fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Result<(), FlowError> {
-    let project_id = event_project_id(&app.state::<AppState>())?;
-    emit_message_in(app, project_id, from, to, text)
-}
-
-fn emit_message_in(
+fn emit_message(
     app: &AppHandle,
-    project_id: Option<i64>,
+    project_id: i64,
     from: Speaker,
     to: Speaker,
     text: &str,
 ) -> Result<(), FlowError> {
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
-        db.insert_message(from, to, text, time)?;
+        db.insert_message(project_id, from, to, text, time)?;
     }
     emit(
         app,
@@ -1193,19 +1523,23 @@ fn emit_message_in(
             to,
             text: text.to_string(),
             time,
-            project_id,
+            project_id: Some(project_id),
         },
     )
 }
 
-fn emit_state(app: &AppHandle, agent: Agent, state: AgentState) -> Result<(), FlowError> {
-    let project_id = event_project_id(&app.state::<AppState>())?;
+fn emit_state(
+    app: &AppHandle,
+    project_id: i64,
+    agent: Agent,
+    state: AgentState,
+) -> Result<(), FlowError> {
     emit(
         app,
         VokiaEvent::AgentState {
             agent,
             state,
-            project_id,
+            project_id: Some(project_id),
         },
     )
 }

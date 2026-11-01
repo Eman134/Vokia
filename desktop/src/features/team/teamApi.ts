@@ -21,8 +21,8 @@ export function fetchCliProblem(): Promise<CliProblem | null> {
   return invoke<CliProblem | null>(CLI_PROBLEM_COMMAND)
 }
 
-export function sendRequest(text: string, to: Agent): Promise<void> {
-  return invoke<void>(SEND_REQUEST_COMMAND, { text, to })
+export function sendRequest(text: string, to: Agent, projectId: number): Promise<void> {
+  return invoke<void>(SEND_REQUEST_COMMAND, { text, to, projectId })
 }
 
 export function answerPermission(id: string, allow: boolean): Promise<void> {

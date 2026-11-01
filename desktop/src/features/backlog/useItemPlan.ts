@@ -2,6 +2,7 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
 import { sendRequest } from '../team/teamApi'
+import { useProjects } from '../projects/useProjects'
 import { useTeam } from '../team/useTeam'
 import type { BacklogItem, BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
@@ -47,6 +48,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const plans = ref<LinkedPlan[]>([])
   const team = useTeam()
   const backlog = useBacklog()
+  const projects = useProjects()
 
   function planOf(itemId: string): ItemPlan {
     return states.value[itemId] ?? EMPTY_PLAN
@@ -85,7 +87,10 @@ export const useItemPlan = defineStore('itemPlan', () => {
     states.value[itemId] = entry
     const tracked = states.value[itemId]
     try {
-      await sendRequest(planPrompt(item, depth), agent)
+      if (projects.selected === null) {
+        throw new Error('Nenhum projeto está selecionado.')
+      }
+      await sendRequest(planPrompt(item, depth), agent, projects.selected.id)
     } catch (error) {
       if (states.value[itemId] === tracked) {
         states.value[itemId] = tracked.cancelled ? { state: 'vazio' } : { state: 'vazio', error: String(error) }

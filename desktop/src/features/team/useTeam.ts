@@ -306,7 +306,10 @@ export const useTeam = defineStore('team', () => {
         }
         queue.value.splice(index, 1)
         try {
-          await sendRequest(head.text, head.to)
+          if (head.projectId === null) {
+            throw new Error('Nenhum projeto está selecionado.')
+          }
+          await sendRequest(head.text, head.to, head.projectId)
         } catch (error) {
           feed.value.push({ type: 'error', message: String(error) })
         }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import ThemeSwitch from '../theme/ThemeSwitch.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiProgress from '../../ui/UiProgress.vue'
@@ -6,8 +7,53 @@ import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
 import type { SettingsItem } from './configuracoesSample'
+import { fetchSettings, saveSetting } from './settingsApi'
 
-defineProps<{ item: SettingsItem }>()
+const props = defineProps<{ item: SettingsItem }>()
+
+// Espelha PERMISSION_GRANT_VALUES de src-tauri/src/db.rs.
+const PERMISSION_GRANT_KEY = 'permission_grant'
+const GRANT_CHOICES = ['session', 'once'] as const
+type GrantChoice = (typeof GRANT_CHOICES)[number]
+const DEFAULT_GRANT: GrantChoice = 'session'
+const GRANT_LABELS: Record<GrantChoice, string> = { session: 'Por sessão', once: 'Uma vez' }
+const GRANT_OPTIONS = GRANT_CHOICES.map((choice) => ({ label: GRANT_LABELS[choice], value: choice }))
+const ERROR_CLASSES = 'text-small text-danger'
+const GRANT_WRAPPER_CLASSES = 'flex flex-col items-end gap-1'
+
+const grant = ref<GrantChoice>(DEFAULT_GRANT)
+const grantError = ref<string | null>(null)
+
+function isGrantChoice(value: string | undefined): value is GrantChoice {
+  return GRANT_CHOICES.some((choice) => choice === value)
+}
+
+async function loadGrant(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[PERMISSION_GRANT_KEY]
+    if (isGrantChoice(stored)) {
+      grant.value = stored
+    }
+  } catch (error) {
+    grantError.value = `Não foi possível ler a aprovação de comandos: ${String(error)}`
+  }
+}
+
+async function chooseGrant(next: GrantChoice): Promise<void> {
+  grant.value = next
+  try {
+    await saveSetting(PERMISSION_GRANT_KEY, next)
+    grantError.value = null
+  } catch (error) {
+    grantError.value = `Não foi possível salvar a aprovação de comandos: ${String(error)}`
+  }
+}
+
+onMounted(() => {
+  if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
+    void loadGrant()
+  }
+})
 
 const ROW_CLASSES = 'flex items-center gap-3.5 border-t border-line py-3'
 const CONTROL_CLASSES = 'flex flex-none flex-wrap items-center justify-end gap-2'
@@ -85,6 +131,15 @@ function toOptions(labels: readonly string[]) {
 
     <div :class="CONTROL_CLASSES">
       <ThemeSwitch v-if="item.control.kind === 'theme'" />
+      <div v-else-if="item.control.kind === 'permission-grant'" :class="GRANT_WRAPPER_CLASSES">
+        <UiSegmented
+          :options="GRANT_OPTIONS"
+          :model-value="grant"
+          label="Aprovação de comando"
+          @update:model-value="chooseGrant"
+        />
+        <p v-if="grantError" role="alert" :class="ERROR_CLASSES">{{ grantError }}</p>
+      </div>
       <UiSwitch v-else-if="item.control.kind === 'switch'" :model-value="item.control.on" :label="item.label" disabled />
       <UiSegmented
         v-else-if="item.control.kind === 'segmented'"

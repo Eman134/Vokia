@@ -4,10 +4,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use rusqlite::{params, Connection, ErrorCode, Row};
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::events::{Agent, Speaker, VokiaEvent};
+use crate::session_key::SessionKey;
 
 pub const DB_FILE: &str = "vokia.db";
 const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
@@ -20,7 +21,16 @@ pub const ORIGIN_GITHUB: &str = "github";
 const SETTING_THEME: &str = "theme";
 // Espelha THEME_CHOICES de src/features/theme/useTheme.ts.
 const THEME_VALUES: &[&str] = &["light", "dark", "system"];
-const SETTINGS_SCHEMA: &[(&str, &[&str])] = &[(SETTING_THEME, THEME_VALUES)];
+pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
+pub const GRANT_SESSION: &str = "session";
+pub const GRANT_ONCE: &str = "once";
+const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
+const SETTINGS_SCHEMA: &[(&str, &[&str])] = &[
+    (SETTING_THEME, THEME_VALUES),
+    (SETTING_PERMISSION_GRANT, PERMISSION_GRANT_VALUES),
+];
+// Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
+const SETTING_DEFAULTS: &[(&str, &str)] = &[(SETTING_PERMISSION_GRANT, GRANT_SESSION)];
 
 // Cada item é uma migração; a versão é a posição + 1. Nunca editar um item já publicado: acrescentar outro.
 const MIGRATIONS: &[&str] = &[
@@ -71,6 +81,15 @@ const MIGRATIONS: &[&str] = &[
         approved_count INTEGER NOT NULL DEFAULT 0,
         last_approved_at INTEGER NOT NULL,
         PRIMARY KEY (project_id, tool, command)
+    );
+",
+    "
+    CREATE TABLE agent_sessions (
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        agent TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, agent)
     );
 ",
 ];
@@ -273,6 +292,19 @@ impl Db {
         })
     }
 
+    pub fn project(&self, id: i64) -> Result<Project, DbError> {
+        let conn = self.conn()?;
+        conn.query_row(
+            &format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id = ?1"),
+            [id],
+            project_from_row,
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => DbError::ProjectNotFound(id),
+            other => DbError::Sqlite(other),
+        })
+    }
+
     pub fn insert_project(&self, new: &NewProject) -> Result<Project, DbError> {
         new.validate()?;
         let path = new.path.trim();
@@ -309,6 +341,48 @@ impl Db {
             return Err(DbError::ProjectNotFound(id));
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    pub fn save_agent_session(&self, key: &SessionKey, session_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO agent_sessions(project_id, agent, session_id, updated_at) \
+             VALUES (?1, ?2, ?3, CAST(unixepoch('subsec') * 1000 AS INTEGER)) \
+             ON CONFLICT(project_id, agent) DO UPDATE SET \
+             session_id = excluded.session_id, updated_at = excluded.updated_at",
+            params![key.project_id, key.agent.name(), session_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn agent_session(&self, key: &SessionKey) -> Result<Option<String>, DbError> {
+        let conn = self.conn()?;
+        let session_id = conn
+            .query_row(
+                "SELECT session_id FROM agent_sessions WHERE project_id = ?1 AND agent = ?2",
+                params![key.project_id, key.agent.name()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(session_id)
+    }
+
+    pub fn clear_agent_session(&self, key: &SessionKey) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM agent_sessions WHERE project_id = ?1 AND agent = ?2",
+            params![key.project_id, key.agent.name()],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_agent_sessions(&self, agent: Agent) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM agent_sessions WHERE agent = ?1",
+            params![agent.name()],
+        )?;
         Ok(())
     }
 
@@ -398,6 +472,7 @@ impl Db {
 
     pub fn insert_message(
         &self,
+        project_id: i64,
         from: Speaker,
         to: Speaker,
         text: &str,
@@ -406,11 +481,11 @@ impl Db {
         let conn = self.conn()?;
         let inserted = conn.execute(
             "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at) \
-             SELECT id, ?1, ?2, ?3, ?4 FROM projects WHERE selected = 1",
-            params![from.as_str(), to.as_str(), text, time as i64],
+             SELECT id, ?2, ?3, ?4, ?5 FROM projects WHERE id = ?1",
+            params![project_id, from.as_str(), to.as_str(), text, time as i64],
         )?;
         if inserted == 0 {
-            return Err(DbError::NoSelectedProject);
+            return Err(DbError::ProjectNotFound(project_id));
         }
         Ok(())
     }
@@ -456,6 +531,11 @@ impl Db {
             if is_valid_setting(&key, &value) {
                 settings.insert(key, value);
             }
+        }
+        for (key, value) in SETTING_DEFAULTS {
+            settings
+                .entry((*key).to_string())
+                .or_insert_with(|| (*value).to_string());
         }
         Ok(settings)
     }

@@ -2,6 +2,7 @@ type SettingsAction = { label: string; variant: 'quiet' | 'danger' }
 
 type SettingsControl =
   | { kind: 'theme' }
+  | { kind: 'permission-grant' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
   | { kind: 'select'; options: readonly string[] }
@@ -246,6 +247,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       { kind: 'row', label: 'Mexer fora do worktree', control: { kind: 'switch', on: true } },
       { kind: 'row', label: 'Apagar arquivos', control: { kind: 'switch', on: true } },
       { kind: 'group', label: 'Comandos' },
+      {
+        kind: 'row',
+        label: 'Aprovação de comando',
+        hint: 'vale pela sessão do agente ou só para aquela vez',
+        control: { kind: 'permission-grant' },
+      },
       {
         kind: 'row',
         label: 'Sempre permitidos',

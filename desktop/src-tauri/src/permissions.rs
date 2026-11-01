@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -10,12 +10,12 @@ use tokio::time::timeout;
 use crate::claude::PermissionRequest;
 use crate::db::DbState;
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
-use crate::orchestrator::{event_project_id, now_millis};
-use crate::state::AppState;
+use crate::orchestrator::now_millis;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const COMMAND_FIELD: &str = "command";
 const PATH_FIELD: &str = "file_path";
+const APPROVAL_SEPARATOR: char = '\u{1f}';
 
 #[derive(Debug)]
 pub enum PermissionError {
@@ -42,25 +42,54 @@ pub struct PermissionGate<'a> {
     pub app: &'a AppHandle,
     pub broker: &'a PermissionBroker,
     pub agent: Agent,
+    pub project_id: i64,
+    pub granted: &'a Mutex<HashSet<String>>,
+    pub grant_per_session: bool,
 }
 
 impl PermissionGate<'_> {
     pub async fn decide(self, request: PermissionRequest) -> bool {
-        self.broker.request(self.app, self.agent, request).await
+        let approval = approval_key(&request);
+        if self.grant_per_session && self.is_granted(&approval) {
+            return true;
+        }
+        let allowed = self
+            .broker
+            .request(self.app, self.agent, self.project_id, request)
+            .await;
+        if allowed && self.grant_per_session {
+            self.remember(approval);
+        }
+        allowed
+    }
+
+    // Lock envenenado vale como "não aprovado": o comando volta a ser perguntado.
+    fn is_granted(&self, approval: &str) -> bool {
+        self.granted
+            .lock()
+            .is_ok_and(|granted| granted.contains(approval))
+    }
+
+    fn remember(&self, approval: String) {
+        if let Ok(mut granted) = self.granted.lock() {
+            granted.insert(approval);
+        }
     }
 }
 
 impl PermissionBroker {
     // Sem resposta no limite ou com falha ao avisar a tela, o resultado é negar.
-    async fn request(&self, app: &AppHandle, agent: Agent, request: PermissionRequest) -> bool {
+    async fn request(
+        &self,
+        app: &AppHandle,
+        agent: Agent,
+        project_id: i64,
+        request: PermissionRequest,
+    ) -> bool {
         let (sender, receiver) = oneshot::channel();
         if self.register(&request.id, sender).is_err() {
             return false;
         }
-        let Ok(project_id) = event_project_id(&app.state::<AppState>()) else {
-            self.forget(&request.id);
-            return false;
-        };
         let Ok(now) = now_millis() else {
             self.forget(&request.id);
             return false;
@@ -69,16 +98,15 @@ impl PermissionBroker {
         let db_state = app.state::<DbState>();
         let db = db_state.db();
         // Falha ao ler o contador não pode travar o pedido.
-        let approved_before = project_id
-            .zip(db)
-            .and_then(|(id, db)| db.approved_count(id, &request.tool, &command).ok())
+        let approved_before = db
+            .and_then(|db| db.approved_count(project_id, &request.tool, &command).ok())
             .unwrap_or(0);
         let event = VokiaEvent::Permission {
             id: request.id.clone(),
             agent,
             tool: request.tool.clone(),
             detail: command.clone(),
-            project_id,
+            project_id: Some(project_id),
             expires_at: now + PERMISSION_WAIT_LIMIT.as_millis() as u64,
             approved_before,
         };
@@ -94,11 +122,11 @@ impl PermissionBroker {
         };
         self.forget(&request.id);
         if outcome == PermissionOutcome::Allowed {
-            if let Some((id, db)) = project_id.zip(db) {
+            if let Some(db) = db {
                 let recorded = now_millis()
                     .map_err(|error| error.to_string())
                     .and_then(|time| {
-                        db.record_approval(id, &request.tool, &command, time)
+                        db.record_approval(project_id, &request.tool, &command, time)
                             .map_err(|error| error.to_string())
                     });
                 if let Err(message) = recorded {
@@ -111,7 +139,7 @@ impl PermissionBroker {
             EVENT_NAME,
             VokiaEvent::PermissionClosed {
                 id: request.id,
-                project_id,
+                project_id: Some(project_id),
                 outcome,
             },
         );
@@ -145,15 +173,19 @@ impl PermissionBroker {
     }
 }
 
-fn emit_agent_state(app: &AppHandle, agent: Agent, state: AgentState, project_id: Option<i64>) {
+fn emit_agent_state(app: &AppHandle, agent: Agent, state: AgentState, project_id: i64) {
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::AgentState {
             agent,
             state,
-            project_id,
+            project_id: Some(project_id),
         },
     );
+}
+
+fn approval_key(request: &PermissionRequest) -> String {
+    format!("{}{APPROVAL_SEPARATOR}{}", request.tool, detail(request))
 }
 
 fn detail(request: &PermissionRequest) -> String {

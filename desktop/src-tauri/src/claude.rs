@@ -355,6 +355,10 @@ impl LiveSession {
         self.session_id.as_deref()
     }
 
+    pub fn pid(&self) -> Option<u32> {
+        self.child.id()
+    }
+
     pub async fn send<D, F>(&mut self, message: &str, decide: D) -> Result<Reply, ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
@@ -467,6 +471,27 @@ impl LiveSession {
             let _ = self.child.kill().await;
         }
     }
+}
+
+// Encerra o processo e seus filhos (as ferramentas que o claude lança) sem depender do drop do LiveSession.
+pub fn kill_process_tree(pid: u32) {
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new("taskkill");
+        command
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW);
+        command
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut command = std::process::Command::new("kill");
+        command.args(["-KILL", &pid.to_string()]);
+        command
+    };
+    // Falha quando o processo já saiu, que é o resultado desejado.
+    let _ = command.output();
 }
 
 // Sem leitor contínuo o stderr cheio travaria o processo no meio de uma resposta.
