@@ -1251,7 +1251,8 @@ impl AgentSession {
                     }
                     return Ok(Some(reply));
                 }
-                Err(error) if error.is_session_loss() => {
+                // Morte no meio da resposta de um processo já em uso: reenviar poderia repetir um comando; o erro vai ao feed.
+                Err(error) if error.is_session_loss() && attempt != Attempt::Reuse => {
                     if attempt == Attempt::Resume {
                         self.session_id = None;
                         store.clear()?;
