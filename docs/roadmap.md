@@ -324,12 +324,13 @@ Convenções para todas as etapas:
 | 51B | Etapa 51B - Persistência SQLite: backlog e planos | Implementador | a definir | Intermediário | 51A, 24, 25 | ⏳ Pendente |
 | 54 | Etapa 54 - Rodar card do backlog | Implementador | a definir | Intermediário | 51B, 52, 33 | ⏳ Pendente |
 
+- **Decisões das perguntas (aprovadas pelo usuário em 2026-10-31):** Bash com lista de bloqueio e MAX_TURNS 40 (52); três níveis, sem "perguntar antes" (53); histórico com conversas entre agentes (51A); agente do plano roda o card e a Iara coordena (54).
 - **Origem:** decisão do usuário de 2026-10-31: (a) o usuário escolhe o nível de permissão; o padrão é tudo liberado dentro da pasta do projeto selecionado; (b) persistência em SQLite (backlog, planos e histórico). Não há requisito em `backlog/`; os critérios de pronto estão nas notas das etapas.
-- **Etapa 51A.** Banco SQLite no diretório de dados do app, migrações versionadas, tabela de projetos (nome e pasta, um projeto selecionado) e histórico das conversas (feed). Base de 51B e da pasta usada pela 52. *Arquivos prováveis:* `desktop/src-tauri/src/db.rs` (novo), `main.rs`, `Cargo.toml`, serviço e store no front.
-- **Etapa 52.** Os agentes deixam de rodar com `--tools ""` (`claude.rs:383-384`): processo com `current_dir` na pasta do projeto selecionado e ferramentas liberadas nessa pasta (permissão padrão). Seleção da pasta pelo usuário quando não houver projeto. *Arquivos prováveis:* `claude.rs`, `orchestrator.rs`, `task.rs`.
-- **Etapa 53.** Níveis escolhidos pelo usuário e salvos no projeto (51A); o padrão é o da 52. Cada nível vira flags da CLI. Nível que pede aprovação por comando depende da origem das decisões (S7) e fica fora até essa decisão.
+- **Etapa 51A.** Banco SQLite no diretório de dados do app, migrações versionadas, tabela de projetos (nome e pasta, um projeto selecionado) e histórico das conversas (feed, incluindo as conversas entre agentes, por decisão do usuário). Base de 51B e da pasta usada pela 52. *Arquivos prováveis:* `desktop/src-tauri/src/db.rs` (novo), `main.rs`, `Cargo.toml`, serviço e store no front.
+- **Etapa 52.** Os agentes deixam de rodar com `--tools ""` (`claude.rs:383-384`): processo com `current_dir` na pasta do projeto selecionado e ferramentas liberadas nessa pasta (permissão padrão). Bash liberado com lista de bloqueio para comandos destrutivos ou que alterem fora da pasta (a CLI não restringe Bash à pasta; lista inicial na nota, detalhada no plano). `MAX_TURNS` padrão 40 por pedido (hoje 3), configurável depois. Seleção da pasta pelo usuário quando não houver projeto. *Arquivos prováveis:* `claude.rs`, `orchestrator.rs`, `task.rs`.
+- **Etapa 53.** Níveis escolhidos pelo usuário e salvos no projeto (51A); o padrão é o da 52. Níveis aprovados: liberado (padrão da 52), edição (sem Bash) e leitura; cada nível vira flags da CLI. O nível "perguntar antes" fica fora da S13 e depende da S7.
 - **Etapa 51B.** Tabelas de itens do backlog, micro-tarefas e planos; `useBacklog` (24) e `useItemPlan` (25) passam a carregar e salvar pelo serviço.
-- **Etapa 54.** Ação "Rodar" no card/modal: manda o item com o plano vinculado ao agente responsável e move o card (In progress ao começar, In review ao terminar) pelos eventos do orquestrador. *Não fazer:* execução paralela de vários cards (fila do front da 13 vale) e worktrees.
+- **Etapa 54.** Ação "Rodar" no card/modal: manda o item com o plano vinculado ao agente do plano (executor padrão; a Iara coordena) e move o card (In progress ao começar, In review ao terminar) pelos eventos do orquestrador. *Não fazer:* execução paralela de vários cards (fila do front da 13 vale) e worktrees.
 - *Verificação:* contrato com Rust (`cargo fmt --check`, `cargo clippy -- -D warnings`) e E2E por etapa; a 52 e a 54 validam num projeto de teste descartável, nunca no repositório do Vokia.
 
 Cada etapa de implementação gera, na sequência, um pedido ao Tester (E2E) e outro ao Reviewer, com os prompts da seção 5.
@@ -355,6 +356,51 @@ São sequenciais, porque tocam o mesmo arquivo ou dependem do estado:
 - 17 → 22: o fluxo substitui o botão de decisões.
 - 26 e 27 sobre `tray.rs` e `window.rs`: uma de cada vez.
 - O Tester e o Reviewer de uma etapa rodam depois do PRONTO do Implementador.
+
+## Ordem de implementação (marcos e ondas)
+
+Acrescentada em 2026-10-31 a pedido do usuário. Não renumera nada: ordena as etapas existentes até dois marcos. As seções 2 e 4 continuam valendo para o que não está aqui. Estados atuais: Plano Roadmap.
+
+### Marco (a) · O Vokia desenvolve o Vokia
+**Critério de pronto:** abrir o Vokia de dev (ícone azul, Plano - Icone dev e release), selecionar a pasta do repositório do Vokia, criar um card com plano vinculado, apertar Rodar; o agente do plano lê e edita arquivos e roda comandos na pasta (Bash com lista de bloqueio), o card vai a In progress e depois a In review, e ao fechar e reabrir o app projeto, histórico, card e plano continuam. Validado primeiro num projeto de teste descartável, só depois no repositório do Vokia.
+**Entram (críticas):** 14 e Fila de pedidos (fechar), 23, 24, 25, 33, 51A, 52, 51B, 54; mais o ícone dev (pequeno, evita confundir as duas instâncias).
+**Ficam para depois:** níveis de permissão (53; o padrão "liberado" da 52 basta), tudo o que não aparece no marco 1.0.0.
+
+### Marco 1.0.0 · MVP de desenvolvimento
+**Critério de pronto (atualizado em 2026-10-31):** marco (a) mais: o usuário escolhe o nível de permissão (53); pede algo novo e a Iara faz a triagem e o vira card (15, 16); o usuário revê o que os agentes mudaram (41); cria agentes pela interface e eles entram no time (50A a 50C); os momentos do time (20) e os limites do plano (21) aparecem; a permissão é fixa por nível (sem a origem das decisões, S7, decidido pelo usuário); `cargo fmt --check`, `cargo clippy -- -D warnings`, `npm run typecheck`, `npm run build` e todos os E2E passando (os E2E ficam fora do git por enquanto, decisão do usuário; este roadmap não muda isso); versão 1.0.0 em `package.json`/`Cargo.toml`/`tauri.conf.json` e instalador NSIS pelo `release.yml` com atualização automática funcionando.
+**Só 1.0.0 (além do marco a):** 41, 15, 16, 50A, 50B, 50C, 53, 20, 21, 40. Pré-requisitos que entram junto, pelas dependências das notas: 48A, 48B, 48C e 48D (50A depende de 48A-1 e 48B-2; 50B de 48B e 48C) e 36 (50C). Marco (a) continua com 14 e a Fila de pedidos como críticas.
+**Recomendado, não bloqueante:** S7, origem das decisões (ver "Mapear para a S7" abaixo); se mapeada antes do 1.0.0 entram 17 e 18 e o nível "perguntar antes".
+
+### Ondas
+Cada onda agrupa etapas em arquivos diferentes (rodam em paralelo); uma onda só começa quando as dependências da anterior estão commitadas. ⭐ = crítica para o marco (a); sem ⭐ só entra no 1.0.0.
+
+| Onda | Etapas | Arquivos principais | Dependências reais |
+| --- | --- | --- | --- |
+| 0 · Fechar o em curso | ⭐ 14 (validada), ⭐ Fila de pedidos (depois da 14: ambas em `ActionBar.vue`/`useTeam.ts`), ⭐ 23 (em teste), 20 e 40 (em revisão/teste), ⭐ ícone dev | `features/team/*`; `features/backlog/`; `package.json`+`tauri.dev.conf.json` | 13 concluída |
+| 1 | ⭐ 24 (modal), ⭐ 51A (SQLite base, projeto, histórico; inclui conversas entre agentes) | `features/backlog/`; `src-tauri/src/db.rs`, `main.rs`, `orchestrator.rs`, `projects/` | 23; 6R. 51A mexe em `useTeam.ts` só depois da Fila |
+| 2 | ⭐ 25 (plano do item), ⭐ 52 (agentes com ferramentas + seleção de pasta + `MAX_TURNS` 40) | `features/backlog/`; `claude.rs`, `orchestrator.rs`, `task.rs` | 24; 51A |
+| 3 | ⭐ 33 (página Backlog), ⭐ 51B (SQLite de backlog e planos) | `features/backlog/BacklogPage.vue`, `pages.ts`; `db.rs`, `useBacklog.ts`, `useItemPlan.ts` | 33: 23, 24, 25; 51B: 51A, 24, 25. 51B não pode gravar os dados de exemplo da 33 |
+| 4 · ⭐ Fecha o marco (a) | ⭐ 54 (rodar card) | modal/card, `useTeam.ts`, `orchestrator.rs` | 51B, 52, 33 |
+| 5 · Só 1.0.0 | 48A-1 (Rust, `orchestrator/`) com 48B-1 → 48B-2 (front, `agents.ts`/stores; remove `useTeam.ts`), 41 (página Diff), 36 (página Agentes) | `src-tauri/src/orchestrator/`; `features/team/`; `features/diff/`; `features/agents/` (41 e 36 só acrescentam uma linha cada em `pages.ts`: uma por vez) | 48A-1: 6R-2; 48B: 6R-2, 31; 41 e 36: 31, 2, 5, 6. Entra depois do marco (a): 48 re-ancora as notas 51A a 54 já feitas |
+| 6 · Só 1.0.0 | 48A-2 (`flow.rs`), 48C e 48D (barra em `bar/` e `status/`), 53 (níveis; `claude.rs`, `db.rs`, migração depois da 51B) | `flow.rs`; `features/team/bar/`, `status/`; `claude.rs`, `db.rs` | 48A-1; 48B-2; 53: 52. Ordem interna 48C/48D como na nota do 48 |
+| 7 · Só 1.0.0 | 50A (registro de agentes, Rust, `Agent` vira id textual), 15 (compositor, já em `bar/`) | Rust inteiro (`events.rs`, `orchestrator/`, `claude.rs`); `bar/` | 50A: 6R-3, 48A, 48B-2, decisão O1; 15: 2, 11, 13, 48C. 50A não roda junto de outra etapa em Rust |
+| 8 · Só 1.0.0 | 50B (time dinâmico no front), 16 (triagem, depois da 50A: ambas mexem no orquestrador) | `agents.ts`, stores; balão e `flow.rs` | 50B: 50A, 48B, 48C; 16: 12, 13, 15, 50A. 16 só acrescenta estados do balão |
+| 9 · Só 1.0.0 | 50C (tela de criação de agente, na página Agentes), 21 (limites do plano) | `features/agents/`; store do balão | 50C: 50B, 36; 21: 12, 10, 8, 4 |
+| 10 · Só 1.0.0 | 20 e 40 (se ainda abertas), regressão geral, bump 1.0.0 e release | versões; `release.yml` | todas as anteriores |
+
+Sequenciais por arquivo (não paralelizar): 14 → Fila → 51A/`useTeam.ts`; 51A → 52 → 53 em `db.rs`/`claude.rs`; 15 → 16 em `ActionBar.vue`/`orchestrator.rs`; 48A/48B/48C antes de 15, 16 e 50A a 50C (re-ancorar a nota de cada uma depois do 48); 50A antes de 16 e de qualquer etapa em Rust. Ártemis e Apolo seguem depois do PRONTO de cada etapa, como na seção 3. Em cada onda, só o Implementador de uma etapa mexe num mesmo arquivo.
+
+### Fora do MVP (nenhuma etapa dos marcos depende delas)
+- 17, 18, 19, 22: painel/decisão/fluxo na barra; dependem da origem das decisões no backend (S7, recomendada e não bloqueante: aceito sair o 1.0.0 sem ela) e o "perguntar antes" também está fora.
+- 26 a 29: bandeja com estado, notificação, widget e lateral; é experiência fora do app, não bloqueia desenvolver.
+- 32, ~~36~~, 37, 43 (36 entrou no 1.0.0 em 2026-10-31, por causa da 50C): páginas Conversas (já há conversa básica), Agentes, Estatísticas e Mapa do time; só visual/consulta.
+- 34: Projetos e Novo projeto; a 51A/52 já selecionam a pasta de um projeto.
+- 45, 46, 47: reações e @todos; refinamento da conversa.
+- ~~48 e 50A a 50C~~: entraram no 1.0.0 em 2026-10-31 por decisão do usuário (ver Marco 1.0.0 e ondas 5 a 9); 48D também entra por ordem de dependência.
+- ~~41, 15, 16~~: entraram no 1.0.0 (decisão do usuário, 2026-10-31).
+
+### Mapear para a S7 (origem das decisões) · recomendado, não bloqueante
+Hoje o backend só emite `message`, `agent-state` (thinking, waiting, idle), `error` e `plan-usage` (`events.rs`) e roda a CLI com permissão fixa. Para ter decisões reais, mapear, na CLI instalada (`claude --help` e o stream-json de `claude.rs`): (1) `permission_denials` no evento de resultado (ferramentas bloqueadas pelo modo de permissão); (2) `--permission-prompt-tool` (ferramenta de aprovação consultada pela CLI); (3) bloco `tool_use` de pergunta ao usuário (AskUserQuestion) no stream; (4) o que dispara o estado `waiting` hoje; (5) como devolver a resposta (retomar com `--resume` e liberar a ferramenta) e se a espera cabe no `MAX_TURNS`; (6) onde persistir a decisão (tabela nova na 51A). Saída: nota de levantamento e um tipo de evento `decision`; só então replanejar 17, 18 e o nível "perguntar antes" (53).
 
 ## 5. Prompts AI-made
 
