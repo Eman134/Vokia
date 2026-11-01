@@ -4,6 +4,7 @@ import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
 import { useDecisions } from '../decisions/useDecisions'
+import { presenceOf } from '../team/agentStateStyle'
 import type { Agent } from '../team/events'
 import { AGENTS, useTeam } from '../team/useTeam'
 import {
@@ -37,14 +38,6 @@ function formatTime(time: number): string {
   return new Date(time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }
 
-function togglePause(): void {
-  if (control.isPaused(props.agent)) {
-    control.resume(props.agent)
-  } else {
-    control.pause(props.agent)
-  }
-}
-
 function openChat(): void {
   decisions.setOpen(false)
   team.requestMention(props.agent)
@@ -61,11 +54,16 @@ async function submit(): Promise<void> {
 <template>
   <div class="flex max-h-96 flex-col gap-3 overflow-y-auto" :data-testid="`agent-now-${agent}`">
     <header class="flex flex-wrap items-center gap-2">
+      <span
+        class="size-1.75 rounded-full"
+        :class="presenceOf(team.states[agent], control.isPaused(agent)).dot"
+        aria-hidden="true"
+      />
       <p class="text-label font-semibold text-ink">{{ profile.name }} · {{ profile.role }}</p>
       <UiBadge :status="BADGE_BY_STATUS[status]" :label="status" data-testid="agent-now-status" />
       <span v-if="since !== null" class="text-caption text-muted">{{ elapsedLabel(since, Date.now()) }}</span>
       <span class="ml-auto flex gap-1">
-        <UiButton variant="quiet" size="sm" data-testid="agent-now-pause" @press="togglePause">
+        <UiButton variant="quiet" size="sm" data-testid="agent-now-pause" @press="team.togglePause(agent)">
           {{ control.isPaused(agent) ? RESUME_LABEL : PAUSE_LABEL }}
         </UiButton>
         <UiButton variant="quiet" size="sm" @press="openChat">{{ OPEN_CHAT_LABEL }}</UiButton>

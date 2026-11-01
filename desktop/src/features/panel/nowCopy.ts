@@ -9,6 +9,7 @@ export const PAUSE_LABEL = 'Pausar'
 export const RESUME_LABEL = 'Retomar'
 export const OPEN_CHAT_LABEL = 'Abrir conversa'
 export const PAUSED_STEP = 'pausado por você'
+const PAUSED_PROJECT_FALLBACK = 'projeto removido'
 export const NOW_TITLE = 'Agora'
 export const RECENT_TITLE = 'Últimas ações'
 export const QUEUE_TITLE = 'Fila'
@@ -20,6 +21,18 @@ export const MINUTE_MS = 60000
 
 export function agentTabLabel(name: string, queued: number): string {
   return queued > 0 ? `${name} ${queued} na fila` : name
+}
+
+export function PAUSED_BADGE(count: number): string {
+  return count === 1 ? '1 pausado' : `${count} pausados`
+}
+
+export function pausedEntryLabel(agentName: string, projectName: string | undefined): string {
+  return `${agentName} · ${projectName ?? PAUSED_PROJECT_FALLBACK}`
+}
+
+export function pauseNotice(agentName: string, paused: boolean): string {
+  return `${agentName} ${paused ? 'pausado' : 'retomado'}`
 }
 
 export function elapsedLabel(since: number, now: number): string {

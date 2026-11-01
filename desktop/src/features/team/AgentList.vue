@@ -2,9 +2,16 @@
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { AGENTS, useTeam } from './useTeam'
-import { DOT_CLASSES, STATE_LABELS } from './agentStateStyle'
+import { presenceOf } from './agentStateStyle'
+import type { Agent } from './events'
+import { useAgentControl } from '../panel/useAgentControl'
 
 const team = useTeam()
+const control = useAgentControl()
+
+function presence(agent: Agent) {
+  return presenceOf(team.states[agent], control.isPaused(agent))
+}
 </script>
 
 <template>
@@ -26,8 +33,8 @@ const team = useTeam()
             <span class="block text-body font-semibold text-ink">{{ agent.name }}</span>
             <span class="block text-caption text-muted">{{ agent.role }}</span>
             <span class="mt-1 flex items-center gap-1.5 text-caption text-ink">
-              <span class="size-1.75 rounded-full" :class="DOT_CLASSES[team.states[agent.id]]" />
-              {{ STATE_LABELS[team.states[agent.id]] }}
+              <span class="size-1.75 rounded-full" :class="presence(agent.id).dot" />
+              {{ presence(agent.id).label }}
             </span>
           </span>
         </button>

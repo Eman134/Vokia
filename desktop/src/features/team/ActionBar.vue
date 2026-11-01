@@ -21,6 +21,7 @@ import {
   SLASH_COMMANDS,
   type SlashCommand,
 } from './slashCommands'
+import { PAUSED_DOT_CLASS } from './agentStateStyle'
 import type { Agent } from './events'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
@@ -28,9 +29,11 @@ import MentionMenu from './MentionMenu.vue'
 import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
 import QueuePopover from './QueuePopover.vue'
+import PausedAgents from './PausedAgents.vue'
 import Balloon from '../balloon/Balloon.vue'
 import { PANEL_TITLE } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
+import { useAgentControl } from '../panel/useAgentControl'
 import PanelShell from '../panel/PanelShell.vue'
 import UiButton from '../../ui/UiButton.vue'
 
@@ -69,6 +72,7 @@ const emit = defineEmits<{
 const team = useTeam()
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
+const control = useAgentControl()
 const draft = ref('')
 const caret = ref(0)
 const scrollLeft = ref(0)
@@ -190,6 +194,13 @@ watch(
 
 onMounted(() => window.addEventListener('keydown', onShortcut))
 onUnmounted(() => window.removeEventListener('keydown', onShortcut))
+
+function dashClass(agent: Agent): string {
+  if (control.isPaused(agent)) {
+    return PAUSED_DOT_CLASS
+  }
+  return team.states[agent] === 'waiting' ? 'bg-warn' : 'bg-ok'
+}
 
 function anchorLeft(): number {
   const wrapper = wrapperRef.value
@@ -390,7 +401,7 @@ function onPointerLeave(): void {
           v-for="agent in team.activeAgents"
           :key="agent.id"
           class="h-1 w-3.5 rounded-full"
-          :class="team.states[agent.id] === 'waiting' ? 'bg-warn' : 'bg-ok'"
+          :class="dashClass(agent.id)"
         />
       </span>
       <span
@@ -399,6 +410,7 @@ function onPointerLeave(): void {
       >
         {{ statusStore.statusText }}
       </span>
+      <PausedAgents />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
         :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"

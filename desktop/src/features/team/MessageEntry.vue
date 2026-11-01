@@ -68,6 +68,7 @@ function highlightedSegments(message: VokiaMessage): MentionSegment[] {
       <p class="wrap-break-word mt-0.5 whitespace-pre-wrap text-control text-ink">{{ entry.text }}</p>
     </div>
   </div>
+  <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
   <div v-else class="flex items-center gap-2.5 rounded-card border border-danger bg-surface px-4 py-3">
     <span class="size-1.75 shrink-0 rounded-full bg-danger" />
     <p class="wrap-break-word min-w-0 whitespace-pre-wrap text-control text-ink">{{ entry.message }}</p>

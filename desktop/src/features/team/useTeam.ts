@@ -4,6 +4,7 @@ import {
   type Agent,
   type AgentState,
   type CliProblem,
+  type FeedNotice,
   type VokiaError,
   type VokiaEvent,
   type VokiaMessage,
@@ -20,7 +21,9 @@ import {
 } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
-import { fetchDbProblem, listProjects, loadHistory } from '../projects/projectsApi'
+import { fetchDbProblem, loadHistory } from '../projects/projectsApi'
+import { useProjects } from '../projects/useProjects'
+import { pauseNotice } from '../panel/nowCopy'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
@@ -35,12 +38,13 @@ export function agentName(id: Agent): string {
   return AGENTS.find((agent) => agent.id === id)?.name ?? id
 }
 
-export type FeedEntry = VokiaMessage | VokiaError
+export type FeedEntry = VokiaMessage | VokiaError | FeedNotice
 
 export interface QueuedRequest {
   id: number
   text: string
   to: Agent
+  projectId: number | null
   editing: boolean
 }
 
@@ -82,6 +86,8 @@ export const useTeam = defineStore('team', () => {
   const queue = ref<QueuedRequest[]>([])
   const permissions = ref<VokiaPermission[]>([])
   const control = useAgentControl()
+  const projects = useProjects()
+  const pausesLoaded = ref(false)
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -132,14 +138,28 @@ export const useTeam = defineStore('team', () => {
         feed.value.push({ type: 'error', message: problem.reason })
         return
       }
-      const selected = (await listProjects()).find((project) => project.selected)
-      if (selected !== undefined) {
-        feed.value = await loadHistory(selected.id)
+      await projects.load()
+      await restorePauses()
+      if (projects.selected !== null) {
+        feed.value = await loadHistory(projects.selected.id)
       }
     } catch (error) {
       feed.value.push({
         type: 'error',
         message: `Não foi possível carregar o histórico: ${String(error)}`,
+      })
+    }
+  }
+
+  async function restorePauses(): Promise<void> {
+    try {
+      await control.load()
+      pausesLoaded.value = true
+      void drain()
+    } catch (error) {
+      feed.value.push({
+        type: 'error',
+        message: `Não foi possível carregar as pausas dos agentes: ${String(error)}`,
       })
     }
   }
@@ -207,6 +227,16 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
+  async function togglePause(agent: Agent): Promise<void> {
+    try {
+      const pausing = !control.isPaused(agent)
+      await (pausing ? control.pause(agent) : control.resume(agent))
+      feed.value.push({ type: 'notice', text: pauseNotice(agentName(agent), pausing), time: Date.now() })
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+    }
+  }
+
   async function decidePermission(id: string, allow: boolean): Promise<void> {
     try {
       await answerPermission(id, allow)
@@ -232,13 +262,13 @@ export const useTeam = defineStore('team', () => {
 
   // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
   async function drain(): Promise<void> {
-    if (draining) {
+    if (draining || !pausesLoaded.value) {
       return
     }
     draining = true
     try {
       for (;;) {
-        const index = queue.value.findIndex((request) => !control.isPaused(request.to))
+        const index = queue.value.findIndex((request) => !control.isPaused(request.to, request.projectId))
         const head = queue.value[index]
         if (head === undefined || head.editing) {
           break
@@ -256,7 +286,7 @@ export const useTeam = defineStore('team', () => {
   }
 
   watch(
-    () => control.paused.size,
+    () => control.paused,
     () => void drain(),
   )
 
@@ -325,6 +355,7 @@ export const useTeam = defineStore('team', () => {
       id: ++nextQueueId,
       text,
       to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
+      projectId: projects.selected?.id ?? null,
       editing: false,
     })
     void drain()
@@ -338,6 +369,7 @@ export const useTeam = defineStore('team', () => {
     feed,
     timeline,
     states,
+    togglePause,
     online,
     checking,
     pendingMention,

@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard};
 use rusqlite::{params, Connection, ErrorCode, Row};
 use serde::Serialize;
 
-use crate::events::{Speaker, VokiaEvent};
+use crate::events::{Agent, Speaker, VokiaEvent};
 
 pub const DB_FILE: &str = "vokia.db";
 const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
@@ -55,6 +55,14 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE projects ADD COLUMN origin_kind TEXT NOT NULL DEFAULT 'folder';
     ALTER TABLE projects ADD COLUMN origin_repo TEXT;
 ",
+    "
+    CREATE TABLE agent_pauses (
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        agent TEXT NOT NULL,
+        paused_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        PRIMARY KEY (project_id, agent)
+    );
+",
 ];
 
 #[derive(Debug)]
@@ -70,6 +78,7 @@ pub enum DbError {
     ProjectPathTaken(String),
     InvalidProject(&'static str),
     InvalidSpeaker(String),
+    InvalidAgent(String),
     InvalidSetting(String, String),
 }
 
@@ -106,6 +115,12 @@ impl fmt::Display for DbError {
             DbError::InvalidSpeaker(value) => {
                 write!(f, "O histórico guarda um remetente desconhecido: {value}.")
             }
+            DbError::InvalidAgent(value) => {
+                write!(
+                    f,
+                    "O banco guarda uma pausa de agente desconhecido: {value}."
+                )
+            }
             DbError::InvalidSetting(key, value) => {
                 write!(f, "A configuração {key} não aceita o valor {value:?}.")
             }
@@ -135,6 +150,13 @@ fn classify(path: &Path, error: rusqlite::Error) -> DbError {
 #[serde(rename_all = "camelCase")]
 pub struct DbProblem {
     pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentPause {
+    pub project_id: i64,
+    pub agent: Agent,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -280,6 +302,52 @@ impl Db {
         Ok(())
     }
 
+    pub fn agent_pauses(&self) -> Result<Vec<AgentPause>, DbError> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(
+            "SELECT agent_pauses.project_id, agent_pauses.agent FROM agent_pauses \
+             JOIN projects ON projects.id = agent_pauses.project_id \
+             ORDER BY agent_pauses.paused_at",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.map(|row| -> Result<AgentPause, DbError> {
+            let (project_id, agent) = row?;
+            Ok(AgentPause {
+                project_id,
+                agent: parse_agent(&agent)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn set_agent_paused(
+        &self,
+        project_id: i64,
+        agent: Agent,
+        paused: bool,
+    ) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        let key = agent_key(agent);
+        if !paused {
+            conn.execute(
+                "DELETE FROM agent_pauses WHERE project_id = ?1 AND agent = ?2",
+                params![project_id, key],
+            )?;
+            return Ok(());
+        }
+        let inserted = conn.execute(
+            "INSERT OR REPLACE INTO agent_pauses(project_id, agent) \
+             SELECT id, ?2 FROM projects WHERE id = ?1",
+            params![project_id, key],
+        )?;
+        if inserted == 0 {
+            return Err(DbError::ProjectNotFound(project_id));
+        }
+        Ok(())
+    }
+
     pub fn insert_message(
         &self,
         from: Speaker,
@@ -355,6 +423,17 @@ impl Db {
         )?;
         Ok(())
     }
+}
+
+fn agent_key(agent: Agent) -> String {
+    agent.name().to_lowercase()
+}
+
+fn parse_agent(value: &str) -> Result<Agent, DbError> {
+    Agent::ALL
+        .into_iter()
+        .find(|agent| agent_key(*agent) == value)
+        .ok_or_else(|| DbError::InvalidAgent(value.to_string()))
 }
 
 fn parse_speaker(value: &str) -> Result<Speaker, DbError> {

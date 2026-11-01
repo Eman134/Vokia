@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import NowPanel from './NowPanel.vue'
 import { NOW_TAB_LABEL } from './nowCopy'
 import { useTeam } from '../team/useTeam'
 import DecisionPanel from '../decisions/DecisionPanel.vue'
 import { PANEL_TITLE } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
-
-type PanelTab = 'decisoes' | 'agora'
+import { usePanelTab, type PanelTab } from './usePanelTab'
 
 interface TabEntry {
   id: PanelTab
@@ -19,7 +18,7 @@ const TOGGLE_KEY_CODE = 'KeyJ'
 
 const decisions = useDecisions()
 const team = useTeam()
-const tab = ref<PanelTab>('decisoes')
+const panelTab = usePanelTab()
 const tabs = computed<TabEntry[]>(() => [
   { id: 'decisoes', label: PANEL_TITLE, count: decisions.pendingCount },
   { id: 'agora', label: NOW_TAB_LABEL, count: team.activeAgents.length },
@@ -51,15 +50,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         :key="entry.id"
         type="button"
         role="tab"
-        :aria-selected="tab === entry.id"
+        :aria-selected="panelTab.tab === entry.id"
         class="text-label font-semibold focus:outline-2 focus:outline-solid focus:outline-accent"
-        :class="tab === entry.id ? 'text-ink' : 'text-muted'"
-        @click="tab = entry.id"
+        :class="panelTab.tab === entry.id ? 'text-ink' : 'text-muted'"
+        @click="panelTab.tab = entry.id"
       >
         {{ entry.label }} <span data-testid="panel-tab-count">{{ entry.count }}</span>
       </button>
     </div>
-    <DecisionPanel v-if="tab === 'decisoes'" />
+    <DecisionPanel v-if="panelTab.tab === 'decisoes'" />
     <NowPanel v-else />
   </section>
 </template>

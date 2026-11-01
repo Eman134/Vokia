@@ -9,6 +9,13 @@ const SEND_REQUEST_COMMAND = 'send_request'
 const ANSWER_PERMISSION_COMMAND = 'answer_permission'
 const ANSWER_DECISION_COMMAND = 'answer_decision'
 const CHECK_CONNECTION_COMMAND = 'check_connection'
+const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
+const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
+
+export interface AgentPause {
+  projectId: number
+  agent: Agent
+}
 
 export function fetchCliProblem(): Promise<CliProblem | null> {
   return invoke<CliProblem | null>(CLI_PROBLEM_COMMAND)
@@ -24,6 +31,14 @@ export function answerPermission(id: string, allow: boolean): Promise<void> {
 
 export function answerDecision(id: number, answer: string): Promise<void> {
   return invoke<void>(ANSWER_DECISION_COMMAND, { id, answer })
+}
+
+export function listAgentPauses(): Promise<AgentPause[]> {
+  return invoke<AgentPause[]>(LIST_AGENT_PAUSES_COMMAND)
+}
+
+export function setAgentPaused(projectId: number, agent: Agent, paused: boolean): Promise<void> {
+  return invoke<void>(SET_AGENT_PAUSED_COMMAND, { projectId, agent, paused })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

@@ -20,6 +20,12 @@ export interface VokiaAgentState {
   state: AgentState
 }
 
+export interface FeedNotice {
+  type: 'notice'
+  text: string
+  time: number
+}
+
 export interface VokiaError {
   type: 'error'
   message: string

@@ -49,6 +49,8 @@ fn main() {
             commands::send_request,
             commands::answer_permission,
             commands::answer_decision,
+            commands::list_agent_pauses,
+            commands::set_agent_paused,
             commands::check_connection,
             commands::db_problem,
             commands::list_projects,

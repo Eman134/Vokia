@@ -4,7 +4,7 @@ use tauri::{AppHandle, State};
 
 use crate::claude::CliProblem;
 use crate::connectivity;
-use crate::db::{DbProblem, DbState, Project};
+use crate::db::{AgentPause, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
 use crate::projects::{self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectError};
@@ -102,6 +102,24 @@ pub async fn create_project(
 pub fn load_history(state: State<'_, DbState>, project_id: i64) -> Result<Vec<VokiaEvent>, String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.load_history(project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_agent_pauses(state: State<'_, DbState>) -> Result<Vec<AgentPause>, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.agent_pauses().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_agent_paused(
+    state: State<'_, DbState>,
+    project_id: i64,
+    agent: Agent,
+    paused: bool,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.set_agent_paused(project_id, agent, paused)
         .map_err(|error| error.to_string())
 }
 

@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
-import { DOT_CLASSES } from '../team/agentStateStyle'
+import { presenceOf } from '../team/agentStateStyle'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
 import { AGENTS, useTeam } from '../team/useTeam'
@@ -24,14 +24,6 @@ const team = useTeam()
 const control = useAgentControl()
 const tab = ref<NowTab>('todos')
 const rows = AGENTS.map((agent) => ({ agent, activity: reactive(useAgentActivity(agent.id)) }))
-
-function togglePause(agent: (typeof AGENTS)[number]): void {
-  if (control.isPaused(agent.id)) {
-    control.resume(agent.id)
-  } else {
-    control.pause(agent.id)
-  }
-}
 </script>
 
 <template>
@@ -67,11 +59,14 @@ function togglePause(agent: (typeof AGENTS)[number]): void {
           </span>
           <span class="wrap-break-word line-clamp-1 text-caption text-muted">{{ row.activity.task ?? NO_TASK_TEXT }}</span>
           <span class="flex items-center gap-1.5 text-caption text-ink">
-            <span class="size-1.75 rounded-full" :class="DOT_CLASSES[team.states[row.agent.id]]" />
+            <span
+              class="size-1.75 rounded-full"
+              :class="presenceOf(team.states[row.agent.id], control.isPaused(row.agent.id)).dot"
+            />
             {{ row.activity.step }}
           </span>
         </span>
-        <UiButton variant="quiet" size="sm" @press="togglePause(row.agent)">
+        <UiButton variant="quiet" size="sm" @press="team.togglePause(row.agent.id)">
           {{ control.isPaused(row.agent.id) ? RESUME_LABEL : PAUSE_LABEL }}
         </UiButton>
       </li>
