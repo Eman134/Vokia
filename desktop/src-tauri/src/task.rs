@@ -21,7 +21,7 @@ pub const SESSION_RECOVERY_LIMIT: u32 = 2;
 pub const SESSION_ROTATE_MESSAGES: u32 = 30;
 pub const SESSION_IDLE_LIMIT_SECS: u64 = 600;
 pub const SESSION_CLOSE_TIMEOUT_SECS: u64 = 3;
-pub const MAX_LIVE_SESSIONS: usize = 4;
+pub const MAX_LIVE_SESSIONS: usize = 16;
 
 #[derive(Debug)]
 pub struct TaskDefinition {
