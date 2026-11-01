@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AgentPortrait from './AgentPortrait.vue'
+import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { AGENTS, useTeam } from './useTeam'
 import { presenceOf } from './agentStateStyle'
@@ -30,7 +31,10 @@ function presence(agent: Agent) {
             <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.list" />
           </span>
           <span class="flex min-w-0 flex-col">
-            <span class="block text-body font-semibold text-ink">{{ agent.name }}</span>
+            <span class="flex items-center gap-1.5 text-body font-semibold text-ink">
+              {{ agent.name }}
+              <AgentProjectIcons :agent="agent.id" />
+            </span>
             <span class="block text-caption text-muted">{{ agent.role }}</span>
             <span class="mt-1 flex items-center gap-1.5 text-caption text-ink">
               <span class="size-1.75 rounded-full" :class="presence(agent.id).dot" />

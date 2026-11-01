@@ -5,6 +5,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import { presenceOf } from '../team/agentStateStyle'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
 import { AGENTS, useTeam } from '../team/useTeam'
 import AgentNow from './AgentNow.vue'
@@ -55,6 +56,7 @@ const rows = AGENTS.map((agent) => ({ agent, activity: reactive(useAgentActivity
         <span class="flex min-w-0 flex-1 flex-col">
           <span class="flex items-center gap-2">
             <span class="text-label font-semibold text-ink">{{ row.agent.name }}</span>
+            <AgentProjectIcons :agent="row.agent.id" />
             <UiBadge :status="BADGE_BY_STATUS[row.activity.status]" :label="row.activity.status" />
           </span>
           <span class="wrap-break-word line-clamp-1 text-caption text-muted">{{ row.activity.task ?? NO_TASK_TEXT }}</span>

@@ -5,6 +5,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
 import { useDecisions } from '../decisions/useDecisions'
 import { presenceOf } from '../team/agentStateStyle'
+import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import type { Agent } from '../team/events'
 import { AGENTS, useTeam } from '../team/useTeam'
 import {
@@ -60,6 +61,7 @@ async function submit(): Promise<void> {
         aria-hidden="true"
       />
       <p class="text-label font-semibold text-ink">{{ profile.name }} · {{ profile.role }}</p>
+      <AgentProjectIcons :agent="agent" />
       <UiBadge :status="BADGE_BY_STATUS[status]" :label="status" data-testid="agent-now-status" />
       <span v-if="since !== null" class="text-caption text-muted">{{ elapsedLabel(since, Date.now()) }}</span>
       <span class="ml-auto flex gap-1">
