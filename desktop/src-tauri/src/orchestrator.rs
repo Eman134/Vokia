@@ -141,7 +141,7 @@ impl From<DbError> for FlowError {
     }
 }
 
-fn project_dir(app: &AppHandle) -> Result<PathBuf, FlowError> {
+fn project_dir(app: &AppHandle) -> Result<(PathBuf, i64), FlowError> {
     let state = app.state::<DbState>();
     let db = state
         .require()
@@ -156,8 +156,9 @@ fn project_dir(app: &AppHandle) -> Result<PathBuf, FlowError> {
     if project.path.trim().is_empty() {
         return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
     }
-    projects::ensure_directory(&project.path)
-        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))
+    let dir = projects::ensure_directory(&project.path)
+        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))?;
+    Ok((dir, project.id))
 }
 
 pub async fn handle_request(
@@ -170,8 +171,14 @@ pub async fn handle_request(
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
-    project_dir(app)?;
-    emit_message(app, Speaker::User, Speaker::from(recipient), request)?;
+    let (_, project_id) = project_dir(app)?;
+    emit_message_in(
+        app,
+        Some(project_id),
+        Speaker::User,
+        Speaker::from(recipient),
+        request,
+    )?;
     if !start_or_enqueue(state, request, recipient)? {
         return Ok(());
     }
@@ -211,7 +218,22 @@ fn next_job(state: &AppState) -> Result<Option<(String, Agent)>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let next = flow.pending.pop_front();
     flow.active = next.is_some();
+    if next.is_none() {
+        flow.project_id = None;
+    }
     Ok(next)
+}
+
+// Os eventos da troca levam o projeto de quando ela começou, mesmo que o usuário selecione outro depois.
+pub fn event_project_id(state: &AppState) -> Result<Option<i64>, FlowError> {
+    let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    Ok(flow.project_id)
+}
+
+fn begin_exchange_project(state: &AppState, project_id: i64) -> Result<(), FlowError> {
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    flow.project_id = Some(project_id);
+    Ok(())
 }
 
 async fn run_flow(
@@ -241,7 +263,8 @@ async fn run_exchange(
     request: &str,
     origin: Agent,
 ) -> Result<(), FlowError> {
-    let project_dir = project_dir(app)?;
+    let (project_dir, project_id) = project_dir(app)?;
+    begin_exchange_project(state, project_id)?;
     let definition = interpret_task(app, state, cli, request, origin).await?;
     begin_task(app, state, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
@@ -511,6 +534,7 @@ fn raise_decision(
             title,
             detail,
             options,
+            project_id: event_project_id(state)?,
         },
     )?;
     for requester in &turn.requesters {
@@ -1147,6 +1171,17 @@ fn delegation_request(line: &str, from: Agent) -> Option<(Agent, &str)> {
 }
 
 fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Result<(), FlowError> {
+    let project_id = event_project_id(&app.state::<AppState>())?;
+    emit_message_in(app, project_id, from, to, text)
+}
+
+fn emit_message_in(
+    app: &AppHandle,
+    project_id: Option<i64>,
+    from: Speaker,
+    to: Speaker,
+    text: &str,
+) -> Result<(), FlowError> {
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
         db.insert_message(from, to, text, time)?;
@@ -1158,12 +1193,21 @@ fn emit_message(app: &AppHandle, from: Speaker, to: Speaker, text: &str) -> Resu
             to,
             text: text.to_string(),
             time,
+            project_id,
         },
     )
 }
 
 fn emit_state(app: &AppHandle, agent: Agent, state: AgentState) -> Result<(), FlowError> {
-    emit(app, VokiaEvent::AgentState { agent, state })
+    let project_id = event_project_id(&app.state::<AppState>())?;
+    emit(
+        app,
+        VokiaEvent::AgentState {
+            agent,
+            state,
+            project_id,
+        },
+    )
 }
 
 fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {

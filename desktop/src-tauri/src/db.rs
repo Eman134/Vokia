@@ -390,6 +390,7 @@ impl Db {
                 to: parse_speaker(&to)?,
                 text,
                 time: time as u64,
+                project_id: Some(project_id),
             })
         })
         .collect()

@@ -27,5 +27,6 @@ pub struct PendingDecision {
 
 pub struct FlowQueue {
     pub active: bool,
+    pub project_id: Option<i64>,
     pub pending: VecDeque<(String, Agent)>,
 }

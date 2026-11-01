@@ -5,6 +5,7 @@ import {
   type AgentState,
   type CliProblem,
   type FeedNotice,
+  type VokiaAgentState,
   type VokiaError,
   type VokiaEvent,
   type VokiaMessage,
@@ -24,6 +25,7 @@ import { useAgentControl } from '../panel/useAgentControl'
 import { fetchDbProblem, loadHistory } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
+import { projectAgentKey } from './projectAgentKey'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
@@ -88,6 +90,8 @@ export const useTeam = defineStore('team', () => {
   const control = useAgentControl()
   const projects = useProjects()
   const pausesLoaded = ref(false)
+  const activity = ref<Record<string, AgentState>>({})
+  const lastProject = ref<Record<Agent, number | null>>({ iara: null, davi: null })
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -212,6 +216,7 @@ export const useTeam = defineStore('team', () => {
         break
       case 'agent-state':
         states.value[event.agent] = event.state
+        recordActivity(event)
         break
       case 'permission':
         permissions.value.push(event)
@@ -225,6 +230,20 @@ export const useTeam = defineStore('team', () => {
       case 'plan-usage':
         break
     }
+  }
+
+  function recordActivity({ agent, state, projectId }: VokiaAgentState): void {
+    if (projectId === null) {
+      return
+    }
+    lastProject.value[agent] = projectId
+    activity.value[projectAgentKey(projectId, agent)] = state
+  }
+
+  function projectsOf(agent: Agent): number[] {
+    return Object.entries(activity.value)
+      .filter(([key, state]) => state !== 'idle' && key.endsWith(`:${agent}`))
+      .map(([key]) => Number(key.split(':')[0]))
   }
 
   async function togglePause(agent: Agent): Promise<void> {
@@ -369,6 +388,9 @@ export const useTeam = defineStore('team', () => {
     feed,
     timeline,
     states,
+    activity,
+    lastProject,
+    projectsOf,
     togglePause,
     online,
     checking,

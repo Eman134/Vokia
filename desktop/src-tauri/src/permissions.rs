@@ -3,12 +3,14 @@ use std::fmt;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::claude::PermissionRequest;
 use crate::events::{Agent, VokiaEvent, EVENT_NAME};
+use crate::orchestrator::event_project_id;
+use crate::state::AppState;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const COMMAND_FIELD: &str = "command";
@@ -54,11 +56,16 @@ impl PermissionBroker {
         if self.register(&request.id, sender).is_err() {
             return false;
         }
+        let Ok(project_id) = event_project_id(&app.state::<AppState>()) else {
+            self.forget(&request.id);
+            return false;
+        };
         let event = VokiaEvent::Permission {
             id: request.id.clone(),
             agent,
             tool: request.tool.clone(),
             detail: detail(&request),
+            project_id,
         };
         if app.emit(EVENT_NAME, event).is_err() {
             self.forget(&request.id);

@@ -106,28 +106,35 @@ pub struct UsageWindow {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum VokiaEvent {
+    #[serde(rename_all = "camelCase")]
     Message {
         from: Speaker,
         to: Speaker,
         text: String,
         time: u64,
+        project_id: Option<i64>,
     },
+    #[serde(rename_all = "camelCase")]
     AgentState {
         agent: Agent,
         state: AgentState,
+        project_id: Option<i64>,
     },
     Error {
         message: String,
     },
+    #[serde(rename_all = "camelCase")]
     Permission {
         id: String,
         agent: Agent,
         tool: String,
         detail: String,
+        project_id: Option<i64>,
     },
     PermissionClosed {
         id: String,
     },
+    #[serde(rename_all = "camelCase")]
     Decision {
         id: u64,
         agent: Agent,
@@ -135,6 +142,7 @@ pub enum VokiaEvent {
         title: String,
         detail: String,
         options: Vec<String>,
+        project_id: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     PlanUsage {

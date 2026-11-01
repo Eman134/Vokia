@@ -12,12 +12,14 @@ export interface VokiaMessage {
   to: Speaker
   text: string
   time: number
+  projectId: number | null
 }
 
 export interface VokiaAgentState {
   type: 'agent-state'
   agent: Agent
   state: AgentState
+  projectId: number | null
 }
 
 export interface FeedNotice {
@@ -37,6 +39,7 @@ export interface VokiaPermission {
   agent: Agent
   tool: string
   detail: string
+  projectId: number | null
 }
 
 export interface VokiaPermissionClosed {
@@ -54,6 +57,7 @@ export interface VokiaDecision {
   title: string
   detail: string
   options: string[]
+  projectId: number | null
 }
 
 export interface UsageWindow {

@@ -37,6 +37,7 @@ fn main() {
             cache: Mutex::new(Cache::default()),
             flow: Mutex::new(FlowQueue {
                 active: false,
+                project_id: None,
                 pending: VecDeque::new(),
             }),
             archive: Mutex::new(Vec::new()),
