@@ -2,7 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
-import { CURRENT_PROJECT, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { useProjects } from '../projects/useProjects'
 import BacklogCard from './BacklogCard.vue'
 import BacklogItemModal from './BacklogItemModal.vue'
 import { colorVar, TAG_COLOR, TAG_LABEL } from './backlogLabels'
@@ -49,6 +50,8 @@ const SAMPLE_IDS = new Set(SAMPLE_ITEMS.map((item) => item.id))
 const DISPLAYED_TAGS = Object.keys(TAG_LABEL).filter((tag) => tag !== 'divida') as (keyof typeof TAG_LABEL)[]
 
 const backlog = useBacklog()
+const projectsStore = useProjects()
+const projectName = computed(() => projectsStore.selected?.name ?? '')
 const density = ref<BacklogCardDensity>('normal')
 const featureFilter = ref<string>(FEATURE_FILTER_OPTIONS[0].value)
 const typeFilter = ref<string>(TYPE_FILTER_OPTIONS[0].value)
@@ -97,8 +100,8 @@ onMounted(() => {
   <section :class="PAGE_CLASSES">
     <div :class="HEADER_CLASSES">
       <div>
-        <span class="text-caption text-muted">
-          {{ CURRENT_PROJECT }}<template v-if="usingSample"> · {{ SAMPLE_DATA_LABEL }}</template>
+        <span v-if="projectName" class="text-caption text-muted">
+          {{ projectName }}<template v-if="usingSample"> · {{ SAMPLE_DATA_LABEL }}</template>
         </span>
         <h1 :class="TITLE_CLASSES">{{ BACKLOG_TITLE }}</h1>
         <p :class="SUBTITLE_CLASSES">{{ BACKLOG_SUBTITLE }}</p>

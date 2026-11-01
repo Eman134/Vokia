@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
-import { CURRENT_PROJECT, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { useProjects } from '../projects/useProjects'
 import PlanDetail from './PlanDetail.vue'
 import PlanList from './PlanList.vue'
 import {
@@ -32,7 +33,10 @@ const crumb = computed(() =>
     ? `${parent.value.name} › ${selected.value.name}`
     : `${SCOPE_CRUMB_PREFIX} ${selected.value.scope}`,
 )
-const contextLabel = computed(() => `${CURRENT_PROJECT} · ${crumb.value} · ${SAMPLE_DATA_LABEL}`)
+const projectsStore = useProjects()
+const contextLabel = computed(() =>
+  [projectsStore.selected?.name, crumb.value, SAMPLE_DATA_LABEL].filter(Boolean).join(' · '),
+)
 const subtitle = computed(() => {
   const lead = parent.value
     ? `${SUB_PLAN_SUBTITLE_PREFIX} "${parent.value.name}". `

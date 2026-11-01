@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { CURRENT_PROJECT, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { computed } from 'vue'
+import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import { useProjects } from '../projects/useProjects'
 import MemoryList from './MemoryList.vue'
 import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 
@@ -11,12 +13,15 @@ const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-dialog bo
 const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
 const GRAPH_SECTION_CLASSES = `${SECTION_CLASSES} flex-[999_1_560px]`
 const SECTION_HEADER_CLASSES = 'flex flex-wrap items-baseline gap-2 px-4.5 py-4'
+
+const projectsStore = useProjects()
+const projectName = computed(() => projectsStore.selected?.name ?? '')
 </script>
 
 <template>
   <main :class="PAGE_CLASSES">
     <header>
-      <span class="text-caption text-muted">{{ CURRENT_PROJECT }} · {{ SAMPLE_DATA_LABEL }}</span>
+      <span v-if="projectName" class="text-caption text-muted">{{ projectName }} · {{ SAMPLE_DATA_LABEL }}</span>
       <h1 :class="TITLE_CLASSES">Memória e grafo</h1>
       <p class="mt-1 max-w-[64ch] text-body text-muted">
         O que os agentes aprenderam sobre o projeto e o mapa que liga código e artefatos (diagramas, documentos e

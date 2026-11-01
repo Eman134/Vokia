@@ -59,6 +59,7 @@ export interface FolderInfo {
   name: string
   branch: string | null
   remoteUrl: string | null
+  githubRepo: string | null
 }
 
 export interface GithubRepoInfo {

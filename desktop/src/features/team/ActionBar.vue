@@ -22,6 +22,7 @@ import {
   type SlashCommand,
 } from './slashCommands'
 import { PAUSED_DOT_CLASS } from './agentStateStyle'
+import { useProjects } from '../projects/useProjects'
 import type { Agent } from './events'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
@@ -98,7 +99,10 @@ const pageActions = computed<readonly PageAction[]>(() =>
 )
 
 const locked = computed(() => team.checking)
-const placeholder = computed(() => placeholderFor(railPage.value, statusStore.status, statusStore.placeholder))
+const projectsStore = useProjects()
+const placeholder = computed(() =>
+  placeholderFor(railPage.value, projectsStore.selected?.name ?? '', statusStore.status, statusStore.placeholder),
+)
 const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
 const commandMatch = computed<TriggerMatch | null>(() => findCommandTrigger(draft.value, caret.value))
 const menuKind = computed<'command' | 'mention' | null>(() =>

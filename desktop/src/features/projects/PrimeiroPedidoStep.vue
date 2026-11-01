@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia'
 import {
   BACK_LABEL,
   CREATE_WITHOUT_REQUEST_LABEL,
+  LINKED_REPO_LABEL,
   NEXT_HEADING,
   NEXT_STEPS,
   REQUEST_COMPOSER_HINT,
@@ -30,7 +31,7 @@ const HEADING_CLASSES = 'text-label font-medium text-muted'
 const DISABLED_ITEM_CLASSES = 'rounded-control border border-line bg-surface px-3 py-2 text-left opacity-60'
 
 const wizard = useNovoProjeto()
-const { busy, error } = storeToRefs(wizard)
+const { busy, error, linkedRepo, originKind } = storeToRefs(wizard)
 </script>
 
 <template>
@@ -89,6 +90,8 @@ const { busy, error } = storeToRefs(wizard)
         <span class="text-muted"> · {{ item.text }}</span>
       </li>
     </ol>
+
+    <p v-if="originKind === 'folder' && linkedRepo" data-testid="linked-repo" class="text-caption text-muted">{{ LINKED_REPO_LABEL }} · {{ linkedRepo }}</p>
 
     <div v-if="error?.field === 'general'" data-testid="create-error">
       <UiNotice :text="error.message" @close="error = null" />

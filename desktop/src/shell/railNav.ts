@@ -20,13 +20,6 @@ export interface RailItem {
   path: string
 }
 
-export interface RailProject {
-  name: string
-  working: number
-  dot: 'warn' | 'ok'
-  path: string
-}
-
 export const PAGE_LABELS: Record<AppPage, string> = {
   projetos: 'Projetos',
   agentes: 'Agentes e camadas',
@@ -47,8 +40,6 @@ export const PAGE_LABELS: Record<AppPage, string> = {
 export const DEFAULT_PAGE: AppPage = 'conversas'
 
 export const SAMPLE_DATA_LABEL = 'dados de exemplo'
-
-export const CURRENT_PROJECT = 'loja-online'
 
 export const RAIL_COLLAPSED_WIDTH = 88
 export const RAIL_EXPANDED_WIDTH = 232
@@ -111,26 +102,5 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
     page: 'memoria',
     label: PAGE_LABELS.memoria,
     path: 'M4 4a2 2 0 100-.1M12 4a2 2 0 100-.1M8 12a2 2 0 100-.1M5.5 5.5L7 10.5M10.5 5.5L9 10.5M6 4h4',
-  },
-]
-
-export const PROJECTS: readonly RailProject[] = [
-  {
-    name: 'loja-online',
-    working: 5,
-    dot: 'warn',
-    path: 'M9 2.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13zM9 7a2 2 0 110 4 2 2 0 010-4z',
-  },
-  {
-    name: 'app-agenda',
-    working: 2,
-    dot: 'warn',
-    path: 'M9 3l6.5 12h-13z',
-  },
-  {
-    name: 'site-estudio',
-    working: 2,
-    dot: 'ok',
-    path: 'M3.5 3.5h11v11h-11z',
   },
 ]

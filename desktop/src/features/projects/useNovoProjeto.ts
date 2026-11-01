@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useNavigation } from '../../shell/useNavigation'
 import { DEFAULT_PROJECT_ICON } from './projectIcons'
@@ -13,6 +13,7 @@ import {
   type OriginKind,
   type ProjectErrorCode,
 } from './projectsApi'
+import { useProjects } from './useProjects'
 
 export type WizardStep = 1 | 2 | 3
 export type ErrorField = 'path' | 'repo' | 'parentDir' | 'branch' | 'symbol' | 'general'
@@ -47,6 +48,7 @@ const ERROR_FIELD: Record<ProjectErrorCode, ErrorField> = {
 
 export const useNovoProjeto = defineStore('newProject', () => {
   const navigation = useNavigation()
+  const projects = useProjects()
 
   const step = ref<WizardStep>(FIRST_STEP)
   const originKind = ref<OriginKind>('folder')
@@ -55,6 +57,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
   const mode = ref<CloneMode>('link')
   const parentDir = ref('')
   const branch = ref('')
+  const linkedRepo = ref<string | null>(null)
   const name = ref('')
   const symbol = ref<string>(DEFAULT_PROJECT_ICON)
   const description = ref('')
@@ -64,6 +67,10 @@ export const useNovoProjeto = defineStore('newProject', () => {
 
   watch([path, repo, parentDir, branch], () => {
     error.value = null
+  })
+
+  watch(path, () => {
+    linkedRepo.value = null
   })
 
   function messageOf(cause: unknown): string {
@@ -92,8 +99,11 @@ export const useNovoProjeto = defineStore('newProject', () => {
       if (originKind.value === 'folder') {
         const info = await inspectFolder(path.value.trim())
         path.value = info.path
+        await nextTick()
+        linkedRepo.value = info.githubRepo
         applyDefaults(info.name)
       } else {
+        linkedRepo.value = null
         if (parentDir.value.trim() === '') {
           error.value = { field: 'parentDir', message: PARENT_REQUIRED_MESSAGE }
           return
@@ -131,6 +141,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
     mode.value = 'link'
     parentDir.value = ''
     branch.value = ''
+    linkedRepo.value = null
     name.value = ''
     symbol.value = DEFAULT_PROJECT_ICON
     description.value = ''
@@ -171,6 +182,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
     error.value = null
     try {
       await createProject(buildInput())
+      await projects.load()
       reset()
       navigation.goTo('projetos')
     } catch (cause) {
@@ -181,7 +193,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
   }
 
   return {
-    step, originKind, path, repo, mode, parentDir, branch, name, symbol, description, busy, error,
+    step, originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, description, busy, error,
     choosePath, chooseParent, inspect, setName, setSymbol, next, back, create, reset,
   }
 })

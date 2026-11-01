@@ -2,7 +2,14 @@
 import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
 import { storeToRefs } from 'pinia'
-import { CANCEL_LABEL, CHOOSE_LABEL, PICK_FOLDER_LABEL, START_FROM_LABEL, START_FROM_VALUE } from './projetosSample'
+import {
+  CANCEL_LABEL,
+  CHOOSE_LABEL,
+  LINKED_REPO_LABEL,
+  PICK_FOLDER_LABEL,
+  START_FROM_LABEL,
+  START_FROM_VALUE,
+} from './projetosSample'
 import ProjectIcon from './ProjectIcon.vue'
 import { PROJECT_ICON_KEYS, PROJECT_ICONS } from './projectIcons'
 import type { CloneMode, OriginKind } from './projectsApi'
@@ -37,7 +44,7 @@ const ICON_INACTIVE_CLASSES = 'border-line text-muted'
 const FOOTER_CLASSES ='flex items-center justify-end gap-2'
 
 const wizard = useNovoProjeto()
-const { originKind, path, repo, mode, parentDir, branch, name, symbol, description, busy, error } =
+const { originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, description, busy, error } =
   storeToRefs(wizard)
 
 function errorFor(field: string): string | undefined {
@@ -68,6 +75,7 @@ function errorFor(field: string): string | undefined {
           {{ PICK_FOLDER_LABEL }}
         </UiButton>
       </div>
+      <p v-if="linkedRepo" data-testid="linked-repo" class="text-caption text-muted">{{ LINKED_REPO_LABEL }} · {{ linkedRepo }}</p>
     </template>
     <template v-else>
       <UiField v-model="repo" label="Repositório" hint="dono/repo ou link" :error="errorFor('repo')" data-testid="field-repo" />

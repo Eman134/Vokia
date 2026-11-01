@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { CURRENT_PROJECT } from '../../../shell/railNav'
+import { computed } from 'vue'
+import { useProjects } from '../../projects/useProjects'
 import VokiaMascot from '../../brand/VokiaMascot.vue'
 import { FINAL_TIPS } from '../onboardingSample'
 import StepHeading from './StepHeading.vue'
@@ -7,14 +8,19 @@ import StepHeading from './StepHeading.vue'
 const MASCOT_SIZE = 92
 const TIP_CLASSES = 'flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3'
 const TIP_KEY_CLASSES = 'min-w-13 flex-none rounded-control-sm bg-surface-2 px-2 py-1 text-center font-mono text-small'
+const NO_PROJECT_TEXT = 'Crie um projeto para a Iara começar a ler o código.'
+
+const projectsStore = useProjects()
+const readingText = computed(() =>
+  projectsStore.selected
+    ? `Iara já está lendo o ${projectsStore.selected.name}. A primeira proposta chega na barra de baixo em uns 2 minutos.`
+    : NO_PROJECT_TEXT,
+)
 </script>
 
 <template>
   <div class="flex w-full flex-col gap-7">
-    <StepHeading
-      title="Tudo pronto"
-      :text="`Iara já está lendo o ${CURRENT_PROJECT}. A primeira proposta chega na barra de baixo em uns 2 minutos.`"
-    >
+    <StepHeading title="Tudo pronto" :text="readingText">
       <template #mascot>
         <VokiaMascot look="animado" :size="MASCOT_SIZE" />
       </template>

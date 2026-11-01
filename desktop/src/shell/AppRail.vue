@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
-  CURRENT_PROJECT,
   PAGE_LABELS,
   PROJECT_TOOLS,
-  PROJECTS,
   RAIL_COLLAPSED_WIDTH,
   RAIL_EXPANDED_WIDTH,
   WORKSPACE_ITEMS,
@@ -13,6 +11,10 @@ import {
 import { useNavigation } from './useNavigation'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
+import { projectIconOf } from '../features/projects/projectIcons'
+import type { Project } from '../features/projects/projectsApi'
+import { useProjects } from '../features/projects/useProjects'
+import { useTeam } from '../features/team/useTeam'
 
 const PROJECT_LIST_PAGE: AppPage = 'projetos'
 const NEW_PROJECT_PAGE: AppPage = 'onboarding'
@@ -37,7 +39,15 @@ const railPage = computed<AppPage>(() =>
   navigation.page === 'novo-projeto' ? PROJECT_LIST_PAGE : navigation.page,
 )
 const expanded = ref(false)
-const openProject = ref<string | null>(CURRENT_PROJECT)
+const projectsStore = useProjects()
+const team = useTeam()
+const openProject = ref<string | null>(projectsStore.selected?.name ?? null)
+watch(
+  () => projectsStore.selected?.name ?? null,
+  (name) => {
+    openProject.value = name
+  },
+)
 const itemSize = computed(() => [ITEM, expanded.value && ITEM_EXPANDED_PAD])
 const toggleLabel = computed(() => (expanded.value ? 'Recolher menu' : 'Expandir menu'))
 
@@ -57,8 +67,22 @@ function groupId(projectName: string) {
   return `rail-projeto-${projectName}`
 }
 
-function toggleProject(projectName: string) {
-  openProject.value = isOpen(projectName) ? null : projectName
+async function selectProject(project: Project) {
+  try {
+    await projectsStore.select(project.id)
+  } catch (cause) {
+    team.feed.push({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+  }
+}
+
+function toggleProject(project: Project) {
+  if (isOpen(project.name)) {
+    openProject.value = null
+  } else if (projectsStore.selected?.id === project.id) {
+    openProject.value = project.name
+  } else {
+    void selectProject(project)
+  }
 }
 
 function toggle() {
@@ -121,37 +145,30 @@ function toggle() {
         aria-label="Projetos"
         :class="[CARD, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
       >
-        <div v-for="project in PROJECTS" :key="project.name" class="flex flex-col">
+        <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
           <button
             type="button"
             :class="[itemSize, ITEM_OFF, isOpen(project.name) && 'bg-surface-2']"
-            :aria-label="`${project.name} · ${project.working} trabalhando`"
+            :aria-label="project.name"
             :aria-expanded="isOpen(project.name)"
             :aria-controls="groupId(project.name)"
-            :title="`${project.name} · ${project.working} trabalhando`"
-            @click="toggleProject(project.name)"
+            :title="project.name"
+            @click="toggleProject(project)"
           >
             <span :class="ICON_BOX">
               <svg
                 class="size-4"
-                viewBox="0 0 18 18"
+                viewBox="0 0 16 16"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.5"
                 stroke-linejoin="round"
                 aria-hidden="true"
               >
-                <path :d="project.path" />
+                <path :d="projectIconOf(project.symbol).path" />
               </svg>
             </span>
             <span v-if="expanded" :class="LABEL">{{ project.name }}</span>
-            <span
-              :class="[
-                'size-1.75 rounded-full shadow-[0_0_0_2px_var(--color-surface)]',
-                project.dot === 'warn' ? 'bg-warn' : 'bg-ok',
-                expanded ? 'ml-auto' : 'absolute bottom-1.5 right-1.5',
-              ]"
-            />
           </button>
           <div
             :id="groupId(project.name)"

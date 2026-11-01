@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
-import { CURRENT_PROJECT, PAGE_LABELS, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { PAGE_LABELS, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { useProjects } from '../projects/useProjects'
 import ArtifactCard from './ArtifactCard.vue'
 import {
   ALL_FILTER,
@@ -24,13 +25,15 @@ const filterOptions = computed(() =>
   })),
 )
 const countLabel = `${artifacts.length} artefatos`
+const projectsStore = useProjects()
+const projectName = computed(() => projectsStore.selected?.name ?? '')
 </script>
 
 <template>
   <section :class="PAGE_CLASSES">
     <header class="flex flex-wrap items-end gap-4">
       <div>
-        <p class="text-caption text-muted">{{ CURRENT_PROJECT }} · {{ SAMPLE_DATA_LABEL }}</p>
+        <p v-if="projectName" class="text-caption text-muted">{{ projectName }} · {{ SAMPLE_DATA_LABEL }}</p>
         <h1 :class="TITLE_CLASSES">{{ PAGE_LABELS.canvas }}</h1>
         <p class="mt-1 max-w-[70ch] text-body text-muted">{{ PAGE_SUBTITLE }}</p>
       </div>

@@ -1,103 +1,8 @@
-import { PROJECTS } from '../../shell/railNav'
-import type { ProjectIconKey } from './projectIcons'
-
-interface SampleFeature {
-  name: string
-  percent: number
-  label: string
-}
-
-export interface SampleProject {
-  name: string
-  path: string
-  working: number
-  icon: ProjectIconKey
-  features: readonly SampleFeature[]
-  workingNow: readonly string[]
-  pending: string
-  next: string
-  team: string
-  portraits: readonly string[]
-  pendingBadge: string
-  pausedText?: string
-}
-
-const workingOf = (name: string) => PROJECTS.find((project) => project.name === name)?.working ?? 0
-
 export const PROJECTS_TITLE = 'Seus projetos'
 export const PROJECTS_SUBTITLE =
   'Cada projeto tem um símbolo e o seu próprio mapa do time, backlog, conversas, artefatos e memória. Um agente pode trabalhar em mais de um.'
 export const NEW_PROJECT_LABEL = '+ Novo projeto'
-export const SAMPLE_BADGE_LABEL = 'exemplo'
-export const STATE_WORKING = 'Trabalhando'
-export const STATE_PENDING = 'Pendente'
-export const STATE_NEXT = 'Em seguida'
 export const OPEN_LABEL = 'Abrir'
-export const MOUNT_TEAM_LABEL = 'Montar time'
-export const RESUME_LABEL = 'Retomar'
-
-export const SAMPLE_PROJECTS: readonly SampleProject[] = [
-  {
-    name: 'loja-online',
-    path: '~/dev/loja-online',
-    working: workingOf('loja-online'),
-    icon: 'target',
-    features: [
-      { name: 'Pagamento via Pix', percent: 70, label: 'revisão' },
-      { name: 'Cartão parcelado', percent: 45, label: 'lote 2/3' },
-      { name: 'Painel de pedidos', percent: 0, label: 'backlog' },
-    ],
-    workingNow: ['Davi · tela do QR', 'Iara · planejando lote 3'],
-    pending: 'Nina quer rodar npm install',
-    next: 'PIX-5 · webhook idempotente',
-    team: '4 times · 7 agentes',
-    portraits: ['iara', 'davi', 'nina', 'leo'],
-    pendingBadge: '1 pendente',
-  },
-  {
-    name: 'app-agenda',
-    path: '~/dev/app-agenda',
-    working: workingOf('app-agenda'),
-    icon: 'triangle',
-    features: [
-      { name: 'Lembretes por push', percent: 85, label: 'entrega' },
-      { name: 'Login com Google', percent: 0, label: 'replay ›' },
-    ],
-    workingNow: ['Léo · envio do push'],
-    pending: 'Léo quer dar git push',
-    next: 'Testes no iOS',
-    team: 'Léo e Téo também em loja-online',
-    portraits: ['leo', 'teo', 'rui'],
-    pendingBadge: '1 pendente',
-  },
-  {
-    name: 'site-estudio',
-    path: '~/dev/site-estudio',
-    working: workingOf('site-estudio'),
-    icon: 'square',
-    features: [{ name: 'Página de cases', percent: 35, label: 'lote 1/3' }],
-    workingNow: ['Davi · grade de cases'],
-    pending: 'Bia pergunta qual paleta usar',
-    next: 'Lote 2 · filtros por cliente',
-    team: 'Davi também em loja-online',
-    portraits: ['bia', 'davi'],
-    pendingBadge: '1 pergunta',
-  },
-  {
-    name: 'vokia',
-    path: '~/dev/Vokia · pausado',
-    working: 0,
-    icon: 'diamond',
-    features: [],
-    workingNow: ['ninguém'],
-    pending: 'Montar o time',
-    next: 'Canvas de camadas',
-    team: '',
-    portraits: [],
-    pendingBadge: '',
-    pausedText: 'Nenhum agente alocado. 2 features no backlog: canvas de camadas e importar templates.',
-  },
-]
 
 export const NEW_PROJECT_CONTEXT = 'Projetos › Novo projeto'
 export const NEW_PROJECT_STEPS = ['Origem', 'Montar o time', 'Primeiro pedido'] as const
@@ -115,6 +20,7 @@ export const CREATES_ITEMS = [
   { name: 'worktrees/', text: 'um por feature, fora da sua branch' },
 ] as const
 export const CREATES_NOTE = 'Nada é enviado ao GitHub sem a sua aprovação.'
+export const LINKED_REPO_LABEL = 'Vinculado ao GitHub'
 export const CLI_NOTE = 'Claude Code e Codex logados'
 export const START_FROM_LABEL = 'Começar de'
 export const START_FROM_VALUE = 'Branch existente'
