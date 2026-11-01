@@ -34,7 +34,12 @@ impl fmt::Display for PermissionError {
 
 #[derive(Default)]
 pub struct PermissionBroker {
-    pending: Mutex<HashMap<String, oneshot::Sender<bool>>>,
+    pending: Mutex<HashMap<String, PendingPermission>>,
+}
+
+struct PendingPermission {
+    project_id: i64,
+    sender: oneshot::Sender<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -87,7 +92,7 @@ impl PermissionBroker {
         request: PermissionRequest,
     ) -> bool {
         let (sender, receiver) = oneshot::channel();
-        if self.register(&request.id, sender).is_err() {
+        if self.register(&request.id, project_id, sender).is_err() {
             return false;
         }
         let Ok(now) = now_millis() else {
@@ -153,16 +158,40 @@ impl PermissionBroker {
             .lock()
             .map_err(|_: PoisonError<_>| PermissionError::Poisoned)?
             .remove(id)
-            .ok_or(PermissionError::Unknown)?;
+            .ok_or(PermissionError::Unknown)?
+            .sender;
         // O receptor some quando o tempo esgota; a resposta tardia vira "não existe mais".
         sender.send(allow).map_err(|_| PermissionError::Unknown)
     }
 
-    fn register(&self, id: &str, sender: oneshot::Sender<bool>) -> Result<(), PermissionError> {
+    // Fechar as sessões de um projeto encerra na hora o que elas ainda perguntam ao usuário: negado, sem esperar o limite.
+    pub fn deny_project(&self, project_id: i64) {
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+        let ids: Vec<String> = pending
+            .iter()
+            .filter(|(_, entry)| entry.project_id == project_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            if let Some(entry) = pending.remove(&id) {
+                // O receptor some quando o tempo já esgotou; nesse caso não há o que negar.
+                let _ = entry.sender.send(false);
+            }
+        }
+    }
+
+    fn register(
+        &self,
+        id: &str,
+        project_id: i64,
+        sender: oneshot::Sender<bool>,
+    ) -> Result<(), PermissionError> {
         self.pending
             .lock()
             .map_err(|_: PoisonError<_>| PermissionError::Poisoned)?
-            .insert(id.to_string(), sender);
+            .insert(id.to_string(), PendingPermission { project_id, sender });
         Ok(())
     }
 

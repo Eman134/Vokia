@@ -82,6 +82,7 @@ pub fn select_project(app: AppHandle, state: State<'_, DbState>, id: i64) -> Res
     };
     db.select_project(id).map_err(|error| error.to_string())?;
     if let Some(previous) = previous.filter(|previous| *previous != id) {
+        app.state::<AppState>().permissions.deny_project(previous);
         // Fechar espera a mensagem em andamento do projeto anterior; a troca de seleção não deve esperar junto.
         tauri::async_runtime::spawn(async move {
             app.state::<AppState>()
