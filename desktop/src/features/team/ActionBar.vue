@@ -126,7 +126,6 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
 const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value)
-const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.id] !== 'idle'))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
 )
@@ -368,7 +367,7 @@ function onPointerLeave(): void {
       @submit.prevent="submit"
     >
       <svg
-        v-if="activeAgents.length < 2"
+        v-if="team.activeAgents.length < 2"
         class="size-6.5 shrink-0"
         :class="{ 'animate-spin': statusStore.status === 'working' }"
         :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
@@ -388,7 +387,7 @@ function onPointerLeave(): void {
       </svg>
       <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
         <span
-          v-for="agent in activeAgents"
+          v-for="agent in team.activeAgents"
           :key="agent.id"
           class="h-1 w-3.5 rounded-full"
           :class="team.states[agent.id] === 'waiting' ? 'bg-warn' : 'bg-ok'"

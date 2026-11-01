@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDecisions } from '../decisions/useDecisions'
 import { useUsage } from '../usage/useUsage'
-import { AGENTS, useTeam } from './useTeam'
+import { useTeam } from './useTeam'
 import {
   DONE_HOLD_MS,
   needsYouCopy,
@@ -23,7 +23,6 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   const doneUntil = ref(0)
   let doneTimer: ReturnType<typeof setInterval> | null = null
 
-  const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.id] !== 'idle'))
   // Mensagens do usuário também entram no feed; só erro ou resposta de agente mudam o estado.
   const outcomes = computed(() =>
     team.feed.filter((entry) => entry.type === 'error' || (entry.type === 'message' && entry.from !== 'user')),
@@ -35,14 +34,14 @@ export const useTeamStatus = defineStore('teamStatus', () => {
       fiveHour: usage.fiveHour,
       lastIsError: lastIsError.value,
       pendingDecisions: decisions.pendingCount,
-      activeAgents: activeAgents.value,
+      activeAgents: team.activeAgents,
       doneUntil: doneUntil.value,
       now: now.value,
     }),
   )
   const copy = computed(() => {
     if (status.value === 'working') {
-      return workingCopy(activeAgents.value)
+      return workingCopy(team.activeAgents)
     }
     return status.value === 'needs-you' ? needsYouCopy(decisions.pendingCount) : STATUS_COPY[status.value]
   })
@@ -76,7 +75,7 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   }
 
   watch(
-    () => activeAgents.value.length,
+    () => team.activeAgents.length,
     (count, previous) => {
       if (count > 0 && previous === 0) {
         stopDoneTimer()

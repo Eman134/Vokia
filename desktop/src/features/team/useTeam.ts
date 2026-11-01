@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
   type Agent,
@@ -19,6 +19,7 @@ import {
   type UnlistenFn,
 } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
+import { useAgentControl } from '../panel/useAgentControl'
 import { fetchDbProblem, listProjects, loadHistory } from '../projects/projectsApi'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
@@ -80,6 +81,7 @@ export const useTeam = defineStore('team', () => {
   const pendingMention = ref<Agent | null>(null)
   const queue = ref<QueuedRequest[]>([])
   const permissions = ref<VokiaPermission[]>([])
+  const control = useAgentControl()
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -91,6 +93,7 @@ export const useTeam = defineStore('team', () => {
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     AGENTS.find((agent) => states.value[agent.id] === 'thinking'),
   )
+  const activeAgents = computed<AgentProfile[]>(() => AGENTS.filter((agent) => states.value[agent.id] !== 'idle'))
   const timeline = computed<TimelineItem[]>(() => {
     const items: TimelineItem[] = []
     feed.value.forEach((entry, index) => {
@@ -235,11 +238,12 @@ export const useTeam = defineStore('team', () => {
     draining = true
     try {
       for (;;) {
-        const head = queue.value[0]
+        const index = queue.value.findIndex((request) => !control.isPaused(request.to))
+        const head = queue.value[index]
         if (head === undefined || head.editing) {
           break
         }
-        queue.value.shift()
+        queue.value.splice(index, 1)
         try {
           await sendRequest(head.text, head.to)
         } catch (error) {
@@ -250,6 +254,11 @@ export const useTeam = defineStore('team', () => {
       draining = false
     }
   }
+
+  watch(
+    () => control.paused.size,
+    () => void drain(),
+  )
 
   function startEdit(id: number): boolean {
     const target = queue.value.find((request) => request.id === id)
@@ -342,6 +351,7 @@ export const useTeam = defineStore('team', () => {
     moveQueued,
     removeQueued,
     thinkingAgent,
+    activeAgents,
     start,
     recheckCli,
     stop,

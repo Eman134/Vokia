@@ -2,19 +2,7 @@
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { AGENTS, useTeam } from './useTeam'
-import type { AgentState } from './events'
-
-const STATE_LABELS: Record<AgentState, string> = {
-  thinking: 'pensando',
-  waiting: 'esperando',
-  idle: 'livre',
-}
-
-const DOT_CLASSES: Record<AgentState, string> = {
-  thinking: 'animate-pulse bg-ok',
-  waiting: 'bg-warn',
-  idle: 'bg-faint',
-}
+import { DOT_CLASSES, STATE_LABELS } from './agentStateStyle'
 
 const team = useTeam()
 </script>
