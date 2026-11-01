@@ -423,6 +423,17 @@ impl LiveSession {
     }
 
     async fn closing_reason(&mut self) -> String {
+        let text = self.stderr_text().await;
+        match timeout(STDERR_DRAIN_TIMEOUT, self.child.wait()).await {
+            Ok(Ok(status)) => match status.code() {
+                Some(code) => format!("{text} (código {code})"),
+                None => text,
+            },
+            _ => text,
+        }
+    }
+
+    async fn stderr_text(&mut self) -> String {
         let Some(tail) = self.stderr_tail.take() else {
             return SESSION_EOF.to_string();
         };
