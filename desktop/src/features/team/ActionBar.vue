@@ -4,6 +4,7 @@ import { AGENTS, DEFAULT_RECIPIENT, useTeam, type AgentProfile } from './useTeam
 import { useTeamStatus } from './useTeamStatus'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
 import { placeholderFor, QUEUE_SUFFIX } from './composerPlaceholder'
+import { QUEUE_BADGE } from './queueCopy'
 import {
   findTrigger,
   insertMention,
@@ -26,6 +27,7 @@ import { useNavigation } from '../../shell/useNavigation'
 import MentionMenu from './MentionMenu.vue'
 import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
+import QueuePopover from './QueuePopover.vue'
 import Balloon from '../balloon/Balloon.vue'
 import UiButton from '../../ui/UiButton.vue'
 
@@ -41,9 +43,14 @@ const SPINNING_RING_DASH = `${SPINNING_ARC} ${RING_CIRCUMFERENCE - SPINNING_ARC}
 // O invólucro deixa passar o ponteiro: só a pílula captura, para o resto da janela continuar clicável.
 const BAR_WRAP_CLASSES =
   'pointer-events-none fixed bottom-6 left-[max(--spacing(6),calc(50%-var(--container-bar)/2),var(--rail-w,0px))] right-[max(--spacing(6),calc(50%-var(--container-bar)/2))] flex justify-center'
+const BAR_MOTION_CLASSES = 'duration-180 ease-out motion-reduce:transition-none'
 // `relative` ancora o menu de @ (MentionMenu é absolute) à pílula, não ao invólucro.
-const PILL_CLASSES =
-  'pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float transition-[width] duration-180 ease-out'
+// interpolate-size deixa o width animar entre w-fit e w-full; sem suporte a largura só troca.
+const PILL_CLASSES = `pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float transition-[width] [interpolate-size:allow-keywords] ${BAR_MOTION_CLASSES}`
+const REVEAL_ENTER_FROM_CLASS = 'opacity-0'
+const REVEAL_ENTER_ACTIVE_CLASS = `transition-opacity ${BAR_MOTION_CLASSES}`
+const REVEAL_LEAVE_ACTIVE_CLASS = REVEAL_ENTER_ACTIVE_CLASS
+const REVEAL_LEAVE_TO_CLASS = REVEAL_ENTER_FROM_CLASS
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
 const EXPANDED_WIDTH_CLASS = 'w-full'
 // Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
@@ -73,6 +80,7 @@ const highlightedIndex = ref(0)
 const hovered = ref(false)
 const focusWithin = ref(false)
 const actionMenuOpen = ref(false)
+const queueOpen = ref(false)
 const navigation = useNavigation()
 const railPage = computed<RailPage | null>(() =>
   navigation.page === 'novo-projeto' || navigation.page === 'onboarding' ? null : navigation.page,
@@ -113,7 +121,7 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
     : mentionMatches.value.at(highlightedIndex.value),
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
-const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value)
+const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value)
 const activeAgents = computed(() => AGENTS.filter((agent) => team.states[agent.id] !== 'idle'))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
@@ -136,6 +144,19 @@ watch([menuKind, () => activeMatch.value?.query], () => {
 })
 
 watch(menuOpen, (open) => {
+  if (open) {
+    actionMenuOpen.value = false
+    queueOpen.value = false
+  }
+})
+
+watch(actionMenuOpen, (open) => {
+  if (open) {
+    queueOpen.value = false
+  }
+})
+
+watch(queueOpen, (open) => {
   if (open) {
     actionMenuOpen.value = false
   }
@@ -374,19 +395,26 @@ function onPointerLeave(): void {
       >
         {{ statusStore.statusText }}
       </span>
-      <template v-if="expanded">
-        <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
-        <UiButton
-          variant="quiet"
-          size="sm"
-          aria-label="Ações da página"
-          aria-haspopup="menu"
-          :aria-expanded="actionMenuOpen"
-          @press="actionMenuOpen = !actionMenuOpen"
-        >
-          ☰
-        </UiButton>
-      </template>
+      <Transition
+        :enter-from-class="REVEAL_ENTER_FROM_CLASS"
+        :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"
+        :leave-active-class="REVEAL_LEAVE_ACTIVE_CLASS"
+        :leave-to-class="REVEAL_LEAVE_TO_CLASS"
+      >
+        <span v-if="expanded" class="flex shrink-0 items-center gap-3">
+          <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
+          <UiButton
+            variant="quiet"
+            size="sm"
+            aria-label="Ações da página"
+            aria-haspopup="menu"
+            :aria-expanded="actionMenuOpen"
+            @press="actionMenuOpen = !actionMenuOpen"
+          >
+            ☰
+          </UiButton>
+        </span>
+      </Transition>
       <div
         ref="wrapperRef"
         class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
@@ -428,6 +456,16 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
+      <UiButton
+        v-if="team.queue.length > 0"
+        variant="quiet"
+        size="sm"
+        aria-haspopup="dialog"
+        :aria-expanded="queueOpen"
+        @press="queueOpen = !queueOpen"
+      >
+        {{ QUEUE_BADGE(team.queue.length) }}
+      </UiButton>
       <CommandMenu
         v-if="menuOpen && menuKind === 'command'"
         :id="listboxId"
@@ -450,6 +488,7 @@ function onPointerLeave(): void {
         @run="runAction"
         @close="actionMenuOpen = false"
       />
+      <QueuePopover v-if="queueOpen && team.queue.length > 0" @close="queueOpen = false" />
     </form>
   </div>
   <div role="status" :class="team.online ? undefined : BAR_WRAP_CLASSES">

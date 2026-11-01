@@ -33,7 +33,10 @@ export interface QueuedRequest {
   id: number
   text: string
   to: Agent
+  editing: boolean
 }
+
+export type QueueMove = 'up' | 'down'
 
 export const AGENTS: readonly AgentProfile[] = [
   { id: 'iara', name: 'Iara', role: 'Tech lead' },
@@ -204,9 +207,14 @@ export const useTeam = defineStore('team', () => {
     }
     draining = true
     try {
-      for (let next = queue.value.shift(); next !== undefined; next = queue.value.shift()) {
+      for (;;) {
+        const head = queue.value[0]
+        if (head === undefined || head.editing) {
+          break
+        }
+        queue.value.shift()
         try {
-          await sendRequest(next.text, next.to)
+          await sendRequest(head.text, head.to)
         } catch (error) {
           feed.value.push({ type: 'error', message: String(error) })
         }
@@ -214,6 +222,55 @@ export const useTeam = defineStore('team', () => {
     } finally {
       draining = false
     }
+  }
+
+  function startEdit(id: number): boolean {
+    const target = queue.value.find((request) => request.id === id)
+    if (target === undefined) {
+      return false
+    }
+    for (const request of queue.value) {
+      request.editing = request.id === id
+    }
+    return true
+  }
+
+  function saveEdit(id: number, text: string): boolean {
+    const target = queue.value.find((request) => request.id === id)
+    if (target === undefined || text.trim() === '') {
+      return false
+    }
+    target.text = text
+    target.editing = false
+    void drain()
+    return true
+  }
+
+  function cancelEdit(id: number): void {
+    const target = queue.value.find((request) => request.id === id)
+    if (target !== undefined) {
+      target.editing = false
+    }
+    void drain()
+  }
+
+  function moveQueued(id: number, move: QueueMove): void {
+    const index = queue.value.findIndex((request) => request.id === id)
+    const neighbor = move === 'up' ? index - 1 : index + 1
+    if (index !== -1 && neighbor >= 0 && neighbor < queue.value.length) {
+      const moved = queue.value[index]!
+      queue.value[index] = queue.value[neighbor]!
+      queue.value[neighbor] = moved
+    }
+    void drain()
+  }
+
+  function removeQueued(id: number): void {
+    const index = queue.value.findIndex((request) => request.id === id)
+    if (index !== -1) {
+      queue.value.splice(index, 1)
+    }
+    void drain()
   }
 
   async function send(text: string, to: Agent | null): Promise<boolean> {
@@ -232,6 +289,7 @@ export const useTeam = defineStore('team', () => {
       id: ++nextQueueId,
       text,
       to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
+      editing: false,
     })
     void drain()
     return true
@@ -249,6 +307,11 @@ export const useTeam = defineStore('team', () => {
     pendingMention,
     queue,
     queuedFor,
+    startEdit,
+    saveEdit,
+    cancelEdit,
+    moveQueued,
+    removeQueued,
     thinkingAgent,
     start,
     recheckCli,

@@ -7,6 +7,7 @@ export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { AGENTS, useTeam } from './useTeam'
 import MessageEntry from './MessageEntry.vue'
+import QueuedEntry from './QueuedEntry.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 
@@ -36,7 +37,7 @@ async function followEnd(): Promise<void> {
   }
 }
 
-watch([() => team.feed.length, () => team.thinkingAgent], followEnd)
+watch([() => team.feed.length, () => team.queue.length, () => team.thinkingAgent], followEnd)
 onMounted(followEnd)
 </script>
 
@@ -64,6 +65,11 @@ onMounted(followEnd)
           </ol>
         </details>
         <MessageEntry v-else :entry="item.entry" />
+      </li>
+    </ol>
+    <ol v-if="team.queue.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
+      <li v-for="request in team.queue" :key="request.id">
+        <QueuedEntry :request="request" />
       </li>
     </ol>
     <div
