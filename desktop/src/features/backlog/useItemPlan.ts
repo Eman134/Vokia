@@ -125,7 +125,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   }
 
   function receive(entry: (typeof team.feed)[number]): void {
-    if (entry.type === 'notice') return
+    if (entry.type === 'notice' || entry.type === 'permission-result') return
     if (entry.type === 'error') {
       const id = oldestAwaiting()
       if (id !== undefined) states.value[id] = states.value[id]?.cancelled ? { state: 'vazio' } : { state: 'vazio', error: entry.message }

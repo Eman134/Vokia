@@ -30,7 +30,7 @@ export const STATUS_COPY: Record<Exclude<TeamStatus, 'working' | 'needs-you'>, S
 export const STATUS_RING: Record<TeamStatus, string> = {
   paused: 'stroke-danger',
   error: 'stroke-danger',
-  'needs-you': 'stroke-warn',
+  'needs-you': 'stroke-danger',
   working: 'stroke-ok',
   done: 'stroke-ok',
   rest: 'stroke-faint',

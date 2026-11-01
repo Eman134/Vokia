@@ -5,6 +5,7 @@ import {
   type AgentState,
   type CliProblem,
   type FeedNotice,
+  type FeedPermissionResult,
   type VokiaAgentState,
   type VokiaError,
   type VokiaEvent,
@@ -40,7 +41,7 @@ export function agentName(id: Agent): string {
   return AGENTS.find((agent) => agent.id === id)?.name ?? id
 }
 
-export type FeedEntry = VokiaMessage | VokiaError | FeedNotice
+export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
 
 export interface QueuedRequest {
   id: number
@@ -221,9 +222,20 @@ export const useTeam = defineStore('team', () => {
       case 'permission':
         permissions.value.push(event)
         break
-      case 'permission-closed':
+      case 'permission-closed': {
+        const closed = permissions.value.find((permission) => permission.id === event.id)
+        if (closed) {
+          feed.value.push({
+            type: 'permission-result',
+            agent: closed.agent,
+            detail: closed.detail,
+            outcome: event.outcome,
+            time: Date.now(),
+          })
+        }
         permissions.value = permissions.value.filter((permission) => permission.id !== event.id)
         break
+      }
       case 'decision':
         useDecisions().apply(event)
         break

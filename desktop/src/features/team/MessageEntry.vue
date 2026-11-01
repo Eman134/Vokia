@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AGENTS, DEFAULT_RECIPIENT, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
 import { mentionSegments, mentionSpans, type MentionSegment } from './composerMentions'
-import type { Speaker, VokiaMessage } from './events'
+import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
 
 defineProps<{ entry: FeedEntry }>()
 
@@ -9,6 +9,12 @@ const SPEAKER_NAMES: Record<Speaker, string> = {
   user: 'Você',
   iara: 'Iara',
   davi: 'Davi',
+}
+
+const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
+  allowed: '✓ Aprovado:',
+  denied: '✕ Negado:',
+  expired: '⏱ Expirou sem resposta:',
 }
 
 const USER_INITIAL = 'V'
@@ -69,6 +75,13 @@ function highlightedSegments(message: VokiaMessage): MentionSegment[] {
     </div>
   </div>
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
+  <p
+    v-else-if="entry.type === 'permission-result'"
+    data-testid="permission-result"
+    class="wrap-break-word whitespace-pre-wrap text-caption text-muted"
+  >
+    {{ OUTCOME_LABELS[entry.outcome] }} {{ entry.detail }}
+  </p>
   <div v-else class="flex items-center gap-2.5 rounded-card border border-danger bg-surface px-4 py-3">
     <span class="size-1.75 shrink-0 rounded-full bg-danger" />
     <p class="wrap-break-word min-w-0 whitespace-pre-wrap text-control text-ink">{{ entry.message }}</p>

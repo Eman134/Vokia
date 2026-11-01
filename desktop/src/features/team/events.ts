@@ -28,6 +28,16 @@ export interface FeedNotice {
   time: number
 }
 
+export type PermissionOutcome = 'allowed' | 'denied' | 'expired'
+
+export interface FeedPermissionResult {
+  type: 'permission-result'
+  agent: Agent
+  detail: string
+  outcome: PermissionOutcome
+  time: number
+}
+
 export interface VokiaError {
   type: 'error'
   message: string
@@ -40,11 +50,15 @@ export interface VokiaPermission {
   tool: string
   detail: string
   projectId: number | null
+  expiresAt: number
+  approvedBefore: number
 }
 
 export interface VokiaPermissionClosed {
   type: 'permission-closed'
   id: string
+  projectId: number | null
+  outcome: PermissionOutcome
 }
 
 export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao'

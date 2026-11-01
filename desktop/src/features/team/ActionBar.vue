@@ -26,6 +26,7 @@ import { useProjects } from '../projects/useProjects'
 import type { Agent } from './events'
 import type { RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
+import PermissionInline from './PermissionInline.vue'
 import MentionMenu from './MentionMenu.vue'
 import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
@@ -202,6 +203,9 @@ onUnmounted(() => window.removeEventListener('keydown', onShortcut))
 function dashClass(agent: Agent): string {
   if (control.isPaused(agent)) {
     return PAUSED_DOT_CLASS
+  }
+  if (team.permissions.some((permission) => permission.agent === agent)) {
+    return 'bg-danger motion-safe:animate-pulse'
   }
   return team.states[agent] === 'waiting' ? 'bg-warn' : 'bg-ok'
 }
@@ -384,7 +388,10 @@ function onPointerLeave(): void {
       <svg
         v-if="team.activeAgents.length < 2"
         class="size-6.5 shrink-0"
-        :class="{ 'animate-spin': statusStore.status === 'working' }"
+        :class="{
+          'animate-spin': statusStore.status === 'working',
+          'animate-pulse motion-reduce:animate-none': statusStore.status === 'needs-you',
+        }"
         :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
         fill="none"
         :stroke-width="RING_STROKE"
@@ -414,6 +421,7 @@ function onPointerLeave(): void {
       >
         {{ statusStore.statusText }}
       </span>
+      <PermissionInline v-if="expanded && team.permissions.length > 0" />
       <PausedAgents />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
