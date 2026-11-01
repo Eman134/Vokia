@@ -1,9 +1,11 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { useDecisions } from '../decisions/useDecisions'
 import { useUsage } from '../usage/useUsage'
 import { AGENTS, useTeam } from './useTeam'
 import {
   DONE_HOLD_MS,
+  needsYouCopy,
   resolveTeamStatus,
   STATUS_COPY,
   STATUS_RING,
@@ -16,6 +18,7 @@ const DONE_TICK_MS = 1000
 export const useTeamStatus = defineStore('teamStatus', () => {
   const team = useTeam()
   const usage = useUsage()
+  const decisions = useDecisions()
   const now = ref(Date.now())
   const doneUntil = ref(0)
   let doneTimer: ReturnType<typeof setInterval> | null = null
@@ -31,14 +34,18 @@ export const useTeamStatus = defineStore('teamStatus', () => {
     resolveTeamStatus({
       fiveHour: usage.fiveHour,
       lastIsError: lastIsError.value,
+      pendingDecisions: decisions.pendingCount,
       activeAgents: activeAgents.value,
       doneUntil: doneUntil.value,
       now: now.value,
     }),
   )
-  const copy = computed(() =>
-    status.value === 'working' ? workingCopy(activeAgents.value) : STATUS_COPY[status.value],
-  )
+  const copy = computed(() => {
+    if (status.value === 'working') {
+      return workingCopy(activeAgents.value)
+    }
+    return status.value === 'needs-you' ? needsYouCopy(decisions.pendingCount) : STATUS_COPY[status.value]
+  })
   const ring = computed(() => STATUS_RING[status.value])
   const statusText = computed(() => `${copy.value.status} · ${copy.value.detail}`)
   const placeholder = computed(() => copy.value.placeholder)

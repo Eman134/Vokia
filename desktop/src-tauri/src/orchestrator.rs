@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -12,10 +13,12 @@ use crate::cache::{
 };
 use crate::claude::{self, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply};
 use crate::db::{DbError, DbState};
-use crate::events::{Agent, AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
+use crate::events::{
+    Agent, AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME,
+};
 use crate::permissions::PermissionGate;
 use crate::projects;
-use crate::state::AppState;
+use crate::state::{AppState, PendingDecision};
 use crate::task::{
     agent_named, call_mode, degrades_to_fresh, is_live_task, long_request_text, parse_definition,
     ActiveTask, CallMode, TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS,
@@ -29,10 +32,15 @@ const NO_CONVERSATION: usize = 0;
 const TEAM_ROSTER: &str = "Time desta sessão: Iara (tech lead) e Davi (dev frontend).";
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
+const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const NO_FOLDER_MESSAGE: &str =
     "O projeto selecionado não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
 const PROJECT_RULE: &str =
     "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
+pub const DECISION_MARK: &str = "#decisao";
+pub const DECISION_FIELD_SEPARATOR: char = '|';
+pub const DECISION_OPTION_SEPARATOR: char = ';';
+const DECISION_FIELD_COUNT: usize = 4;
 const DELEGATION_MARK: char = '@';
 const DELEGATION_SEPARATOR: char = ':';
 const REPLY_PREFIX: &str = " respondeu: ";
@@ -63,6 +71,8 @@ pub enum FlowError {
     Clock(SystemTimeError),
     History(DbError),
     ProjectFolder(String),
+    DecisionsPoisoned,
+    UnknownDecision,
 }
 
 impl fmt::Display for FlowError {
@@ -104,6 +114,11 @@ impl fmt::Display for FlowError {
                 write!(f, "Não foi possível gravar o histórico: {error}")
             }
             FlowError::ProjectFolder(reason) => write!(f, "{reason}"),
+            FlowError::DecisionsPoisoned => write!(
+                f,
+                "As decisões pendentes ficaram inconsistentes após uma falha anterior."
+            ),
+            FlowError::UnknownDecision => write!(f, "Esta decisão não existe mais."),
         }
     }
 }
@@ -161,6 +176,25 @@ pub async fn handle_request(
         return Ok(());
     }
     run_flow(app, state, cli, request, recipient).await
+}
+
+pub async fn answer_decision(
+    app: &AppHandle,
+    state: &AppState,
+    id: u64,
+    answer: &str,
+) -> Result<(), FlowError> {
+    let decision = state
+        .decisions
+        .lock()
+        .map_err(|_| FlowError::DecisionsPoisoned)?
+        .remove(&id)
+        .ok_or(FlowError::UnknownDecision)?;
+    let text = format!(
+        "Decisão \"{}\" (sobre o pedido: {}): {answer}",
+        decision.title, decision.request
+    );
+    handle_request(app, state, &text, decision.agent).await
 }
 
 fn start_or_enqueue(state: &AppState, request: &str, recipient: Agent) -> Result<bool, FlowError> {
@@ -333,6 +367,9 @@ async fn run_turns(
             ))
         })?;
         let reply = ask_step(exchange, pool, turn.speaker, &prompts).await?;
+        if let Some(parsed) = parse_decision(&reply) {
+            return raise_decision(exchange, transcript, &turn, parsed);
+        }
         let ParsedReply {
             visible,
             delegation,
@@ -425,6 +462,62 @@ async fn run_turns(
             None => return Ok(TaskOutcome::Finished),
         }
     }
+}
+
+// Quem decide fica Waiting até a resposta virar um novo pedido; quem delegou a ele volta a Idle.
+fn raise_decision(
+    exchange: &Exchange<'_>,
+    transcript: &mut Vec<String>,
+    turn: &Turn,
+    parsed: ParsedDecision,
+) -> Result<TaskOutcome, FlowError> {
+    let Exchange {
+        app,
+        state,
+        request,
+        ..
+    } = *exchange;
+    let ParsedDecision {
+        kind,
+        title,
+        detail,
+        options,
+        visible,
+    } = parsed;
+    let agent = turn.speaker;
+    let visible = parse_reply(&visible, agent).visible;
+    if !visible.is_empty() {
+        say(app, transcript, agent, Speaker::User, &visible)?;
+    }
+    let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
+    state
+        .decisions
+        .lock()
+        .map_err(|_| FlowError::DecisionsPoisoned)?
+        .insert(
+            id,
+            PendingDecision {
+                agent,
+                title: title.clone(),
+                request: request.to_string(),
+            },
+        );
+    emit(
+        app,
+        VokiaEvent::Decision {
+            id,
+            agent,
+            kind,
+            title,
+            detail,
+            options,
+        },
+    )?;
+    for requester in &turn.requesters {
+        emit_state(app, *requester, AgentState::Idle)?;
+    }
+    emit_state(app, agent, AgentState::Waiting)?;
+    Ok(TaskOutcome::Finished)
 }
 
 struct Turn {
@@ -954,9 +1047,69 @@ fn role(agent: Agent) -> String {
         Agent::Davi => "dev frontend",
     };
     format!(
-        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {PROJECT_RULE}",
+        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE}",
         agent.name()
     )
+}
+
+struct ParsedDecision {
+    kind: DecisionKind,
+    title: String,
+    detail: String,
+    options: Vec<String>,
+    visible: String,
+}
+
+fn parse_decision(reply: &str) -> Option<ParsedDecision> {
+    let lines: Vec<&str> = reply.lines().collect();
+    let (index, decision) = lines
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, line)| decision_line(line).map(|decision| (index, decision)))?;
+    let visible: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter(|(position, _)| *position != index)
+        .map(|(_, line)| *line)
+        .collect();
+    Some(ParsedDecision {
+        visible: visible.join(
+            "
+",
+        ),
+        ..decision
+    })
+}
+
+fn decision_line(line: &str) -> Option<ParsedDecision> {
+    let rest = line.trim().strip_prefix(DECISION_MARK)?;
+    let mut fields = rest.splitn(DECISION_FIELD_COUNT, DECISION_FIELD_SEPARATOR);
+    let kind = DecisionKind::parse(fields.next()?.trim())?;
+    let title = fields.next()?.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let detail = fields.next().unwrap_or_default().trim();
+    let options: Vec<String> = fields
+        .next()
+        .unwrap_or_default()
+        .split(DECISION_OPTION_SEPARATOR)
+        .map(str::trim)
+        .filter(|option| !option.is_empty())
+        .map(str::to_string)
+        .collect();
+    // Escolha sem opções não tem como ser respondida; a linha vira texto comum.
+    if kind == DecisionKind::Escolha && options.is_empty() {
+        return None;
+    }
+    Some(ParsedDecision {
+        kind,
+        title: title.to_string(),
+        detail: detail.to_string(),
+        options,
+        visible: String::new(),
+    })
 }
 
 struct ParsedReply {

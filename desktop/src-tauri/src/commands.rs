@@ -46,6 +46,18 @@ pub fn answer_permission(
 }
 
 #[tauri::command]
+pub async fn answer_decision(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+    answer: String,
+) -> Result<(), String> {
+    orchestrator::answer_decision(&app, &state, id, &answer)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn db_problem(state: State<'_, DbState>) -> Option<DbProblem> {
     state.problem()
 }

@@ -38,6 +38,18 @@ export interface VokiaPermissionClosed {
   id: string
 }
 
+export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao'
+
+export interface VokiaDecision {
+  type: 'decision'
+  id: number
+  agent: Agent
+  kind: DecisionKind
+  title: string
+  detail: string
+  options: string[]
+}
+
 export interface UsageWindow {
   percent: number
   resetsAt: number
@@ -55,6 +67,7 @@ export type VokiaEvent =
   | VokiaError
   | VokiaPermission
   | VokiaPermissionClosed
+  | VokiaDecision
   | VokiaPlanUsage
 
 export interface CliProblem {

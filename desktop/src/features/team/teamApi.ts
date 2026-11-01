@@ -7,6 +7,7 @@ export type { UnlistenFn }
 const CLI_PROBLEM_COMMAND = 'cli_problem'
 const SEND_REQUEST_COMMAND = 'send_request'
 const ANSWER_PERMISSION_COMMAND = 'answer_permission'
+const ANSWER_DECISION_COMMAND = 'answer_decision'
 const CHECK_CONNECTION_COMMAND = 'check_connection'
 
 export function fetchCliProblem(): Promise<CliProblem | null> {
@@ -19,6 +20,10 @@ export function sendRequest(text: string, to: Agent): Promise<void> {
 
 export function answerPermission(id: string, allow: boolean): Promise<void> {
   return invoke<void>(ANSWER_PERMISSION_COMMAND, { id, allow })
+}
+
+export function answerDecision(id: number, answer: string): Promise<void> {
+  return invoke<void>(ANSWER_DECISION_COMMAND, { id, answer })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

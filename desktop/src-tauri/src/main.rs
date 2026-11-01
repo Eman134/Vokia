@@ -15,7 +15,8 @@ mod task;
 mod tray;
 mod window;
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -40,11 +41,14 @@ fn main() {
             }),
             archive: Mutex::new(Vec::new()),
             permissions: PermissionBroker::default(),
+            decisions: Mutex::new(HashMap::new()),
+            next_decision_id: AtomicU64::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             commands::cli_problem,
             commands::send_request,
             commands::answer_permission,
+            commands::answer_decision,
             commands::check_connection,
             commands::db_problem,
             commands::list_projects,

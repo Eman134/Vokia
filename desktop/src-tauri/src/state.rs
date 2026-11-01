@@ -1,5 +1,6 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 use crate::cache::Cache;
@@ -14,6 +15,14 @@ pub struct AppState {
     pub flow: Mutex<FlowQueue>,
     pub archive: Mutex<Vec<TaskRecord>>,
     pub permissions: PermissionBroker,
+    pub decisions: Mutex<HashMap<u64, PendingDecision>>,
+    pub next_decision_id: AtomicU64,
+}
+
+pub struct PendingDecision {
+    pub agent: Agent,
+    pub title: String,
+    pub request: String,
 }
 
 pub struct FlowQueue {

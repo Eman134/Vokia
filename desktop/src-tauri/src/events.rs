@@ -63,6 +63,39 @@ pub enum AgentState {
     Idle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DecisionKind {
+    Aprovacao,
+    Escolha,
+    Pergunta,
+    Revisao,
+}
+
+impl DecisionKind {
+    const ALL: [DecisionKind; 4] = [
+        DecisionKind::Aprovacao,
+        DecisionKind::Escolha,
+        DecisionKind::Pergunta,
+        DecisionKind::Revisao,
+    ];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            DecisionKind::Aprovacao => "aprovacao",
+            DecisionKind::Escolha => "escolha",
+            DecisionKind::Pergunta => "pergunta",
+            DecisionKind::Revisao => "revisao",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<DecisionKind> {
+        DecisionKind::ALL
+            .into_iter()
+            .find(|kind| kind.as_str().eq_ignore_ascii_case(value))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
@@ -94,6 +127,14 @@ pub enum VokiaEvent {
     },
     PermissionClosed {
         id: String,
+    },
+    Decision {
+        id: u64,
+        agent: Agent,
+        kind: DecisionKind,
+        title: String,
+        detail: String,
+        options: Vec<String>,
     },
     #[serde(rename_all = "camelCase")]
     PlanUsage {

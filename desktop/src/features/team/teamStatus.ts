@@ -1,9 +1,9 @@
 import { PAUSE_THRESHOLD } from '../usage/usagePlans'
 import type { AgentProfile } from './useTeam'
 
-export type TeamStatus = 'paused' | 'error' | 'working' | 'done' | 'rest'
+export type TeamStatus = 'paused' | 'error' | 'needs-you' | 'working' | 'done' | 'rest'
 
-export const STATUS_PRIORITY: readonly TeamStatus[] = ['paused', 'error', 'working', 'done', 'rest']
+export const STATUS_PRIORITY: readonly TeamStatus[] = ['paused', 'error', 'needs-you', 'working', 'done', 'rest']
 export const DONE_HOLD_MS = 15000
 
 export interface StatusCopy {
@@ -12,7 +12,7 @@ export interface StatusCopy {
   placeholder: string
 }
 
-export const STATUS_COPY: Record<Exclude<TeamStatus, 'working'>, StatusCopy> = {
+export const STATUS_COPY: Record<Exclude<TeamStatus, 'working' | 'needs-you'>, StatusCopy> = {
   paused: {
     status: 'Time pausado',
     detail: 'retome pela barra',
@@ -30,6 +30,7 @@ export const STATUS_COPY: Record<Exclude<TeamStatus, 'working'>, StatusCopy> = {
 export const STATUS_RING: Record<TeamStatus, string> = {
   paused: 'stroke-danger',
   error: 'stroke-danger',
+  'needs-you': 'stroke-warn',
   working: 'stroke-ok',
   done: 'stroke-ok',
   rest: 'stroke-faint',
@@ -38,6 +39,7 @@ export const STATUS_RING: Record<TeamStatus, string> = {
 export interface TeamStatusInput {
   fiveHour: number | null
   lastIsError: boolean
+  pendingDecisions: number
   activeAgents: AgentProfile[]
   doneUntil: number
   now: number
@@ -47,11 +49,20 @@ export function resolveTeamStatus(input: TeamStatusInput): TeamStatus {
   const active: Record<TeamStatus, boolean> = {
     paused: input.fiveHour !== null && input.fiveHour >= PAUSE_THRESHOLD,
     error: input.lastIsError,
+    'needs-you': input.pendingDecisions > 0,
     working: input.activeAgents.length > 0,
     done: input.now < input.doneUntil,
     rest: true,
   }
   return STATUS_PRIORITY.find((status) => active[status]) ?? 'rest'
+}
+
+export function needsYouCopy(count: number): StatusCopy {
+  return {
+    status: 'Precisa de você',
+    detail: count === 1 ? '1 decisão esperando' : `${count} decisões esperando`,
+    placeholder: 'Responda ou mencione @alguém',
+  }
 }
 
 export function workingCopy(agents: readonly AgentProfile[]): StatusCopy {

@@ -18,6 +18,7 @@ import {
   sendRequest,
   type UnlistenFn,
 } from './teamApi'
+import { useDecisions } from '../decisions/useDecisions'
 import { fetchDbProblem, listProjects, loadHistory } from '../projects/projectsApi'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
@@ -27,6 +28,10 @@ export interface AgentProfile {
   id: Agent
   name: string
   role: string
+}
+
+export function agentName(id: Agent): string {
+  return AGENTS.find((agent) => agent.id === id)?.name ?? id
 }
 
 export type FeedEntry = VokiaMessage | VokiaError
@@ -169,6 +174,7 @@ export const useTeam = defineStore('team', () => {
     unlisten = null
     stopListeningConnection?.()
     stopListeningConnection = null
+    useDecisions().stop()
     if (pollTimer !== null) {
       clearInterval(pollTimer)
       pollTimer = null
@@ -189,6 +195,9 @@ export const useTeam = defineStore('team', () => {
         break
       case 'permission-closed':
         permissions.value = permissions.value.filter((permission) => permission.id !== event.id)
+        break
+      case 'decision':
+        useDecisions().apply(event)
         break
       case 'plan-usage':
         break

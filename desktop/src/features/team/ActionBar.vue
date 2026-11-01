@@ -29,6 +29,9 @@ import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
 import QueuePopover from './QueuePopover.vue'
 import Balloon from '../balloon/Balloon.vue'
+import { PANEL_TITLE } from '../decisions/decisionCopy'
+import { useDecisions } from '../decisions/useDecisions'
+import PanelShell from '../panel/PanelShell.vue'
 import UiButton from '../../ui/UiButton.vue'
 
 const RING_BOX = 28
@@ -65,6 +68,7 @@ const emit = defineEmits<{
 
 const team = useTeam()
 const statusStore = useTeamStatus()
+const decisions = useDecisions()
 const draft = ref('')
 const caret = ref(0)
 const scrollLeft = ref(0)
@@ -353,6 +357,7 @@ function onPointerLeave(): void {
 <template>
   <div v-if="team.online" :class="BAR_WRAP_CLASSES">
     <Balloon />
+    <PanelShell />
     <form
       ref="pillRef"
       :class="[PILL_CLASSES, expanded ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS]"
@@ -456,6 +461,36 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
+      <UiButton
+        variant="quiet"
+        size="sm"
+        :aria-label="PANEL_TITLE"
+        :aria-expanded="decisions.open"
+        class="gap-1.75"
+        data-testid="decisions-button"
+        @press="decisions.toggle()"
+      >
+        <span
+          v-if="decisions.pendingCount > 0"
+          class="grid h-4.5 min-w-4.5 place-items-center rounded-full bg-warn px-1.25 text-tiny font-semibold text-bg"
+          data-testid="decisions-count"
+          >{{ decisions.pendingCount }}</span
+        >
+        <svg
+          v-else-if="!expanded"
+          class="size-3 text-ok"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M2.5 8.5L6 12l7.5-8" />
+        </svg>
+        <span v-if="expanded">{{ PANEL_TITLE }}</span>
+      </UiButton>
       <UiButton
         v-if="team.queue.length > 0"
         variant="quiet"
