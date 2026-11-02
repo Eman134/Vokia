@@ -18,6 +18,7 @@ import { useProjects } from '../features/projects/useProjects'
 import { useTeam } from '../features/team/useTeam'
 
 const PROJECT_LIST_PAGE: AppPage = 'projetos'
+const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
 const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap text-left'
 const ITEM_EXPANDED_PAD = 'pr-2.5'
@@ -50,13 +51,14 @@ watch(
 )
 const itemSize = computed(() => [ITEM, expanded.value && ITEM_EXPANDED_PAD])
 const toggleLabel = computed(() => (expanded.value ? 'Recolher menu' : 'Expandir menu'))
+const hasSingleProject = computed(() => projectsStore.projects.length === 1)
 
 function isActive(page: AppPage) {
   return page === railPage.value
 }
 
 function isOpen(projectName: string) {
-  return openProject.value === projectName
+  return hasSingleProject.value || openProject.value === projectName
 }
 
 function isActiveSubpage(projectName: string, page: AppPage) {
@@ -79,7 +81,7 @@ function toggleProject(project: Project) {
   if (projectsStore.selected?.id === project.id && !isProjectPage(navigation.page)) {
     openProject.value = project.name
     navigation.goTo(navigation.rememberedPage(project.id))
-  } else if (isOpen(project.name)) {
+  } else if (isOpen(project.name) && !hasSingleProject.value) {
     openProject.value = null
   } else if (projectsStore.selected?.id === project.id) {
     openProject.value = project.name
@@ -145,6 +147,7 @@ function toggle() {
       </nav>
 
       <nav
+        v-if="projectsStore.projects.length > 0"
         aria-label="Projetos"
         :class="[CARD, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
       >
@@ -210,6 +213,32 @@ function toggle() {
           </div>
         </div>
       </nav>
+      <div v-else class="min-h-0 flex-1">
+        <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+          <button
+            type="button"
+            :class="[itemSize, ITEM_OFF]"
+            :aria-label="PAGE_LABELS[NEW_PROJECT_PAGE]"
+            :title="PAGE_LABELS[NEW_PROJECT_PAGE]"
+            @click="navigation.goTo(NEW_PROJECT_PAGE)"
+          >
+            <span :class="ICON_BOX">
+              <svg
+                class="size-4.25 flex-none"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+            </span>
+            <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS[NEW_PROJECT_PAGE] }}</span>
+          </button>
+        </nav>
+      </div>
 
       <div class="mt-2 flex shrink-0 flex-col items-start gap-1 pl-1.5">
         <button
