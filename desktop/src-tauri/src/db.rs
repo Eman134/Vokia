@@ -8,13 +8,14 @@ use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::events::{Agent, Speaker, VokiaEvent};
+use crate::permission_level::PermissionLevel;
 use crate::session_key::SessionKey;
 
 pub const DB_FILE: &str = "vokia.db";
 const HISTORY_LIMIT: i64 = 500;
 const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
-     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id)";
+     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level";
 // item_plans antes de backlog_items: a chave estrangeira deles aponta para backlog_items.
 const PROJECT_CHILD_TABLES: &[&str] = &[
     "item_plans",
@@ -160,6 +161,9 @@ const MIGRATIONS: &[&str] = &[
     UPDATE projects SET selected = 1 WHERE id = (SELECT MIN(id) FROM projects)
         AND NOT EXISTS (SELECT 1 FROM projects WHERE selected = 1);
 ",
+    "
+    ALTER TABLE projects ADD COLUMN permission_level TEXT NOT NULL DEFAULT 'liberado' CHECK (permission_level IN ('liberado','edicao','leitura'));
+",
 ];
 
 #[derive(Debug)]
@@ -179,6 +183,7 @@ pub enum DbError {
     InvalidSpeaker(String),
     InvalidAgent(String),
     InvalidSetting(String, String),
+    InvalidPermissionLevel(String),
     InvalidBacklogColumn(String),
     ColumnNotMovable(String),
     InvalidBacklogState(String),
@@ -239,6 +244,9 @@ impl fmt::Display for DbError {
             }
             DbError::InvalidSetting(key, value) => {
                 write!(f, "A configuração {key} não aceita o valor {value:?}.")
+            }
+            DbError::InvalidPermissionLevel(value) => {
+                write!(f, "O nível de permissão {value:?} não existe.")
             }
             DbError::InvalidBacklogColumn(value) => {
                 write!(f, "O backlog não tem a coluna {value:?}.")
@@ -321,9 +329,18 @@ pub struct Project {
     pub origin_repo: Option<String>,
     pub pinned: bool,
     pub last_activity_at: Option<i64>,
+    pub permission_level: PermissionLevel,
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
+    let level: String = row.get(11)?;
+    let permission_level = PermissionLevel::parse(&level).ok_or_else(|| {
+        rusqlite::Error::InvalidColumnType(
+            11,
+            "permission_level".into(),
+            rusqlite::types::Type::Text,
+        )
+    })?;
     Ok(Project {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -336,6 +353,7 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         origin_repo: row.get(8)?,
         pinned: row.get(9)?,
         last_activity_at: row.get(10)?,
+        permission_level,
     })
 }
 
@@ -562,6 +580,18 @@ impl Db {
             tx.execute("UPDATE projects SET pinned = 1 WHERE id = ?1", [id])?;
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_permission_level(&self, id: i64, level: PermissionLevel) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE projects SET permission_level = ?1 WHERE id = ?2",
+            params![level.as_str(), id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::ProjectNotFound(id));
+        }
         Ok(())
     }
 

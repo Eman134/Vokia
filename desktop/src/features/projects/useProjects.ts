@@ -5,7 +5,9 @@ import {
   listProjects,
   pinProject,
   selectProject,
+  setPermissionLevel,
   updateProject,
+  type PermissionLevel,
   type Project,
   type ProjectEdit,
 } from './projectsApi'
@@ -41,5 +43,10 @@ export const useProjects = defineStore('projects', () => {
     await load()
   }
 
-  return { projects, loaded, selected, pinned, load, select, update, remove, pin }
+  async function setPermission(id: number, level: PermissionLevel): Promise<void> {
+    await setPermissionLevel(id, level)
+    await load()
+  }
+
+  return { projects, loaded, selected, pinned, load, select, update, remove, pin, setPermission }
 })

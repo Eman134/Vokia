@@ -9,6 +9,7 @@ mod connectivity;
 mod db;
 mod events;
 mod orchestrator;
+mod permission_level;
 mod permissions;
 mod projects;
 mod session_key;
@@ -70,7 +71,8 @@ fn main() {
             commands::list_backlog,
             commands::save_backlog_item,
             commands::move_backlog_item,
-            commands::save_item_plan
+            commands::save_item_plan,
+            commands::set_permission_level
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

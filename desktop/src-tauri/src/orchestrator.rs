@@ -15,7 +15,8 @@ use crate::cache::{
     RECOVERY_CONVERSATION_ITEMS,
 };
 use crate::claude::{
-    self, kill_process_tree, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply,
+    self, kill_process_tree, Access, ClaudeError, LimitWindow, LiveSession, ProjectAccess,
+    RateLimits, Reply,
 };
 use crate::db::{
     Db, DbError, DbState, Project, GRANT_SESSION, ORIGIN_GITHUB, SETTING_PERMISSION_GRANT,
@@ -319,11 +320,15 @@ async fn exchange_turns(
     }
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
+    let access = ProjectAccess {
+        dir: &project_dir,
+        level: project.permission_level,
+    };
     let exchange = Exchange {
         app,
         state,
         cli,
-        project_dir: &project_dir,
+        project: access,
         project_context: &context,
         request,
         key,
@@ -408,7 +413,7 @@ struct Exchange<'a> {
     app: &'a AppHandle,
     state: &'a AppState,
     cli: &'a Path,
-    project_dir: &'a Path,
+    project: ProjectAccess<'a>,
     project_context: &'a str,
     request: &'a str,
     key: SessionKey,
@@ -939,7 +944,7 @@ async fn ask_step(
         app,
         state,
         cli,
-        project_dir,
+        project,
         project_context,
         key,
         ..
@@ -977,7 +982,7 @@ async fn ask_step(
     let live = match call_mode(held.guard.fresh_only) {
         CallMode::Live => {
             held.guard
-                .reply(cli, project_dir, gate, &store, &agent_role, prompts, first)
+                .reply(cli, project, gate, &store, &agent_role, prompts, first)
                 .await?
         }
         CallMode::Fresh => None,
@@ -1023,12 +1028,7 @@ async fn fresh_reply(
     role: &str,
     message: &str,
 ) -> Result<Reply, ClaudeError> {
-    let mut live = LiveSession::open(
-        exchange.cli,
-        role,
-        Access::Project(exchange.project_dir),
-        None,
-    )?;
+    let mut live = LiveSession::open(exchange.cli, role, Access::Project(exchange.project), None)?;
     pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
     let reply = live.send(message, |request| gate.decide(request)).await;
     live.close(SESSION_CLOSE_GRACE).await;
@@ -1305,7 +1305,7 @@ impl AgentSession {
     async fn reply(
         &mut self,
         cli: &Path,
-        project_dir: &Path,
+        project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
         store: &SessionStore<'_>,
         role: &str,
@@ -1315,7 +1315,7 @@ impl AgentSession {
         let mut next = self.first_attempt(store).await?;
         while let Some(attempt) = next {
             match self
-                .attempt(cli, project_dir, gate, role, attempt, prompts, first)
+                .attempt(cli, project, gate, role, attempt, prompts, first)
                 .await
             {
                 Ok(reply) => {
@@ -1372,7 +1372,7 @@ impl AgentSession {
     async fn attempt(
         &mut self,
         cli: &Path,
-        project_dir: &Path,
+        project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
         role: &str,
         attempt: Attempt,
@@ -1396,7 +1396,7 @@ impl AgentSession {
                     Attempt::Resume => self.session_id.as_deref(),
                     _ => None,
                 };
-                LiveSession::open(cli, role, Access::Project(project_dir), resume)?
+                LiveSession::open(cli, role, Access::Project(project), resume)?
             }
         };
         self.pid

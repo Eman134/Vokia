@@ -8,6 +8,7 @@ use crate::connectivity;
 use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
+use crate::permission_level::PermissionLevel;
 use crate::permissions::PermissionError;
 use crate::projects::{
     self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectEdit, ProjectError,
@@ -137,6 +138,26 @@ pub fn update_project(
 pub fn pin_project(state: State<'_, DbState>, id: Option<i64>) -> Result<(), ProjectError> {
     let db = state.require()?;
     projects::pin_project(db, id)
+}
+
+#[tauri::command]
+pub async fn set_permission_level(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    level: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    let permission_level = PermissionLevel::parse(&level)
+        .ok_or_else(|| DbError::InvalidPermissionLevel(level).to_string())?;
+    let app_state = app.state::<AppState>();
+    if orchestrator::has_flow(&app_state, Some(project_id)).map_err(|error| error.to_string())? {
+        return Err(DbError::ProjectBusy.to_string());
+    }
+    db.set_permission_level(project_id, permission_level)
+        .map_err(|error| error.to_string())?;
+    stop_project_work(&app_state, project_id).await;
+    Ok(())
 }
 
 #[tauri::command]

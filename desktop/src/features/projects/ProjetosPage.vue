@@ -8,7 +8,12 @@ import { useTeam } from '../team/useTeam'
 import ProjectCard from './ProjectCard.vue'
 import ProjectEditForm from './ProjectEditForm.vue'
 import { NEW_PROJECT_LABEL, PROJECTS_SUBTITLE, PROJECTS_TITLE } from './projetosSample'
-import { isProjectError, type Project, type ProjectEdit } from './projectsApi'
+import {
+  isProjectError,
+  type PermissionLevel,
+  type Project,
+  type ProjectEdit,
+} from './projectsApi'
 import { useProjects } from './useProjects'
 
 const PROJECTS_CONTEXT = 'Workspace'
@@ -38,9 +43,10 @@ async function open(project: Project) {
   }
 }
 
-async function save(project: Project, input: ProjectEdit) {
+async function save(project: Project, input: ProjectEdit, level: PermissionLevel) {
   try {
     await projectsStore.update(project.id, input)
+    if (level !== project.permissionLevel) await projectsStore.setPermission(project.id, level)
     editingId.value = null
   } catch (cause) {
     failure.value = describe(cause)
@@ -103,7 +109,7 @@ onMounted(async () => {
         <ProjectEditForm
           v-if="editingId === project.id"
           :project="project"
-          @save="(input) => save(project, input)"
+          @save="(input, level) => save(project, input, level)"
           @cancel="editingId = null"
         />
         <ProjectCard

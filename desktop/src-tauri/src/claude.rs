@@ -11,6 +11,8 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
+use crate::permission_level::PermissionLevel;
+
 const USER_MESSAGE_KIND: &str = "user";
 const USER_ROLE: &str = "user";
 const PIPE_MISSING: &str = "o pipe do processo não ficou disponível";
@@ -58,6 +60,26 @@ const BASH_ALLOWLIST: [&str; 26] = [
     "Bash(cargo fmt --check)",
     "Bash(cargo clippy *)",
 ];
+const EDIT_TOOLS: &str = "Read,Edit,Write,Glob,Grep";
+const READ_TOOLS: &str = "Read,Glob,Grep";
+const READ_ALLOWED: [&str; 2] = ["Glob(./**)", "Grep(./**)"];
+// Sem `--tools` o Bash continua disponível e só cai em pergunta; no nível de edição ele precisa sair do conjunto.
+struct LevelFlags {
+    tools: Option<&'static str>,
+    allowed: &'static [&'static [&'static str]],
+}
+const LIBERADO_FLAGS: LevelFlags = LevelFlags {
+    tools: None,
+    allowed: &[&FILE_TOOLS, &BASH_ALLOWLIST],
+};
+const EDICAO_FLAGS: LevelFlags = LevelFlags {
+    tools: Some(EDIT_TOOLS),
+    allowed: &[&FILE_TOOLS],
+};
+const LEITURA_FLAGS: LevelFlags = LevelFlags {
+    tools: Some(READ_TOOLS),
+    allowed: &[&READ_ALLOWED],
+};
 const CONTROL_REQUEST_KIND: &str = "control_request";
 const CAN_USE_TOOL_SUBTYPE: &str = "can_use_tool";
 const CONTROL_RESPONSE_KIND: &str = "control_response";
@@ -255,7 +277,13 @@ async fn ensure_logged_in(cli: &Path) -> Result<(), CliProblem> {
 #[derive(Clone, Copy)]
 pub enum Access<'a> {
     TextOnly,
-    Project(&'a Path),
+    Project(ProjectAccess<'a>),
+}
+
+#[derive(Clone, Copy)]
+pub struct ProjectAccess<'a> {
+    pub dir: &'a Path,
+    pub level: PermissionLevel,
 }
 
 fn timeout_for(access: Access<'_>) -> Duration {
@@ -635,14 +663,18 @@ fn agent_command(cli: &Path, leading: &[&str], role: &str, access: Access<'_>) -
         Access::TextOnly => {
             command.args(["--tools", "", "--max-turns", TEXT_ONLY_MAX_TURNS]);
         }
-        Access::Project(dir) => {
-            command.current_dir(dir);
+        Access::Project(project) => {
+            command.current_dir(project.dir);
             command
                 .arg("--add-dir")
-                .arg(dir)
+                .arg(project.dir)
                 .args(["--permission-mode", PERMISSION_MODE])
-                .args(["--setting-sources", NO_SETTING_SOURCES])
-                .args(["--allowedTools", &allowed_tools()])
+                .args(["--setting-sources", NO_SETTING_SOURCES]);
+            if let Some(tools) = flags_for(project.level).tools {
+                command.args(["--tools", tools]);
+            }
+            command
+                .args(["--allowedTools", &allowed_tools(project.level)])
                 .args(["--max-turns", PROJECT_MAX_TURNS]);
         }
     }
@@ -650,10 +682,19 @@ fn agent_command(cli: &Path, leading: &[&str], role: &str, access: Access<'_>) -
     command
 }
 
-fn allowed_tools() -> String {
-    FILE_TOOLS
+fn flags_for(level: PermissionLevel) -> &'static LevelFlags {
+    match level {
+        PermissionLevel::Liberado => &LIBERADO_FLAGS,
+        PermissionLevel::Edicao => &EDICAO_FLAGS,
+        PermissionLevel::Leitura => &LEITURA_FLAGS,
+    }
+}
+
+fn allowed_tools(level: PermissionLevel) -> String {
+    flags_for(level)
+        .allowed
         .iter()
-        .chain(BASH_ALLOWLIST.iter())
+        .flat_map(|group| group.iter())
         .copied()
         .collect::<Vec<_>>()
         .join(",")

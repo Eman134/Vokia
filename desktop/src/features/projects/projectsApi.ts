@@ -13,9 +13,11 @@ const UPDATE_PROJECT_COMMAND = 'update_project'
 const DELETE_PROJECT_COMMAND = 'delete_project'
 const CLEAR_CONVERSATION_COMMAND = 'clear_conversation'
 const PIN_PROJECT_COMMAND = 'pin_project'
+const SET_PERMISSION_LEVEL_COMMAND = 'set_permission_level'
 
 export type OriginKind = 'folder' | 'github'
 export type CloneMode = 'link' | 'fork'
+export type PermissionLevel = 'liberado' | 'edicao' | 'leitura'
 
 export interface Project {
   id: number
@@ -29,6 +31,7 @@ export interface Project {
   originRepo: string | null
   pinned: boolean
   lastActivityAt: number | null
+  permissionLevel: PermissionLevel
 }
 
 export interface DbProblem {
@@ -131,4 +134,8 @@ export function clearConversation(projectId: number): Promise<void> {
 
 export function pinProject(id: number | null): Promise<void> {
   return invoke<void>(PIN_PROJECT_COMMAND, { id })
+}
+
+export function setPermissionLevel(projectId: number, level: PermissionLevel): Promise<void> {
+  return invoke<void>(SET_PERMISSION_LEVEL_COMMAND, { projectId, level })
 }
