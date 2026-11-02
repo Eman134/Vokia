@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -27,7 +28,7 @@ use crate::events::{
 use crate::permissions::PermissionGate;
 use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
 use crate::session_key::SessionKey;
-use crate::state::{AppState, PendingDecision};
+use crate::state::{AppState, PendingDecision, QueuedJob};
 use crate::task::MAX_LIVE_SESSIONS;
 use crate::task::{
     agent_named, call_mode, degrades_to_fresh, long_request_text, parse_definition, ActiveTask,
@@ -79,6 +80,14 @@ const ARCHIVE_FILE: &str = "tasks-archive.json";
 const NO_NAMES: &str = "nenhuma";
 const NO_VARIABLES: &str = "- nenhuma";
 const INTERPRETER_ROLE: &str = "Você extrai a definição de uma tarefa e não conversa. Responda somente com um objeto JSON, sem texto fora dele, com os campos: nova_tarefa (true se o pedido inicia um assunto diferente do anterior, false se continua o anterior); objetivo (frase curta); participantes (só quem precisa agir: por padrão o destinatário, ou o agente que o pedido cita; inclua os dois apenas quando o pedido mandar os dois agirem); alternar (true somente se o pedido pedir revezamento explícito entre os dois, como alternadamente, um de cada vez ou revezando; sem esse pedido é false, e então variaveis é [] e parada é null); variaveis (lista de {\"nome\", \"tipo\": \"numero\" | \"texto\" | \"lista\", \"valor\", \"regra\": \"livre\" | \"mais_um\" | \"so_leitura\"}); parada ({\"variavel\", \"alcanca\": nome de uma variável numérica ou inteiro}, ou null). Exemplos: \"contem até 20 alternadamente\" → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20 alternadamente\",\"participantes\":[\"Iara\",\"Davi\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"contagem\",\"tipo\":\"numero\",\"valor\":0,\"regra\":\"mais_um\"},{\"nome\":\"limite\",\"tipo\":\"numero\",\"valor\":20,\"regra\":\"so_leitura\"}],\"parada\":{\"variavel\":\"contagem\",\"alcanca\":\"limite\"}}. \"fale um animal alternadamente, você e o davi\" → {\"nova_tarefa\":true,\"objetivo\":\"alternar animais\",\"participantes\":[\"Davi\",\"Iara\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"animais\",\"tipo\":\"lista\",\"valor\":[],\"regra\":\"livre\"}],\"parada\":null}. \"quanto é 1+1?\" → {\"nova_tarefa\":true,\"objetivo\":\"responder 1+1\",\"participantes\":[\"Iara\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}. \"conte até 20\" para o Davi, sem pedir revezamento → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20\",\"participantes\":[\"Davi\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}.";
+
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestOutcome {
+    Finished,
+    Failed,
+    Queued,
+}
 
 #[derive(Debug)]
 pub enum FlowError {
@@ -205,7 +214,8 @@ pub async fn handle_request(
     request: &str,
     recipient: Agent,
     project_id: i64,
-) -> Result<(), FlowError> {
+    run_id: Option<u64>,
+) -> Result<RequestOutcome, FlowError> {
     let cli = state
         .cli
         .as_ref()
@@ -222,8 +232,8 @@ pub async fn handle_request(
         project_id,
         agent: recipient,
     };
-    if !start_or_enqueue(state, key, request)? {
-        return Ok(());
+    if !start_or_enqueue(state, key, request, run_id)? {
+        return Ok(RequestOutcome::Queued);
     }
     run_flow(app, state, cli, key, request).await
 }
@@ -244,20 +254,30 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    handle_request(app, state, &text, decision.agent, decision.project_id).await
+    handle_request(app, state, &text, decision.agent, decision.project_id, None)
+        .await
+        .map(|_| ())
 }
 
-fn start_or_enqueue(state: &AppState, key: SessionKey, request: &str) -> Result<bool, FlowError> {
+fn start_or_enqueue(
+    state: &AppState,
+    key: SessionKey,
+    request: &str,
+    run_id: Option<u64>,
+) -> Result<bool, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     if let Some(pending) = flow.pending.get_mut(&key) {
-        pending.push_back(request.to_string());
+        pending.push_back(QueuedJob {
+            text: request.to_string(),
+            run_id,
+        });
         return Ok(false);
     }
     flow.pending.insert(key, VecDeque::new());
     Ok(true)
 }
 
-fn next_job(state: &AppState, key: SessionKey) -> Result<Option<String>, FlowError> {
+fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let next = flow.pending.get_mut(&key).and_then(VecDeque::pop_front);
     if next.is_none() {
@@ -272,16 +292,38 @@ async fn run_flow(
     cli: &Path,
     key: SessionKey,
     request: &str,
-) -> Result<(), FlowError> {
+) -> Result<RequestOutcome, FlowError> {
     let mut request = request.to_string();
     let mut outcome: Result<(), FlowError> = Ok(());
+    // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
+    let mut first: Option<RequestOutcome> = None;
+    let mut current_run: Option<u64> = None;
     loop {
-        if let Err(error) = run_exchange(app, state, cli, key, &request).await {
-            outcome = outcome.and(report_failure(app, key.project_id, &error));
+        let this = match run_exchange(app, state, cli, key, &request).await {
+            Ok(TaskOutcome::Finished) => RequestOutcome::Finished,
+            Ok(_) => RequestOutcome::Failed,
+            Err(error) => {
+                outcome = outcome.and(report_failure(app, key.project_id, &error));
+                RequestOutcome::Failed
+            }
+        };
+        if let Some(run_id) = current_run {
+            emit(
+                app,
+                VokiaEvent::RequestSettled {
+                    run_id,
+                    project_id: key.project_id,
+                    outcome: this,
+                },
+            )?;
         }
+        first.get_or_insert(this);
         match next_job(state, key)? {
-            Some(next) => request = next,
-            None => return outcome,
+            Some(job) => {
+                request = job.text;
+                current_run = job.run_id;
+            }
+            None => return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed)),
         }
     }
 }
@@ -293,7 +335,7 @@ async fn run_exchange(
     cli: &Path,
     key: SessionKey,
     request: &str,
-) -> Result<(), FlowError> {
+) -> Result<TaskOutcome, FlowError> {
     let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id).await;
     let result = exchange_turns(app, state, cli, key, request, &mut sessions).await;
     sessions.release().await;
@@ -307,7 +349,7 @@ async fn exchange_turns(
     key: SessionKey,
     request: &str,
     sessions: &mut ExchangeSessions,
-) -> Result<(), FlowError> {
+) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent, AgentState::Sending)?;
     let project_dir = project_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
@@ -341,7 +383,8 @@ async fn exchange_turns(
     };
     let closed = close_task(state, key.project_id, outcome, transcript);
     result?;
-    closed
+    closed?;
+    Ok(outcome)
 }
 
 async fn interpret_task(

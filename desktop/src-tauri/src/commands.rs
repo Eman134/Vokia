@@ -7,7 +7,7 @@ use crate::claude::CliProblem;
 use crate::connectivity;
 use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
-use crate::orchestrator;
+use crate::orchestrator::{self, RequestOutcome};
 use crate::permission_level::PermissionLevel;
 use crate::permissions::PermissionError;
 use crate::projects::{
@@ -34,12 +34,16 @@ pub async fn send_request(
     text: String,
     to: Agent,
     project_id: i64,
-) -> Result<(), String> {
-    if let Err(error) = orchestrator::handle_request(&app, &state, &text, to, project_id).await {
-        orchestrator::report_failure(&app, project_id, &error)
-            .map_err(|emit_error| emit_error.to_string())?;
+    run_id: Option<u64>,
+) -> Result<RequestOutcome, String> {
+    match orchestrator::handle_request(&app, &state, &text, to, project_id, run_id).await {
+        Ok(outcome) => Ok(outcome),
+        Err(error) => {
+            orchestrator::report_failure(&app, project_id, &error)
+                .map_err(|emit_error| emit_error.to_string())?;
+            Ok(RequestOutcome::Failed)
+        }
     }
-    Ok(())
 }
 
 #[tauri::command]

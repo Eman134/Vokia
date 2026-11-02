@@ -144,14 +144,19 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (!item || states.value[itemId]?.state !== 'proposto') return
     const plan: LinkedPlan = { id: itemId, name: item.title, meta: ACCEPTED_PLAN_META }
     plans.value = [...plans.value.filter((current) => current.id !== plan.id), plan]
-    states.value[itemId] = { state: 'vinculado', plan }
+    states.value[itemId] = {
+      state: 'vinculado',
+      plan,
+      proposal: states.value[itemId]?.proposal,
+      agent: states.value[itemId]?.agent,
+    }
     persist(itemId)
   }
 
   function link(itemId: string, planId: string): void {
     const plan = plans.value.find((current) => current.id === planId)
     if (!plan) return
-    states.value[itemId] = { state: 'vinculado', plan }
+    states.value[itemId] = { state: 'vinculado', plan, agent: states.value[planId]?.agent }
     persist(itemId)
   }
 

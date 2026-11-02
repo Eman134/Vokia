@@ -16,6 +16,10 @@ interface ItemQueue {
   generation: number
 }
 
+// moveTo recusa In progress e In review (MOVABLE_COLUMNS); só a execução move o card para elas.
+const RUN_COLUMNS = ['Ready', 'In progress', 'In review'] as const
+export type RunColumn = (typeof RUN_COLUMNS)[number]
+
 export const useBacklog = defineStore('backlog', () => {
   const items = ref<BacklogItem[]>([])
   const planEntries = ref<ItemPlanEntry[]>([])
@@ -142,6 +146,23 @@ export const useBacklog = defineStore('backlog', () => {
     enqueue(id, (projectId) => moveBacklogItem(projectId, id, column))
   }
 
+  function addActivity(id: string, text: string): void {
+    const item = editable(id)
+    if (!item) return
+    item.activity = [
+      ...(item.activity ?? []),
+      { id: crypto.randomUUID(), text, at: new Date().toLocaleString('pt-BR') },
+    ]
+    saveItem(id)
+  }
+
+  function setRunColumn(id: string, column: RunColumn, note: string): void {
+    const item = editable(id)
+    if (!item) return
+    item.column = column
+    addActivity(id, note)
+  }
+
   function toggleTag(id: string, tag: BacklogTag): void {
     const item = editable(id)
     if (!item) return
@@ -166,6 +187,7 @@ export const useBacklog = defineStore('backlog', () => {
   return {
     items,
     planEntries,
+    loadedProjectId,
     openId,
     openItem,
     loading,
@@ -176,6 +198,8 @@ export const useBacklog = defineStore('backlog', () => {
     load,
     moveTo,
     toggleTag,
+    addActivity,
+    setRunColumn,
     answer,
     toggleCriterion,
     savePlan,

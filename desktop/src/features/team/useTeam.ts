@@ -19,6 +19,7 @@ import {
   listenConnectionChanges,
   listenTeamEvents,
   sendRequest,
+  type RequestOutcome,
   type UnlistenFn,
 } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
@@ -44,12 +45,17 @@ export function agentName(id: Agent): string {
 
 export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
 
+// 'queued' não é desfecho: o término do pedido enfileirado chega depois pelo evento request-settled.
+export type RunResult = Exclude<RequestOutcome, 'queued'> | 'cancelled'
+
 export interface QueuedRequest {
   id: number
   text: string
   to: Agent
   projectId: number
   editing: boolean
+  onQueued?: () => void
+  onSettled?: (result: RunResult) => void
 }
 
 export type QueueMove = 'up' | 'down'
@@ -101,6 +107,8 @@ export const useTeam = defineStore('team', () => {
   let pendingCheck: Promise<boolean> | null = null
   let nextQueueId = 0
   let draining = false
+  // Callbacks de pedidos com onSettled, por id, até o término (resposta do comando ou evento request-settled).
+  const waiting = new Map<number, (result: RunResult) => void>()
 
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     AGENTS.find((agent) => states.value[agent.id] === 'thinking'),
@@ -249,6 +257,12 @@ export const useTeam = defineStore('team', () => {
       case 'decision':
         useDecisions().apply(event)
         break
+      case 'request-settled': {
+        const settle = waiting.get(event.runId)
+        waiting.delete(event.runId)
+        if (settle !== undefined) runCallback(() => settle(event.outcome))
+        break
+      }
       case 'plan-usage':
         break
     }
@@ -301,6 +315,41 @@ export const useTeam = defineStore('team', () => {
     return queue.value.filter((request) => request.to === agent)
   }
 
+  // Um callback que lança não pode parar a fila nem o laço de eventos: o erro vai ao feed e o fluxo segue.
+  function runCallback(callback: () => void): void {
+    try {
+      callback()
+    } catch (error) {
+      feed.value.push({ type: 'error', message: `Não foi possível atualizar o pedido: ${String(error)}` })
+    }
+  }
+
+  // O callback é registrado antes do envio: o evento request-settled pode chegar antes da resposta do comando.
+  async function dispatch(request: QueuedRequest): Promise<void> {
+    if (request.onSettled !== undefined) {
+      waiting.set(request.id, request.onSettled)
+    }
+    let result: RunResult = 'failed'
+    try {
+      const outcome = await sendRequest(
+        request.text,
+        request.to,
+        request.projectId,
+        request.onSettled !== undefined ? request.id : undefined,
+      )
+      if (outcome === 'queued') {
+        if (waiting.has(request.id)) runCallback(() => request.onQueued?.())
+        return
+      }
+      result = outcome
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+    }
+    const settle = waiting.get(request.id)
+    waiting.delete(request.id)
+    if (settle !== undefined) runCallback(() => settle(result))
+  }
+
   // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
   async function drain(): Promise<void> {
     if (draining || !pausesLoaded.value) {
@@ -315,11 +364,7 @@ export const useTeam = defineStore('team', () => {
           break
         }
         queue.value.splice(index, 1)
-        try {
-          await sendRequest(head.text, head.to, head.projectId)
-        } catch (error) {
-          feed.value.push({ type: 'error', message: String(error) })
-        }
+        await dispatch(head)
       }
     } finally {
       draining = false
@@ -375,6 +420,11 @@ export const useTeam = defineStore('team', () => {
   function removeQueued(id: number): void {
     const index = queue.value.findIndex((request) => request.id === id)
     if (index !== -1) {
+      const cancelled = queue.value[index]
+      if (cancelled?.onSettled !== undefined) {
+        const settle = cancelled.onSettled
+        runCallback(() => settle('cancelled'))
+      }
       queue.value.splice(index, 1)
     }
     void drain()
@@ -420,7 +470,11 @@ export const useTeam = defineStore('team', () => {
     return project.id
   }
 
-  async function send(text: string, to: Agent | null): Promise<boolean> {
+  async function send(
+    text: string,
+    to: Agent | null,
+    options?: { projectId?: number; onQueued?: () => void; onSettled?: (result: RunResult) => void },
+  ): Promise<boolean> {
     if (text.trim() === '') {
       return false
     }
@@ -432,7 +486,7 @@ export const useTeam = defineStore('team', () => {
     } finally {
       checking.value = false
     }
-    const projectId = await targetProjectId(text)
+    const projectId = options?.projectId ?? (await targetProjectId(text))
     if (projectId === null) {
       return false
     }
@@ -442,6 +496,8 @@ export const useTeam = defineStore('team', () => {
       to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
       projectId,
       editing: false,
+      onQueued: options?.onQueued,
+      onSettled: options?.onSettled,
     })
     void drain()
     return true

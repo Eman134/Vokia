@@ -29,8 +29,13 @@ pub struct PendingDecision {
     pub request: String,
 }
 
+pub struct QueuedJob {
+    pub text: String,
+    pub run_id: Option<u64>,
+}
+
 // Uma chave presente é um fluxo em andamento; os pedidos que chegam nesse meio-tempo esperam aqui.
 #[derive(Default)]
 pub struct FlowQueue {
-    pub pending: HashMap<SessionKey, VecDeque<String>>,
+    pub pending: HashMap<SessionKey, VecDeque<QueuedJob>>,
 }

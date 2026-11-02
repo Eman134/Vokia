@@ -19,15 +19,17 @@ import MicroTaskScript, { isScriptValid } from './MicroTaskScript.vue'
 import PlanPanel from './PlanPanel.vue'
 import { useBacklog } from './useBacklog'
 import { useItemPlan } from './useItemPlan'
+import { useRunItem } from './useRunItem'
 
 const TAG_TINT_PERCENT = 13
 const TRIAGE_PLAN_TEXT = 'Plano sai da triagem'
 const FOCUSABLE_SELECTOR = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
 
-const emit = defineEmits<{ replay: []; 'main-action': [] }>()
+const emit = defineEmits<{ replay: [] }>()
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
+const runItem = useRunItem()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const addingTag = ref(false)
@@ -74,6 +76,10 @@ function changeTag(tag: BacklogTag): void {
 function moveTo(target: BacklogColumn): void {
   dialog.value?.focus()
   backlog.moveTo(item.value!.id, target)
+}
+
+function onMainAction(): void {
+  if (item.value) void runItem.run(item.value.id)
 }
 
 function toggleMicro(id: string): void {
@@ -252,6 +258,7 @@ watch(
             :key="target"
             kind="add"
             :label="target"
+            :disabled="runItem.isRunning(item.id)"
             @press="moveTo(target)"
           />
           <span v-if="showAutoHint" class="text-caption text-muted">{{ AUTO_COLUMNS_HINT }}</span>
@@ -260,7 +267,15 @@ watch(
 
       <footer class="flex items-center justify-end gap-2">
         <UiButton variant="quiet" size="lg" @press="emit('replay')">Ver replay</UiButton>
-        <UiButton variant="primary" size="lg" @press="emit('main-action')">{{ MAIN_ACTION[planState] }}</UiButton>
+        <UiButton
+          variant="primary"
+          size="lg"
+          data-testid="run-item"
+          :disabled="!runItem.canRun(item.id)"
+          @press="onMainAction"
+        >
+          {{ MAIN_ACTION[planState] }}
+        </UiButton>
       </footer>
     </section>
   </div>

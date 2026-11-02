@@ -64,7 +64,7 @@ export const MAIN_ACTION: Record<BacklogState, string> = {
   vazio: 'Mandar para a triagem',
   gerando: 'Ver o plano em andamento',
   proposto: 'Ver a proposta',
-  vinculado: 'Mandar para o time',
+  vinculado: 'Rodar',
 }
 export const MODAL_STATE_CHIP: Record<BacklogState, string> = {
   triagem: 'Triagem',

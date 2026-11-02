@@ -85,6 +85,13 @@ export interface VokiaPlanUsage {
   sevenDay: UsageWindow
 }
 
+export interface VokiaRequestSettled {
+  type: 'request-settled'
+  runId: number
+  projectId: number
+  outcome: 'finished' | 'failed'
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -93,6 +100,7 @@ export type VokiaEvent =
   | VokiaPermissionClosed
   | VokiaDecision
   | VokiaPlanUsage
+  | VokiaRequestSettled
 
 export interface CliProblem {
   reason: string

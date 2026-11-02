@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::orchestrator::RequestOutcome;
+
 pub const EVENT_NAME: &str = "vokia://event";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -162,5 +164,11 @@ pub enum VokiaEvent {
     PlanUsage {
         five_hour: UsageWindow,
         seven_day: UsageWindow,
+    },
+    #[serde(rename_all = "camelCase")]
+    RequestSettled {
+        run_id: u64,
+        project_id: i64,
+        outcome: RequestOutcome,
     },
 }
