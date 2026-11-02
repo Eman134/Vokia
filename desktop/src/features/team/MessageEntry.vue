@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { AGENTS, DEFAULT_RECIPIENT, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
-import { mentionSegments, mentionSpans, type MentionSegment } from './composerMentions'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
+import MarkdownText from './MarkdownText.vue'
 
 defineProps<{ entry: FeedEntry }>()
 
@@ -31,9 +31,10 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   return AGENTS.find((agent) => agent.id === speaker)
 }
 
-function highlightedSegments(message: VokiaMessage): MentionSegment[] {
-  const recipient = message.to === 'user' ? [] : [message.to]
-  return mentionSegments(message.text, mentionSpans(message.text, new Set(recipient)))
+// Só o destinatário do agente é destacado como menção, como antes.
+function highlightedNames(message: VokiaMessage): string[] {
+  const recipient = message.to === 'user' ? undefined : profile(message.to)
+  return recipient ? [recipient.name] : []
 }
 </script>
 
@@ -43,16 +44,9 @@ function highlightedSegments(message: VokiaMessage): MentionSegment[] {
       <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-caption text-muted">
         Para {{ SPEAKER_NAMES[entry.to] }}
       </span>
-      <p
-        class="wrap-break-word whitespace-pre-wrap rounded-card rounded-tr-tail bg-surface-2 px-4 py-3 text-control text-ink"
-      >
-        <span
-          v-for="(segment, index) in highlightedSegments(entry)"
-          :key="index"
-          :class="segment.agent === null ? undefined : 'text-accent'"
-          >{{ segment.text }}</span
-        >
-      </p>
+      <div class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
+        <MarkdownText :text="entry.text" :mentions="highlightedNames(entry)" />
+      </div>
     </div>
     <span class="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-small font-semibold text-bg">
       {{ USER_INITIAL }}
@@ -71,7 +65,9 @@ function highlightedSegments(message: VokiaMessage): MentionSegment[] {
           {{ profile(entry.from)?.role }} · {{ TIME_FORMAT.format(entry.time) }}
         </time>
       </header>
-      <p class="wrap-break-word mt-0.5 whitespace-pre-wrap text-control text-ink">{{ entry.text }}</p>
+      <div class="mt-0.5">
+        <MarkdownText :text="entry.text" />
+      </div>
     </div>
   </div>
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
