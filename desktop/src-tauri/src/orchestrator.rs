@@ -17,12 +17,14 @@ use crate::cache::{
 use crate::claude::{
     self, kill_process_tree, Access, ClaudeError, LimitWindow, LiveSession, RateLimits, Reply,
 };
-use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
+use crate::db::{
+    Db, DbError, DbState, Project, GRANT_SESSION, ORIGIN_GITHUB, SETTING_PERMISSION_GRANT,
+};
 use crate::events::{
     Agent, AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME,
 };
 use crate::permissions::PermissionGate;
-use crate::projects;
+use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::MAX_LIVE_SESSIONS;
@@ -44,6 +46,20 @@ const NO_FOLDER_MESSAGE: &str =
     "O projeto do pedido não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
 const PROJECT_RULE: &str =
     "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
+const PROJECT_IDENTITY_PREFIX: &str = "Projeto em contexto: \"";
+const PROJECT_IDENTITY_PATH_PREFIX: &str = "\", na pasta ";
+const PROJECT_DESCRIPTION_PREFIX: &str = "Descrição do projeto: ";
+const PROJECT_DESCRIPTION_LIMIT: usize = 500;
+const PROJECT_REPO_PREFIX: &str = "Repositório do projeto no GitHub: ";
+const PROJECT_NAME_RULE_PREFIX: &str = "O nome do projeto é só \"";
+const PROJECT_NAME_RULE_SUFFIX: &str = "\": mesmo que a pasta, o repositório ou o programa que você roda tenham outro nome, não o use e não proponha renomear nada por causa disso. Quando o usuário falar do projeto, é esse.";
+const TRUNCATION_MARK: &str = "…";
+const PROJECT_TREE_HEADER_PREFIX: &str = "Estrutura da pasta do projeto, até ";
+const PROJECT_TREE_HEADER_SUFFIX: &str = " níveis, um caminho relativo por linha e pastas terminadas em \"/\". É um retrato do momento em que a sessão abriu; pastas de dependência e de build ficam de fora; use as ferramentas se precisar do estado atual:";
+const PROJECT_TREE_OMITTED_PREFIX: &str = "… e mais ";
+const PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX: &str = "… e mais de ";
+const PROJECT_TREE_OMITTED_SUFFIX: &str = " entradas não listadas.";
+const PROJECT_TREE_EMPTY: &str = "A pasta do projeto está vazia.";
 pub const DECISION_MARK: &str = "#decisao";
 pub const DECISION_FIELD_SEPARATOR: char = '|';
 pub const DECISION_OPTION_SEPARATOR: char = ';';
@@ -164,14 +180,17 @@ impl From<DbError> for FlowError {
     }
 }
 
-fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
+fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, FlowError> {
     let state = app.state::<DbState>();
     let db = state
         .require()
         .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
-    let project = db
-        .project(project_id)
-        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
+    db.project(project_id)
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))
+}
+
+fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
+    let project = load_project(app, project_id)?;
     if project.path.trim().is_empty() {
         return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
     }
@@ -289,6 +308,10 @@ async fn exchange_turns(
     sessions: &mut ExchangeSessions,
 ) -> Result<(), FlowError> {
     let project_dir = project_dir(app, key.project_id)?;
+    let project = load_project(app, key.project_id)?;
+    // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
+    let tree = scan_structure(&project_dir).await;
+    let context = project_context(&project, tree.as_ref());
     let definition = interpret_task(app, state, cli, request, key).await?;
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
@@ -297,6 +320,7 @@ async fn exchange_turns(
         state,
         cli,
         project_dir: &project_dir,
+        project_context: &context,
         request,
         key,
         definition: &definition,
@@ -381,6 +405,7 @@ struct Exchange<'a> {
     state: &'a AppState,
     cli: &'a Path,
     project_dir: &'a Path,
+    project_context: &'a str,
     request: &'a str,
     key: SessionKey,
     definition: &'a TaskDefinition,
@@ -907,11 +932,12 @@ async fn ask_step(
         state,
         cli,
         project_dir,
+        project_context,
         key,
         ..
     } = *exchange;
     emit_state(app, key.project_id, agent, AgentState::Thinking)?;
-    let agent_role = role(agent);
+    let agent_role = role(agent, project_context);
     let first = sessions.opened.insert(agent);
     let held = sessions.held(agent)?;
     if first {
@@ -1440,13 +1466,99 @@ fn usage_window(window: LimitWindow) -> UsageWindow {
     }
 }
 
-fn role(agent: Agent) -> String {
+async fn scan_structure(dir: &Path) -> Option<FolderTree> {
+    let owned = dir.to_path_buf();
+    let scanned = tauri::async_runtime::spawn_blocking(move || projects::folder_tree(&owned)).await;
+    let error = match scanned {
+        Ok(Ok(tree)) => return Some(tree),
+        Ok(Err(error)) => error.to_string(),
+        Err(error) => error.to_string(),
+    };
+    eprintln!(
+        "Não foi possível ler a estrutura da pasta do projeto {}: {error}",
+        dir.display()
+    );
+    None
+}
+
+fn project_context(project: &Project, tree: Option<&FolderTree>) -> String {
+    let name = project.name.trim();
+    let mut sentences = vec![format!(
+        "{PROJECT_IDENTITY_PREFIX}{name}{PROJECT_IDENTITY_PATH_PREFIX}{}.",
+        project.path
+    )];
+    if let Some(description) = project_description(project) {
+        sentences.push(format!("{PROJECT_DESCRIPTION_PREFIX}{description}"));
+    }
+    if project.origin_kind == ORIGIN_GITHUB {
+        if let Some(repo) = project
+            .origin_repo
+            .as_deref()
+            .map(str::trim)
+            .filter(|repo| !repo.is_empty())
+        {
+            sentences.push(format!("{PROJECT_REPO_PREFIX}{repo}."));
+        }
+    }
+    sentences.push(format!(
+        "{PROJECT_NAME_RULE_PREFIX}{name}{PROJECT_NAME_RULE_SUFFIX}"
+    ));
+    let mut context = sentences.join(" ");
+    if let Some(tree) = tree {
+        context.push('\n');
+        context.push_str(&project_tree_block(tree));
+    }
+    context
+}
+
+fn project_tree_block(tree: &FolderTree) -> String {
+    if tree.entries.is_empty() && tree.omitted == 0 {
+        return PROJECT_TREE_EMPTY.to_string();
+    }
+    let mut lines = vec![format!(
+        "{PROJECT_TREE_HEADER_PREFIX}{TREE_MAX_DEPTH}{PROJECT_TREE_HEADER_SUFFIX}"
+    )];
+    lines.extend(tree.entries.iter().cloned());
+    if tree.omitted > 0 {
+        let prefix = if tree.omitted_is_lower_bound {
+            PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX
+        } else {
+            PROJECT_TREE_OMITTED_PREFIX
+        };
+        lines.push(format!(
+            "{prefix}{}{PROJECT_TREE_OMITTED_SUFFIX}",
+            tree.omitted
+        ));
+    }
+    lines.join("\n")
+}
+
+fn project_description(project: &Project) -> Option<String> {
+    let description = project
+        .description
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if description.is_empty() {
+        return None;
+    }
+    if description.chars().count() <= PROJECT_DESCRIPTION_LIMIT {
+        return Some(description);
+    }
+    let truncated: String = description
+        .chars()
+        .take(PROJECT_DESCRIPTION_LIMIT)
+        .collect();
+    Some(format!("{truncated}{TRUNCATION_MARK}"))
+}
+
+fn role(agent: Agent, project_context: &str) -> String {
     let title = match agent {
         Agent::Iara => "tech lead",
         Agent::Davi => "dev frontend",
     };
     format!(
-        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE}",
+        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE} {project_context}",
         agent.name()
     )
 }
