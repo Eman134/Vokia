@@ -27,7 +27,7 @@ import { clearConversation, fetchDbProblem, loadHistory } from '../projects/proj
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { projectAgentKey } from './projectAgentKey'
-import { ASK_PROJECT_NOTICE, citedNoFolderNotice, NO_FOLDER_NOTICE, resolveProject } from './projectResolution'
+import { ASK_PROJECT_NOTICE, NO_PROJECT_NOTICE, resolveProject } from './projectResolution'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
@@ -398,8 +398,8 @@ export const useTeam = defineStore('team', () => {
       notify(ASK_PROJECT_NOTICE)
       return null
     }
-    if (resolution.kind === 'no-folder') {
-      notify(resolution.name === undefined ? NO_FOLDER_NOTICE : citedNoFolderNotice(resolution.name))
+    if (resolution.kind === 'no-project') {
+      notify(NO_PROJECT_NOTICE)
       return null
     }
     const { project } = resolution

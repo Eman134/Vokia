@@ -11,8 +11,6 @@ use crate::events::{Agent, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 
 pub const DB_FILE: &str = "vokia.db";
-const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
-const DEFAULT_PROJECT_PATH: &str = "";
 const HISTORY_LIMIT: i64 = 500;
 const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
@@ -150,6 +148,17 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
     CREATE UNIQUE INDEX projects_one_pinned ON projects(pinned) WHERE pinned = 1;
+",
+    "
+    DELETE FROM item_plans WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM backlog_items WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM messages WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM agent_pauses WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM permission_approvals WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM agent_sessions WHERE project_id IN (SELECT id FROM projects WHERE path = '');
+    DELETE FROM projects WHERE path = '';
+    UPDATE projects SET selected = 1 WHERE id = (SELECT MIN(id) FROM projects)
+        AND NOT EXISTS (SELECT 1 FROM projects WHERE selected = 1);
 ",
 ];
 
@@ -377,7 +386,6 @@ impl Db {
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(|error| classify(&path, error))?;
         migrate(&mut conn).map_err(|error| classify(&path, error))?;
-        ensure_default_project(&conn).map_err(|error| classify(&path, error))?;
         Ok(Db {
             conn: Mutex::new(conn),
         })
@@ -489,7 +497,6 @@ impl Db {
              AND NOT EXISTS (SELECT 1 FROM projects WHERE selected = 1)",
             [],
         )?;
-        ensure_default_project(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -520,7 +527,6 @@ impl Db {
         for table in PROJECT_CHILD_TABLES.iter().chain(&["projects", "settings"]) {
             tx.execute(&format!("DELETE FROM {table}"), [])?;
         }
-        ensure_default_project(&tx)?;
         tx.commit()?;
         Ok(())
     }
@@ -806,15 +812,6 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         )?;
         tx.commit()?;
     }
-    Ok(())
-}
-
-fn ensure_default_project(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO projects(name, path, selected) \
-         SELECT ?1, ?2, 1 WHERE NOT EXISTS (SELECT 1 FROM projects)",
-        params![DEFAULT_PROJECT_NAME, DEFAULT_PROJECT_PATH],
-    )?;
     Ok(())
 }
 

@@ -1,6 +1,8 @@
 <script lang="ts">
 export const EMPTY_FEED_TITLE = 'Nenhuma mensagem ainda.'
 export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
+export const NO_PROJECT_TITLE = 'Nenhum projeto ainda.'
+export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o time.'
 </script>
 
 <script setup lang="ts">
@@ -10,6 +12,10 @@ import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import QueuedEntry from './QueuedEntry.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
+import { NEW_PROJECT_LABEL } from '../projects/projetosSample'
+import { useProjects } from '../projects/useProjects'
+import { useNavigation } from '../../shell/useNavigation'
+import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
@@ -18,6 +24,8 @@ const AGENT_GROUP_TITLE = AGENTS.map((agent) => agent.name).join(' ↔ ')
 const AT_END_TOLERANCE_PX = 4
 
 const team = useTeam()
+const projectsStore = useProjects()
+const navigation = useNavigation()
 const scroller = ref<HTMLElement | null>(null)
 // Só o próprio scroll decide: arrastar a barra ou rolar com a roda sai do fim e volta ao chegar nele.
 const followingEnd = ref(true)
@@ -67,7 +75,15 @@ onMounted(followEnd)
       />
     </header>
     <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
-    <UiEmpty v-if="team.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+    <template v-if="projectsStore.loaded && projectsStore.selected === null">
+      <UiEmpty :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
+        <template #mascot>
+          <VokiaMascot look="tudo-em-dia" />
+        </template>
+      </UiEmpty>
+      <UiButton variant="primary" size="lg" @press="navigation.goTo('novo-projeto')">{{ NEW_PROJECT_LABEL }}</UiButton>
+    </template>
+    <UiEmpty v-else-if="team.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />
       </template>
