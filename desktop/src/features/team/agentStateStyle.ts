@@ -1,12 +1,14 @@
 import type { AgentState } from './events'
 
 export const STATE_LABELS: Record<AgentState, string> = {
+  sending: 'enviando',
   thinking: 'pensando',
   waiting: 'esperando',
   idle: 'livre',
 }
 
 export const DOT_CLASSES: Record<AgentState, string> = {
+  sending: 'animate-pulse bg-muted',
   thinking: 'animate-pulse bg-ok',
   waiting: 'bg-warn',
   idle: 'bg-faint',

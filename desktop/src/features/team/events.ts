@@ -4,7 +4,7 @@ export type Agent = 'iara' | 'davi'
 
 export type Speaker = 'user' | Agent
 
-export type AgentState = 'thinking' | 'waiting' | 'idle'
+export type AgentState = 'sending' | 'thinking' | 'waiting' | 'idle'
 
 export interface VokiaMessage {
   type: 'message'

@@ -307,12 +307,16 @@ async fn exchange_turns(
     request: &str,
     sessions: &mut ExchangeSessions,
 ) -> Result<(), FlowError> {
+    emit_state(app, key.project_id, key.agent, AgentState::Sending)?;
     let project_dir = project_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
     // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
     let definition = interpret_task(app, state, cli, request, key).await?;
+    if first_speaker(&definition, key.agent) != key.agent {
+        emit_state(app, key.project_id, key.agent, AgentState::Idle)?;
+    }
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
     let exchange = Exchange {
@@ -609,6 +613,10 @@ fn raise_decision(
     Ok(TaskOutcome::Finished)
 }
 
+fn first_speaker(definition: &TaskDefinition, origin: Agent) -> Agent {
+    definition.participants.first().copied().unwrap_or(origin)
+}
+
 struct Turn {
     speaker: Agent,
     base: String,
@@ -629,7 +637,7 @@ impl Turn {
     }
 
     fn first(definition: &TaskDefinition, origin: Agent, request: &str) -> Self {
-        let speaker = definition.participants.first().copied().unwrap_or(origin);
+        let speaker = first_speaker(definition, origin);
         Self::new(
             speaker,
             &format!("Pedido do usuário: {request}"),

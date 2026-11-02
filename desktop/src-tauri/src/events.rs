@@ -58,6 +58,7 @@ impl From<Agent> for Speaker {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentState {
+    Sending,
     Thinking,
     Waiting,
     Idle,
