@@ -9,7 +9,6 @@ import {
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
-import { SAMPLE_IDS } from './backlogPageSample'
 import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem, type BacklogTag } from './backlogTypes'
 
 interface ItemQueue {
@@ -23,6 +22,7 @@ export const useBacklog = defineStore('backlog', () => {
   const openId = ref<string | null>(null)
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
+  const loadError = ref<string | null>(null)
   const team = useTeam()
   const queues = new Map<string, ItemQueue>()
   let loadSeq = 0
@@ -62,12 +62,14 @@ export const useBacklog = defineStore('backlog', () => {
     loadSeq += 1
     clearLoaded()
     loading.value = false
+    loadError.value = null
   }
 
   // Resposta de uma carga antiga (outro projeto ou carga mais nova) é descartada.
   async function load(projectId: number): Promise<boolean> {
     const seq = (loadSeq += 1)
     clearLoaded()
+    loadError.value = null
     loading.value = true
     return applySnapshot(projectId, seq)
   }
@@ -79,9 +81,13 @@ export const useBacklog = defineStore('backlog', () => {
       items.value = snapshot.items
       planEntries.value = snapshot.plans
       loadedProjectId.value = projectId
+      loadError.value = null
       return true
     } catch (error) {
-      if (seq === loadSeq) reportError(error)
+      if (seq === loadSeq) {
+        loadError.value = error instanceof Error ? error.message : String(error)
+        reportError(error)
+      }
       return false
     } finally {
       if (seq === loadSeq) loading.value = false
@@ -98,7 +104,7 @@ export const useBacklog = defineStore('backlog', () => {
   // e recarrega do banco; o conteúdo é lido no envio, então nada reaplica a mudança que falhou.
   function enqueue(itemId: string, write: (projectId: number) => Promise<void>): void {
     const projectId = loadedProjectId.value
-    if (projectId === null || SAMPLE_IDS.has(itemId)) return
+    if (projectId === null) return
     const queue = queues.get(itemId) ?? { tail: Promise.resolve(), generation: 0 }
     queues.set(itemId, queue)
     const generation = queue.generation
@@ -163,6 +169,7 @@ export const useBacklog = defineStore('backlog', () => {
     openId,
     openItem,
     loading,
+    loadError,
     open,
     close,
     clear,

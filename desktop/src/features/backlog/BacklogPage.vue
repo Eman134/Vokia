@@ -1,29 +1,33 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiEmpty from '../../ui/UiEmpty.vue'
+import UiNotice from '../../ui/UiNotice.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
-import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
 import { useProjects } from '../projects/useProjects'
 import BacklogCard from './BacklogCard.vue'
 import BacklogItemModal from './BacklogItemModal.vue'
 import { colorVar, TAG_COLOR, TAG_LABEL } from './backlogLabels'
 import {
+  ALL_FEATURES_LABEL,
+  ALL_FEATURES_VALUE,
   ALL_TRIAGED_LABEL,
   BACKLOG_SUBTITLE,
   BACKLOG_TITLE,
-  COLUMN_SAMPLES,
+  COLUMN_META,
   DENSITY_OPTIONS,
+  EMPTY_BOARD_TEXT,
+  EMPTY_BOARD_TITLE,
   EMPTY_COLUMN_TEXT,
-  FEATURE_FILTER_OPTIONS,
+  LOAD_ERROR_PREFIX,
+  LOADING_TEXT,
   MINE_LABEL,
   NEW_REQUEST_LABEL,
   PLAN_ALL_LABEL,
-  SAMPLE_IDS,
-  SAMPLE_ITEMS,
   SEARCH_LABEL,
   SEARCH_PLACEHOLDER,
   TYPE_FILTER_OPTIONS,
-} from './backlogPageSample'
+} from './backlogPageCopy'
 import { DEFAULT_COLUMN, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type KanbanStage } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 
@@ -53,21 +57,35 @@ const backlog = useBacklog()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 const density = ref<BacklogCardDensity>('normal')
-const featureFilter = ref<string>(FEATURE_FILTER_OPTIONS[0].value)
 const typeFilter = ref<string>(TYPE_FILTER_OPTIONS[0].value)
 
 function columnOf(item: BacklogItem): BacklogColumn {
   return item.column ?? (item.stage ? STAGE_COLUMN[item.stage] : DEFAULT_COLUMN)
 }
 
+const dismissedError = ref(false)
+const featureFilter = ref<string>(ALL_FEATURES_VALUE)
+const featureOptions = computed(() => [
+  { label: ALL_FEATURES_LABEL, value: ALL_FEATURES_VALUE },
+  ...[...new Set(backlog.items.map((item) => item.feature).filter((feature): feature is string => Boolean(feature)))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    .map((feature) => ({ label: feature, value: feature })),
+])
+const visibleItems = computed(() =>
+  featureFilter.value === ALL_FEATURES_VALUE ? backlog.items : backlog.items.filter((item) => item.feature === featureFilter.value),
+)
+const isEmptyBoard = computed(() => !backlog.loading && !backlog.loadError && backlog.items.length === 0 && projectName.value !== '')
+watch(featureOptions, (options) => {
+  if (!options.some((option) => option.value === featureFilter.value)) featureFilter.value = ALL_FEATURES_VALUE
+})
+
 const columns = computed(() =>
-  COLUMN_SAMPLES.map((column) => ({
+  COLUMN_META.map((column) => ({
     ...column,
-    cards: backlog.items.filter((item) => columnOf(item) === column.name),
+    cards: visibleItems.value.filter((item) => columnOf(item) === column.name),
   })),
 )
 
-const usingSample = computed(() => backlog.items.some((item) => SAMPLE_IDS.has(item.id)))
 const pendingCount = computed(() => backlog.items.filter((item) => item.state === 'vazio').length)
 const planAllLabel = computed(() =>
   pendingCount.value ? PLAN_ALL_LABEL.replace('{count}', String(pendingCount.value)) : ALL_TRIAGED_LABEL,
@@ -89,14 +107,6 @@ function tagStyle(tag: keyof typeof TAG_LABEL) {
   return { color: token, backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)` }
 }
 
-// Exemplos só entram quando o projeto carregou sem itens; ficam em memória (o store não os grava).
-async function loadSelected(projectId: number): Promise<void> {
-  const applied = await backlog.load(projectId)
-  if (applied && backlog.items.length === 0) {
-    backlog.items = SAMPLE_ITEMS.map((item) => structuredClone(item))
-  }
-}
-
 watch(
   () => projectsStore.selected?.id,
   (projectId) => {
@@ -104,7 +114,8 @@ watch(
       backlog.clear()
       return
     }
-    void loadSelected(projectId)
+    dismissedError.value = false
+    void backlog.load(projectId)
   },
   { immediate: true },
 )
@@ -114,9 +125,7 @@ watch(
   <section :class="PAGE_CLASSES">
     <div :class="HEADER_CLASSES">
       <div>
-        <span v-if="projectName" class="text-caption text-muted">
-          {{ projectName }}<template v-if="usingSample"> · {{ SAMPLE_DATA_LABEL }}</template>
-        </span>
+        <span v-if="projectName" class="text-caption text-muted">{{ projectName }}</span>
         <h1 :class="TITLE_CLASSES">{{ BACKLOG_TITLE }}</h1>
         <p :class="SUBTITLE_CLASSES">{{ BACKLOG_SUBTITLE }}</p>
       </div>
@@ -138,7 +147,7 @@ watch(
         disabled
         aria-disabled="true"
       />
-      <UiSegmented v-model="featureFilter" :options="FEATURE_FILTER_OPTIONS" label="Feature" disabled />
+      <UiSegmented v-model="featureFilter" :options="featureOptions" label="Feature" />
       <UiSegmented v-model="typeFilter" :options="TYPE_FILTER_OPTIONS" label="Tipo" disabled />
       <button type="button" :class="MINE_CLASSES" aria-pressed="false" disabled aria-disabled="true">
         {{ MINE_LABEL }}
@@ -160,6 +169,9 @@ watch(
       <span class="ml-auto text-caption text-muted">{{ summary }}</span>
     </div>
 
+    <UiNotice v-if="backlog.loadError && !dismissedError" :text="LOAD_ERROR_PREFIX + backlog.loadError" @close="dismissedError = true" />
+    <UiEmpty v-if="isEmptyBoard" :title="EMPTY_BOARD_TITLE" :text="EMPTY_BOARD_TEXT" />
+
     <div :class="GRID_SCROLL_CLASSES">
       <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
         <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
@@ -176,7 +188,8 @@ watch(
             :density="density"
             @open="backlog.open(item.id)"
           />
-          <div v-if="column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</div>
+          <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
+          <div v-else-if="column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</div>
         </section>
       </div>
     </div>
