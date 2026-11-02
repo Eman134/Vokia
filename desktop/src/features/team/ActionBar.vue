@@ -32,11 +32,15 @@ import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
 import QueuePopover from './QueuePopover.vue'
 import PausedAgents from './PausedAgents.vue'
+import FlowSteps from './FlowSteps.vue'
+import { FLOW_LABEL, FLOW_PLACEHOLDER } from './flowSteps'
+import { useFlow } from './useFlow'
 import Balloon from '../balloon/Balloon.vue'
 import { panelTitleFor } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
 import PanelShell from '../panel/PanelShell.vue'
+import { MAX_PERCENT, ringDash } from '../usage/usagePlans'
 import UiButton from '../../ui/UiButton.vue'
 
 const RING_BOX = 28
@@ -74,6 +78,7 @@ const emit = defineEmits<{
 const team = useTeam()
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
+const flow = useFlow()
 const control = useAgentControl()
 const draft = ref('')
 const caret = ref(0)
@@ -102,7 +107,13 @@ const pageActions = computed<readonly PageAction[]>(() =>
 const locked = computed(() => team.checking)
 const projectsStore = useProjects()
 const placeholder = computed(() =>
-  placeholderFor(railPage.value, projectsStore.selected?.name ?? '', statusStore.status, statusStore.placeholder),
+  flow.flow !== null
+    ? FLOW_PLACEHOLDER[flow.flow]
+    : placeholderFor(railPage.value, projectsStore.selected?.name ?? '', statusStore.status, statusStore.placeholder),
+)
+const flowLabel = computed(() => (flow.flow === null ? '' : `${FLOW_LABEL[flow.flow]} · ${flow.step}/${flow.total}`))
+const ringDashArray = computed(() =>
+  flow.active ? ringDash(flow.progress * MAX_PERCENT, RING_RADIUS) : statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH,
 )
 const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
 const commandMatch = computed<TriggerMatch | null>(() => findCommandTrigger(draft.value, caret.value))
@@ -135,7 +146,7 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
 const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value)
-const inlinePermission = computed(() => expanded.value && team.permissions.length > 0)
+const inlinePermission = computed(() => !flow.active && expanded.value && team.permissions.length > 0)
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
@@ -391,8 +402,8 @@ function onPointerLeave(): void {
         v-if="team.activeAgents.length < 2"
         class="size-6.5 shrink-0"
         :class="{
-          'animate-spin': statusStore.status === 'working',
-          'animate-pulse motion-reduce:animate-none': statusStore.status === 'needs-you',
+          'animate-spin': !flow.active && statusStore.status === 'working',
+          'animate-pulse motion-reduce:animate-none': !flow.active && statusStore.status === 'needs-you',
         }"
         :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
         fill="none"
@@ -406,7 +417,7 @@ function onPointerLeave(): void {
           :r="RING_RADIUS"
           :class="statusStore.ring"
           stroke-linecap="round"
-          :stroke-dasharray="statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH"
+          :stroke-dasharray="ringDashArray"
         />
       </svg>
       <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
@@ -418,10 +429,11 @@ function onPointerLeave(): void {
         />
       </span>
       <span
+        v-if="!flow.active || !expanded"
         class="min-w-0 truncate text-label font-semibold text-muted"
         :class="expanded ? undefined : 'pr-2'"
       >
-        {{ statusStore.statusText }}
+        {{ flow.active ? flowLabel : statusStore.statusText }}
       </span>
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
@@ -431,7 +443,7 @@ function onPointerLeave(): void {
         :leave-active-class="REVEAL_LEAVE_ACTIVE_CLASS"
         :leave-to-class="REVEAL_LEAVE_TO_CLASS"
       >
-        <span v-if="expanded && !inlinePermission" class="flex shrink-0 items-center gap-3">
+        <span v-if="expanded && !inlinePermission && !flow.active" class="flex shrink-0 items-center gap-3">
           <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
           <UiButton
             variant="quiet"
@@ -487,7 +499,9 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
+      <FlowSteps v-if="flow.active && expanded" />
       <UiButton
+        v-if="!flow.active"
         variant="quiet"
         size="sm"
         :aria-label="decisionsTitle"
