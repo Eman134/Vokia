@@ -43,6 +43,8 @@ const ERROR_FIELD: Record<ProjectErrorCode, ErrorField> = {
   ProjectAlreadyAdded: 'general',
   CreateInProgress: 'general',
   InvalidIcon: 'symbol',
+  ProjectNotFound: 'general',
+  ProjectBusy: 'general',
   Db: 'general',
 }
 

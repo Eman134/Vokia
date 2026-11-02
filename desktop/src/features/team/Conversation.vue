@@ -10,7 +10,9 @@ import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import QueuedEntry from './QueuedEntry.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import UiNotice from '../../ui/UiNotice.vue'
 
 const AGENT_GROUP_TITLE = AGENTS.map((agent) => agent.name).join(' ↔ ')
 const AT_END_TOLERANCE_PX = 4
@@ -19,9 +21,19 @@ const team = useTeam()
 const scroller = ref<HTMLElement | null>(null)
 // Só o próprio scroll decide: arrastar a barra ou rolar com a roda sai do fim e volta ao chegar nele.
 const followingEnd = ref(true)
+const clearFailure = ref<string | null>(null)
 
 function countLabel(count: number): string {
   return count === 1 ? '1 mensagem' : `${count} mensagens`
+}
+
+async function clearConversation(): Promise<void> {
+  clearFailure.value = null
+  try {
+    await team.clearFeed()
+  } catch (error) {
+    clearFailure.value = `Não foi possível limpar a conversa: ${String(error)}`
+  }
 }
 
 function onScroll(): void {
@@ -46,7 +58,15 @@ onMounted(followEnd)
   <section ref="scroller" class="flex-1 overflow-y-auto px-8 pb-40 pt-6" @scroll="onScroll">
     <header class="mb-6 flex items-center justify-between gap-4">
       <h1 class="text-title text-ink">Conversas</h1>
+      <UiConfirm
+        v-if="team.feed.length > 0"
+        label="Limpar"
+        message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
+        confirm-label="Limpar conversa"
+        @confirm="clearConversation"
+      />
     </header>
+    <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
     <UiEmpty v-if="team.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />

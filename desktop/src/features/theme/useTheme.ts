@@ -28,10 +28,9 @@ export const useTheme = defineStore('theme', () => {
   async function load(): Promise<void> {
     try {
       const stored = (await fetchSettings())[THEME_SETTING_KEY]
-      if (isThemeChoice(stored)) {
-        choice.value = stored
-        applyTheme(stored)
-      }
+      const theme = isThemeChoice(stored) ? stored : DEFAULT_THEME
+      choice.value = theme
+      applyTheme(theme)
     } catch (error) {
       // O motivo do banco indisponível já aparece no feed (useTeam.restoreHistory); aqui só mantém o tema padrão.
       console.error(`Não foi possível ler o tema salvo: ${String(error)}`)

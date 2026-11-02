@@ -3,6 +3,9 @@ export const PROJECTS_SUBTITLE =
   'Cada projeto tem um símbolo e o seu próprio mapa do time, backlog, conversas, artefatos e memória. Um agente pode trabalhar em mais de um.'
 export const NEW_PROJECT_LABEL = '+ Novo projeto'
 export const OPEN_LABEL = 'Abrir'
+export const EDIT_LABEL = 'Editar'
+export const SAVE_LABEL = 'Salvar'
+export const EMPTY_PATH_TEXT = 'Sem pasta definida'
 
 export const NEW_PROJECT_CONTEXT = 'Projetos › Novo projeto'
 export const NEW_PROJECT_STEPS = ['Origem', 'Montar o time', 'Primeiro pedido'] as const

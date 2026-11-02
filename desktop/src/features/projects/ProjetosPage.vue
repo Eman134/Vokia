@@ -4,9 +4,11 @@ import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useNavigation } from '../../shell/useNavigation'
+import { useTeam } from '../team/useTeam'
 import ProjectCard from './ProjectCard.vue'
+import ProjectEditForm from './ProjectEditForm.vue'
 import { NEW_PROJECT_LABEL, PROJECTS_SUBTITLE, PROJECTS_TITLE } from './projetosSample'
-import type { Project } from './projectsApi'
+import { isProjectError, type Project, type ProjectEdit } from './projectsApi'
 import { useProjects } from './useProjects'
 
 const PROJECTS_CONTEXT = 'Workspace'
@@ -19,15 +21,36 @@ const GRID_CLASSES = 'grid grid-cols-[repeat(auto-fill,minmax(440px,1fr))] gap-4
 
 const navigation = useNavigation()
 const projectsStore = useProjects()
+const team = useTeam()
 const failure = ref<string | null>(null)
+const editingId = ref<number | null>(null)
 
 function describe(cause: unknown): string {
+  if (isProjectError(cause)) return cause.message
   return cause instanceof Error ? cause.message : String(cause)
 }
 
 async function open(project: Project) {
   try {
     await navigation.enterProject(project)
+  } catch (cause) {
+    failure.value = describe(cause)
+  }
+}
+
+async function save(project: Project, input: ProjectEdit) {
+  try {
+    await projectsStore.update(project.id, input)
+    editingId.value = null
+  } catch (cause) {
+    failure.value = describe(cause)
+  }
+}
+
+async function remove(project: Project) {
+  try {
+    await projectsStore.remove(project.id)
+    if (project.selected) await team.restoreHistory()
   } catch (cause) {
     failure.value = describe(cause)
   }
@@ -68,12 +91,21 @@ onMounted(async () => {
     <UiEmpty v-if="projectsStore.loaded && projectsStore.projects.length === 0" :title="NO_PROJECTS_TEXT" />
 
     <div :class="GRID_CLASSES">
-      <ProjectCard
-        v-for="project in projectsStore.projects"
-        :key="project.id"
-        :project="project"
-        @open="open(project)"
-      />
+      <template v-for="project in projectsStore.projects" :key="project.id">
+        <ProjectEditForm
+          v-if="editingId === project.id"
+          :project="project"
+          @save="(input) => save(project, input)"
+          @cancel="editingId = null"
+        />
+        <ProjectCard
+          v-else
+          :project="project"
+          @open="open(project)"
+          @edit="editingId = project.id"
+          @remove="remove(project)"
+        />
+      </template>
     </div>
   </section>
 </template>

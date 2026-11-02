@@ -9,8 +9,12 @@ use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::{Agent, VokiaEvent};
 use crate::orchestrator;
 use crate::permissions::PermissionError;
-use crate::projects::{self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectError};
+use crate::projects::{
+    self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectEdit, ProjectError,
+};
 use crate::state::AppState;
+
+const ERASE_BUSY_MESSAGE: &str = "Há um pedido em andamento; aguarde terminar.";
 
 #[tauri::command]
 pub fn cli_problem(state: State<'_, AppState>) -> Option<CliProblem> {
@@ -117,6 +121,74 @@ pub async fn create_project(
 ) -> Result<Project, ProjectError> {
     let db = state.require()?;
     projects::create_project(db, input).await
+}
+
+#[tauri::command]
+pub fn update_project(
+    state: State<'_, DbState>,
+    id: i64,
+    input: ProjectEdit,
+) -> Result<Project, ProjectError> {
+    let db = state.require()?;
+    projects::update_project(db, id, input)
+}
+
+#[tauri::command]
+pub async fn delete_project(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    id: i64,
+) -> Result<(), ProjectError> {
+    let db = state.require()?;
+    let app_state = app.state::<AppState>();
+    if orchestrator::has_flow(&app_state, Some(id))? {
+        return Err(DbError::ProjectBusy.into());
+    }
+    stop_project_work(&app_state, id).await;
+    db.delete_project(id)?;
+    orchestrator::forget_project(&app_state, id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_conversation(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    let app_state = app.state::<AppState>();
+    if orchestrator::has_flow(&app_state, Some(project_id)).map_err(|error| error.to_string())? {
+        return Err(DbError::ProjectBusy.to_string());
+    }
+    stop_project_work(&app_state, project_id).await;
+    db.clear_messages(project_id)
+        .map_err(|error| error.to_string())?;
+    orchestrator::forget_project(&app_state, project_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn erase_all_data(app: AppHandle, state: State<'_, DbState>) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    let app_state = app.state::<AppState>();
+    if orchestrator::has_flow(&app_state, None).map_err(|error| error.to_string())? {
+        return Err(ERASE_BUSY_MESSAGE.to_string());
+    }
+    let existing = db.list_projects().map_err(|error| error.to_string())?;
+    for project in &existing {
+        stop_project_work(&app_state, project.id).await;
+    }
+    db.erase_all().map_err(|error| error.to_string())?;
+    for project in &existing {
+        orchestrator::forget_project(&app_state, project.id);
+    }
+    orchestrator::remove_archive(&app, &app_state).map_err(|error| error.to_string())
+}
+
+async fn stop_project_work(state: &AppState, project_id: i64) {
+    state.permissions.deny_project(project_id);
+    state.sessions.close_project(project_id).await;
 }
 
 #[tauri::command]

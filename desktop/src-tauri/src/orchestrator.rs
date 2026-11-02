@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
@@ -794,12 +795,15 @@ fn archive_task(app: &AppHandle, state: &AppState, record: TaskRecord) -> Result
     if archive.len() > ARCHIVE_LIMIT {
         archive.remove(0);
     }
-    let path = app
+    write_archive(&archive_path(app)?, &archive)
+}
+
+fn archive_path(app: &AppHandle) -> Result<PathBuf, FlowError> {
+    Ok(app
         .path()
         .app_data_dir()
         .map_err(FlowError::ArchivePath)?
-        .join(ARCHIVE_FILE);
-    write_archive(&path, &archive)
+        .join(ARCHIVE_FILE))
 }
 
 fn write_archive(path: &Path, records: &[TaskRecord]) -> Result<(), FlowError> {
@@ -808,6 +812,41 @@ fn write_archive(path: &Path, records: &[TaskRecord]) -> Result<(), FlowError> {
     }
     let json = serde_json::to_vec(records).map_err(FlowError::ArchiveJson)?;
     fs::write(path, json).map_err(FlowError::ArchiveIo)
+}
+
+pub(crate) fn remove_archive(app: &AppHandle, state: &AppState) -> Result<(), FlowError> {
+    state
+        .archive
+        .lock()
+        .map_err(|_| FlowError::ArchivePoisoned)?
+        .clear();
+    match fs::remove_file(archive_path(app)?) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(FlowError::ArchiveIo(error)),
+    }
+}
+
+pub(crate) fn has_flow(state: &AppState, project_id: Option<i64>) -> Result<bool, FlowError> {
+    let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    Ok(flow
+        .pending
+        .keys()
+        .any(|key| project_id.is_none_or(|id| key.project_id == id)))
+}
+
+// Os mapas só recebem inserções e remoções simples; um lock envenenado não deixa estado pela metade.
+pub(crate) fn forget_project(state: &AppState, project_id: i64) {
+    state
+        .cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .remove(&project_id);
+    state
+        .decisions
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .retain(|_, decision| decision.project_id != project_id);
 }
 
 #[derive(Default)]

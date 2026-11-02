@@ -2,14 +2,14 @@
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import ProjectIcon from './ProjectIcon.vue'
-import { OPEN_LABEL } from './projetosSample'
+import { EDIT_LABEL, EMPTY_PATH_TEXT, OPEN_LABEL } from './projetosSample'
 import type { Project } from './projectsApi'
 
 const props = defineProps<{ project: Project }>()
-const emit = defineEmits<{ open: [] }>()
+const emit = defineEmits<{ open: []; edit: []; remove: [] }>()
 
-const EMPTY_PATH_TEXT = 'Sem pasta definida'
 const FOLDER_ORIGIN_LABEL = 'Pasta'
 const GITHUB_ORIGIN_PREFIX = 'GitHub'
 
@@ -43,6 +43,15 @@ const originLabel = computed(() =>
     <div :class="FOOTER_CLASSES">
       <UiBadge status="backlog" :label="originLabel" />
       <span class="ml-auto" />
+      <UiButton variant="quiet" size="sm" data-testid="project-card-edit" @press="emit('edit')">
+        {{ EDIT_LABEL }}
+      </UiButton>
+      <UiConfirm
+        label="Excluir"
+        message="Remove o projeto, conversas, backlog e planos do app. A pasta no disco não é apagada."
+        confirm-label="Excluir projeto"
+        @confirm="emit('remove')"
+      />
       <UiButton variant="primary" size="lg" data-testid="project-card-open" @press="emit('open')">
         {{ OPEN_LABEL }}
       </UiButton>

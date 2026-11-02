@@ -1,15 +1,25 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import ThemeSwitch from '../theme/ThemeSwitch.vue'
+import { useTeam } from '../team/useTeam'
+import { useTheme } from '../theme/useTheme'
+import { useProjects } from '../projects/useProjects'
+import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
 import type { SettingsItem } from './configuracoesSample'
-import { fetchSettings, saveSetting } from './settingsApi'
+import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
+const projects = useProjects()
+const team = useTeam()
+const theme = useTheme()
+const navigation = useNavigation()
+const PROJECTS_PAGE = 'projetos'
 
 // Espelha PERMISSION_GRANT_VALUES de src-tauri/src/db.rs.
 const PERMISSION_GRANT_KEY = 'permission_grant'
@@ -19,10 +29,34 @@ const DEFAULT_GRANT: GrantChoice = 'session'
 const GRANT_LABELS: Record<GrantChoice, string> = { session: 'Por sessão', once: 'Uma vez' }
 const GRANT_OPTIONS = GRANT_CHOICES.map((choice) => ({ label: GRANT_LABELS[choice], value: choice }))
 const ERROR_CLASSES = 'text-small text-danger'
-const GRANT_WRAPPER_CLASSES = 'flex flex-col items-end gap-1'
+const STACK_CLASSES = 'flex flex-col items-end gap-1'
 
 const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
+const erasing = ref(false)
+const eraseError = ref<string | null>(null)
+
+async function eraseEverything(): Promise<void> {
+  erasing.value = true
+  eraseError.value = null
+  try {
+    await eraseAllData()
+  } catch (error) {
+    eraseError.value = `Não foi possível apagar os dados: ${String(error)}`
+    erasing.value = false
+    return
+  }
+  try {
+    await projects.load()
+    await team.restoreHistory()
+    await theme.load()
+    navigation.goTo(PROJECTS_PAGE)
+  } catch (error) {
+    eraseError.value = `Dados apagados, mas a tela não recarregou: ${String(error)}`
+  } finally {
+    erasing.value = false
+  }
+}
 
 function isGrantChoice(value: string | undefined): value is GrantChoice {
   return GRANT_CHOICES.some((choice) => choice === value)
@@ -131,7 +165,7 @@ function toOptions(labels: readonly string[]) {
 
     <div :class="CONTROL_CLASSES">
       <ThemeSwitch v-if="item.control.kind === 'theme'" />
-      <div v-else-if="item.control.kind === 'permission-grant'" :class="GRANT_WRAPPER_CLASSES">
+      <div v-else-if="item.control.kind === 'permission-grant'" :class="STACK_CLASSES">
         <UiSegmented
           :options="GRANT_OPTIONS"
           :model-value="grant"
@@ -139,6 +173,16 @@ function toOptions(labels: readonly string[]) {
           @update:model-value="chooseGrant"
         />
         <p v-if="grantError" role="alert" :class="ERROR_CLASSES">{{ grantError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'erase-data'" :class="STACK_CLASSES">
+        <UiConfirm
+          label="Apagar…"
+          message="Apaga todos os projetos, conversas, backlog, planos e também as configurações (tema e permissões voltam ao padrão). Não pode ser desfeito."
+          confirm-label="Apagar tudo"
+          :busy="erasing"
+          @confirm="eraseEverything"
+        />
+        <p v-if="eraseError" role="alert" :class="ERROR_CLASSES">{{ eraseError }}</p>
       </div>
       <UiSwitch v-else-if="item.control.kind === 'switch'" :model-value="item.control.on" :label="item.label" disabled />
       <UiSegmented

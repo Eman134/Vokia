@@ -9,6 +9,9 @@ const PICK_FOLDER_COMMAND = 'pick_folder'
 const INSPECT_FOLDER_COMMAND = 'inspect_folder'
 const INSPECT_GITHUB_REPO_COMMAND = 'inspect_github_repo'
 const CREATE_PROJECT_COMMAND = 'create_project'
+const UPDATE_PROJECT_COMMAND = 'update_project'
+const DELETE_PROJECT_COMMAND = 'delete_project'
+const CLEAR_CONVERSATION_COMMAND = 'clear_conversation'
 
 export type OriginKind = 'folder' | 'github'
 export type CloneMode = 'link' | 'fork'
@@ -44,7 +47,7 @@ export function loadHistory(projectId: number): Promise<VokiaMessage[]> {
 export type ProjectErrorCode =
   | 'GitNotInstalled' | 'FolderNotFound' | 'NotADirectory'  | 'GhNotInstalled' | 'GhNotAuthenticated' | 'InvalidRepoRef' | 'RepoNotFound' | 'GhFailed'
   | 'DestinationExists' | 'CloneFailed' | 'CloneTimeout' | 'BranchNotFound'
-  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'Db'
+  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'ProjectNotFound' | 'ProjectBusy' | 'Db'
 
 export interface ProjectError {
   code: ProjectErrorCode
@@ -101,6 +104,24 @@ export function inspectGithubRepo(repo: string): Promise<GithubRepoInfo> {
   return invoke<GithubRepoInfo>(INSPECT_GITHUB_REPO_COMMAND, { repo })
 }
 
+export interface ProjectEdit {
+  name: string
+  symbol: string
+  description: string
+}
+
 export function createProject(input: NewProjectInput): Promise<Project> {
   return invoke<Project>(CREATE_PROJECT_COMMAND, { input })
+}
+
+export function updateProject(id: number, input: ProjectEdit): Promise<Project> {
+  return invoke<Project>(UPDATE_PROJECT_COMMAND, { id, input })
+}
+
+export function deleteProject(id: number): Promise<void> {
+  return invoke<void>(DELETE_PROJECT_COMMAND, { id })
+}
+
+export function clearConversation(projectId: number): Promise<void> {
+  return invoke<void>(CLEAR_CONVERSATION_COMMAND, { projectId })
 }

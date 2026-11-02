@@ -16,6 +16,15 @@ const DEFAULT_PROJECT_PATH: &str = "";
 const HISTORY_LIMIT: i64 = 500;
 const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo";
+// item_plans antes de backlog_items: a chave estrangeira deles aponta para backlog_items.
+const PROJECT_CHILD_TABLES: &[&str] = &[
+    "item_plans",
+    "backlog_items",
+    "messages",
+    "agent_pauses",
+    "permission_approvals",
+    "agent_sessions",
+];
 pub const ORIGIN_FOLDER: &str = "folder";
 pub const ORIGIN_GITHUB: &str = "github";
 const SETTING_THEME: &str = "theme";
@@ -149,6 +158,7 @@ pub enum DbError {
     Unavailable(String),
     NoSelectedProject,
     ProjectNotFound(i64),
+    ProjectBusy,
     ProjectPathTaken(String),
     InvalidProject(&'static str),
     InvalidSpeaker(String),
@@ -192,6 +202,10 @@ impl fmt::Display for DbError {
             DbError::Unavailable(reason) => write!(f, "{reason}"),
             DbError::NoSelectedProject => write!(f, "Nenhum projeto está selecionado."),
             DbError::ProjectNotFound(id) => write!(f, "O projeto {id} não existe."),
+            DbError::ProjectBusy => write!(
+                f,
+                "Há um pedido em andamento neste projeto; aguarde terminar."
+            ),
             DbError::ProjectPathTaken(path) => {
                 write!(f, "Já existe um projeto na pasta {path}.")
             }
@@ -312,21 +326,26 @@ pub struct NewProject<'a> {
     pub origin_repo: Option<&'a str>,
 }
 
+fn validate_project_fields(name: &str, symbol: &str) -> Result<(), DbError> {
+    if name.trim().is_empty() {
+        return Err(DbError::InvalidProject(
+            "O nome do projeto não pode ser vazio.",
+        ));
+    }
+    if symbol.trim().is_empty() {
+        return Err(DbError::InvalidProject(
+            "O ícone do projeto não pode ser vazio.",
+        ));
+    }
+    Ok(())
+}
+
 impl NewProject<'_> {
     pub fn validate(&self) -> Result<(), DbError> {
-        if self.name.trim().is_empty() {
-            return Err(DbError::InvalidProject(
-                "O nome do projeto não pode ser vazio.",
-            ));
-        }
+        validate_project_fields(self.name, self.symbol)?;
         if self.path.trim().is_empty() {
             return Err(DbError::InvalidProject(
                 "A pasta do projeto não pode ser vazia.",
-            ));
-        }
-        if self.symbol.trim().is_empty() {
-            return Err(DbError::InvalidProject(
-                "O ícone do projeto não pode ser vazio.",
             ));
         }
         Ok(())
@@ -417,6 +436,80 @@ impl Db {
             project_from_row,
         )?;
         Ok(project)
+    }
+
+    pub fn update_project(
+        &self,
+        id: i64,
+        name: &str,
+        symbol: &str,
+        description: &str,
+    ) -> Result<Project, DbError> {
+        validate_project_fields(name, symbol)?;
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE projects SET name = ?1, symbol = ?2, description = ?3 WHERE id = ?4",
+            params![name.trim(), symbol.trim(), description.trim(), id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::ProjectNotFound(id));
+        }
+        let project = conn.query_row(
+            &format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id = ?1"),
+            [id],
+            project_from_row,
+        )?;
+        Ok(project)
+    }
+
+    pub fn delete_project(&self, id: i64) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for table in PROJECT_CHILD_TABLES {
+            tx.execute(&format!("DELETE FROM {table} WHERE project_id = ?1"), [id])?;
+        }
+        if tx.execute("DELETE FROM projects WHERE id = ?1", [id])? == 0 {
+            return Err(DbError::ProjectNotFound(id));
+        }
+        tx.execute(
+            "UPDATE projects SET selected = 1 WHERE id = (SELECT MIN(id) FROM projects) \
+             AND NOT EXISTS (SELECT 1 FROM projects WHERE selected = 1)",
+            [],
+        )?;
+        ensure_default_project(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn clear_messages(&self, project_id: i64) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM projects WHERE id = ?1)",
+            [project_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(DbError::ProjectNotFound(project_id));
+        }
+        tx.execute("DELETE FROM messages WHERE project_id = ?1", [project_id])?;
+        tx.execute(
+            "DELETE FROM agent_sessions WHERE project_id = ?1",
+            [project_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn erase_all(&self) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for table in PROJECT_CHILD_TABLES.iter().chain(&["projects", "settings"]) {
+            tx.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+        ensure_default_project(&tx)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn select_project(&self, id: i64) -> Result<(), DbError> {

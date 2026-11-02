@@ -11,6 +11,7 @@ use tokio::time::timeout;
 
 use crate::claude::base_command;
 use crate::db::{Db, DbError, NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
+use crate::orchestrator::FlowError;
 
 const GIT_PROGRAM: &str = "git";
 const GH_PROGRAM: &str = "gh";
@@ -55,6 +56,8 @@ pub enum ErrorCode {
     ProjectAlreadyAdded,
     CreateInProgress,
     InvalidIcon,
+    ProjectNotFound,
+    ProjectBusy,
     Db,
 }
 
@@ -109,8 +112,16 @@ impl From<DbError> for ProjectError {
             DbError::ProjectPathTaken(path) => {
                 ProjectError::new(ErrorCode::ProjectAlreadyAdded, message).with_path(path)
             }
+            DbError::ProjectNotFound(_) => ProjectError::new(ErrorCode::ProjectNotFound, message),
+            DbError::ProjectBusy => ProjectError::new(ErrorCode::ProjectBusy, message),
             _ => ProjectError::new(ErrorCode::Db, message),
         }
+    }
+}
+
+impl From<FlowError> for ProjectError {
+    fn from(error: FlowError) -> Self {
+        ProjectError::new(ErrorCode::Db, error.to_string())
     }
 }
 
@@ -164,6 +175,14 @@ pub struct NewProjectInput {
     symbol: String,
     description: String,
     origin: Origin,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEdit {
+    name: String,
+    symbol: String,
+    description: String,
 }
 
 #[derive(Deserialize)]
@@ -322,14 +341,25 @@ pub async fn inspect_github_repo(raw: &str) -> Result<GithubRepoInfo, ProjectErr
     })
 }
 
+fn ensure_known_icon(symbol: &str) -> Result<(), ProjectError> {
+    if PROJECT_ICONS.contains(&symbol) {
+        return Ok(());
+    }
+    Err(ProjectError::new(
+        ErrorCode::InvalidIcon,
+        "O ícone do projeto não está no catálogo.",
+    ))
+}
+
+pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, ProjectError> {
+    let symbol = edit.symbol.trim();
+    ensure_known_icon(symbol)?;
+    Ok(db.update_project(id, &edit.name, symbol, &edit.description)?)
+}
+
 pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, ProjectError> {
     let _guard = CreateGuard::acquire()?;
-    if !PROJECT_ICONS.contains(&input.symbol.as_str()) {
-        return Err(ProjectError::new(
-            ErrorCode::InvalidIcon,
-            "O ícone do projeto não está no catálogo.",
-        ));
-    }
+    ensure_known_icon(input.symbol.trim())?;
     match &input.origin {
         Origin::Folder { path } => {
             let info = inspect_folder(path).await?;

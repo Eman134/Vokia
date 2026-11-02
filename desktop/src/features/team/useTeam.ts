@@ -23,7 +23,7 @@ import {
 } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
-import { fetchDbProblem, loadHistory } from '../projects/projectsApi'
+import { clearConversation, fetchDbProblem, loadHistory } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { projectAgentKey } from './projectAgentKey'
@@ -154,6 +154,15 @@ export const useTeam = defineStore('team', () => {
         message: `Não foi possível carregar o histórico: ${String(error)}`,
       })
     }
+  }
+
+  async function clearFeed(): Promise<void> {
+    const project = projects.selected
+    if (project === null) {
+      return
+    }
+    await clearConversation(project.id)
+    feed.value = []
   }
 
   async function restorePauses(): Promise<void> {
@@ -427,5 +436,7 @@ export const useTeam = defineStore('team', () => {
     requestMention,
     takePendingMention,
     send,
+    restoreHistory,
+    clearFeed,
   }
 })

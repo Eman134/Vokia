@@ -1,6 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { listProjects, selectProject, type Project } from './projectsApi'
+import {
+  deleteProject,
+  listProjects,
+  selectProject,
+  updateProject,
+  type Project,
+  type ProjectEdit,
+} from './projectsApi'
 
 export const useProjects = defineStore('projects', () => {
   const projects = ref<Project[]>([])
@@ -17,5 +24,15 @@ export const useProjects = defineStore('projects', () => {
     await load()
   }
 
-  return { projects, loaded, selected, load, select }
+  async function update(id: number, input: ProjectEdit): Promise<void> {
+    await updateProject(id, input)
+    await load()
+  }
+
+  async function remove(id: number): Promise<void> {
+    await deleteProject(id)
+    await load()
+  }
+
+  return { projects, loaded, selected, load, select, update, remove }
 })

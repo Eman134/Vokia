@@ -11,6 +11,7 @@ type SettingsControl =
   | { kind: 'code'; values: readonly string[]; tone?: 'ok' | 'danger' }
   | { kind: 'keys'; keys: readonly string[] }
   | { kind: 'actions'; actions: readonly SettingsAction[] }
+  | { kind: 'erase-data' }
 
 interface SettingsMoment {
   label: string
@@ -494,8 +495,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       {
         kind: 'row',
         label: 'Apagar dados do app',
-        hint: 'não mexe nos repositórios nem na pasta .vokia/ deles',
-        control: { kind: 'actions', actions: [{ label: 'Apagar…', variant: 'danger' }] },
+        hint: 'projetos, conversas, backlog e planos; inclui as configurações (tema e permissões voltam ao padrão); não mexe nos repositórios',
+        control: { kind: 'erase-data' },
       },
     ],
   },
