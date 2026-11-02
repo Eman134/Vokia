@@ -45,6 +45,7 @@ const ERROR_FIELD: Record<ProjectErrorCode, ErrorField> = {
   InvalidIcon: 'symbol',
   ProjectNotFound: 'general',
   ProjectBusy: 'general',
+  ProjectHasNoFolder: 'general',
   Db: 'general',
 }
 

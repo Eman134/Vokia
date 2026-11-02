@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   deleteProject,
   listProjects,
+  pinProject,
   selectProject,
   updateProject,
   type Project,
@@ -13,6 +14,7 @@ export const useProjects = defineStore('projects', () => {
   const projects = ref<Project[]>([])
   const loaded = ref(false)
   const selected = computed(() => projects.value.find((project) => project.selected) ?? null)
+  const pinned = computed(() => projects.value.find((project) => project.pinned) ?? null)
 
   async function load(): Promise<void> {
     projects.value = await listProjects()
@@ -34,5 +36,10 @@ export const useProjects = defineStore('projects', () => {
     await load()
   }
 
-  return { projects, loaded, selected, load, select, update, remove }
+  async function pin(id: number | null): Promise<void> {
+    await pinProject(id)
+    await load()
+  }
+
+  return { projects, loaded, selected, pinned, load, select, update, remove, pin }
 })

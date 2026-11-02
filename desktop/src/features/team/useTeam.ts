@@ -27,6 +27,7 @@ import { clearConversation, fetchDbProblem, loadHistory } from '../projects/proj
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { projectAgentKey } from './projectAgentKey'
+import { ASK_PROJECT_NOTICE, NO_FOLDER_NOTICE, resolveProject } from './projectResolution'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
@@ -47,7 +48,7 @@ export interface QueuedRequest {
   id: number
   text: string
   to: Agent
-  projectId: number | null
+  projectId: number
   editing: boolean
 }
 
@@ -315,9 +316,6 @@ export const useTeam = defineStore('team', () => {
         }
         queue.value.splice(index, 1)
         try {
-          if (head.projectId === null) {
-            throw new Error('Nenhum projeto está selecionado.')
-          }
           await sendRequest(head.text, head.to, head.projectId)
         } catch (error) {
           feed.value.push({ type: 'error', message: String(error) })
@@ -382,6 +380,39 @@ export const useTeam = defineStore('team', () => {
     void drain()
   }
 
+  function notify(text: string): void {
+    feed.value.push({ type: 'notice', text, time: Date.now() })
+  }
+
+  async function targetProjectId(text: string): Promise<number | null> {
+    const selected = projects.selected
+    const resolution = resolveProject(text, projects.projects, selected?.id ?? null)
+    if (resolution.kind === 'ask') {
+      notify(ASK_PROJECT_NOTICE)
+      return null
+    }
+    if (resolution.kind === 'no-folder') {
+      notify(NO_FOLDER_NOTICE)
+      return null
+    }
+    const { project } = resolution
+    if (project.id === selected?.id) {
+      return project.id
+    }
+    if (selected !== null && AGENTS.some((agent) => projectsOf(agent.id).includes(selected.id))) {
+      notify(`Há agentes trabalhando em #${selected.name}. Espere terminar para enviar um pedido a #${project.name}.`)
+      return null
+    }
+    try {
+      await projects.select(project.id)
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+      return null
+    }
+    await restoreHistory()
+    return project.id
+  }
+
   async function send(text: string, to: Agent | null): Promise<boolean> {
     if (text.trim() === '') {
       return false
@@ -394,11 +425,15 @@ export const useTeam = defineStore('team', () => {
     } finally {
       checking.value = false
     }
+    const projectId = await targetProjectId(text)
+    if (projectId === null) {
+      return false
+    }
     queue.value.push({
       id: ++nextQueueId,
       text,
       to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
-      projectId: projects.selected?.id ?? null,
+      projectId,
       editing: false,
     })
     void drain()

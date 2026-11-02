@@ -12,6 +12,7 @@ const CREATE_PROJECT_COMMAND = 'create_project'
 const UPDATE_PROJECT_COMMAND = 'update_project'
 const DELETE_PROJECT_COMMAND = 'delete_project'
 const CLEAR_CONVERSATION_COMMAND = 'clear_conversation'
+const PIN_PROJECT_COMMAND = 'pin_project'
 
 export type OriginKind = 'folder' | 'github'
 export type CloneMode = 'link' | 'fork'
@@ -26,6 +27,8 @@ export interface Project {
   description: string
   originKind: OriginKind
   originRepo: string | null
+  pinned: boolean
+  lastActivityAt: number | null
 }
 
 export interface DbProblem {
@@ -47,7 +50,7 @@ export function loadHistory(projectId: number): Promise<VokiaMessage[]> {
 export type ProjectErrorCode =
   | 'GitNotInstalled' | 'FolderNotFound' | 'NotADirectory'  | 'GhNotInstalled' | 'GhNotAuthenticated' | 'InvalidRepoRef' | 'RepoNotFound' | 'GhFailed'
   | 'DestinationExists' | 'CloneFailed' | 'CloneTimeout' | 'BranchNotFound'
-  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'ProjectNotFound' | 'ProjectBusy' | 'Db'
+  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'ProjectNotFound' | 'ProjectBusy' | 'ProjectHasNoFolder' | 'Db'
 
 export interface ProjectError {
   code: ProjectErrorCode
@@ -124,4 +127,8 @@ export function deleteProject(id: number): Promise<void> {
 
 export function clearConversation(projectId: number): Promise<void> {
   return invoke<void>(CLEAR_CONVERSATION_COMMAND, { projectId })
+}
+
+export function pinProject(id: number | null): Promise<void> {
+  return invoke<void>(PIN_PROJECT_COMMAND, { id })
 }
