@@ -58,6 +58,7 @@ pub enum ErrorCode {
     InvalidIcon,
     ProjectNotFound,
     ProjectBusy,
+    ProjectHasNoFolder,
     Db,
 }
 
@@ -114,6 +115,9 @@ impl From<DbError> for ProjectError {
             }
             DbError::ProjectNotFound(_) => ProjectError::new(ErrorCode::ProjectNotFound, message),
             DbError::ProjectBusy => ProjectError::new(ErrorCode::ProjectBusy, message),
+            DbError::ProjectHasNoFolder => {
+                ProjectError::new(ErrorCode::ProjectHasNoFolder, message)
+            }
             _ => ProjectError::new(ErrorCode::Db, message),
         }
     }
@@ -355,6 +359,10 @@ pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, Pr
     let symbol = edit.symbol.trim();
     ensure_known_icon(symbol)?;
     Ok(db.update_project(id, &edit.name, symbol, &edit.description)?)
+}
+
+pub fn pin_project(db: &Db, id: Option<i64>) -> Result<(), ProjectError> {
+    Ok(db.pin_project(id)?)
 }
 
 pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, ProjectError> {

@@ -134,6 +134,12 @@ pub fn update_project(
 }
 
 #[tauri::command]
+pub fn pin_project(state: State<'_, DbState>, id: Option<i64>) -> Result<(), ProjectError> {
+    let db = state.require()?;
+    projects::pin_project(db, id)
+}
+
+#[tauri::command]
 pub async fn delete_project(
     app: AppHandle,
     state: State<'_, DbState>,

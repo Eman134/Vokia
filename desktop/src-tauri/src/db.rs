@@ -15,7 +15,8 @@ const DEFAULT_PROJECT_NAME: &str = "Projeto padrão";
 const DEFAULT_PROJECT_PATH: &str = "";
 const HISTORY_LIMIT: i64 = 500;
 const PROJECT_COLUMNS: &str =
-    "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo";
+    "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
+     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id)";
 // item_plans antes de backlog_items: a chave estrangeira deles aponta para backlog_items.
 const PROJECT_CHILD_TABLES: &[&str] = &[
     "item_plans",
@@ -146,6 +147,10 @@ const MIGRATIONS: &[&str] = &[
         FOREIGN KEY (project_id, item_id) REFERENCES backlog_items(project_id, id) ON DELETE CASCADE
     );
 ",
+    "
+    ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+    CREATE UNIQUE INDEX projects_one_pinned ON projects(pinned) WHERE pinned = 1;
+",
 ];
 
 #[derive(Debug)]
@@ -159,6 +164,7 @@ pub enum DbError {
     NoSelectedProject,
     ProjectNotFound(i64),
     ProjectBusy,
+    ProjectHasNoFolder,
     ProjectPathTaken(String),
     InvalidProject(&'static str),
     InvalidSpeaker(String),
@@ -206,6 +212,9 @@ impl fmt::Display for DbError {
                 f,
                 "Há um pedido em andamento neste projeto; aguarde terminar."
             ),
+            DbError::ProjectHasNoFolder => {
+                write!(f, "Escolha a pasta do projeto antes de fixá-lo.")
+            }
             DbError::ProjectPathTaken(path) => {
                 write!(f, "Já existe um projeto na pasta {path}.")
             }
@@ -301,6 +310,8 @@ pub struct Project {
     pub description: String,
     pub origin_kind: String,
     pub origin_repo: Option<String>,
+    pub pinned: bool,
+    pub last_activity_at: Option<i64>,
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -314,6 +325,8 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         description: row.get(6)?,
         origin_kind: row.get(7)?,
         origin_repo: row.get(8)?,
+        pinned: row.get(9)?,
+        last_activity_at: row.get(10)?,
     })
 }
 
@@ -519,6 +532,28 @@ impl Db {
         let changed = tx.execute("UPDATE projects SET selected = 1 WHERE id = ?1", [id])?;
         if changed == 0 {
             return Err(DbError::ProjectNotFound(id));
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn pin_project(&self, id: Option<i64>) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE projects SET pinned = 0 WHERE pinned = 1", [])?;
+        if let Some(id) = id {
+            let path: String = tx
+                .query_row("SELECT path FROM projects WHERE id = ?1", [id], |row| {
+                    row.get(0)
+                })
+                .map_err(|error| match error {
+                    rusqlite::Error::QueryReturnedNoRows => DbError::ProjectNotFound(id),
+                    other => DbError::Sqlite(other),
+                })?;
+            if path.trim().is_empty() {
+                return Err(DbError::ProjectHasNoFolder);
+            }
+            tx.execute("UPDATE projects SET pinned = 1 WHERE id = ?1", [id])?;
         }
         tx.commit()?;
         Ok(())

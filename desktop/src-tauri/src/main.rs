@@ -61,6 +61,7 @@ fn main() {
             commands::create_project,
             commands::update_project,
             commands::delete_project,
+            commands::pin_project,
             commands::clear_conversation,
             commands::erase_all_data,
             commands::load_history,

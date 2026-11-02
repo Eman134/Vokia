@@ -41,7 +41,7 @@ const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome =
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const NO_FOLDER_MESSAGE: &str =
-    "O projeto selecionado não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
+    "O projeto do pedido não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
 const PROJECT_RULE: &str =
     "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
 pub const DECISION_MARK: &str = "#decisao";
