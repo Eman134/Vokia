@@ -91,6 +91,19 @@ export const useBalloons = defineStore('balloons', () => {
     close()
   }
 
+  function replace(id: string, item: BalloonItem): boolean {
+    if (current.value?.id === id) {
+      current.value = item
+      return true
+    }
+    const index = queue.value.findIndex((candidate) => candidate.id === id)
+    if (index === -1) {
+      return false
+    }
+    queue.value.splice(index, 1, item)
+    return true
+  }
+
   function setPanelOpen(open: boolean): void {
     panelOpen.value = open
     if (!open) {
@@ -112,6 +125,7 @@ export const useBalloons = defineStore('balloons', () => {
     suggestions,
     panelOpen,
     enqueue,
+    replace,
     act,
     dismiss,
     setPanelOpen,

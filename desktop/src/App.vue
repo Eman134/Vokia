@@ -9,6 +9,7 @@ import ActionBar from './features/team/ActionBar.vue'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
 import { useUsage } from './features/usage/useUsage'
+import { useLimitNotices } from './features/usage/useLimitNotices'
 import SplashScreen from './features/system/SplashScreen.vue'
 import CliMissingScreen from './features/system/CliMissingScreen.vue'
 import UiEmpty from './ui/UiEmpty.vue'
@@ -19,14 +20,17 @@ const team = useTeam()
 const navigation = useNavigation()
 const updater = useUpdater()
 const usage = useUsage()
+const limitNotices = useLimitNotices()
 const pageViews = computed(() => PAGE_VIEWS[navigation.page] ?? null)
 const showRail = computed(() => navigation.page !== 'onboarding')
 
 onMounted(team.start)
 onMounted(updater.check)
 onMounted(usage.start)
+onMounted(limitNotices.start)
 onUnmounted(team.stop)
 onUnmounted(usage.stop)
+onUnmounted(limitNotices.stop)
 </script>
 
 <template>

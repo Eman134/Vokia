@@ -1,3 +1,5 @@
+import type { MascotLook } from '../brand/mascotArt'
+
 export type BalloonKind = 'moment' | 'limit' | 'request'
 export type BalloonSource = 'conversa' | 'codigo' | 'chat' | 'grafo' | 'uso do plano'
 
@@ -16,6 +18,7 @@ export interface BalloonItem {
   origin?: string
   title: string
   text?: string
+  mascot?: MascotLook
   actions: BalloonAction[]
 }
 

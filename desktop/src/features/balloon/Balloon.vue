@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useBalloons } from './useBalloons'
 import UiButton from '../../ui/UiButton.vue'
+import VokiaMascot from '../brand/VokiaMascot.vue'
 
 const store = useBalloons()
 
@@ -21,8 +22,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     role="status"
     class="pointer-events-auto absolute bottom-full mb-3 w-80 rounded-popover border border-line bg-surface p-3 shadow-float"
   >
-    <p class="text-tiny text-muted">{{ store.current.origin ?? store.current.source }}</p>
-    <p class="text-label font-semibold text-ink">{{ store.current.title }}</p>
+    <div class="flex items-start gap-2">
+      <VokiaMascot v-if="store.current.mascot" :look="store.current.mascot" />
+      <div class="min-w-0">
+        <p class="text-tiny text-muted">{{ store.current.origin ?? store.current.source }}</p>
+        <p class="text-label font-semibold text-ink">{{ store.current.title }}</p>
+      </div>
+    </div>
     <p v-if="store.current.text" class="text-caption text-muted">{{ store.current.text }}</p>
     <p v-if="store.confirmation !== null" class="mt-2 text-label font-semibold text-ok">
       {{ store.confirmation }}
