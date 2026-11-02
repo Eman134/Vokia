@@ -4,6 +4,7 @@ import type { Agent } from '../team/events'
 import { sendRequest } from '../team/teamApi'
 import { useProjects } from '../projects/useProjects'
 import { useTeam } from '../team/useTeam'
+import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
 import type { BacklogItem, BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 
@@ -39,6 +40,18 @@ export interface ItemPlan {
 
 const EMPTY_PLAN: ItemPlan = { state: 'vazio' }
 
+function toItemPlan(entry: ItemPlanEntry): ItemPlan {
+  return { state: entry.state, proposal: entry.proposal, plan: entry.plan, agent: entry.agent }
+}
+
+function linkedPlansOf(entries: ItemPlanEntry[]): LinkedPlan[] {
+  const byId = new Map<string, LinkedPlan>()
+  entries.forEach((entry) => {
+    if (entry.plan) byId.set(entry.plan.id, entry.plan)
+  })
+  return [...byId.values()]
+}
+
 export function planPrompt(item: BacklogItem, depth: PlanDepth): string {
   return `Escreva um plano para o item "${item.title}". ${depth === 'rapido' ? 'Um lote.' : 'Com pesquisa.'} Responda em português, em lotes.`
 }
@@ -56,6 +69,20 @@ export const useItemPlan = defineStore('itemPlan', () => {
 
   function stateOf(itemId: string): BacklogState {
     return planOf(itemId).state
+  }
+
+  function persist(itemId: string): void {
+    const current = states.value[itemId]
+    const input: ItemPlanInput =
+      current?.state === 'proposto' || current?.state === 'vinculado'
+        ? { state: current.state, proposal: current.proposal, plan: current.plan, agent: current.agent }
+        : { state: EMPTY_PLAN_STATE }
+    backlog.savePlan(itemId, input)
+  }
+
+  function clearPlan(itemId: string): void {
+    reset(itemId)
+    persist(itemId)
   }
 
   function reset(itemId: string): void {
@@ -109,7 +136,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   }
 
   function discard(itemId: string): void {
-    reset(itemId)
+    clearPlan(itemId)
   }
 
   function accept(itemId: string): void {
@@ -118,15 +145,18 @@ export const useItemPlan = defineStore('itemPlan', () => {
     const plan: LinkedPlan = { id: itemId, name: item.title, meta: ACCEPTED_PLAN_META }
     plans.value = [...plans.value.filter((current) => current.id !== plan.id), plan]
     states.value[itemId] = { state: 'vinculado', plan }
+    persist(itemId)
   }
 
   function link(itemId: string, planId: string): void {
     const plan = plans.value.find((current) => current.id === planId)
-    if (plan) states.value[itemId] = { state: 'vinculado', plan }
+    if (!plan) return
+    states.value[itemId] = { state: 'vinculado', plan }
+    persist(itemId)
   }
 
   function unlink(itemId: string): void {
-    reset(itemId)
+    clearPlan(itemId)
   }
 
   function receive(entry: (typeof team.feed)[number]): void {
@@ -139,15 +169,34 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (entry.to !== 'user' || entry.from === 'user') return
     const id = oldestAwaiting(entry.from)
     if (id === undefined) return
-    states.value[id] = states.value[id]?.cancelled
-      ? { state: 'vazio' }
-      : { state: 'proposto', agent: entry.from, proposal: entry.text }
+    if (states.value[id]?.cancelled) {
+      states.value[id] = { state: 'vazio' }
+      return
+    }
+    states.value[id] = { state: 'proposto', agent: entry.from, proposal: entry.text }
+    persist(id)
   }
 
   watch(
     () => team.feed.length,
     (length, previous) => {
       if (length > previous) team.feed.slice(previous).forEach(receive)
+    },
+  )
+
+  watch(
+    () => backlog.planEntries,
+    (entries) => {
+      const awaiting = Object.entries(states.value).filter(
+        ([itemId, current]) =>
+          (current.state === 'gerando' || current.cancelled === true) &&
+          backlog.items.some((item) => item.id === itemId),
+      )
+      states.value = {
+        ...Object.fromEntries(entries.map((entry) => [entry.itemId, toItemPlan(entry)])),
+        ...Object.fromEntries(awaiting),
+      }
+      plans.value = linkedPlansOf(entries)
     },
   )
 

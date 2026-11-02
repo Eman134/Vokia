@@ -1,10 +1,31 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useTeam } from '../team/useTeam'
+import {
+  fetchBacklog,
+  moveBacklogItem,
+  saveBacklogItem,
+  saveItemPlan,
+  type ItemPlanEntry,
+  type ItemPlanInput,
+} from './backlogApi'
+import { SAMPLE_IDS } from './backlogPageSample'
 import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem, type BacklogTag } from './backlogTypes'
+
+interface ItemQueue {
+  tail: Promise<void>
+  generation: number
+}
 
 export const useBacklog = defineStore('backlog', () => {
   const items = ref<BacklogItem[]>([])
+  const planEntries = ref<ItemPlanEntry[]>([])
   const openId = ref<string | null>(null)
+  const loadedProjectId = ref<number | null>(null)
+  const loading = ref(false)
+  const team = useTeam()
+  const queues = new Map<string, ItemQueue>()
+  let loadSeq = 0
 
   const openItem = computed(() => items.value.find((item) => item.id === openId.value) ?? null)
 
@@ -12,35 +33,144 @@ export const useBacklog = defineStore('backlog', () => {
     return items.value.find((item) => item.id === id)
   }
 
+  // Item com erro de leitura é mostrado, mas não abre nem muda: o banco guarda dado que o app não consegue ler.
+  function editable(id: string): BacklogItem | undefined {
+    const item = find(id)
+    return item?.error ? undefined : item
+  }
+
   function open(id: string): void {
-    if (find(id)) openId.value = id
+    if (editable(id)) openId.value = id
   }
 
   function close(): void {
     openId.value = null
   }
 
+  function reportError(error: unknown): void {
+    team.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+  }
+
+  function clearLoaded(): void {
+    items.value = []
+    planEntries.value = []
+    loadedProjectId.value = null
+    openId.value = null
+  }
+
+  function clear(): void {
+    loadSeq += 1
+    clearLoaded()
+    loading.value = false
+  }
+
+  // Resposta de uma carga antiga (outro projeto ou carga mais nova) é descartada.
+  async function load(projectId: number): Promise<boolean> {
+    const seq = (loadSeq += 1)
+    clearLoaded()
+    loading.value = true
+    return applySnapshot(projectId, seq)
+  }
+
+  async function applySnapshot(projectId: number, seq: number): Promise<boolean> {
+    try {
+      const snapshot = await fetchBacklog(projectId)
+      if (seq !== loadSeq) return false
+      items.value = snapshot.items
+      planEntries.value = snapshot.plans
+      loadedProjectId.value = projectId
+      return true
+    } catch (error) {
+      if (seq === loadSeq) reportError(error)
+      return false
+    } finally {
+      if (seq === loadSeq) loading.value = false
+    }
+  }
+
+  // Sem zerar a lista: planos em geração de outros itens continuam, porque o plan store preserva os que aguardam resposta.
+  async function reloadAfterFailure(projectId: number): Promise<void> {
+    if (loadedProjectId.value !== projectId) return
+    await applySnapshot(projectId, (loadSeq += 1))
+  }
+
+  // Gravações do mesmo item rodam em ordem. Uma falha descarta as que ainda não foram enviadas (geração antiga)
+  // e recarrega do banco; o conteúdo é lido no envio, então nada reaplica a mudança que falhou.
+  function enqueue(itemId: string, write: (projectId: number) => Promise<void>): void {
+    const projectId = loadedProjectId.value
+    if (projectId === null || SAMPLE_IDS.has(itemId)) return
+    const queue = queues.get(itemId) ?? { tail: Promise.resolve(), generation: 0 }
+    queues.set(itemId, queue)
+    const generation = queue.generation
+    const run = queue.tail.then(async () => {
+      if (queue.generation !== generation) return
+      try {
+        await write(projectId)
+      } catch (error) {
+        queue.generation += 1
+        reportError(error)
+        await reloadAfterFailure(projectId)
+      }
+    })
+    queue.tail = run
+    void run.then(() => {
+      if (queue.tail === run) queues.delete(itemId)
+    })
+  }
+
+  function saveItem(itemId: string): void {
+    enqueue(itemId, async (projectId) => {
+      const item = editable(itemId)
+      if (item) await saveBacklogItem(projectId, JSON.parse(JSON.stringify(item)))
+    })
+  }
+
+  function savePlan(itemId: string, plan: ItemPlanInput): void {
+    enqueue(itemId, (projectId) => saveItemPlan(projectId, itemId, plan))
+  }
+
   function moveTo(id: string, column: BacklogColumn): void {
-    const item = find(id)
+    const item = editable(id)
     if (!item || !MOVABLE_COLUMNS.includes(column) || column === (item.column ?? DEFAULT_COLUMN)) return
     item.column = column
+    enqueue(id, (projectId) => moveBacklogItem(projectId, id, column))
   }
 
   function toggleTag(id: string, tag: BacklogTag): void {
-    const item = find(id)
+    const item = editable(id)
     if (!item) return
     item.tags = item.tags.includes(tag) ? item.tags.filter((current) => current !== tag) : [...item.tags, tag]
+    saveItem(id)
   }
 
   function answer(itemId: string, questionId: string, option: string): void {
-    const question = find(itemId)?.questions?.find((current) => current.id === questionId)
-    if (question) question.selected = option
+    const question = editable(itemId)?.questions?.find((current) => current.id === questionId)
+    if (!question) return
+    question.selected = option
+    saveItem(itemId)
   }
 
   function toggleCriterion(itemId: string, criterionId: string): void {
-    const criterion = find(itemId)?.criteria?.find((current) => current.id === criterionId)
-    if (criterion) criterion.done = !criterion.done
+    const criterion = editable(itemId)?.criteria?.find((current) => current.id === criterionId)
+    if (!criterion) return
+    criterion.done = !criterion.done
+    saveItem(itemId)
   }
 
-  return { items, openId, openItem, open, close, moveTo, toggleTag, answer, toggleCriterion }
+  return {
+    items,
+    planEntries,
+    openId,
+    openItem,
+    loading,
+    open,
+    close,
+    clear,
+    load,
+    moveTo,
+    toggleTag,
+    answer,
+    toggleCriterion,
+    savePlan,
+  }
 })

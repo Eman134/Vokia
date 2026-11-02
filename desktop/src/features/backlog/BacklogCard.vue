@@ -39,6 +39,7 @@ const chip = computed(() => {
 })
 
 const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
+  if (props.item.error) return undefined
   const label = props.item.stage ? (props.item.stage === 'review' ? 'Ver diff' : undefined) : STATE_ACTION[props.item.state]
   return label && { label, id: ACTION_ID[label] }
 })
@@ -77,7 +78,7 @@ function tagPillStyle(tag: BacklogTag) {
 <template>
   <article
     class="flex cursor-pointer flex-col gap-2 rounded-card border border-line bg-surface p-3.5"
-    :class="isCompact && 'border-l-4'"
+    :class="[isCompact && 'border-l-4', item.error && 'border-danger']"
     :style="isCompact ? { borderLeftColor: featureColor } : undefined"
     @click="emit('open')"
   >
@@ -92,6 +93,9 @@ function tagPillStyle(tag: BacklogTag) {
     <h3 class="text-control font-semibold text-ink" :class="isCompact ? 'truncate' : 'wrap-break-word'">
       {{ item.title }}
     </h3>
+    <p v-if="item.error" role="alert" class="text-caption font-semibold text-danger">
+      Erro ao ler este item: {{ item.error.reason }}
+    </p>
 
     <p v-if="!isCompact && item.description" class="text-caption text-muted">{{ item.description }}</p>
     <p v-if="showPlan" class="wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ item.plan }}</p>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
@@ -18,6 +18,7 @@ import {
   MINE_LABEL,
   NEW_REQUEST_LABEL,
   PLAN_ALL_LABEL,
+  SAMPLE_IDS,
   SAMPLE_ITEMS,
   SEARCH_LABEL,
   SEARCH_PLACEHOLDER,
@@ -46,7 +47,6 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
   review: 'In review',
   done: 'Done',
 }
-const SAMPLE_IDS = new Set(SAMPLE_ITEMS.map((item) => item.id))
 const DISPLAYED_TAGS = Object.keys(TAG_LABEL).filter((tag) => tag !== 'divida') as (keyof typeof TAG_LABEL)[]
 
 const backlog = useBacklog()
@@ -89,11 +89,25 @@ function tagStyle(tag: keyof typeof TAG_LABEL) {
   return { color: token, backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)` }
 }
 
-onMounted(() => {
-  if (backlog.items.length === 0) {
+// Exemplos só entram quando o projeto carregou sem itens; ficam em memória (o store não os grava).
+async function loadSelected(projectId: number): Promise<void> {
+  const applied = await backlog.load(projectId)
+  if (applied && backlog.items.length === 0) {
     backlog.items = SAMPLE_ITEMS.map((item) => structuredClone(item))
   }
-})
+}
+
+watch(
+  () => projectsStore.selected?.id,
+  (projectId) => {
+    if (projectId === undefined) {
+      backlog.clear()
+      return
+    }
+    void loadSelected(projectId)
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -147,7 +161,7 @@ onMounted(() => {
     </div>
 
     <div :class="GRID_SCROLL_CLASSES">
-      <div role="list" aria-label="Colunas do backlog" :class="GRID_CLASSES">
+      <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
         <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
           <div class="flex items-center gap-2 text-control text-ink">
             <span class="size-2.25 rounded-full" :style="{ backgroundColor: colorVar(column.dotToken) }" />

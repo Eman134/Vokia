@@ -251,3 +251,5 @@ export const SAMPLE_ITEMS: readonly BacklogItem[] = [
     by: 'Bia · 2 dias',
   },
 ]
+
+export const SAMPLE_IDS: ReadonlySet<string> = new Set(SAMPLE_ITEMS.map((item) => item.id))

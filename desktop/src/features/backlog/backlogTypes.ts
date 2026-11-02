@@ -105,4 +105,9 @@ export interface BacklogItem {
   criteria?: BacklogCriterion[]
   activity?: BacklogActivity[]
   links?: BacklogLink[]
+  error?: BacklogItemError
+}
+
+export interface BacklogItemError {
+  reason: string
 }
