@@ -18,7 +18,6 @@ import { useProjects } from '../features/projects/useProjects'
 import { useTeam } from '../features/team/useTeam'
 
 const PROJECT_LIST_PAGE: AppPage = 'projetos'
-const NEW_PROJECT_PAGE: AppPage = 'onboarding'
 
 const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap text-left'
 const ITEM_EXPANDED_PAD = 'pr-2.5'
@@ -210,29 +209,6 @@ function toggle() {
             </div>
           </div>
         </div>
-        <span class="mx-1.5 my-0.75 h-px bg-line" />
-        <button
-          type="button"
-          :class="[itemSize, ITEM_OFF]"
-          aria-label="Novo projeto"
-          title="Novo projeto"
-          @click="navigation.goTo(NEW_PROJECT_PAGE)"
-        >
-          <span :class="ICON_BOX">
-            <svg
-              class="size-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <path d="M8 3v10M3 8h10" />
-            </svg>
-          </span>
-          <span v-if="expanded" :class="LABEL">Novo projeto</span>
-        </button>
       </nav>
 
       <div class="mt-2 flex shrink-0 flex-col items-start gap-1 pl-1.5">
