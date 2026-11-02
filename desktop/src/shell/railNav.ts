@@ -39,6 +39,8 @@ export const PAGE_LABELS: Record<AppPage, string> = {
 
 export const DEFAULT_PAGE: AppPage = 'conversas'
 
+export const PROJECT_LIST_PAGE: AppPage = 'projetos'
+
 export const SAMPLE_DATA_LABEL = 'dados de exemplo'
 
 export const RAIL_COLLAPSED_WIDTH = 88

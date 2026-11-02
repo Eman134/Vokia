@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   PAGE_LABELS,
+  PROJECT_LIST_PAGE,
   PROJECT_TOOLS,
   RAIL_COLLAPSED_WIDTH,
   RAIL_EXPANDED_WIDTH,
@@ -17,7 +18,6 @@ import type { Project } from '../features/projects/projectsApi'
 import { useProjects } from '../features/projects/useProjects'
 import { useTeam } from '../features/team/useTeam'
 
-const PROJECT_LIST_PAGE: AppPage = 'projetos'
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
 const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap text-left'
