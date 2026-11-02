@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useFlow } from './useFlow'
 
 type StepState = 'feita' | 'atual' | 'depois'
@@ -16,7 +15,6 @@ const DOT_CLASSES: Record<StepState, string> = {
 }
 
 const flow = useFlow()
-const title = computed(() => `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}`)
 
 function stateOf(index: number): StepState {
   const number = index + 1
@@ -34,8 +32,7 @@ function stepTitle(name: string, index: number): string {
 </script>
 
 <template>
-  <div class="flex min-w-0 items-center gap-3">
-    <span class="shrink-0 text-label font-semibold text-muted max-lg:hidden">{{ title }}</span>
+  <div class="flex min-w-0 items-center">
     <ol class="flex min-w-0 items-center gap-1 max-md:gap-0.5">
       <li v-for="(name, index) in flow.names" :key="name" class="min-w-0">
         <button

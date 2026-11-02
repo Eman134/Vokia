@@ -146,16 +146,21 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
     : mentionMatches.value.at(highlightedIndex.value),
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
-const expanded = computed(
-  () => flow.active || hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
+const interacting = computed(
+  () => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
 )
+const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() => !flow.active && expanded.value && team.permissions.length > 0)
 const canAsk = computed(() => flow.flow !== 'onboarding')
+const hasProjects = computed(() => projectsStore.projects.length > 0)
+const stepTitle = computed(() =>
+  flow.active ? `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}` : '',
+)
 const pillWidthClass = computed(() => {
-  if (!canAsk.value) {
-    return CONTENT_WIDTH_CLASS
+  if (canAsk.value && interacting.value) {
+    return EXPANDED_WIDTH_CLASS
   }
-  return expanded.value ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS
+  return flow.active ? CONTENT_WIDTH_CLASS : COMPACT_WIDTH_CLASS
 })
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 const activeOptionId = computed(() =>
@@ -438,15 +443,15 @@ function onPointerLeave(): void {
           :class="dashClass(agent.id)"
         />
       </span>
-      <span
-        class="min-w-0 truncate text-label font-semibold text-muted"
-        :class="[expanded ? undefined : 'pr-2', { 'max-xl:hidden': !canAsk }]"
-      >
-        {{ flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow] }}
+      <span class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
+        <span class="truncate text-label font-semibold text-muted" :class="{ 'max-xl:hidden': !canAsk }">
+          {{ flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow] }}
+        </span>
+        <span v-if="flow.active" class="truncate text-meta text-muted max-lg:hidden">{{ stepTitle }}</span>
       </span>
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
-      <PinnedProject v-if="canAsk" />
+      <FlowSteps v-if="flow.active" />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
         :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"
@@ -472,7 +477,7 @@ function onPointerLeave(): void {
         v-if="canAsk"
         ref="wrapperRef"
         class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
-        :class="{ 'sr-only': !expanded || (inlinePermission && draft === '') }"
+        :class="{ 'sr-only': !interacting || (inlinePermission && draft === '') }"
       >
         <div
           aria-hidden="true"
@@ -510,7 +515,7 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
-      <FlowSteps v-if="flow.active && expanded" />
+      <PinnedProject v-if="canAsk && hasProjects" />
       <UiButton
         v-if="!flow.active"
         variant="quiet"
