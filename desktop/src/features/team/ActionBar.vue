@@ -152,7 +152,7 @@ const interacting = computed(
 const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() => !flow.active && expanded.value && team.permissions.length > 0)
 const canAsk = computed(() => flow.flow !== 'onboarding')
-const hasProjects = computed(() => projectsStore.projects.length > 0)
+const hasMultipleProjects = computed(() => projectsStore.projects.length > 1)
 const stepTitle = computed(() =>
   flow.active ? `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}` : '',
 )
@@ -515,7 +515,7 @@ function onPointerLeave(): void {
           @blur="dismissMenu"
         />
       </div>
-      <PinnedProject v-if="canAsk && hasProjects" />
+      <PinnedProject v-if="canAsk && hasMultipleProjects" />
       <UiButton
         v-if="!flow.active"
         variant="quiet"
