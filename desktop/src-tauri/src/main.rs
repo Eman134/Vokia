@@ -1,6 +1,7 @@
 // Sem isso o executável release abre uma janela de console junto com a do app no Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backlog;
 mod cache;
 mod claude;
 mod commands;
@@ -60,7 +61,11 @@ fn main() {
             commands::create_project,
             commands::load_history,
             commands::get_settings,
-            commands::set_setting
+            commands::set_setting,
+            commands::list_backlog,
+            commands::save_backlog_item,
+            commands::move_backlog_item,
+            commands::save_item_plan
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

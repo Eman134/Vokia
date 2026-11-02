@@ -92,6 +92,51 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (project_id, agent)
     );
 ",
+    "
+    CREATE TABLE backlog_items (
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        \"type\" TEXT NOT NULL,
+        state TEXT NOT NULL,
+        stage TEXT,
+        triage_step INTEGER,
+        parent TEXT,
+        feature TEXT,
+        description TEXT,
+        plan TEXT,
+        who TEXT NOT NULL,
+        \"by\" TEXT NOT NULL,
+        is_new INTEGER,
+        \"column\" TEXT NOT NULL DEFAULT 'Backlog',
+        priority TEXT,
+        estimate TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        tasks TEXT NOT NULL DEFAULT '[]',
+        criteria TEXT NOT NULL DEFAULT '[]',
+        questions TEXT NOT NULL DEFAULT '[]',
+        links TEXT NOT NULL DEFAULT '[]',
+        activity TEXT NOT NULL DEFAULT '[]',
+        children_total INTEGER,
+        children_done INTEGER,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (project_id, id)
+    );
+    CREATE INDEX backlog_items_by_position ON backlog_items(project_id, position);
+    CREATE TABLE item_plans (
+        project_id INTEGER NOT NULL,
+        item_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        text TEXT,
+        plan_id TEXT,
+        plan_name TEXT,
+        plan_meta TEXT,
+        agent TEXT,
+        linked_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, item_id),
+        FOREIGN KEY (project_id, item_id) REFERENCES backlog_items(project_id, id) ON DELETE CASCADE
+    );
+",
 ];
 
 #[derive(Debug)]
@@ -109,6 +154,16 @@ pub enum DbError {
     InvalidSpeaker(String),
     InvalidAgent(String),
     InvalidSetting(String, String),
+    InvalidBacklogColumn(String),
+    ColumnNotMovable(String),
+    InvalidBacklogState(String),
+    InvalidBacklogType(String),
+    InvalidMicroTaskStatus(String),
+    InvalidPlanState(String),
+    InvalidPlanAgent(String),
+    InvalidBacklogPlan(&'static str),
+    BacklogItemNotFound(String),
+    BacklogItemData { item_id: String, reason: String },
 }
 
 impl fmt::Display for DbError {
@@ -153,6 +208,38 @@ impl fmt::Display for DbError {
             DbError::InvalidSetting(key, value) => {
                 write!(f, "A configuração {key} não aceita o valor {value:?}.")
             }
+            DbError::InvalidBacklogColumn(value) => {
+                write!(f, "O backlog não tem a coluna {value:?}.")
+            }
+            DbError::ColumnNotMovable(value) => {
+                write!(
+                    f,
+                    "A coluna {value:?} é automática e não aceita movimento manual."
+                )
+            }
+            DbError::InvalidBacklogState(value) => {
+                write!(f, "O item do backlog não aceita o estado {value:?}.")
+            }
+            DbError::InvalidBacklogType(value) => {
+                write!(f, "O item do backlog não aceita o tipo {value:?}.")
+            }
+            DbError::InvalidMicroTaskStatus(value) => {
+                write!(f, "A micro-tarefa não aceita o status {value:?}.")
+            }
+            DbError::InvalidPlanState(value) => {
+                write!(f, "O plano do item não aceita o estado {value:?}.")
+            }
+            DbError::InvalidPlanAgent(value) => {
+                write!(f, "O plano do item não aceita o agente {value:?}.")
+            }
+            DbError::InvalidBacklogPlan(reason) => write!(f, "{reason}"),
+            DbError::BacklogItemNotFound(id) => {
+                write!(f, "O item {id} não existe no backlog deste projeto.")
+            }
+            DbError::BacklogItemData { item_id, reason } => write!(
+                f,
+                "Os dados do item {item_id} do backlog são inválidos: {reason}"
+            ),
         }
     }
 }
@@ -264,7 +351,7 @@ impl Db {
         })
     }
 
-    fn conn(&self) -> Result<MutexGuard<'_, Connection>, DbError> {
+    pub(crate) fn conn(&self) -> Result<MutexGuard<'_, Connection>, DbError> {
         self.conn.lock().map_err(|_| DbError::Poisoned)
     }
 
