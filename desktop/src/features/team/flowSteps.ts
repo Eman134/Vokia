@@ -11,7 +11,3 @@ export const FLOW_PLACEHOLDER: Record<FlowId, string> = {
 }
 
 export const FLOW_LABEL: Record<FlowId, string> = { onboarding: 'Onboarding', 'novo-projeto': 'Novo projeto' }
-
-export const FLOW_LAST_STEP_TITLE = 'Última etapa'
-export const FLOW_READY_TEXT = 'Tudo pronto'
-export const FLOW_FINISH_LABEL = 'Pronto'

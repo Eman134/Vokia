@@ -8,7 +8,6 @@ export const SAVE_LABEL = 'Salvar'
 export const EMPTY_PATH_TEXT = 'Sem pasta definida'
 
 export const NEW_PROJECT_CONTEXT = 'Projetos › Novo projeto'
-export const NEW_PROJECT_STEPS = ['Origem', 'Montar o time', 'Primeiro pedido'] as const
 export const STEP_TITLES = ['Novo projeto', 'Montar o time', 'Primeiro pedido'] as const
 export const STEP_SUBTITLES = [
   'De uma pasta do computador ou de um repositório do GitHub. Nos próximos passos você escolhe o time e faz o primeiro pedido.',

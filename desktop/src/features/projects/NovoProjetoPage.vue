@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import { useFlow } from '../team/useFlow'
 import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
 import PrimeiroPedidoStep from './PrimeiroPedidoStep.vue'
 import ProjetoOrigemStep from './ProjetoOrigemStep.vue'
@@ -14,7 +15,6 @@ import {
   MAP_PREVIEW_HEADING,
   MAP_PREVIEW_NOTE,
   NEW_PROJECT_CONTEXT,
-  NEW_PROJECT_STEPS,
   PREVIEW_HEADING,
   SAMPLE_TEAM_PREVIEW,
   SHARED_HEADING,
@@ -24,7 +24,7 @@ import {
   SUMMARY_HEADING,
   TEAM_NEXT_HEADING,
 } from './projetosSample'
-import { useNovoProjeto } from './useNovoProjeto'
+import { useNovoProjeto, type WizardStep } from './useNovoProjeto'
 
 const PREVIEW_PORTRAIT_SIZE = 28
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
@@ -34,11 +34,20 @@ const COLUMNS_CLASSES = 'flex flex-wrap items-start gap-5.5'
 const FORM_CLASSES = 'flex min-w-0 basis-[560px] flex-1 flex-col gap-5.5 rounded-[28px] bg-surface p-7'
 const PREVIEW_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-[28px] border border-line p-6'
 const HEADING_CLASSES = 'text-label font-medium text-muted'
-const STEPS_CLASSES = 'flex flex-wrap items-center gap-2 text-caption'
-const STEP_ACTIVE_CLASSES = 'bg-ink text-bg'
-const STEP_IDLE_CLASSES = 'bg-surface-2 text-muted'
 
 const wizard = useNovoProjeto()
+const flow = useFlow()
+
+flow.start('novo-projeto', wizard.step)
+watch(
+  () => wizard.step,
+  (value) => flow.goTo(value),
+)
+watch(
+  () => flow.step,
+  (value) => wizard.goBackTo(value as WizardStep),
+)
+onBeforeUnmount(() => flow.finish())
 
 const index = computed(() => wizard.step - 1)
 const previewName = computed(() => wizard.name || 'novo-projeto')
@@ -59,18 +68,6 @@ const previewOrigin = computed(() => (wizard.originKind === 'folder' ? 'Pasta' :
       <h1 :class="TITLE_CLASSES">{{ STEP_TITLES[index] }}</h1>
       <p :class="SUBTITLE_CLASSES">{{ STEP_SUBTITLES[index] }}</p>
     </header>
-
-    <ol :class="STEPS_CLASSES" aria-label="Passos">
-      <li
-        v-for="(label, position) in NEW_PROJECT_STEPS"
-        :key="label"
-        class="rounded-chip px-3 py-1"
-        :class="position === index ? STEP_ACTIVE_CLASSES : STEP_IDLE_CLASSES"
-        :aria-current="position === index ? 'step' : undefined"
-      >
-        {{ position + 1 }} · {{ label }}
-      </li>
-    </ol>
 
     <div :class="COLUMNS_CLASSES">
       <div :class="FORM_CLASSES">

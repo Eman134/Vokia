@@ -7,7 +7,6 @@ const FIRST_STEP = 1
 export const useFlow = defineStore('flow', () => {
   const flow = ref<FlowId | null>(null)
   const step = ref(FIRST_STEP)
-  const waitingText = ref<string | null>(null)
   const names = computed<readonly string[]>(() => (flow.value === null ? [] : FLOW_STEPS[flow.value]))
   const active = computed(() => flow.value !== null)
   const total = computed(() => names.value.length)
@@ -17,10 +16,9 @@ export const useFlow = defineStore('flow', () => {
     return Number.isInteger(value) && value >= FIRST_STEP && value <= total.value
   }
 
-  function start(next: FlowId, first: number = FIRST_STEP, waiting: string | null = null): void {
+  function start(next: FlowId, first: number = FIRST_STEP): void {
     flow.value = next
     step.value = isStep(first) ? first : FIRST_STEP
-    waitingText.value = waiting
   }
 
   function goTo(target: number): void {
@@ -29,17 +27,10 @@ export const useFlow = defineStore('flow', () => {
     }
   }
 
-  function setWaiting(text: string | null): void {
-    if (active.value) {
-      waitingText.value = text
-    }
-  }
-
   function finish(): void {
     flow.value = null
     step.value = FIRST_STEP
-    waitingText.value = null
   }
 
-  return { flow, step, waitingText, names, active, total, progress, start, goTo, setWaiting, finish }
+  return { flow, step, names, active, total, progress, start, goTo, finish }
 })

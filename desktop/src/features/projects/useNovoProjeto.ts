@@ -162,6 +162,10 @@ export const useNovoProjeto = defineStore('newProject', () => {
     step.value = (step.value - 1) as WizardStep
   }
 
+  function goBackTo(target: WizardStep) {
+    if (target < step.value) step.value = target
+  }
+
   function buildInput(): NewProjectInput {
     const base = { name: name.value, symbol: symbol.value, description: description.value }
     if (originKind.value === 'folder') {
@@ -197,6 +201,6 @@ export const useNovoProjeto = defineStore('newProject', () => {
 
   return {
     step, originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, description, busy, error,
-    choosePath, chooseParent, inspect, setName, setSymbol, next, back, create, reset,
+    choosePath, chooseParent, inspect, setName, setSymbol, next, back, goBackTo, create, reset,
   }
 })

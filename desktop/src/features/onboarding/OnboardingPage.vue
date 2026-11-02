@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type Component } from 'vue'
 import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
 import VokiaLogo from '../brand/VokiaLogo.vue'
+import { useFlow } from '../team/useFlow'
 import BoasVindasStep from './steps/BoasVindasStep.vue'
 import ConexoesStep from './steps/ConexoesStep.vue'
 import ProjetoStep from './steps/ProjetoStep.vue'
@@ -44,8 +45,19 @@ const ARROW_PATH = 'M3 8h9M8.5 4.5 12 8l-3.5 3.5'
 
 const navigation = useNavigation()
 const index = ref(0)
+const flow = useFlow()
+flow.start('onboarding', index.value + 1)
 const current = computed(() => STEPS[index.value])
 const isFirst = computed(() => index.value === 0)
+
+watch(index, (value) => flow.goTo(value + 1))
+watch(
+  () => flow.step,
+  (value) => {
+    index.value = value - 1
+  },
+)
+onBeforeUnmount(() => flow.finish())
 
 function goTo(id: StepId): void {
   index.value = STEPS.findIndex((step) => step.id === id)

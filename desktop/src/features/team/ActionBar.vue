@@ -66,6 +66,7 @@ const REVEAL_LEAVE_ACTIVE_CLASS = REVEAL_ENTER_ACTIVE_CLASS
 const REVEAL_LEAVE_TO_CLASS = REVEAL_ENTER_FROM_CLASS
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
 const EXPANDED_WIDTH_CLASS = 'w-full'
+const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
 // Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
 const FIELD_PADDING_X = 14
 // Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
@@ -112,7 +113,6 @@ const placeholder = computed(() =>
     ? FLOW_PLACEHOLDER[flow.flow]
     : placeholderFor(railPage.value, projectsStore.selected?.name ?? '', statusStore.status, statusStore.placeholder),
 )
-const flowLabel = computed(() => (flow.flow === null ? '' : `${FLOW_LABEL[flow.flow]} · ${flow.step}/${flow.total}`))
 const ringDashArray = computed(() =>
   flow.active ? ringDash(flow.progress * MAX_PERCENT, RING_RADIUS) : statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH,
 )
@@ -146,8 +146,17 @@ const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
     : mentionMatches.value.at(highlightedIndex.value),
 )
 const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
-const expanded = computed(() => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value)
+const expanded = computed(
+  () => flow.active || hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
+)
 const inlinePermission = computed(() => !flow.active && expanded.value && team.permissions.length > 0)
+const canAsk = computed(() => flow.flow !== 'onboarding')
+const pillWidthClass = computed(() => {
+  if (!canAsk.value) {
+    return CONTENT_WIDTH_CLASS
+  }
+  return expanded.value ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS
+})
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
@@ -392,7 +401,7 @@ function onPointerLeave(): void {
     <PanelShell />
     <form
       ref="pillRef"
-      :class="[PILL_CLASSES, expanded ? EXPANDED_WIDTH_CLASS : COMPACT_WIDTH_CLASS]"
+      :class="[PILL_CLASSES, pillWidthClass]"
       @pointerenter="hovered = true"
       @pointerleave="onPointerLeave"
       @focusin="focusWithin = true"
@@ -430,15 +439,14 @@ function onPointerLeave(): void {
         />
       </span>
       <span
-        v-if="!flow.active || !expanded"
         class="min-w-0 truncate text-label font-semibold text-muted"
-        :class="expanded ? undefined : 'pr-2'"
+        :class="[expanded ? undefined : 'pr-2', { 'max-xl:hidden': !canAsk }]"
       >
-        {{ flow.active ? flowLabel : statusStore.statusText }}
+        {{ flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow] }}
       </span>
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
-      <PinnedProject />
+      <PinnedProject v-if="canAsk" />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
         :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"
@@ -461,6 +469,7 @@ function onPointerLeave(): void {
         </span>
       </Transition>
       <div
+        v-if="canAsk"
         ref="wrapperRef"
         class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
         :class="{ 'sr-only': !expanded || (inlinePermission && draft === '') }"

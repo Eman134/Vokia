@@ -1,24 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useFlow } from './useFlow'
-import { FLOW_FINISH_LABEL, FLOW_LAST_STEP_TITLE, FLOW_READY_TEXT } from './flowSteps'
-import UiButton from '../../ui/UiButton.vue'
 
 type StepState = 'feita' | 'atual' | 'depois'
 
 const STEP_CLASSES: Record<StepState, string> = {
-  feita: 'text-ok',
-  atual: 'bg-surface-2 font-semibold text-ink',
+  feita: 'text-ink',
+  atual: 'bg-ink text-bg font-semibold',
   depois: 'text-muted',
+}
+const DOT_CLASSES: Record<StepState, string> = {
+  feita: 'bg-accent-soft text-accent',
+  atual: 'bg-bg text-ink',
+  depois: 'border border-line text-muted',
 }
 
 const flow = useFlow()
-const isLast = computed(() => flow.step === flow.total)
-const title = computed(() =>
-  isLast.value
-    ? `${FLOW_LAST_STEP_TITLE} · ${FLOW_READY_TEXT} · ${flow.step}/${flow.total}`
-    : `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}`,
-)
+const title = computed(() => `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}`)
 
 function stateOf(index: number): StepState {
   const number = index + 1
@@ -27,28 +25,35 @@ function stateOf(index: number): StepState {
   }
   return number === flow.step ? 'atual' : 'depois'
 }
+
+function stepTitle(name: string, index: number): string {
+  const state = stateOf(index)
+  const suffix = state === 'feita' ? ' · feita' : state === 'atual' ? ' · agora' : ''
+  return `${index + 1}. ${name}${suffix}`
+}
 </script>
 
 <template>
   <div class="flex min-w-0 items-center gap-3">
-    <span class="shrink-0 text-label font-semibold text-muted">{{ title }}</span>
-    <ol class="flex min-w-0 items-center gap-1">
+    <span class="shrink-0 text-label font-semibold text-muted max-lg:hidden">{{ title }}</span>
+    <ol class="flex min-w-0 items-center gap-1 max-md:gap-0.5">
       <li v-for="(name, index) in flow.names" :key="name" class="min-w-0">
         <button
           type="button"
-          class="flex h-7 min-w-0 items-center rounded-control px-2 text-label"
-          :class="STEP_CLASSES[stateOf(index)]"
-          :title="stateOf(index)"
+          class="flex h-7 min-w-0 items-center gap-1.5 rounded-control px-0.5 text-label"
+          :class="[STEP_CLASSES[stateOf(index)], stateOf(index) === 'atual' ? 'pr-2.5 max-lg:pr-0.5' : '']"
+          :title="stepTitle(name, index)"
+          :aria-current="stateOf(index) === 'atual' ? 'step' : undefined"
+          :disabled="stateOf(index) !== 'feita'"
           @click="flow.goTo(index + 1)"
         >
-          <span v-if="stateOf(index) === 'feita'">✓</span>
-          <span v-else-if="stateOf(index) === 'depois'">{{ index + 1 }}</span>
-          <span v-else class="truncate"
-            >{{ name }}<template v-if="flow.waitingText !== null"> · {{ flow.waitingText }}</template></span
-          >
+          <span
+            class="grid size-5.5 shrink-0 place-items-center rounded-full text-small font-bold"
+            :class="DOT_CLASSES[stateOf(index)]"
+          >{{ stateOf(index) === 'feita' ? '✓' : index + 1 }}</span>
+          <span v-if="stateOf(index) === 'atual'" class="truncate pr-1 max-lg:hidden">{{ name }}</span>
         </button>
       </li>
     </ol>
-    <UiButton v-if="isLast" variant="primary" size="sm" @press="flow.finish()">{{ FLOW_FINISH_LABEL }}</UiButton>
   </div>
 </template>
