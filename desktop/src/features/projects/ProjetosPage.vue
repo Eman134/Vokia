@@ -56,6 +56,14 @@ async function remove(project: Project) {
   }
 }
 
+async function togglePin(project: Project) {
+  try {
+    await projectsStore.pin(project.pinned ? null : project.id)
+  } catch (cause) {
+    failure.value = describe(cause)
+  }
+}
+
 onMounted(async () => {
   try {
     await projectsStore.load()
@@ -103,6 +111,7 @@ onMounted(async () => {
           :project="project"
           @open="open(project)"
           @edit="editingId = project.id"
+          @pin="togglePin(project)"
           @remove="remove(project)"
         />
       </template>

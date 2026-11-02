@@ -4,7 +4,14 @@ export const ASK_PROJECT_NOTICE =
   'Não sei a qual projeto este pedido se refere. Cite o nome do projeto na mensagem ou fixe um projeto na barra de ação para eu usar sempre ele.'
 export const NO_FOLDER_NOTICE = 'Nenhum projeto tem uma pasta. Escolha a pasta de um projeto para enviar pedidos.'
 
-export type Resolution = { kind: 'project'; project: Project } | { kind: 'ask' } | { kind: 'no-folder' }
+export function citedNoFolderNotice(name: string): string {
+  return `O projeto ${name} não tem pasta. Escolha a pasta dele para enviar pedidos.`
+}
+
+export type Resolution =
+  | { kind: 'project'; project: Project }
+  | { kind: 'ask' }
+  | { kind: 'no-folder'; name?: string }
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -27,6 +34,10 @@ function citedProjects(text: string, projects: readonly Project[]): Project[] {
   return cited.filter((project) => !hasLongerCitedName(project, cited))
 }
 
+function hasFolder(project: Project): boolean {
+  return project.path.trim() !== ''
+}
+
 function mostRecent(projects: readonly Project[]): Project | undefined {
   return projects
     .filter((project) => project.lastActivityAt !== null)
@@ -38,16 +49,20 @@ export function resolveProject(
   projects: readonly Project[],
   selectedId: number | null,
 ): Resolution {
-  const usable = projects.filter((project) => project.path.trim() !== '')
-  if (usable.length === 0) {
-    return { kind: 'no-folder' }
-  }
-  const cited = citedProjects(text, usable)
+  const cited = citedProjects(text, projects)
   if (cited.length > 1) {
     return { kind: 'ask' }
   }
+  const [citedProject] = cited
+  if (citedProject !== undefined && !hasFolder(citedProject)) {
+    return { kind: 'no-folder', name: citedProject.name }
+  }
+  const usable = projects.filter(hasFolder)
+  if (usable.length === 0) {
+    return { kind: 'no-folder' }
+  }
   const chosen =
-    cited[0] ??
+    citedProject ??
     usable.find((project) => project.pinned) ??
     usable.find((project) => project.id === selectedId) ??
     mostRecent(usable) ??

@@ -30,6 +30,7 @@ import PermissionInline from './PermissionInline.vue'
 import MentionMenu from './MentionMenu.vue'
 import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
+import PinnedProject from './PinnedProject.vue'
 import QueuePopover from './QueuePopover.vue'
 import PausedAgents from './PausedAgents.vue'
 import FlowSteps from './FlowSteps.vue'
@@ -437,6 +438,7 @@ function onPointerLeave(): void {
       </span>
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
+      <PinnedProject />
       <Transition
         :enter-from-class="REVEAL_ENTER_FROM_CLASS"
         :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"

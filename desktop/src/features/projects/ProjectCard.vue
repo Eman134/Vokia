@@ -8,10 +8,13 @@ import { EDIT_LABEL, EMPTY_PATH_TEXT, OPEN_LABEL } from './projetosSample'
 import type { Project } from './projectsApi'
 
 const props = defineProps<{ project: Project }>()
-const emit = defineEmits<{ open: []; edit: []; remove: [] }>()
+const emit = defineEmits<{ open: []; edit: []; remove: []; pin: [] }>()
 
 const FOLDER_ORIGIN_LABEL = 'Pasta'
 const GITHUB_ORIGIN_PREFIX = 'GitHub'
+const PIN_LABEL = 'Fixar'
+const UNPIN_LABEL = 'Desafixar'
+const PINNED_BADGE_LABEL = 'Fixado'
 
 const CARD_CLASSES = 'flex min-w-0 flex-col gap-4 rounded-[26px] border border-line bg-surface p-5.5'
 const HEADER_CLASSES = 'flex min-w-0 items-center gap-3.5'
@@ -35,7 +38,10 @@ const originLabel = computed(() =>
         <ProjectIcon :icon="project.symbol" class="size-6" data-testid="project-card-icon" />
       </span>
       <div class="min-w-0">
-        <b :class="NAME_CLASSES" class="block">{{ project.name }}</b>
+        <div class="flex min-w-0 items-center gap-2">
+          <b :class="NAME_CLASSES" class="min-w-0 block">{{ project.name }}</b>
+          <UiBadge v-if="project.pinned" status="lote" :label="PINNED_BADGE_LABEL" />
+        </div>
         <div :class="PATH_CLASSES" :title="path">{{ path }}</div>
       </div>
     </div>
@@ -43,6 +49,15 @@ const originLabel = computed(() =>
     <div :class="FOOTER_CLASSES">
       <UiBadge status="backlog" :label="originLabel" />
       <span class="ml-auto" />
+      <UiButton
+        variant="quiet"
+        size="sm"
+        data-testid="project-card-pin"
+        :disabled="!project.pinned && project.path.trim() === ''"
+        @press="emit('pin')"
+      >
+        {{ project.pinned ? UNPIN_LABEL : PIN_LABEL }}
+      </UiButton>
       <UiButton variant="quiet" size="sm" data-testid="project-card-edit" @press="emit('edit')">
         {{ EDIT_LABEL }}
       </UiButton>
