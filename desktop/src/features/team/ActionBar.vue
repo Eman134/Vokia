@@ -39,6 +39,7 @@ import { useFlow } from './useFlow'
 import Balloon from '../balloon/Balloon.vue'
 import { panelTitleFor } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
+import { useRequestNotices } from '../balloon/useRequestNotices'
 import { useAgentControl } from '../panel/useAgentControl'
 import PanelShell from '../panel/PanelShell.vue'
 import { MAX_PERCENT, ringDash } from '../usage/usagePlans'
@@ -80,6 +81,7 @@ const emit = defineEmits<{
 const team = useTeam()
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
+const requestNotices = useRequestNotices()
 const flow = useFlow()
 const control = useAgentControl()
 const draft = ref('')
@@ -266,7 +268,12 @@ async function submit(): Promise<void> {
   // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
   const pendingConfirmed = confirmed.value
   draft.value = ''
-  if (!(await team.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to))) {
+  if (
+    !(await team.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
+      onEnqueued: requestNotices.announceSent,
+      onQueued: requestNotices.markBackendQueued,
+    }))
+  ) {
     draft.value = pending
     confirmed.value = pendingConfirmed
   }

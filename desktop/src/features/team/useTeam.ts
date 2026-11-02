@@ -54,7 +54,7 @@ export interface QueuedRequest {
   to: Agent
   projectId: number
   editing: boolean
-  onQueued?: () => void
+  onQueued?: (id: number) => void
   onSettled?: (result: RunResult) => void
 }
 
@@ -107,6 +107,7 @@ export const useTeam = defineStore('team', () => {
   let pendingCheck: Promise<boolean> | null = null
   let nextQueueId = 0
   let draining = false
+  let inFlight: QueuedRequest | null = null
   // Callbacks de pedidos com onSettled, por id, até o término (resposta do comando ou evento request-settled).
   const waiting = new Map<number, (result: RunResult) => void>()
 
@@ -338,7 +339,9 @@ export const useTeam = defineStore('team', () => {
         request.onSettled !== undefined ? request.id : undefined,
       )
       if (outcome === 'queued') {
-        if (waiting.has(request.id)) runCallback(() => request.onQueued?.())
+        if (request.onSettled === undefined || waiting.has(request.id)) {
+          runCallback(() => request.onQueued?.(request.id))
+        }
         return
       }
       result = outcome
@@ -364,7 +367,12 @@ export const useTeam = defineStore('team', () => {
           break
         }
         queue.value.splice(index, 1)
-        await dispatch(head)
+        inFlight = head
+        try {
+          await dispatch(head)
+        } finally {
+          inFlight = null
+        }
       }
     } finally {
       draining = false
@@ -473,7 +481,18 @@ export const useTeam = defineStore('team', () => {
   async function send(
     text: string,
     to: Agent | null,
-    options?: { projectId?: number; onQueued?: () => void; onSettled?: (result: RunResult) => void },
+    options?: {
+      projectId?: number
+      onQueued?: (id: number) => void
+      onSettled?: (result: RunResult) => void
+      onEnqueued?: (info: {
+        id: number
+        to: Agent
+        ahead: number | null
+        dispatched: boolean
+        externalBusy: boolean
+      }) => void
+    },
   ): Promise<boolean> {
     if (text.trim() === '') {
       return false
@@ -490,16 +509,31 @@ export const useTeam = defineStore('team', () => {
     if (projectId === null) {
       return false
     }
+    const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
+    const id = ++nextQueueId
+    const paused = control.isPaused(recipient, projectId)
+    const waitingBefore = queue.value.filter((request) => !control.isPaused(request.to, request.projectId)).length
+    const busyState = activity.value[projectAgentKey(projectId, recipient)]
+    const runningHere = inFlight !== null && inFlight.to === recipient && inFlight.projectId === projectId
+    const externalBusy = (busyState === 'sending' || busyState === 'thinking') && !runningHere
+    const ahead = paused ? null : (inFlight === null ? 0 : 1) + waitingBefore + (externalBusy ? 1 : 0)
     queue.value.push({
-      id: ++nextQueueId,
+      id,
       text,
-      to: to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT,
+      to: recipient,
       projectId,
       editing: false,
       onQueued: options?.onQueued,
       onSettled: options?.onSettled,
     })
     void drain()
+    options?.onEnqueued?.({
+      id,
+      to: recipient,
+      ahead,
+      dispatched: !queue.value.some((request) => request.id === id),
+      externalBusy,
+    })
     return true
   }
 
