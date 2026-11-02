@@ -1,5 +1,6 @@
 {
   "productName": "Vokia Dev",
+  "identifier": "com.vokia.desktop.dev",
   "app": {
     "windows": [
       {
