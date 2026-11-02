@@ -1,4 +1,6 @@
-type SettingsAction = { label: string; variant: 'quiet' | 'danger' }
+export type SettingsActionId = 'rever-onboarding'
+
+type SettingsAction = { label: string; variant: 'quiet' | 'danger'; id?: SettingsActionId }
 
 type SettingsControl =
   | { kind: 'theme' }
@@ -67,7 +69,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         kind: 'row',
         label: 'Tour e configuração inicial',
         hint: 'as seis etapas de boas-vindas, conexões, projeto, time, pedido e pronto',
-        control: { kind: 'actions', actions: [{ label: 'Rever o onboarding', variant: 'quiet' }] },
+        control: {
+          kind: 'actions',
+          actions: [{ label: 'Rever o onboarding', variant: 'quiet', id: 'rever-onboarding' }],
+        },
       },
     ],
   },

@@ -11,7 +11,7 @@ import UiProgress from '../../ui/UiProgress.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
-import type { SettingsItem } from './configuracoesSample'
+import type { SettingsActionId, SettingsItem } from './configuracoesSample'
 import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
@@ -19,7 +19,10 @@ const projects = useProjects()
 const team = useTeam()
 const theme = useTheme()
 const navigation = useNavigation()
-const PROJECTS_PAGE = 'projetos'
+const ONBOARDING_PAGE = 'onboarding'
+const ACTION_HANDLERS: Record<SettingsActionId, () => void> = {
+  'rever-onboarding': () => navigation.goTo(ONBOARDING_PAGE),
+}
 
 // Espelha PERMISSION_GRANT_VALUES de src-tauri/src/db.rs.
 const PERMISSION_GRANT_KEY = 'permission_grant'
@@ -30,6 +33,8 @@ const GRANT_LABELS: Record<GrantChoice, string> = { session: 'Por sessão', once
 const GRANT_OPTIONS = GRANT_CHOICES.map((choice) => ({ label: GRANT_LABELS[choice], value: choice }))
 const ERROR_CLASSES = 'text-small text-danger'
 const STACK_CLASSES = 'flex flex-col items-end gap-1'
+// Limita a largura do controle: a mensagem de confirmação é longa e, sem limite, empurra o rótulo para uma coluna estreita.
+const ERASE_CLASSES = `${STACK_CLASSES} max-w-md`
 
 const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
@@ -50,7 +55,7 @@ async function eraseEverything(): Promise<void> {
     await projects.load()
     await team.restoreHistory()
     await theme.load()
-    navigation.goTo(PROJECTS_PAGE)
+    navigation.goTo(ONBOARDING_PAGE)
   } catch (error) {
     eraseError.value = `Dados apagados, mas a tela não recarregou: ${String(error)}`
   } finally {
@@ -174,7 +179,7 @@ function toOptions(labels: readonly string[]) {
         />
         <p v-if="grantError" role="alert" :class="ERROR_CLASSES">{{ grantError }}</p>
       </div>
-      <div v-else-if="item.control.kind === 'erase-data'" :class="STACK_CLASSES">
+      <div v-else-if="item.control.kind === 'erase-data'" :class="ERASE_CLASSES">
         <UiConfirm
           label="Apagar…"
           message="Apaga todos os projetos, conversas, backlog, planos e também as configurações (tema e permissões voltam ao padrão). Não pode ser desfeito."
@@ -221,7 +226,8 @@ function toOptions(labels: readonly string[]) {
           :key="action.label"
           :variant="action.variant"
           size="sm"
-          disabled
+          :disabled="!action.id"
+          @press="action.id && ACTION_HANDLERS[action.id]()"
         >
           {{ action.label }}
         </UiButton>
