@@ -6,6 +6,7 @@ import {
   RAIL_COLLAPSED_WIDTH,
   RAIL_EXPANDED_WIDTH,
   WORKSPACE_ITEMS,
+  isProjectPage,
   type AppPage,
 } from './railNav'
 import { useNavigation } from './useNavigation'
@@ -67,21 +68,24 @@ function groupId(projectName: string) {
   return `rail-projeto-${projectName}`
 }
 
-async function selectProject(project: Project) {
+async function enterProject(project: Project) {
   try {
-    await projectsStore.select(project.id)
+    await navigation.enterProject(project)
   } catch (cause) {
     team.feed.push({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
   }
 }
 
 function toggleProject(project: Project) {
-  if (isOpen(project.name)) {
+  if (projectsStore.selected?.id === project.id && !isProjectPage(navigation.page)) {
+    openProject.value = project.name
+    navigation.goTo(navigation.rememberedPage(project.id))
+  } else if (isOpen(project.name)) {
     openProject.value = null
   } else if (projectsStore.selected?.id === project.id) {
     openProject.value = project.name
   } else {
-    void selectProject(project)
+    void enterProject(project)
   }
 }
 

@@ -104,3 +104,9 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
     path: 'M4 4a2 2 0 100-.1M12 4a2 2 0 100-.1M8 12a2 2 0 100-.1M5.5 5.5L7 10.5M10.5 5.5L9 10.5M6 4h4',
   },
 ]
+
+const PROJECT_PAGES: ReadonlySet<AppPage> = new Set(PROJECT_TOOLS.map((item) => item.page))
+
+export function isProjectPage(page: AppPage): boolean {
+  return PROJECT_PAGES.has(page)
+}

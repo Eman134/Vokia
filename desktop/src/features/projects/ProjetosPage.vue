@@ -27,8 +27,7 @@ function describe(cause: unknown): string {
 
 async function open(project: Project) {
   try {
-    await projectsStore.select(project.id)
-    navigation.goTo('conversas')
+    await navigation.enterProject(project)
   } catch (cause) {
     failure.value = describe(cause)
   }
