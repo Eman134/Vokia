@@ -30,6 +30,7 @@ import {
 } from './backlogPageCopy'
 import { DEFAULT_COLUMN, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type KanbanStage } from './backlogTypes'
 import { useBacklog } from './useBacklog'
+import { useItemPlan } from './useItemPlan'
 
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
 const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
@@ -54,6 +55,7 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
 const DISPLAYED_TAGS = Object.keys(TAG_LABEL).filter((tag) => tag !== 'divida') as (keyof typeof TAG_LABEL)[]
 
 const backlog = useBacklog()
+const itemPlan = useItemPlan()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 const density = ref<BacklogCardDensity>('normal')
@@ -185,6 +187,8 @@ watch(
             v-for="item in column.cards"
             :key="item.id"
             :item="item"
+            :column="column.name"
+            :state="itemPlan.stateFor(item)"
             :density="density"
             @open="backlog.open(item.id)"
           />

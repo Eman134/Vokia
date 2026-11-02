@@ -71,6 +71,10 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return planOf(itemId).state
   }
 
+  function stateFor(item: BacklogItem): BacklogState {
+    return states.value[item.id]?.state ?? item.state
+  }
+
   function persist(itemId: string): void {
     const current = states.value[itemId]
     const input: ItemPlanInput =
@@ -205,5 +209,5 @@ export const useItemPlan = defineStore('itemPlan', () => {
     },
   )
 
-  return { states, plans, planOf, stateOf, isAgentAwaiting, request, cancel, accept, discard, link, unlink }
+  return { states, plans, planOf, stateOf, stateFor, isAgentAwaiting, request, cancel, accept, discard, link, unlink }
 })

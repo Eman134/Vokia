@@ -6,7 +6,7 @@ export type BacklogTag = 'bug' | 'urgente' | 'ui' | 'backend' | 'ideia' | 'divid
 
 export type BacklogCardDensity = 'normal' | 'compacta'
 
-export type BacklogCardAction = 'triar' | 'revisar' | 'ver-diff'
+export type BacklogCardAction = 'triar' | 'revisar'
 
 export type BacklogColumn = 'Backlog' | 'Ready' | 'In progress' | 'In review' | 'Done'
 

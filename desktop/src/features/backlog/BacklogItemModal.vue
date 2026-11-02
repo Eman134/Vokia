@@ -44,7 +44,7 @@ const unusedTags = computed(() =>
   (Object.keys(TAG_LABEL) as BacklogTag[]).filter((tag) => !item.value?.tags.includes(tag)),
 )
 const visibleMicro = computed(() => item.value?.micro?.filter((task) => isScriptValid(task.script)) ?? [])
-const planState = computed(() => (item.value ? (itemPlan.states[item.value.id]?.state ?? item.value.state) : 'vazio'))
+const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
 const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : item.value?.plan))
 const details = computed(() => {
   const current = item.value

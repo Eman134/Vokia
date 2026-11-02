@@ -6,10 +6,9 @@ import {
   ACTION_ID,
   type ActionLabel,
   colorVar,
+  COLUMN_CHIP,
   DEFAULT_FEATURE_COLOR,
   FEATURE_COLOR,
-  STAGE_BADGE,
-  STAGE_CHIP,
   STATE_ACTION,
   STATE_BADGE,
   STATE_CHIP,
@@ -19,41 +18,41 @@ import {
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import { YOU_INITIAL } from '../team/portraitArt'
-import type { BacklogCardAction, BacklogCardDensity, BacklogItem, BacklogTag } from './backlogTypes'
+import { DEFAULT_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
 
-const props = withDefaults(defineProps<{ item: BacklogItem; density?: BacklogCardDensity }>(), {
+const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity }>(), {
   density: 'normal',
 })
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 
 const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
+const DONE_COLUMN: BacklogColumn = 'Done'
 const VOCE = 'voce'
 
 const isCompact = computed(() => props.density === 'compacta')
 const featureColor = computed(() => colorVar(FEATURE_COLOR[props.item.feature ?? ''] ?? DEFAULT_FEATURE_COLOR))
 
-const chip = computed(() => {
-  const { stage, state } = props.item
-  return stage ? { label: STAGE_CHIP[stage], status: STAGE_BADGE[stage] } : { label: STATE_CHIP[state], status: STATE_BADGE[state] }
-})
+const chip = computed(
+  () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
+)
 
 const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
-  if (props.item.error) return undefined
-  const label = props.item.stage ? (props.item.stage === 'review' ? 'Ver diff' : undefined) : STATE_ACTION[props.item.state]
+  if (props.item.error || props.column !== DEFAULT_COLUMN) return undefined
+  const label = STATE_ACTION[props.state]
   return label && { label, id: ACTION_ID[label] }
 })
 
 const progress = computed(() => {
-  const { stage, state, children, triageStep } = props.item
-  if (stage === 'done') {
+  const { children, triageStep } = props.item
+  if (props.column === DONE_COLUMN) {
     const total = Math.max(children?.total ?? 0, DONE_SEGMENTS)
     return { total, filled: total, fillClass: 'bg-ok', showText: children !== undefined && children.total > 0 }
   }
   if (children) {
     return { total: children.total, filled: Math.min(children.done, children.total), fillClass: 'bg-ok', showText: true }
   }
-  if (state === 'triagem') return { total: TRIAGE_STEP_COUNT, filled: triageStep ?? 0, fillClass: 'bg-accent', showText: false }
+  if (props.state === 'triagem') return { total: TRIAGE_STEP_COUNT, filled: triageStep ?? 0, fillClass: 'bg-accent', showText: false }
   return undefined
 })
 
@@ -64,7 +63,7 @@ const percent = computed(() => {
 
 const authorInitial = computed(() => (props.item.who === VOCE ? YOU_INITIAL : props.item.who.charAt(0).toUpperCase()))
 
-const showPlan = computed(() => !isCompact.value && props.item.state !== 'vazio' && Boolean(props.item.plan))
+const showPlan = computed(() => !isCompact.value && props.state !== 'vazio' && Boolean(props.item.plan))
 
 function tagPillStyle(tag: BacklogTag) {
   const token = colorVar(TAG_COLOR[tag])
@@ -86,7 +85,7 @@ function tagPillStyle(tag: BacklogTag) {
       <span>{{ item.id }}</span>
       <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
-      <UiBadge class="ml-auto" :status="chip.status" :label="chip.label" />
+      <UiBadge v-if="isCompact" class="ml-auto" :status="chip.status" :label="chip.label" />
     </header>
 
     <p v-if="item.parent && !isCompact" class="text-caption text-muted">↳ {{ item.parent }}</p>
@@ -147,6 +146,7 @@ function tagPillStyle(tag: BacklogTag) {
       <UiButton v-if="action" class="ml-auto" variant="primary" size="sm" @click.stop @press="emit('action', action.id)">
         {{ action.label }}
       </UiButton>
+      <UiBadge v-if="!isCompact" :class="!action && 'ml-auto'" :status="chip.status" :label="chip.label" />
     </footer>
   </article>
 </template>

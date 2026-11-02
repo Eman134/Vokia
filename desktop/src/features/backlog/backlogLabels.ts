@@ -1,8 +1,8 @@
 import type UiBadge from '../../ui/UiBadge.vue'
-import type { BacklogCardAction, BacklogState, BacklogTag, KanbanStage } from './backlogTypes'
+import type { BacklogCardAction, BacklogColumn, BacklogState, BacklogTag } from './backlogTypes'
 
 type BadgeStatus = InstanceType<typeof UiBadge>['$props']['status']
-export type ActionLabel = 'Triar' | 'Revisar' | 'Ver diff'
+export type ActionLabel = 'Triar' | 'Revisar'
 
 export const STATE_CHIP: Record<BacklogState, string> = {
   vazio: 'não triado',
@@ -11,12 +11,6 @@ export const STATE_CHIP: Record<BacklogState, string> = {
   proposto: 'proposta',
   vinculado: 'pronto',
 }
-export const STAGE_CHIP: Record<KanbanStage, string> = {
-  ready: 'ready',
-  progress: 'em andamento',
-  review: 'em revisão',
-  done: 'feito',
-}
 export const STATE_BADGE: Record<BacklogState, BadgeStatus> = {
   vazio: 'backlog',
   triagem: 'lote',
@@ -24,11 +18,11 @@ export const STATE_BADGE: Record<BacklogState, BadgeStatus> = {
   proposto: 'precisa de você',
   vinculado: 'trabalhando',
 }
-export const STAGE_BADGE: Record<KanbanStage, BadgeStatus> = {
-  ready: 'lote',
-  progress: 'lote',
-  review: 'precisa de você',
-  done: 'trabalhando',
+export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status: BadgeStatus }>> = {
+  Ready: { label: 'ready', status: 'lote' },
+  'In progress': { label: 'em andamento', status: 'lote' },
+  'In review': { label: 'em revisão', status: 'precisa de você' },
+  Done: { label: 'feito', status: 'trabalhando' },
 }
 
 export const TAG_LABEL: Record<BacklogTag, string> = {
@@ -54,14 +48,13 @@ export const TAG_TEXT_COLOR: Partial<Record<BacklogTag, string>> = {
   urgente: 'warn-text',
 }
 
-export const STATE_ACTION: Partial<Record<BacklogState, Exclude<ActionLabel, 'Ver diff'>>> = {
+export const STATE_ACTION: Partial<Record<BacklogState, ActionLabel>> = {
   vazio: 'Triar',
   proposto: 'Revisar',
 }
 export const ACTION_ID: Record<ActionLabel, BacklogCardAction> = {
   Triar: 'triar',
   Revisar: 'revisar',
-  'Ver diff': 'ver-diff',
 }
 
 export const FEATURE_COLOR: Record<string, string> = {
