@@ -1,3 +1,7 @@
+import { renderAvatarArt, resolveAvatarProfile } from './avatarProfiles'
+
+const registryArt = (profileId: string): string => renderAvatarArt(resolveAvatarProfile(profileId))
+
 export const IDENTITY_RECURSOS = {
   agente: 'Agentes',
   equipe: 'Equipes',
@@ -52,7 +56,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'personagem',
         paleta: 'fria',
-        art: '<ellipse cx="32" cy="58" rx="14" ry="2.5" fill="#1c1c21" opacity=".12"></ellipse><path d="M32 5 C 26 16, 12 28, 12 39 a20 19 0 0 0 40 0 C 52 28, 38 16, 32 5 Z" fill="#4f7cff"></path><path d="M32 5 C 38 16, 52 28, 52 39 a20 19 0 0 1 -20 19 C 44 52, 47 40, 32 5 Z" fill="#2f56d6" opacity=".45"></path><ellipse cx="22" cy="30" rx="3" ry="5" fill="#fff" opacity=".55" transform="rotate(25 22 30)"></ellipse><circle cx="25" cy="40" r="4.2" fill="#fff"></circle><circle cx="25" cy="40" r="2.1" fill="#1c1c21"></circle><circle cx="39" cy="40" r="4.2" fill="#fff"></circle><circle cx="39" cy="40" r="2.1" fill="#1c1c21"></circle><path d="M27 48 Q32 53 37 48" fill="none" stroke="#1c1c21" stroke-width="2" stroke-linecap="round"></path>',
+        art: registryArt('lume'),
       },
       {
         id: 'ambar',
@@ -60,7 +64,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'personagem',
         paleta: 'quente',
-        art: '<ellipse cx="32" cy="58" rx="14" ry="2.5" fill="#1c1c21" opacity=".12"></ellipse><path d="M32 5 C 26 16, 12 28, 12 39 a20 19 0 0 0 40 0 C 52 28, 38 16, 32 5 Z" fill="#f08a3c"></path><path d="M32 5 C 38 16, 52 28, 52 39 a20 19 0 0 1 -20 19 C 44 52, 47 40, 32 5 Z" fill="#c8611c" opacity=".45"></path><ellipse cx="22" cy="30" rx="3" ry="5" fill="#fff" opacity=".55" transform="rotate(25 22 30)"></ellipse><circle cx="25" cy="40" r="4.8" fill="#fff"></circle><circle cx="26.4" cy="39" r="2.4" fill="#1c1c21"></circle><circle cx="39" cy="40" r="4.8" fill="#fff"></circle><circle cx="40.4" cy="39" r="2.4" fill="#1c1c21"></circle><circle cx="32" cy="49" r="2.2" fill="#1c1c21"></circle>',
+        art: registryArt('ambar'),
       },
       {
         id: 'vesper',
@@ -68,7 +72,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'personagem',
         paleta: 'fria',
-        art: '<ellipse cx="32" cy="58" rx="14" ry="2.5" fill="#1c1c21" opacity=".12"></ellipse><path d="M32 5 C 26 16, 12 28, 12 39 a20 19 0 0 0 40 0 C 52 28, 38 16, 32 5 Z" fill="#8b6cf0"></path><path d="M32 5 C 38 16, 52 28, 52 39 a20 19 0 0 1 -20 19 C 44 52, 47 40, 32 5 Z" fill="#6345cc" opacity=".45"></path><ellipse cx="22" cy="30" rx="3" ry="5" fill="#fff" opacity=".55" transform="rotate(25 22 30)"></ellipse><path d="M20.8 40 Q25 43.78 29.2 40" fill="none" stroke="#1c1c21" stroke-width="2" stroke-linecap="round"></path><path d="M34.8 40 Q39 43.78 43.2 40" fill="none" stroke="#1c1c21" stroke-width="2" stroke-linecap="round"></path><path d="M29 49 Q32 51 35 49" fill="none" stroke="#1c1c21" stroke-width="1.8" stroke-linecap="round"></path>',
+        art: registryArt('vesper'),
       },
     ],
   },
@@ -82,7 +86,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'geometrico',
         paleta: 'fria',
-        art: '<polygon points="32,4 54,17 54,45 32,58 10,45 10,17" fill="#2bb3a8"></polygon><polygon points="32,4 54,17 32,30 10,17" fill="#fff" opacity=".35"></polygon><polygon points="32,30 54,17 54,45 32,58" fill="#1a857c" opacity=".55"></polygon><path d="M32 30 V58M10 17 L32 30 L54 17" stroke="#fff" stroke-opacity=".5" stroke-width="1.2" fill="none"></path><circle cx="25" cy="36" r="3.2" fill="#fff"></circle><circle cx="25" cy="36" r="1.6" fill="#1c1c21"></circle><circle cx="39" cy="36" r="3.2" fill="#fff"></circle><circle cx="39" cy="36" r="1.6" fill="#1c1c21"></circle>',
+        art: registryArt('quarzo'),
       },
       {
         id: 'onix',
@@ -90,7 +94,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'geometrico',
         paleta: 'fria',
-        art: '<polygon points="32,3 56,30 32,61 8,30" fill="#8b6cf0"></polygon><polygon points="32,3 56,30 32,30" fill="#6345cc" opacity=".6"></polygon><polygon points="8,30 32,30 32,61" fill="#fff" opacity=".25"></polygon><path d="M8 30 H56M32 3 V61" stroke="#fff" stroke-opacity=".45" stroke-width="1.2"></path><circle cx="26" cy="38" r="3" fill="#fff"></circle><circle cx="26" cy="38" r="1.5" fill="#1c1c21"></circle><circle cx="38" cy="38" r="3" fill="#fff"></circle><circle cx="38" cy="38" r="1.5" fill="#1c1c21"></circle>',
+        art: registryArt('onix'),
       },
       {
         id: 'selene',
@@ -98,7 +102,7 @@ export const IDENTITY_FAMILIES: IdentityFamily[] = [
         recurso: 'agente',
         estilo: 'geometrico',
         paleta: 'quente',
-        art: '<polygon points="32,2 46,22 40,62 24,62 18,22" fill="#e0609a"></polygon><polygon points="32,2 46,22 32,26 18,22" fill="#fff" opacity=".4"></polygon><polygon points="32,26 46,22 40,62 32,62" fill="#b83d74" opacity=".55"></polygon><path d="M32 26 V62" stroke="#fff" stroke-opacity=".5" stroke-width="1.2"></path><circle cx="28" cy="36" r="2.8" fill="#fff"></circle><circle cx="28" cy="36" r="1.4" fill="#1c1c21"></circle><circle cx="37" cy="36" r="2.8" fill="#fff"></circle><circle cx="37" cy="36" r="1.4" fill="#1c1c21"></circle>',
+        art: registryArt('selene'),
       },
     ],
   },

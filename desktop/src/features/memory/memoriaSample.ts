@@ -1,5 +1,3 @@
-import type { PortraitId } from '../team/portraitArt'
-
 export const MEMORY_FILTERS = [
   { label: 'Projeto', value: 'projeto' },
   { label: 'Por agente', value: 'agente' },
@@ -14,7 +12,7 @@ export const MEMORY_FILTER_INITIAL = 'projeto'
 export interface MemoryFact {
   text: string
   // null marca a preferência do usuário, que usa a inicial em vez do retrato.
-  who: PortraitId | null
+  who: string | null
   author: string
   usage: string
   suggested: boolean

@@ -1,5 +1,3 @@
-import type { PortraitId } from '../team/portraitArt'
-
 export const ARTIFACT_KINDS = ['whiteboard', 'mermaid', 'plantuml', 'documento', 'casos', 'anotacoes', 'adr'] as const
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number]
 
@@ -57,7 +55,7 @@ export interface ArtifactSample {
   kind: ArtifactKind
   title: string
   author: string
-  portrait?: PortraitId
+  portrait?: string
   time: string
 }
 

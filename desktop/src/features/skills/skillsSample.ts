@@ -1,5 +1,3 @@
-import type { PortraitId } from '../team/portraitArt'
-
 export const SKILLS_CONTEXT_LABEL = 'Workspace · 8 skills'
 export const SKILLS_TITLE = 'Skills'
 export const SKILLS_SUBTITLE =
@@ -51,7 +49,7 @@ export const SKILL_SAMPLES: readonly SkillSample[] = [
 ]
 
 export interface SkillMatrixOccupation {
-  who: PortraitId
+  who: string
   title: string
 }
 
