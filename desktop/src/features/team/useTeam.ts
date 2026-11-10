@@ -353,6 +353,10 @@ export const useTeam = defineStore('team', () => {
     if (settle !== undefined) runCallback(() => settle(result))
   }
 
+  function isDispatchable(request: QueuedRequest): boolean {
+    return !request.editing && !control.isPaused(request.to, request.projectId)
+  }
+
   // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
   async function drain(): Promise<void> {
     if (draining || !pausesLoaded.value) {
@@ -361,9 +365,9 @@ export const useTeam = defineStore('team', () => {
     draining = true
     try {
       for (;;) {
-        const index = queue.value.findIndex((request) => !control.isPaused(request.to, request.projectId))
+        const index = queue.value.findIndex(isDispatchable)
         const head = queue.value[index]
-        if (head === undefined || head.editing) {
+        if (head === undefined) {
           break
         }
         queue.value.splice(index, 1)
@@ -392,6 +396,7 @@ export const useTeam = defineStore('team', () => {
     for (const request of queue.value) {
       request.editing = request.id === id
     }
+    void drain()
     return true
   }
 
@@ -512,7 +517,7 @@ export const useTeam = defineStore('team', () => {
     const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
     const id = ++nextQueueId
     const paused = control.isPaused(recipient, projectId)
-    const waitingBefore = queue.value.filter((request) => !control.isPaused(request.to, request.projectId)).length
+    const waitingBefore = queue.value.filter(isDispatchable).length
     const busyState = activity.value[projectAgentKey(projectId, recipient)]
     const runningHere = inFlight !== null && inFlight.to === recipient && inFlight.projectId === projectId
     const externalBusy = (busyState === 'sending' || busyState === 'thinking') && !runningHere
