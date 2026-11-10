@@ -27,11 +27,27 @@ pub struct PendingDecision {
     pub project_id: i64,
     pub title: String,
     pub request: String,
+    pub item_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RequestContext {
+    pub run_id: Option<u64>,
+    pub item_id: Option<String>,
+}
+
+impl RequestContext {
+    pub fn new(run_id: Option<u64>, item_id: Option<String>) -> Self {
+        let item_id = item_id
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty());
+        Self { run_id, item_id }
+    }
 }
 
 pub struct QueuedJob {
     pub text: String,
-    pub run_id: Option<u64>,
+    pub context: RequestContext,
 }
 
 // Uma chave presente é um fluxo em andamento; os pedidos que chegam nesse meio-tempo esperam aqui.

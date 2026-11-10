@@ -159,6 +159,7 @@ pub enum VokiaEvent {
         detail: String,
         options: Vec<String>,
         project_id: Option<i64>,
+        item_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     PlanUsage {

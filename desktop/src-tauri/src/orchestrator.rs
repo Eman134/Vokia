@@ -28,7 +28,7 @@ use crate::events::{
 use crate::permissions::PermissionGate;
 use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
 use crate::session_key::SessionKey;
-use crate::state::{AppState, PendingDecision, QueuedJob};
+use crate::state::{AppState, PendingDecision, QueuedJob, RequestContext};
 use crate::task::MAX_LIVE_SESSIONS;
 use crate::task::{
     agent_named, call_mode, degrades_to_fresh, long_request_text, parse_definition, ActiveTask,
@@ -214,7 +214,7 @@ pub async fn handle_request(
     request: &str,
     recipient: Agent,
     project_id: i64,
-    run_id: Option<u64>,
+    context: RequestContext,
 ) -> Result<RequestOutcome, FlowError> {
     let cli = state
         .cli
@@ -232,10 +232,10 @@ pub async fn handle_request(
         project_id,
         agent: recipient,
     };
-    if !start_or_enqueue(state, key, request, run_id)? {
+    if !start_or_enqueue(state, key, request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
-    run_flow(app, state, cli, key, request).await
+    run_flow(app, state, cli, key, request, context).await
 }
 
 pub async fn answer_decision(
@@ -254,22 +254,30 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    handle_request(app, state, &text, decision.agent, decision.project_id, None)
-        .await
-        .map(|_| ())
+    let context = RequestContext::new(None, decision.item_id);
+    handle_request(
+        app,
+        state,
+        &text,
+        decision.agent,
+        decision.project_id,
+        context,
+    )
+    .await
+    .map(|_| ())
 }
 
 fn start_or_enqueue(
     state: &AppState,
     key: SessionKey,
     request: &str,
-    run_id: Option<u64>,
+    context: RequestContext,
 ) -> Result<bool, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     if let Some(pending) = flow.pending.get_mut(&key) {
         pending.push_back(QueuedJob {
             text: request.to_string(),
-            run_id,
+            context,
         });
         return Ok(false);
     }
@@ -292,14 +300,16 @@ async fn run_flow(
     cli: &Path,
     key: SessionKey,
     request: &str,
+    context: RequestContext,
 ) -> Result<RequestOutcome, FlowError> {
     let mut request = request.to_string();
+    let mut item_id = context.item_id;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = None;
     loop {
-        let this = match run_exchange(app, state, cli, key, &request).await {
+        let this = match run_exchange(app, state, cli, key, &request, item_id.as_deref()).await {
             Ok(TaskOutcome::Finished) => RequestOutcome::Finished,
             Ok(_) => RequestOutcome::Failed,
             Err(error) => {
@@ -321,7 +331,8 @@ async fn run_flow(
         match next_job(state, key)? {
             Some(job) => {
                 request = job.text;
-                current_run = job.run_id;
+                current_run = job.context.run_id;
+                item_id = job.context.item_id;
             }
             None => return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed)),
         }
@@ -335,9 +346,10 @@ async fn run_exchange(
     cli: &Path,
     key: SessionKey,
     request: &str,
+    item_id: Option<&str>,
 ) -> Result<TaskOutcome, FlowError> {
     let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id).await;
-    let result = exchange_turns(app, state, cli, key, request, &mut sessions).await;
+    let result = exchange_turns(app, state, cli, key, request, item_id, &mut sessions).await;
     sessions.release().await;
     result
 }
@@ -348,6 +360,7 @@ async fn exchange_turns(
     cli: &Path,
     key: SessionKey,
     request: &str,
+    item_id: Option<&str>,
     sessions: &mut ExchangeSessions,
 ) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent, AgentState::Sending)?;
@@ -373,6 +386,7 @@ async fn exchange_turns(
         project: access,
         project_context: &context,
         request,
+        item_id,
         key,
         definition: &definition,
     };
@@ -459,6 +473,7 @@ struct Exchange<'a> {
     project: ProjectAccess<'a>,
     project_context: &'a str,
     request: &'a str,
+    item_id: Option<&'a str>,
     key: SessionKey,
     definition: &'a TaskDefinition,
 }
@@ -612,6 +627,7 @@ fn raise_decision(
         app,
         state,
         request,
+        item_id,
         key,
         ..
     } = *exchange;
@@ -640,6 +656,7 @@ fn raise_decision(
                 project_id,
                 title: title.clone(),
                 request: request.to_string(),
+                item_id: item_id.map(str::to_string),
             },
         );
     emit(
@@ -652,6 +669,7 @@ fn raise_decision(
             detail,
             options,
             project_id: Some(project_id),
+            item_id: item_id.map(str::to_string),
         },
     )?;
     for requester in &turn.requesters {

@@ -13,7 +13,7 @@ use crate::permissions::PermissionError;
 use crate::projects::{
     self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectEdit, ProjectError,
 };
-use crate::state::AppState;
+use crate::state::{AppState, RequestContext};
 
 const ERASE_BUSY_MESSAGE: &str = "Há um pedido em andamento; aguarde terminar.";
 
@@ -35,8 +35,10 @@ pub async fn send_request(
     to: Agent,
     project_id: i64,
     run_id: Option<u64>,
+    item_id: Option<String>,
 ) -> Result<RequestOutcome, String> {
-    match orchestrator::handle_request(&app, &state, &text, to, project_id, run_id).await {
+    let context = RequestContext::new(run_id, item_id);
+    match orchestrator::handle_request(&app, &state, &text, to, project_id, context).await {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
             orchestrator::report_failure(&app, project_id, &error)

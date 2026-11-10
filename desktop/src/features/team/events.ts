@@ -72,6 +72,7 @@ export interface VokiaDecision {
   detail: string
   options: string[]
   projectId: number | null
+  itemId: string | null
 }
 
 export interface UsageWindow {

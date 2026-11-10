@@ -28,8 +28,9 @@ export function sendRequest(
   to: Agent,
   projectId: number,
   runId?: number,
+  itemId?: string,
 ): Promise<RequestOutcome> {
-  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId })
+  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId })
 }
 
 export function answerPermission(id: string, allow: boolean): Promise<void> {
