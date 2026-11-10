@@ -1,5 +1,5 @@
 import type UiBadge from '../../ui/UiBadge.vue'
-import type { BacklogCardAction, BacklogColumn, BacklogState, BacklogTag } from './backlogTypes'
+import type { BacklogCardAction, BacklogColumn, BacklogState } from './backlogTypes'
 
 type BadgeStatus = InstanceType<typeof UiBadge>['$props']['status']
 export type ActionLabel = 'Triar' | 'Revisar'
@@ -10,6 +10,13 @@ export const STATE_CHIP: Record<BacklogState, string> = {
   gerando: 'escrevendo',
   proposto: 'proposta',
   vinculado: 'pronto',
+}
+export const PLAN_DIALOG_CHIP: Record<BacklogState, string> = {
+  vazio: 'sem plano',
+  triagem: 'triagem',
+  gerando: 'escrevendo…',
+  proposto: 'esperando você',
+  vinculado: 'vinculado',
 }
 export const STATE_BADGE: Record<BacklogState, BadgeStatus> = {
   vazio: 'backlog',
@@ -25,29 +32,6 @@ export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status:
   Done: { label: 'feito', status: 'trabalhando' },
 }
 
-export const TAG_LABEL: Record<BacklogTag, string> = {
-  bug: 'bug',
-  urgente: 'urgente',
-  ui: 'interface',
-  backend: 'backend',
-  ideia: 'ideia',
-  divida: 'dívida técnica',
-  cliente: 'pedido de cliente',
-}
-export const TAG_COLOR: Record<BacklogTag, string> = {
-  bug: 'danger',
-  urgente: 'warn',
-  ui: 'feature-blue',
-  backend: 'feature-green',
-  ideia: 'feature-purple',
-  divida: 'muted',
-  cliente: 'client',
-}
-// O texto do pill usa o token de texto; o fundo continua com o token da cor.
-export const TAG_TEXT_COLOR: Partial<Record<BacklogTag, string>> = {
-  urgente: 'warn-text',
-}
-
 export const STATE_ACTION: Partial<Record<BacklogState, ActionLabel>> = {
   vazio: 'Triar',
   proposto: 'Revisar',
@@ -55,6 +39,11 @@ export const STATE_ACTION: Partial<Record<BacklogState, ActionLabel>> = {
 export const ACTION_ID: Record<ActionLabel, BacklogCardAction> = {
   Triar: 'triar',
   Revisar: 'revisar',
+}
+export const ACTION_TITLE: Record<BacklogCardAction, string> = {
+  triar: 'Mandar para a triagem da líder',
+  revisar: 'Ver a proposta do plano',
+  vincular: 'Vincular plano',
 }
 
 export const FEATURE_COLOR: Record<string, string> = {

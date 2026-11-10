@@ -7,7 +7,9 @@ import UiSegmented from '../../ui/UiSegmented.vue'
 import { useProjects } from '../projects/useProjects'
 import BacklogCard from './BacklogCard.vue'
 import BacklogItemModal from './BacklogItemModal.vue'
-import { colorVar, TAG_COLOR, TAG_LABEL } from './backlogLabels'
+import PlanDialog from './PlanDialog.vue'
+import { colorVar } from './backlogLabels'
+import { tagColor, tagLabel } from './tags'
 import {
   ALL_FEATURES_LABEL,
   ALL_FEATURES_VALUE,
@@ -28,9 +30,16 @@ import {
   SEARCH_PLACEHOLDER,
   TYPE_FILTER_OPTIONS,
 } from './backlogPageCopy'
-import { DEFAULT_COLUMN, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type KanbanStage } from './backlogTypes'
+import {
+  DEFAULT_COLUMN,
+  type BacklogCardAction,
+  type BacklogCardDensity,
+  type BacklogColumn,
+  type BacklogItem,
+  type KanbanStage,
+} from './backlogTypes'
 import { useBacklog } from './useBacklog'
-import { useItemPlan } from './useItemPlan'
+import { useItemPlan, type PlanTab } from './useItemPlan'
 
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
 const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
@@ -40,11 +49,12 @@ const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
 const SEARCH_CLASSES =
   'h-9 w-55 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint disabled:opacity-40'
 const MINE_CLASSES = 'h-7.5 rounded-control-sm border border-line px-3 text-caption text-muted disabled:opacity-40'
-const TAG_FILTER_CLASSES = 'h-7 rounded-control-sm px-2.5 text-label font-medium disabled:opacity-40'
+const TAG_FILTER_CLASSES = 'h-7 rounded-control-sm px-2.5 text-label font-medium'
 const GRID_SCROLL_CLASSES = 'shrink-0 overflow-x-auto'
 const GRID_CLASSES = 'grid min-w-0 grid-cols-[repeat(5,minmax(210px,1fr))] items-start gap-3'
 const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'
 const TAG_TINT_PERCENT = 11
+const TAG_TINT_ACTIVE_PERCENT = 22
 
 const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
   ready: 'Ready',
@@ -52,7 +62,6 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
   review: 'In review',
   done: 'Done',
 }
-const DISPLAYED_TAGS = Object.keys(TAG_LABEL).filter((tag) => tag !== 'divida') as (keyof typeof TAG_LABEL)[]
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
@@ -67,6 +76,10 @@ function columnOf(item: BacklogItem): BacklogColumn {
 
 const dismissedError = ref(false)
 const featureFilter = ref<string>(ALL_FEATURES_VALUE)
+const activeTag = ref<string | null>(null)
+const availableTags = computed(() =>
+  [...new Set(backlog.items.flatMap((item) => item.tags))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+)
 const featureOptions = computed(() => [
   { label: ALL_FEATURES_LABEL, value: ALL_FEATURES_VALUE },
   ...[...new Set(backlog.items.map((item) => item.feature).filter((feature): feature is string => Boolean(feature)))]
@@ -74,12 +87,31 @@ const featureOptions = computed(() => [
     .map((feature) => ({ label: feature, value: feature })),
 ])
 const visibleItems = computed(() =>
-  featureFilter.value === ALL_FEATURES_VALUE ? backlog.items : backlog.items.filter((item) => item.feature === featureFilter.value),
+  backlog.items.filter(
+    (item) =>
+      (featureFilter.value === ALL_FEATURES_VALUE || item.feature === featureFilter.value) &&
+      (activeTag.value === null || item.tags.includes(activeTag.value)),
+  ),
 )
 const isEmptyBoard = computed(() => !backlog.loading && !backlog.loadError && backlog.items.length === 0 && projectName.value !== '')
 watch(featureOptions, (options) => {
   if (!options.some((option) => option.value === featureFilter.value)) featureFilter.value = ALL_FEATURES_VALUE
 })
+watch(availableTags, (tags) => {
+  if (activeTag.value !== null && !tags.includes(activeTag.value)) activeTag.value = null
+})
+
+const PLAN_TAB_BY_ACTION: Record<BacklogCardAction, PlanTab> = { triar: 'pedir', revisar: 'pedir', vincular: 'vincular' }
+
+function onCardAction(itemId: string, action: BacklogCardAction): void {
+  if (backlog.openId !== null) return
+  itemPlan.openDialog(itemId, PLAN_TAB_BY_ACTION[action])
+}
+
+function onOpenCard(itemId: string): void {
+  itemPlan.closeDialog()
+  backlog.open(itemId)
+}
 
 const columns = computed(() =>
   COLUMN_META.map((column) => ({
@@ -104,14 +136,20 @@ const summary = computed(() => {
   ].join(' · ')
 })
 
-function tagStyle(tag: keyof typeof TAG_LABEL) {
-  const token = colorVar(TAG_COLOR[tag])
-  return { color: token, backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)` }
+function tagStyle(tag: string, active: boolean) {
+  const token = colorVar(tagColor(tag))
+  const percent = active ? TAG_TINT_ACTIVE_PERCENT : TAG_TINT_PERCENT
+  return {
+    color: token,
+    backgroundColor: `color-mix(in srgb, ${token} ${percent}%, transparent)`,
+    border: active ? `1px solid ${token}` : '1px solid transparent',
+  }
 }
 
 watch(
   () => projectsStore.selected?.id,
   (projectId) => {
+    activeTag.value = null
     if (projectId === undefined) {
       backlog.clear()
       return
@@ -154,18 +192,17 @@ watch(
       <button type="button" :class="MINE_CLASSES" aria-pressed="false" disabled aria-disabled="true">
         {{ MINE_LABEL }}
       </button>
-      <div role="group" aria-label="Etiquetas" class="flex gap-1.5">
+      <div v-if="availableTags.length" role="group" aria-label="Etiquetas" class="flex flex-wrap gap-1.5">
         <button
-          v-for="tag in DISPLAYED_TAGS"
+          v-for="tag in availableTags"
           :key="tag"
           type="button"
           :class="TAG_FILTER_CLASSES"
-          :style="tagStyle(tag)"
-          aria-pressed="false"
-          disabled
-          aria-disabled="true"
+          :style="tagStyle(tag, activeTag === tag)"
+          :aria-pressed="activeTag === tag"
+          @click="activeTag = activeTag === tag ? null : tag"
         >
-          {{ TAG_LABEL[tag] }}
+          {{ tagLabel(tag) }}
         </button>
       </div>
       <span class="ml-auto text-caption text-muted">{{ summary }}</span>
@@ -189,8 +226,10 @@ watch(
             :item="item"
             :column="column.name"
             :state="itemPlan.stateFor(item)"
+            :plan-line="itemPlan.lineFor(item)"
             :density="density"
-            @open="backlog.open(item.id)"
+            @open="onOpenCard(item.id)"
+            @action="onCardAction(item.id, $event)"
           />
           <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
           <div v-else-if="column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</div>
@@ -199,5 +238,6 @@ watch(
     </div>
 
     <BacklogItemModal />
+    <PlanDialog />
   </section>
 </template>

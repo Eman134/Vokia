@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
 import { sendRequest } from '../team/teamApi'
 import { useProjects } from '../projects/useProjects'
-import { useTeam } from '../team/useTeam'
+import { agentName, useTeam } from '../team/useTeam'
 import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
 import type { BacklogItem, BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
@@ -22,6 +22,9 @@ export const PLAN_STEPS = [
 export const NO_PLAN_TEXT = 'Este item ainda não tem plano. Os agentes só começam depois que ele tiver um.'
 
 const ACCEPTED_PLAN_META = 'proposta aceita'
+const PLAN_LINE_SEPARATOR = ' · '
+const PLAN_LINE_PROPOSED = 'proposta'
+const PLAN_LINE_GENERATING = 'escrevendo o plano…'
 
 export interface LinkedPlan {
   id: string
@@ -59,6 +62,8 @@ export function planPrompt(item: BacklogItem, depth: PlanDepth): string {
 export const useItemPlan = defineStore('itemPlan', () => {
   const states = ref<Record<string, ItemPlan>>({})
   const plans = ref<LinkedPlan[]>([])
+  const dialogItemId = ref<string | null>(null)
+  const preferredTab = ref<PlanTab | null>(null)
   const team = useTeam()
   const backlog = useBacklog()
   const projects = useProjects()
@@ -73,6 +78,32 @@ export const useItemPlan = defineStore('itemPlan', () => {
 
   function stateFor(item: BacklogItem): BacklogState {
     return states.value[item.id]?.state ?? item.state
+  }
+
+  function lineFor(item: BacklogItem): string | undefined {
+    const state = stateFor(item)
+    const saved = states.value[item.id]
+    if (state === 'vazio') return undefined
+    if (state === 'vinculado' && saved?.plan) return [saved.plan.name, saved.plan.meta].join(PLAN_LINE_SEPARATOR)
+    if (state === 'proposto' && saved?.agent) return [agentName(saved.agent), PLAN_LINE_PROPOSED].join(PLAN_LINE_SEPARATOR)
+    if (state === 'gerando' && saved?.agent) return [agentName(saved.agent), PLAN_LINE_GENERATING].join(PLAN_LINE_SEPARATOR)
+    return item.plan
+  }
+
+  function openDialog(itemId: string, tab: PlanTab): void {
+    preferredTab.value = tab
+    dialogItemId.value = itemId
+  }
+
+  function closeDialog(): void {
+    dialogItemId.value = null
+    preferredTab.value = null
+  }
+
+  function takePreferredTab(): PlanTab {
+    const tab = preferredTab.value ?? DEFAULT_PLAN_TAB
+    preferredTab.value = null
+    return tab
   }
 
   function persist(itemId: string): void {
@@ -209,5 +240,23 @@ export const useItemPlan = defineStore('itemPlan', () => {
     },
   )
 
-  return { states, plans, planOf, stateOf, stateFor, isAgentAwaiting, request, cancel, accept, discard, link, unlink }
+  return {
+    states,
+    plans,
+    dialogItemId,
+    planOf,
+    stateOf,
+    stateFor,
+    lineFor,
+    openDialog,
+    closeDialog,
+    takePreferredTab,
+    isAgentAwaiting,
+    request,
+    cancel,
+    accept,
+    discard,
+    link,
+    unlink,
+  }
 })

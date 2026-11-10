@@ -9,7 +9,8 @@ import {
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
-import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem, type BacklogTag } from './backlogTypes'
+import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem } from './backlogTypes'
+import { normalizeTag } from './tags'
 
 interface ItemQueue {
   tail: Promise<void>
@@ -163,10 +164,19 @@ export const useBacklog = defineStore('backlog', () => {
     addActivity(id, note)
   }
 
-  function toggleTag(id: string, tag: BacklogTag): void {
+  function addTags(id: string, raws: string[]): void {
     const item = editable(id)
     if (!item) return
-    item.tags = item.tags.includes(tag) ? item.tags.filter((current) => current !== tag) : [...item.tags, tag]
+    const fresh = [...new Set(raws.map(normalizeTag).filter((tag): tag is string => tag !== null && !item.tags.includes(tag)))]
+    if (fresh.length === 0) return
+    item.tags = [...item.tags, ...fresh]
+    saveItem(id)
+  }
+
+  function removeTag(id: string, tag: string): void {
+    const item = editable(id)
+    if (!item || !item.tags.includes(tag)) return
+    item.tags = item.tags.filter((current) => current !== tag)
     saveItem(id)
   }
 
@@ -197,7 +207,8 @@ export const useBacklog = defineStore('backlog', () => {
     clear,
     load,
     moveTo,
-    toggleTag,
+    addTags,
+    removeTag,
     addActivity,
     setRunColumn,
     answer,

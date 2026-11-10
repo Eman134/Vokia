@@ -4,6 +4,7 @@ import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import {
   ACTION_ID,
+  ACTION_TITLE,
   type ActionLabel,
   colorVar,
   COLUMN_CHIP,
@@ -12,15 +13,13 @@ import {
   STATE_ACTION,
   STATE_BADGE,
   STATE_CHIP,
-  TAG_COLOR,
-  TAG_LABEL,
-  TAG_TEXT_COLOR,
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
+import { tagColor, tagLabel, tagTextColor } from './tags'
 import { YOU_INITIAL } from '../team/portraitArt'
 import { DEFAULT_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
 
-const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity }>(), {
+const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity; planLine?: string }>(), {
   density: 'normal',
 })
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
@@ -63,12 +62,12 @@ const percent = computed(() => {
 
 const authorInitial = computed(() => (props.item.who === VOCE ? YOU_INITIAL : props.item.who.charAt(0).toUpperCase()))
 
-const showPlan = computed(() => !isCompact.value && props.state !== 'vazio' && Boolean(props.item.plan))
+const showPlan = computed(() => !isCompact.value && Boolean(props.planLine))
 
 function tagPillStyle(tag: BacklogTag) {
-  const token = colorVar(TAG_COLOR[tag])
+  const token = colorVar(tagColor(tag))
   return {
-    color: colorVar(TAG_TEXT_COLOR[tag] ?? TAG_COLOR[tag]),
+    color: colorVar(tagTextColor(tag)),
     backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)`,
   }
 }
@@ -85,7 +84,28 @@ function tagPillStyle(tag: BacklogTag) {
       <span>{{ item.id }}</span>
       <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
-      <UiBadge v-if="isCompact" class="ml-auto" :status="chip.status" :label="chip.label" />
+      <ul v-if="!isCompact && item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1.5">
+        <li
+          v-for="tag in item.tags"
+          :key="tag"
+          class="inline-flex h-5.5 items-center rounded-chip px-2 text-meta font-medium whitespace-nowrap"
+          :style="tagPillStyle(tag)"
+        >
+          {{ tagLabel(tag) }}
+        </li>
+      </ul>
+      <div v-if="isCompact" class="ml-auto flex items-center gap-1.5">
+        <UiBadge :status="chip.status" :label="chip.label" />
+        <ul v-if="item.tags.length" class="flex items-center gap-1.5">
+          <li
+            v-for="tag in item.tags"
+            :key="tag"
+            class="size-2 rounded-full"
+            :style="{ backgroundColor: colorVar(tagColor(tag)) }"
+            :title="tagLabel(tag)"
+          />
+        </ul>
+      </div>
     </header>
 
     <p v-if="item.parent && !isCompact" class="text-caption text-muted">↳ {{ item.parent }}</p>
@@ -96,28 +116,36 @@ function tagPillStyle(tag: BacklogTag) {
       Erro ao ler este item: {{ item.error.reason }}
     </p>
 
-    <p v-if="!isCompact && item.description" class="text-caption text-muted">{{ item.description }}</p>
-    <p v-if="showPlan" class="wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ item.plan }}</p>
-
-    <ul v-if="isCompact" class="flex items-center gap-1.5">
-      <li
-        v-for="tag in item.tags"
-        :key="tag"
-        class="size-2 rounded-full"
-        :style="{ backgroundColor: colorVar(TAG_COLOR[tag]) }"
-        :title="TAG_LABEL[tag]"
-      />
-    </ul>
-    <ul v-else-if="item.tags.length" class="flex flex-wrap gap-1.5">
-      <li
-        v-for="tag in item.tags"
-        :key="tag"
-        class="inline-flex h-5.5 items-center rounded-chip px-2 text-meta font-medium whitespace-nowrap"
-        :style="tagPillStyle(tag)"
+    <div v-if="!isCompact && action" class="flex items-center gap-1">
+      <UiButton variant="quiet" size="sm" class="gap-1.5" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
+        <svg v-if="action.id === 'triar'" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+        </svg>
+        {{ action.label }}
+      </UiButton>
+      <UiButton
+        v-if="action.id === 'triar'"
+        variant="quiet"
+        size="sm"
+        :aria-label="ACTION_TITLE.vincular"
+        :title="ACTION_TITLE.vincular"
+        @click.stop
+        @press="emit('action', 'vincular')"
       >
-        {{ TAG_LABEL[tag] }}
-      </li>
-    </ul>
+        <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 014.5 9l1-1"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
+      </UiButton>
+    </div>
+
+    <p v-if="!isCompact && item.description" class="text-caption text-muted">{{ item.description }}</p>
+    <p v-if="showPlan" class="wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
 
     <div v-if="progress" class="flex flex-col gap-1.5">
       <p v-if="progress.showText" class="flex justify-between text-caption text-muted">
@@ -134,19 +162,14 @@ function tagPillStyle(tag: BacklogTag) {
       </div>
     </div>
 
-    <footer v-if="!isCompact || action" class="flex items-center gap-2 text-caption text-muted">
-      <template v-if="!isCompact">
-        <span
-          class="grid size-5 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-tiny font-semibold text-ink"
-        >
-          {{ authorInitial }}
-        </span>
-        <span>{{ item.by }}</span>
-      </template>
-      <UiButton v-if="action" class="ml-auto" variant="primary" size="sm" @click.stop @press="emit('action', action.id)">
-        {{ action.label }}
-      </UiButton>
-      <UiBadge v-if="!isCompact" :class="!action && 'ml-auto'" :status="chip.status" :label="chip.label" />
+    <footer v-if="!isCompact" class="flex items-center gap-2 text-caption text-muted">
+      <span
+        class="grid size-5 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-tiny font-semibold text-ink"
+      >
+        {{ authorInitial }}
+      </span>
+      <span>{{ item.by }}</span>
+      <UiBadge v-if="!isCompact" class="ml-auto" :status="chip.status" :label="chip.label" />
     </footer>
   </article>
 </template>

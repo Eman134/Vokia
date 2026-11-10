@@ -3,7 +3,8 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
-import { colorVar, STATE_BADGE, TAG_COLOR, TAG_LABEL, TAG_TEXT_COLOR } from './backlogLabels'
+import { colorVar, STATE_BADGE } from './backlogLabels'
+import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagColor, tagLabel, tagTextColor } from './tags'
 import {
   AUTO_COLUMNS_HINT,
   DEFAULT_COLUMN,
@@ -20,10 +21,10 @@ import PlanPanel from './PlanPanel.vue'
 import { useBacklog } from './useBacklog'
 import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
+import { trapFocus } from './dialogFocus'
 
 const TAG_TINT_PERCENT = 13
 const TRIAGE_PLAN_TEXT = 'Plano sai da triagem'
-const FOCUSABLE_SELECTOR = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
 
 const emit = defineEmits<{ replay: [] }>()
 
@@ -33,6 +34,7 @@ const runItem = useRunItem()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const addingTag = ref(false)
+const newTag = ref('')
 const expandedMicro = ref(new Set<string>())
 let previousFocus: HTMLElement | null = null
 
@@ -40,8 +42,10 @@ const item = computed(() => backlog.openItem)
 const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
 const moveTargets = computed(() => MOVABLE_COLUMNS.filter((target) => target !== column.value))
 const showAutoHint = computed(() => column.value === 'In progress' || column.value === 'In review')
-const unusedTags = computed(() =>
-  (Object.keys(TAG_LABEL) as BacklogTag[]).filter((tag) => !item.value?.tags.includes(tag)),
+const suggestedTags = computed(() =>
+  [...new Set([...SUGGESTED_TAGS, ...backlog.items.flatMap((current) => current.tags)])].filter(
+    (tag) => !item.value?.tags.includes(tag),
+  ),
 )
 const visibleMicro = computed(() => item.value?.micro?.filter((task) => isScriptValid(task.script)) ?? [])
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
@@ -60,17 +64,27 @@ const details = computed(() => {
 })
 
 function tagPillStyle(tag: BacklogTag) {
-  const token = colorVar(TAG_COLOR[tag])
+  const token = colorVar(tagColor(tag))
   return {
-    color: colorVar(TAG_TEXT_COLOR[tag] ?? TAG_COLOR[tag]),
+    color: colorVar(tagTextColor(tag)),
     backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)`,
   }
 }
 
 // O botão acionado sai do DOM com a ação; sem isso o foco cai no body e Esc/Tab deixam de valer.
-function changeTag(tag: BacklogTag): void {
+function addTag(raw: string): void {
   dialog.value?.focus()
-  backlog.toggleTag(item.value!.id, tag)
+  backlog.addTags(item.value!.id, [raw])
+}
+
+function removeTag(tag: BacklogTag): void {
+  dialog.value?.focus()
+  backlog.removeTag(item.value!.id, tag)
+}
+
+function submitNewTag(): void {
+  addTag(newTag.value)
+  newTag.value = ''
 }
 
 function moveTo(target: BacklogColumn): void {
@@ -88,24 +102,11 @@ function toggleMicro(id: string): void {
   expandedMicro.value = next
 }
 
-function trapFocus(event: KeyboardEvent): void {
-  const focusable = [...(dialog.value?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])]
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  if (!first || !last) return
-  if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
 watch(
   () => backlog.openId,
   async (id) => {
     addingTag.value = false
+    newTag.value = ''
     if (id === null) {
       previousFocus?.focus()
       previousFocus = null
@@ -135,7 +136,7 @@ watch(
       tabindex="-1"
       class="flex max-h-full w-180 max-w-full flex-col gap-5 overflow-y-auto rounded-dialog border border-line bg-surface p-6 shadow-float"
       @keydown.esc.stop="backlog.close()"
-      @keydown.tab="trapFocus"
+      @keydown.tab="trapFocus($event, dialog)"
     >
       <header class="flex flex-col gap-2">
         <div class="flex items-center gap-2 text-caption text-muted">
@@ -153,20 +154,27 @@ watch(
           class="inline-flex h-5.5 items-center gap-1 rounded-chip px-2 text-meta font-medium whitespace-nowrap"
           :style="tagPillStyle(tag)"
         >
-          {{ TAG_LABEL[tag] }}
-          <button type="button" :aria-label="`Remover ${TAG_LABEL[tag]}`" @click="changeTag(tag)">×</button>
+          {{ tagLabel(tag) }}
+          <button type="button" :aria-label="`Remover ${tagLabel(tag)}`" @click="removeTag(tag)">×</button>
         </span>
         <UiChip kind="add" label="+ etiqueta" @press="addingTag = !addingTag" />
       </section>
       <div v-if="addingTag" class="flex flex-wrap items-center gap-1.5">
         <UiChip
-          v-for="tag in unusedTags"
+          v-for="tag in suggestedTags"
           :key="tag"
           kind="add"
-          :label="`+ ${TAG_LABEL[tag]}`"
-          @press="changeTag(tag)"
+          :label="`+ ${tagLabel(tag)}`"
+          @press="addTag(tag)"
         />
-        <span class="text-caption text-muted">ou digite uma nova</span>
+        <input
+          v-model="newTag"
+          :maxlength="TAG_MAX_LENGTH"
+          aria-label="Nova etiqueta"
+          placeholder="Nova etiqueta"
+          class="h-7 rounded-control-sm border border-line bg-surface px-2.5 text-label text-ink placeholder:text-faint"
+          @keydown.enter.prevent="submitNewTag"
+        />
       </div>
 
       <section v-if="item.description">

@@ -7,7 +7,6 @@ import { AGENTS, DEFAULT_RECIPIENT, useTeam } from '../team/useTeam'
 import type { BacklogItem } from './backlogTypes'
 import {
   DEFAULT_DEPTH,
-  DEFAULT_PLAN_TAB,
   NO_PLAN_TEXT,
   PLAN_STEPS,
   useItemPlan,
@@ -25,7 +24,7 @@ const RECOMMENDED_LABEL = ' (recomendada)'
 
 const itemPlan = useItemPlan()
 const team = useTeam()
-const tab = ref<PlanTab>(DEFAULT_PLAN_TAB)
+const tab = ref<PlanTab>(itemPlan.takePreferredTab())
 const agent = ref<Agent>(DEFAULT_RECIPIENT)
 const depth = ref<PlanDepth>(DEFAULT_DEPTH)
 const chosenPlanId = ref<string | null>(null)

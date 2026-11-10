@@ -2,11 +2,11 @@ export type BacklogState = 'vazio' | 'triagem' | 'gerando' | 'proposto' | 'vincu
 
 export type KanbanStage = 'ready' | 'progress' | 'review' | 'done'
 
-export type BacklogTag = 'bug' | 'urgente' | 'ui' | 'backend' | 'ideia' | 'divida' | 'cliente'
+export type BacklogTag = string
 
 export type BacklogCardDensity = 'normal' | 'compacta'
 
-export type BacklogCardAction = 'triar' | 'revisar'
+export type BacklogCardAction = 'triar' | 'revisar' | 'vincular'
 
 export type BacklogColumn = 'Backlog' | 'Ready' | 'In progress' | 'In review' | 'Done'
 
