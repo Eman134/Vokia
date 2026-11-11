@@ -17,7 +17,7 @@ import {
 } from './backlogLabels'
 import { tagColor, tagLabel, tagTextColor } from './tags'
 import { YOU_INITIAL } from '../team/portraitArt'
-import { DEFAULT_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
+import { DEFAULT_COLUMN, READY_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
 
 const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity; planLine?: string }>(), {
   density: 'normal',
@@ -37,7 +37,9 @@ const chip = computed(
 )
 
 const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
-  if (props.item.error || props.column !== DEFAULT_COLUMN) return undefined
+  if (props.item.error) return undefined
+  if (props.column === READY_COLUMN && props.state === 'vinculado') return { label: 'Iniciar', id: 'iniciar' }
+  if (props.column !== DEFAULT_COLUMN) return undefined
   const label = STATE_ACTION[props.state]
   return label && { label, id: ACTION_ID[label] }
 })

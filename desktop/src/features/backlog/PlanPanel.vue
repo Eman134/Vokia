@@ -5,13 +5,14 @@ import UiChip from '../../ui/UiChip.vue'
 import type { Agent } from '../team/events'
 import { AGENTS, DEFAULT_RECIPIENT, useTeam } from '../team/useTeam'
 import { useDecisions } from '../decisions/useDecisions'
-import type { BacklogItem } from './backlogTypes'
+import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogTypes'
 import { parseProposal } from './planProposal'
 import { tagLabel } from './tags'
 import {
   DEFAULT_DEPTH,
   NO_PLAN_TEXT,
   PLAN_STEPS,
+  REVIEWED_PLAN_META,
   useItemPlan,
   type PlanDepth,
   type PlanTab,
@@ -26,6 +27,7 @@ const DEPTH_OPTIONS: { id: PlanDepth; label: string }[] = [
 const RECOMMENDED_LABEL = ' (recomendada)'
 const PENDING_QUESTION_TEXT = 'Há uma pergunta esperando você no painel de Decisões.'
 const ADJUST_LABEL = 'O que ajustar'
+const UNREVIEWED_PLAN_HINT = 'Plano ainda não revisado; ele só vai para Ready depois da revisão.'
 
 const lotsLabel = (count: number, estimate: string): string => {
   const base = `propôs ${count} ${count === 1 ? 'lote' : 'lotes'}`
@@ -43,6 +45,7 @@ const adjusting = ref(false)
 const adjustText = ref('')
 
 const current = computed(() => itemPlan.planOf(props.item.id))
+const canUnlink = computed(() => UNLINKABLE_COLUMNS.includes(props.item.column ?? DEFAULT_COLUMN))
 const agentName = computed(() => AGENTS.find((profile) => profile.id === (current.value.agent ?? agent.value))?.name ?? '')
 const requestBlocked = computed(() => team.checking || team.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value))
 const parsed = computed(() => parseProposal(current.value.proposal ?? ''))
@@ -201,7 +204,8 @@ function sendAdjust(): void {
     <template v-else>
       <p class="text-control font-medium text-ink">{{ current.plan?.name }}</p>
       <p class="text-caption text-muted">{{ current.plan?.meta }}</p>
-      <UiButton class="self-start" variant="quiet" size="sm" @press="unlink">Desvincular</UiButton>
+      <p v-if="current.plan?.meta !== REVIEWED_PLAN_META && (props.item.column ?? DEFAULT_COLUMN) === DEFAULT_COLUMN" class="text-caption text-muted">{{ UNREVIEWED_PLAN_HINT }}</p>
+      <UiButton v-if="canUnlink" class="self-start" variant="quiet" size="sm" @press="unlink">Desvincular</UiButton>
     </template>
   </div>
 </template>

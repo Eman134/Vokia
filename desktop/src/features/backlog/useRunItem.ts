@@ -152,11 +152,11 @@ export const useRunItem = defineStore('runItem', () => {
     },
   )
 
-  async function run(itemId: string): Promise<void> {
+  async function run(itemId: string, delegateTo?: Agent): Promise<void> {
     const item = findItem(itemId)
     const projectId = backlog.loadedProjectId
     if (item === undefined || projectId === null || !canRun(itemId)) return
-    const agent = itemPlan.planOf(itemId).agent ?? DEFAULT_RECIPIENT
+    const agent = delegateTo ?? itemPlan.planOf(itemId).agent ?? DEFAULT_RECIPIENT
     running.value[runKey(projectId, itemId)] = true
     backlog.setRunColumn(itemId, 'In progress', SENT_NOTE(agentName(agent)))
     const accepted = await team.send(buildRunPrompt(item, planTextOf(itemId)), agent, {

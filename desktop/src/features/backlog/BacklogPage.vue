@@ -40,6 +40,7 @@ import {
 } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { useItemPlan, type PlanTab } from './useItemPlan'
+import { useRunItem } from './useRunItem'
 
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
 const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
@@ -65,6 +66,7 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
+const runItem = useRunItem()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 const density = ref<BacklogCardDensity>('normal')
@@ -101,10 +103,14 @@ watch(availableTags, (tags) => {
   if (activeTag.value !== null && !tags.includes(activeTag.value)) activeTag.value = null
 })
 
-const PLAN_TAB_BY_ACTION: Record<BacklogCardAction, PlanTab> = { triar: 'pedir', revisar: 'pedir', vincular: 'vincular' }
+const PLAN_TAB_BY_ACTION: Record<Exclude<BacklogCardAction, 'iniciar'>, PlanTab> = { triar: 'pedir', revisar: 'pedir', vincular: 'vincular' }
 
 function onCardAction(itemId: string, action: BacklogCardAction): void {
   if (backlog.openId !== null) return
+  if (action === 'iniciar') {
+    void runItem.run(itemId)
+    return
+  }
   itemPlan.openDialog(itemId, PLAN_TAB_BY_ACTION[action])
 }
 

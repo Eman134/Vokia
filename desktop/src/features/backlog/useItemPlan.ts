@@ -6,7 +6,7 @@ import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
 import { agentName, useTeam } from '../team/useTeam'
 import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
-import { DECISION_QUESTION_PREFIX, type BacklogItem, type BacklogState } from './backlogTypes'
+import { DECISION_QUESTION_PREFIX, DEFAULT_COLUMN, READY_COLUMN, type BacklogItem, type BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal } from './planProposal'
 
@@ -23,7 +23,7 @@ export const PLAN_STEPS = [
 ] as const
 export const NO_PLAN_TEXT = 'Este item ainda não tem plano. Os agentes só começam depois que ele tiver um.'
 
-const ACCEPTED_PLAN_META = 'proposta aceita'
+export const REVIEWED_PLAN_META = 'proposta aceita'
 const PLAN_LINE_SEPARATOR = ' · '
 const PLAN_LINE_PROPOSED = 'proposta'
 const PLAN_LINE_GENERATING = 'escrevendo o plano…'
@@ -212,10 +212,14 @@ export const useItemPlan = defineStore('itemPlan', () => {
     clearPlan(itemId)
   }
 
+  function promoteToReady(itemId: string): void {
+    if (backlog.items.find((current) => current.id === itemId)?.column === DEFAULT_COLUMN) backlog.moveTo(itemId, READY_COLUMN)
+  }
+
   function accept(itemId: string): void {
     const item = backlog.items.find((current) => current.id === itemId)
     if (!item || states.value[itemId]?.state !== 'proposto') return
-    const plan: LinkedPlan = { id: itemId, name: item.title, meta: ACCEPTED_PLAN_META }
+    const plan: LinkedPlan = { id: itemId, name: item.title, meta: REVIEWED_PLAN_META }
     plans.value = [...plans.value.filter((current) => current.id !== plan.id), plan]
     states.value[itemId] = {
       state: 'vinculado',
@@ -225,6 +229,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     }
     persist(itemId)
     backlog.addTags(itemId, parseProposal(states.value[itemId]?.proposal ?? '').tags)
+    promoteToReady(itemId)
   }
 
   function link(itemId: string, planId: string): void {
@@ -232,10 +237,17 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (!plan) return
     states.value[itemId] = { state: 'vinculado', plan, agent: states.value[planId]?.agent }
     persist(itemId)
+    if (plan.meta === REVIEWED_PLAN_META) promoteToReady(itemId)
   }
 
   function unlink(itemId: string): void {
+    const column = backlog.items.find((current) => current.id === itemId)?.column
     clearPlan(itemId)
+    if (column === READY_COLUMN) backlog.moveTo(itemId, DEFAULT_COLUMN)
+  }
+
+  function isReviewed(itemId: string): boolean {
+    return states.value[itemId]?.state === 'vinculado' && states.value[itemId]?.plan?.meta === REVIEWED_PLAN_META
   }
 
   function receive(entry: (typeof team.feed)[number]): void {
@@ -296,6 +308,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     closeDialog,
     takePreferredTab,
     isAgentAwaiting,
+    isReviewed,
     request,
     hasPendingQuestion,
     promoteInterim,

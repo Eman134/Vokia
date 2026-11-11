@@ -9,6 +9,7 @@ import {
   AUTO_COLUMNS_HINT,
   CONVERSATIONS_LABEL,
   DEFAULT_COLUMN,
+  DELEGATE_LABEL,
   MAIN_ACTION,
   MICRO_EXPLANATION,
   MICRO_SUMMARY,
@@ -19,6 +20,8 @@ import {
   OTHER_PLACEHOLDER,
   PLAN_HINT,
   QUESTIONS_TITLE,
+  READY_BLOCKED_HINT,
+  READY_COLUMN,
   type BacklogColumn,
   type BacklogTag,
   type TriageQuestion,
@@ -31,7 +34,7 @@ import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 import { trapFocus } from './dialogFocus'
 import AgentPortrait from '../team/AgentPortrait.vue'
-import { agentName, DEFAULT_RECIPIENT } from '../team/useTeam'
+import { AGENTS, agentName, DEFAULT_RECIPIENT } from '../team/useTeam'
 import { useNavigation } from '../../shell/useNavigation'
 
 const TAG_TINT_PERCENT = 13
@@ -56,6 +59,10 @@ let previousFocus: HTMLElement | null = null
 const item = computed(() => backlog.openItem)
 const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
 const moveTargets = computed(() => MOVABLE_COLUMNS.filter((target) => target !== column.value))
+const readyBlocked = computed(() => !item.value || !itemPlan.isReviewed(item.value.id))
+const delegateTargets = computed(() =>
+  AGENTS.filter((profile) => profile.id !== (itemPlan.planOf(item.value?.id ?? '').agent ?? DEFAULT_RECIPIENT)),
+)
 const showAutoHint = computed(() => column.value === 'In progress' || column.value === 'In review')
 const suggestedTags = computed(() =>
   [...new Set([...SUGGESTED_TAGS, ...backlog.items.flatMap((current) => current.tags)])].filter(
@@ -104,6 +111,7 @@ function submitNewTag(): void {
 }
 
 function moveTo(target: BacklogColumn): void {
+  if (target === READY_COLUMN && readyBlocked.value) return
   dialog.value?.focus()
   backlog.moveTo(item.value!.id, target)
 }
@@ -349,12 +357,23 @@ watch(
             :key="target"
             kind="add"
             :label="target"
-            :disabled="runItem.isRunning(item.id)"
+            :disabled="runItem.isRunning(item.id) || (target === READY_COLUMN && readyBlocked)"
             @press="moveTo(target)"
           />
           <span v-if="showAutoHint" class="text-caption text-muted">{{ AUTO_COLUMNS_HINT }}</span>
+          <span v-if="readyBlocked && moveTargets.includes(READY_COLUMN)" class="text-caption text-muted">{{ READY_BLOCKED_HINT }}</span>
         </div>
         <div class="ml-auto flex gap-2">
+          <template v-if="planState === 'vinculado' && column === READY_COLUMN">
+            <span class="self-center text-label text-muted">{{ DELEGATE_LABEL }}</span>
+            <UiChip
+              v-for="profile in delegateTargets"
+              :key="profile.id"
+              :label="profile.name"
+              :disabled="!runItem.canRun(item.id)"
+              @press="void runItem.run(item.id, profile.id)"
+            />
+          </template>
           <UiButton variant="quiet" size="lg" @press="openConversations">{{ CONVERSATIONS_LABEL }}</UiButton>
           <UiButton
             variant="primary"

@@ -6,7 +6,7 @@ export type BacklogTag = string
 
 export type BacklogCardDensity = 'normal' | 'compacta'
 
-export type BacklogCardAction = 'triar' | 'revisar' | 'vincular'
+export type BacklogCardAction = 'triar' | 'revisar' | 'vincular' | 'iniciar'
 
 export type BacklogColumn = 'Backlog' | 'Ready' | 'In progress' | 'In review' | 'Done'
 
@@ -58,6 +58,10 @@ export interface BacklogLink {
 export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'Done']
 export const DEFAULT_COLUMN: BacklogColumn = 'Backlog'
 export const AUTO_COLUMNS_HINT = 'In progress e In review andam sozinhos'
+export const READY_COLUMN: BacklogColumn = 'Ready'
+export const READY_BLOCKED_HINT = 'Ready só recebe item com plano revisado'
+export const DELEGATE_LABEL = 'Delegar a'
+export const UNLINKABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready']
 export const OTHER_OPTION = 'Outro…'
 export const QUESTIONS_TITLE = (leader: string): string => `Perguntas de ${leader} · triagem`
 export const OTHER_PLACEHOLDER = (leader: string): string => `Escreva sua resposta para a ${leader}`
@@ -72,7 +76,7 @@ export const MAIN_ACTION: Record<BacklogState, string> = {
   vazio: 'Mandar para a triagem',
   gerando: 'Ver o plano em andamento',
   proposto: 'Ver a proposta',
-  vinculado: 'Rodar',
+  vinculado: 'Iniciar',
 }
 export const MODAL_STATE_CHIP: Record<BacklogState, string> = {
   triagem: 'Triagem',
