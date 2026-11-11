@@ -1,6 +1,6 @@
 export const VOKIA_EVENT = 'vokia://event'
 
-export type Agent = 'iara' | 'davi'
+export type Agent = string
 
 export type Speaker = 'user' | Agent
 

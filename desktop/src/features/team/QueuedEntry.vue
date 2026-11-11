@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AGENTS, DEFAULT_RECIPIENT, useTeam, type QueuedRequest } from './useTeam'
+import { agentName, DEFAULT_RECIPIENT, useTeam, type QueuedRequest } from './useTeam'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
 import UiButton from '../../ui/UiButton.vue'
@@ -9,10 +9,6 @@ const USER_INITIAL = 'V'
 defineProps<{ request: QueuedRequest }>()
 
 const team = useTeam()
-
-function recipientName(id: string): string {
-  return AGENTS.find((agent) => agent.id === id)?.name ?? id
-}
 </script>
 
 <template>
@@ -20,7 +16,7 @@ function recipientName(id: string): string {
     <div class="flex max-w-3/4 flex-col items-end gap-1">
       <span class="flex items-center gap-2 text-caption text-muted">
         <span class="rounded-control bg-surface-2 px-1.5 font-semibold">{{ QUEUED_TAG }}</span>
-        <span v-if="request.to !== DEFAULT_RECIPIENT">Para {{ recipientName(request.to) }}</span>
+        <span v-if="request.to !== DEFAULT_RECIPIENT">Para {{ agentName(request.to) }}</span>
       </span>
       <QueueItemEditor v-if="request.editing" :request="request" class="w-full" />
       <template v-else>

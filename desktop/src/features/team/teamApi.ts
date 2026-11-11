@@ -11,10 +11,42 @@ const ANSWER_DECISION_COMMAND = 'answer_decision'
 const CHECK_CONNECTION_COMMAND = 'check_connection'
 const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
 const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
+const LIST_AGENTS_COMMAND = 'list_agents'
+const CREATE_AGENT_COMMAND = 'create_agent'
 
 export interface AgentPause {
   projectId: number
   agent: Agent
+}
+
+export interface AgentProfile {
+  id: Agent
+  name: string
+  role: string
+  avatar: string
+  cli: string
+  model: string
+  builtin: boolean
+}
+
+export interface CliPreset {
+  id: string
+  label: string
+  models: string[]
+  defaultModel: string
+}
+
+export interface TeamListing {
+  agents: AgentProfile[]
+  presets: CliPreset[]
+}
+
+export interface AgentDraft {
+  name: string
+  role: string
+  avatar: string
+  cli: string
+  model: string
 }
 
 export function fetchCliProblem(): Promise<CliProblem | null> {
@@ -47,6 +79,14 @@ export function listAgentPauses(): Promise<AgentPause[]> {
 
 export function setAgentPaused(projectId: number, agent: Agent, paused: boolean): Promise<void> {
   return invoke<void>(SET_AGENT_PAUSED_COMMAND, { projectId, agent, paused })
+}
+
+export function listAgents(): Promise<TeamListing> {
+  return invoke<TeamListing>(LIST_AGENTS_COMMAND)
+}
+
+export function createAgent(draft: AgentDraft): Promise<AgentProfile> {
+  return invoke<AgentProfile>(CREATE_AGENT_COMMAND, { draft })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

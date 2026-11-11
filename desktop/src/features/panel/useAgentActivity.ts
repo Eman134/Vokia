@@ -61,9 +61,9 @@ export function useAgentActivity(agent: Agent) {
     if (decisions.cards.some((card) => card.agent === agent)) {
       return 'precisa de você'
     }
-    return team.states[agent] === 'idle' ? 'livre' : 'trabalhando'
+    return team.stateOf(agent) === 'idle' ? 'livre' : 'trabalhando'
   })
-  const step = computed(() => (status.value === 'pausado' ? PAUSED_STEP : STATE_LABELS[team.states[agent]]))
+  const step = computed(() => (status.value === 'pausado' ? PAUSED_STEP : STATE_LABELS[team.stateOf(agent)]))
 
   return { task, since, recent, queue, doneToday, status, step }
 }

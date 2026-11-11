@@ -3,7 +3,8 @@ import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import type { Agent } from '../team/events'
-import { AGENTS, DEFAULT_RECIPIENT, useTeam } from '../team/useTeam'
+import { useRoster } from '../team/useRoster'
+import { DEFAULT_RECIPIENT, useTeam } from '../team/useTeam'
 import { useDecisions } from '../decisions/useDecisions'
 import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogTypes'
 import { parseProposal } from './planProposal'
@@ -36,6 +37,7 @@ const lotsLabel = (count: number, estimate: string): string => {
 
 const itemPlan = useItemPlan()
 const team = useTeam()
+const roster = useRoster()
 const decisions = useDecisions()
 const tab = ref<PlanTab>(itemPlan.takePreferredTab())
 const agent = ref<Agent>(DEFAULT_RECIPIENT)
@@ -46,7 +48,7 @@ const adjustText = ref('')
 
 const current = computed(() => itemPlan.planOf(props.item.id))
 const canUnlink = computed(() => UNLINKABLE_COLUMNS.includes(props.item.column ?? DEFAULT_COLUMN))
-const agentName = computed(() => AGENTS.find((profile) => profile.id === (current.value.agent ?? agent.value))?.name ?? '')
+const agentName = computed(() => roster.profileOf(current.value.agent ?? agent.value)?.name ?? '')
 const requestBlocked = computed(() => team.checking || team.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value))
 const parsed = computed(() => parseProposal(current.value.proposal ?? ''))
 const pendingQuestion = computed(() => itemPlan.hasPendingQuestion(props.item.id))
@@ -111,7 +113,7 @@ function sendAdjust(): void {
           <p class="text-label font-semibold text-ink">Quem planeja</p>
           <div class="flex gap-1.5">
             <UiChip
-              v-for="profile in AGENTS"
+              v-for="profile in roster.agents"
               :key="profile.id"
               :label="profile.id === DEFAULT_RECIPIENT ? `${profile.name}${RECOMMENDED_LABEL}` : profile.name"
               :selected="agent === profile.id"

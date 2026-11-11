@@ -2,16 +2,18 @@
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
-import { AGENTS, useTeam } from './useTeam'
+import { useRoster } from './useRoster'
+import { useTeam } from './useTeam'
 import { presenceOf } from './agentStateStyle'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 
 const team = useTeam()
+const roster = useRoster()
 const control = useAgentControl()
 
 function presence(agent: Agent) {
-  return presenceOf(team.states[agent], control.isPaused(agent))
+  return presenceOf(team.stateOf(agent), control.isPaused(agent))
 }
 </script>
 
@@ -19,7 +21,7 @@ function presence(agent: Agent) {
   <aside class="w-60 shrink-0 border-r border-line bg-surface p-4">
     <h2 class="mb-3 text-small font-semibold text-muted">Agentes</h2>
     <ul class="flex flex-col gap-2">
-      <li v-for="agent in AGENTS" :key="agent.id">
+      <li v-for="agent in roster.agents" :key="agent.id">
         <button
           type="button"
           class="flex w-full cursor-pointer items-center gap-3 rounded-card border border-line p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"

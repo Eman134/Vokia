@@ -1,5 +1,5 @@
 import { PAUSE_THRESHOLD } from '../usage/usagePlans'
-import type { AgentProfile } from './useTeam'
+import type { AgentProfile } from './teamApi'
 
 export type TeamStatus = 'paused' | 'error' | 'needs-you' | 'working' | 'done' | 'rest'
 

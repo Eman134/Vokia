@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import { AGENTS, DEFAULT_RECIPIENT, useTeam, type AgentProfile } from './useTeam'
+import { DEFAULT_RECIPIENT, useTeam } from './useTeam'
+import { normalizeName, useRoster } from './useRoster'
+import type { AgentProfile } from './teamApi'
 import { useTeamStatus } from './useTeamStatus'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
 import { placeholderFor, QUEUE_SUFFIX } from './composerPlaceholder'
@@ -81,6 +83,7 @@ const emit = defineEmits<{
 }>()
 
 const team = useTeam()
+const roster = useRoster()
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
 const requestNotices = useRequestNotices()
@@ -134,8 +137,8 @@ const mentionMatches = computed<AgentProfile[]>(() => {
   if (query === null) {
     return []
   }
-  const prefix = query.toLowerCase()
-  return AGENTS.filter((agent) => agent.name.toLowerCase().startsWith(prefix))
+  const prefix = normalizeName(query)
+  return roster.agents.filter((agent) => normalizeName(agent.name).startsWith(prefix))
 })
 const commandMatches = computed<SlashCommand[]>(() => {
   const match = commandMatch.value
@@ -182,7 +185,7 @@ const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
 const segments = computed(() => mentionSegments(draft.value, spans.value))
 const queueHint = computed(() => {
   const target = recipient.value
-  if (target === null || team.states[target] === 'idle') {
+  if (target === null || team.stateOf(target) === 'idle') {
     return null
   }
   const onlyMentions = segments.value.every((segment) => segment.agent !== null || segment.text.trim() === '')
@@ -238,7 +241,7 @@ watch(
   () => team.pendingMention,
   () => {
     const requestedId = team.takePendingMention()
-    const requested = AGENTS.find((agent) => agent.id === requestedId)
+    const requested = roster.agents.find((agent) => agent.id === requestedId)
     if (requested !== undefined) {
       insertAtCaret(requested)
     }
@@ -258,7 +261,7 @@ function dashClass(agent: Agent): string {
   if (team.permissions.some((permission) => permission.agent === agent)) {
     return 'bg-danger motion-safe:animate-pulse'
   }
-  return team.states[agent] === 'waiting' ? 'bg-warn' : 'bg-ok'
+  return team.stateOf(agent) === 'waiting' ? 'bg-warn' : 'bg-ok'
 }
 
 function anchorLeft(): number {

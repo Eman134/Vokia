@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
@@ -7,7 +7,8 @@ import { useDecisions } from '../decisions/useDecisions'
 import { presenceOf } from '../team/agentStateStyle'
 import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import type { Agent } from '../team/events'
-import { AGENTS, useTeam } from '../team/useTeam'
+import { useRoster } from '../team/useRoster'
+import { useTeam } from '../team/useTeam'
 import {
   BADGE_BY_STATUS,
   DONE_TODAY_LABEL,
@@ -32,7 +33,8 @@ const team = useTeam()
 const decisions = useDecisions()
 const control = useAgentControl()
 const { task, since, recent, queue, doneToday, status, step } = useAgentActivity(props.agent)
-const profile = AGENTS.find((candidate) => candidate.id === props.agent)!
+const roster = useRoster()
+const profile = computed(() => roster.profileOf(props.agent))
 const message = ref('')
 
 function formatTime(time: number): string {
@@ -57,10 +59,10 @@ async function submit(): Promise<void> {
     <header class="flex flex-wrap items-center gap-2">
       <span
         class="size-1.75 rounded-full"
-        :class="presenceOf(team.states[agent], control.isPaused(agent)).dot"
+        :class="presenceOf(team.stateOf(agent), control.isPaused(agent)).dot"
         aria-hidden="true"
       />
-      <p class="text-label font-semibold text-ink">{{ profile.name }} · {{ profile.role }}</p>
+      <p class="text-label font-semibold text-ink">{{ profile?.name ?? props.agent }} · {{ profile?.role }}</p>
       <AgentProjectIcons :agent="agent" />
       <UiBadge :status="BADGE_BY_STATUS[status]" :label="status" data-testid="agent-now-status" />
       <span v-if="since !== null" class="text-caption text-muted">{{ elapsedLabel(since, Date.now()) }}</span>
@@ -100,7 +102,7 @@ async function submit(): Promise<void> {
       {{ DONE_TODAY_LABEL }} <span class="font-semibold text-ink" data-testid="agent-now-done">{{ doneToday }}</span>
     </p>
     <form @submit.prevent="submit">
-      <UiField v-model="message" :label="messageFieldLabel(profile.name)" />
+      <UiField v-model="message" :label="messageFieldLabel(profile?.name ?? props.agent)" />
     </form>
   </div>
 </template>

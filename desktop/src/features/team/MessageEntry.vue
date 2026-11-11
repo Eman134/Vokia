@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { AGENTS, DEFAULT_RECIPIENT, isBetweenAgents, type AgentProfile, type FeedEntry } from './useTeam'
+import { agentName, DEFAULT_RECIPIENT, isBetweenAgents, type FeedEntry } from './useTeam'
+import { useRoster } from './useRoster'
+import type { AgentProfile } from './teamApi'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
 import MarkdownText from './MarkdownText.vue'
 
 defineProps<{ entry: FeedEntry }>()
 
-const SPEAKER_NAMES: Record<Speaker, string> = {
-  user: 'Você',
-  iara: 'Iara',
-  davi: 'Davi',
-}
+const roster = useRoster()
+
+const USER_NAME = 'Você'
 
 const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
   allowed: '✓ Aprovado:',
@@ -21,14 +21,18 @@ const USER_INITIAL = 'V'
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
+function speakerName(speaker: Speaker): string {
+  return speaker === 'user' ? USER_NAME : agentName(speaker)
+}
+
 function author(message: VokiaMessage): string {
   return isBetweenAgents(message)
-    ? `${SPEAKER_NAMES[message.from]} → ${SPEAKER_NAMES[message.to]}`
-    : SPEAKER_NAMES[message.from]
+    ? `${speakerName(message.from)} → ${speakerName(message.to)}`
+    : speakerName(message.from)
 }
 
 function profile(speaker: Speaker): AgentProfile | undefined {
-  return AGENTS.find((agent) => agent.id === speaker)
+  return roster.profileOf(speaker)
 }
 
 // Só o destinatário do agente é destacado como menção, como antes.
@@ -42,7 +46,7 @@ function highlightedNames(message: VokiaMessage): string[] {
   <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex items-start justify-end gap-2.5">
     <div class="flex max-w-3/4 flex-col items-end gap-1">
       <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-caption text-muted">
-        Para {{ SPEAKER_NAMES[entry.to] }}
+        Para {{ speakerName(entry.to) }}
       </span>
       <div class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
         <MarkdownText :text="entry.text" :mentions="highlightedNames(entry)" />

@@ -19,6 +19,7 @@ import {
   listenConnectionChanges,
   listenTeamEvents,
   sendRequest,
+  type AgentProfile,
   type RequestOutcome,
   type UnlistenFn,
 } from './teamApi'
@@ -27,20 +28,15 @@ import { useAgentControl } from '../panel/useAgentControl'
 import { clearConversation, fetchDbProblem, loadHistory } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
+import { normalizeName, useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
 import { ASK_PROJECT_NOTICE, NO_PROJECT_NOTICE, resolveProject } from './projectResolution'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 export const DEFAULT_RECIPIENT: Agent = 'iara'
 
-export interface AgentProfile {
-  id: Agent
-  name: string
-  role: string
-}
-
 export function agentName(id: Agent): string {
-  return AGENTS.find((agent) => agent.id === id)?.name ?? id
+  return useRoster().nameOf(id)
 }
 
 export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
@@ -60,11 +56,6 @@ export interface QueuedRequest {
 
 export type QueueMove = 'up' | 'down'
 
-export const AGENTS: readonly AgentProfile[] = [
-  { id: 'iara', name: 'Iara', role: 'Tech lead' },
-  { id: 'davi', name: 'Davi', role: 'Dev frontend' },
-]
-
 export type TimelineItem =
   | { type: 'entry'; start: number; entry: FeedEntry }
   | { type: 'group'; start: number; messages: VokiaMessage[] }
@@ -75,8 +66,9 @@ export function isBetweenAgents(message: VokiaMessage): boolean {
 
 export function findNamedAgent(text: string): Agent | null {
   let found: { agent: Agent; index: number } | null = null
-  for (const profile of AGENTS) {
-    const index = text.search(new RegExp(`(?<!\\p{L})${profile.name}(?!\\p{L})`, 'iu'))
+  const normalizedText = normalizeName(text)
+  for (const profile of useRoster().agents) {
+    const index = normalizedText.search(new RegExp(`(?<!\\p{L})${normalizeName(profile.name)}(?!\\p{L})`, 'u'))
     if (index !== -1 && (found === null || index < found.index)) {
       found = { agent: profile.id, index }
     }
@@ -89,7 +81,8 @@ export const useTeam = defineStore('team', () => {
   const cliProblem = ref<CliProblem | null>(null)
   const startupError = ref<string | null>(null)
   const feed = ref<FeedEntry[]>([])
-  const states = ref<Record<Agent, AgentState>>({ iara: 'idle', davi: 'idle' })
+  const roster = useRoster()
+  const states = ref<Record<Agent, AgentState>>({})
   const online = ref(true)
   const checking = ref(false)
   const pendingMention = ref<Agent | null>(null)
@@ -99,7 +92,7 @@ export const useTeam = defineStore('team', () => {
   const projects = useProjects()
   const pausesLoaded = ref(false)
   const activity = ref<Record<string, AgentState>>({})
-  const lastProject = ref<Record<Agent, number | null>>({ iara: null, davi: null })
+  const lastProject = ref<Record<Agent, number | null>>({})
   let offlineSignals = 0
   let unlisten: UnlistenFn | null = null
   let stopListeningConnection: (() => void) | null = null
@@ -111,10 +104,14 @@ export const useTeam = defineStore('team', () => {
   // Callbacks de pedidos com onSettled, por id, até o término (resposta do comando ou evento request-settled).
   const waiting = new Map<number, (result: RunResult) => void>()
 
+  function stateOf(agent: Agent): AgentState {
+    return states.value[agent] ?? 'idle'
+  }
+
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
-    AGENTS.find((agent) => states.value[agent.id] === 'thinking'),
+    roster.agents.find((agent) => stateOf(agent.id) === 'thinking'),
   )
-  const activeAgents = computed<AgentProfile[]>(() => AGENTS.filter((agent) => states.value[agent.id] !== 'idle'))
+  const activeAgents = computed<AgentProfile[]>(() => roster.agents.filter((agent) => stateOf(agent.id) !== 'idle'))
   const timeline = computed<TimelineItem[]>(() => {
     const items: TimelineItem[] = []
     feed.value.forEach((entry, index) => {
@@ -190,6 +187,7 @@ export const useTeam = defineStore('team', () => {
 
   async function start(): Promise<void> {
     try {
+      await roster.load()
       cliProblem.value = await fetchCliProblem()
       if (cliProblem.value === null) {
         await restoreHistory()
@@ -450,7 +448,7 @@ export const useTeam = defineStore('team', () => {
   function hasPendingWork(projectId: number): boolean {
     return (
       queue.value.some((request) => request.projectId === projectId) ||
-      AGENTS.some((agent) => projectsOf(agent.id).includes(projectId))
+      roster.agents.some((agent) => projectsOf(agent.id).includes(projectId))
     )
   }
 
@@ -549,6 +547,7 @@ export const useTeam = defineStore('team', () => {
     feed,
     timeline,
     states,
+    stateOf,
     activity,
     lastProject,
     projectsOf,

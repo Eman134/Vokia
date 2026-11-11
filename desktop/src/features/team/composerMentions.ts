@@ -1,4 +1,4 @@
-import { AGENTS } from './useTeam'
+import { normalizeName, useRoster } from './useRoster'
 import type { Agent } from './events'
 
 export const MENTION_TRIGGER = '@'
@@ -27,9 +27,10 @@ export function findTrigger(text: string, caret: number, trigger: string): Trigg
 }
 
 export function mentionSpans(text: string, confirmed: ReadonlySet<Agent>): MentionSpan[] {
-  return AGENTS.filter((agent) => confirmed.has(agent.id))
+  const normalizedText = normalizeName(text)
+  return useRoster().agents.filter((agent) => confirmed.has(agent.id))
     .flatMap((agent) =>
-      [...text.matchAll(new RegExp(`(?<=^|\\s)${MENTION_TRIGGER}${agent.name}(?!\\p{L})`, 'giu'))].map((match) => ({
+      [...normalizedText.matchAll(new RegExp(`(?<=^|\\s)${MENTION_TRIGGER}${normalizeName(agent.name)}(?!\\p{L})`, 'gu'))].map((match) => ({
         start: match.index,
         end: match.index + match[0].length,
         agent: agent.id,

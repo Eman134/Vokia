@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
-import type { AgentProfile } from './useTeam'
+import type { AgentProfile } from './teamApi'
 
 defineProps<{
   id: string

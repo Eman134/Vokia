@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref, type UnwrapNestedRefs } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
@@ -7,7 +7,9 @@ import { presenceOf } from '../team/agentStateStyle'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
-import { AGENTS, useTeam } from '../team/useTeam'
+import type { Agent } from '../team/events'
+import { useRoster } from '../team/useRoster'
+import { useTeam } from '../team/useTeam'
 import AgentNow from './AgentNow.vue'
 import {
   agentTabLabel,
@@ -22,9 +24,24 @@ import { useAgentActivity } from './useAgentActivity'
 import { useAgentControl } from './useAgentControl'
 
 const team = useTeam()
+const roster = useRoster()
 const control = useAgentControl()
 const tab = ref<NowTab>('todos')
-const rows = AGENTS.map((agent) => ({ agent, activity: reactive(useAgentActivity(agent.id)) }))
+type AgentActivity = UnwrapNestedRefs<ReturnType<typeof useAgentActivity>>
+
+const activities = new Map<Agent, AgentActivity>()
+
+function activityOf(agent: Agent): AgentActivity {
+  const cached = activities.get(agent)
+  if (cached !== undefined) {
+    return cached
+  }
+  const created = reactive(useAgentActivity(agent))
+  activities.set(agent, created)
+  return created
+}
+
+const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: activityOf(agent.id) })))
 </script>
 
 <template>
@@ -63,7 +80,7 @@ const rows = AGENTS.map((agent) => ({ agent, activity: reactive(useAgentActivity
           <span class="flex items-center gap-1.5 text-caption text-ink">
             <span
               class="size-1.75 rounded-full"
-              :class="presenceOf(team.states[row.agent.id], control.isPaused(row.agent.id)).dot"
+              :class="presenceOf(team.stateOf(row.agent.id), control.isPaused(row.agent.id)).dot"
             />
             {{ row.activity.step }}
           </span>

@@ -34,7 +34,8 @@ import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 import { trapFocus } from './dialogFocus'
 import AgentPortrait from '../team/AgentPortrait.vue'
-import { AGENTS, agentName, DEFAULT_RECIPIENT } from '../team/useTeam'
+import { useRoster } from '../team/useRoster'
+import { agentName, DEFAULT_RECIPIENT } from '../team/useTeam'
 import { useNavigation } from '../../shell/useNavigation'
 
 const TAG_TINT_PERCENT = 13
@@ -46,8 +47,9 @@ const backlog = useBacklog()
 const itemQuestions = useItemQuestions()
 const itemPlan = useItemPlan()
 const runItem = useRunItem()
+const roster = useRoster()
 const navigation = useNavigation()
-const leaderName = agentName(DEFAULT_RECIPIENT)
+const leaderName = computed(() => agentName(DEFAULT_RECIPIENT))
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const addingTag = ref(false)
@@ -61,7 +63,7 @@ const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
 const moveTargets = computed(() => MOVABLE_COLUMNS.filter((target) => target !== column.value))
 const readyBlocked = computed(() => !item.value || !itemPlan.isReviewed(item.value.id))
 const delegateTargets = computed(() =>
-  AGENTS.filter((profile) => profile.id !== (itemPlan.planOf(item.value?.id ?? '').agent ?? DEFAULT_RECIPIENT)),
+  roster.agents.filter((profile) => profile.id !== (itemPlan.planOf(item.value?.id ?? '').agent ?? DEFAULT_RECIPIENT)),
 )
 const showAutoHint = computed(() => column.value === 'In progress' || column.value === 'In review')
 const suggestedTags = computed(() =>
