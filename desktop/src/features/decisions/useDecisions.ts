@@ -36,12 +36,16 @@ export interface AnswerLogEntry {
   kind: 'answered' | 'undone'
 }
 
+const ANSWER_LOG_LIMIT = 200
+
 export const useDecisions = defineStore('decisions', () => {
   const team = useTeam()
   const balloons = useBalloons()
   const pending = ref<VokiaDecision[]>([])
   const resolved = ref<ResolvedEntry[]>([])
   const answerLog = ref<AnswerLogEntry[]>([])
+  // Contador total de entradas: o observador do log usa a diferença dele, pois o array é aparado.
+  const answerLogTotal = ref(0)
   const open = ref(false)
   const awaiting = new Map<number, Awaiting>()
 
@@ -75,6 +79,11 @@ export const useDecisions = defineStore('decisions', () => {
     }
   }
 
+  function logAnswer(entry: AnswerLogEntry): void {
+    answerLog.value = [...answerLog.value, entry].slice(-ANSWER_LOG_LIMIT)
+    answerLogTotal.value += 1
+  }
+
   function answer(id: number, text: string, message: string): void {
     const decision = pending.value.find((candidate) => candidate.id === id)
     if (decision === undefined) {
@@ -82,7 +91,7 @@ export const useDecisions = defineStore('decisions', () => {
     }
     pending.value = pending.value.filter((candidate) => candidate.id !== id)
     resolved.value.push({ key: `decisao-${id}`, message, decisionId: id, sent: false })
-    answerLog.value.push({ decisionId: id, text, kind: 'answered' })
+    logAnswer({ decisionId: id, text, kind: 'answered' })
     awaiting.set(id, { decision, answer: text, timer: setTimeout(() => void send(id), UNDO_WINDOW_MS) })
   }
 
@@ -112,7 +121,7 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.delete(id)
     resolved.value = resolved.value.filter((candidate) => candidate.decisionId !== id)
     pending.value = [...pending.value, entry.decision].sort((a, b) => a.id - b.id)
-    answerLog.value.push({ decisionId: id, text: '', kind: 'undone' })
+    logAnswer({ decisionId: id, text: '', kind: 'undone' })
   }
 
   function answerPermission(id: string, allow: boolean, message: string): void {
@@ -139,5 +148,5 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.clear()
   }
 
-  return { pending, resolved, answerLog, cards, pendingCount, open, apply, answer, undo, answerPermission, setOpen, toggle, stop }
+  return { pending, resolved, answerLog, answerLogTotal, cards, pendingCount, open, apply, answer, undo, answerPermission, setOpen, toggle, stop }
 })

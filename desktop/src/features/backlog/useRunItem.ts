@@ -93,7 +93,7 @@ export const useRunItem = defineStore('runItem', () => {
       !item.error &&
       projectId !== null &&
       projectId === projects.selected?.id &&
-      itemPlan.stateOf(itemId) === 'vinculado' &&
+      itemPlan.isReviewed(itemId) &&
       !BUSY_COLUMNS.includes(item.column ?? DEFAULT_COLUMN) &&
       !isRunning(itemId)
     )

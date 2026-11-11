@@ -134,9 +134,11 @@ function otherText(question: TriageQuestion): string {
   return answerDrafts.value[question.id] ?? (question.selected === OTHER_OPTION ? '' : (question.selected ?? ''))
 }
 
+// O change pode chegar depois do fechamento, quando item.value já é null; closeModal já salvou o texto.
 function saveOther(question: TriageQuestion): void {
+  const current = item.value
   const text = otherText(question).trim()
-  if (text !== '') itemQuestions.answer(item.value!.id, question.id, text)
+  if (current && text !== '') itemQuestions.answer(current.id, question.id, text)
 }
 
 // Com texto livre já salvo, "Outro…" só leva o foco ao campo; regravar o marcador apagaria a resposta.
@@ -148,8 +150,14 @@ function pickOption(question: TriageQuestion, option: string): void {
   itemQuestions.answer(item.value!.id, question.id, option)
 }
 
-function openConversations(): void {
+// Salva antes de fechar: depois do close, item.value vira null e o rascunho não tem mais onde ser gravado.
+function closeModal(): void {
+  item.value?.questions?.filter(isOtherAnswer).forEach((question) => saveOther(question))
   backlog.close()
+}
+
+function openConversations(): void {
+  closeModal()
   navigation.goTo('conversas')
 }
 
@@ -178,7 +186,7 @@ watch(
   <div
     v-if="item"
     class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-    @click.self="backlog.close()"
+    @click.self="closeModal()"
   >
     <section
       ref="dialog"
@@ -187,7 +195,7 @@ watch(
       :aria-labelledby="titleId"
       tabindex="-1"
       class="flex max-h-full w-215 max-w-full flex-col overflow-hidden rounded-dialog border border-line bg-surface shadow-float"
-      @keydown.esc.stop="backlog.close()"
+      @keydown.esc.stop="closeModal()"
       @keydown.tab="trapFocus($event, dialog)"
     >
       <div class="flex flex-col gap-2 border-b border-line px-6 pt-6 pb-4">
@@ -200,7 +208,7 @@ watch(
               {{ item.feature }}
             </span>
             <UiBadge class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
-            <UiButton variant="quiet" size="sm" @press="backlog.close()">Fechar</UiButton>
+            <UiButton variant="quiet" size="sm" @press="closeModal()">Fechar</UiButton>
           </div>
           <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
         </header>

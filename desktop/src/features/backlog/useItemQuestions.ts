@@ -74,8 +74,8 @@ export const useItemQuestions = defineStore('itemQuestions', () => {
 
   watch(() => decisions.pending, syncPending, { deep: true })
   watch(
-    () => decisions.answerLog.length,
-    (length, previous) => decisions.answerLog.slice(previous, length).forEach(applyLogEntry),
+    () => decisions.answerLogTotal,
+    (total, previous) => decisions.answerLog.slice(-(total - previous)).forEach(applyLogEntry),
   )
   watch(
     () => backlog.loadedProjectId,
