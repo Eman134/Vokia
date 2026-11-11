@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import NewAgentDialog from '../agents/NewAgentDialog.vue'
+import type { AgentProfile } from '../team/teamApi'
 import TeamMatrix from './TeamMatrix.vue'
 import {
   ADD_AGENT_LABEL,
@@ -16,6 +19,13 @@ const TAB_LIST_CLASSES = 'flex gap-0.5 rounded-control-lg bg-surface-2 p-0.75'
 const TAB_BASE_CLASSES = 'rounded-[9px] px-3 py-1.5 text-caption disabled:opacity-40'
 const TAB_ACTIVE_CLASSES = 'bg-surface font-semibold text-ink shadow-seg'
 const TAB_INACTIVE_CLASSES = 'text-muted'
+
+const creating = ref(false)
+const highlightedId = ref<string | null>(null)
+
+function onCreated(agent: AgentProfile): void {
+  highlightedId.value = agent.id
+}
 </script>
 
 <template>
@@ -43,9 +53,10 @@ const TAB_INACTIVE_CLASSES = 'text-muted'
         </div>
         <UiButton variant="quiet" size="lg" :disabled="true" aria-disabled="true">{{ ADD_TEAM_LABEL }}</UiButton>
         <UiButton variant="primary" size="lg" :disabled="true" aria-disabled="true">{{ ADD_LAYER_LABEL }}</UiButton>
-        <UiButton variant="primary" size="lg" :disabled="true" aria-disabled="true">{{ ADD_AGENT_LABEL }}</UiButton>
+        <UiButton variant="primary" size="lg" @press="creating = true">{{ ADD_AGENT_LABEL }}</UiButton>
       </div>
     </header>
-    <TeamMatrix />
+    <TeamMatrix :highlighted-id="highlightedId" @add-agent="creating = true" />
+    <NewAgentDialog v-if="creating" @created="onCreated" @close="creating = false" />
   </section>
 </template>

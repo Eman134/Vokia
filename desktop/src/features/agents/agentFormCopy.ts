@@ -1,0 +1,8 @@
+export const DIALOG_TITLE = 'Novo agente'
+export const NAME_LABEL = 'Nome'
+export const ROLE_LABEL = 'Papel'
+export const AVATAR_LABEL = 'Avatar'
+export const CLI_LABEL = 'Roda em'
+export const MODEL_LABEL = 'Modelo'
+export const CANCEL_LABEL = 'Cancelar'
+export const CREATE_LABEL = 'Criar'

@@ -17,6 +17,9 @@ import {
 const TEAM_COLUMN_PX = 150
 const LAYER_COLUMN_MIN_PX = 170
 
+defineProps<{ highlightedId: string | null }>()
+const emit = defineEmits<{ addAgent: [] }>()
+
 const roster = useRoster()
 
 const agentsByLayer = computed<Record<MapLayerId, AgentProfile[]>>(() => {
@@ -57,13 +60,21 @@ const gridStyle = {
           :key="layer.id"
           class="flex min-w-0 flex-col justify-center gap-2 border-t border-line p-3"
         >
-          <AgentCard v-for="agent in agentsByLayer[layer.id]" :key="agent.id" :agent="agent" />
-          <span
+          <AgentCard
+            v-for="agent in agentsByLayer[layer.id]"
+            :key="agent.id"
+            :agent="agent"
+            :aria-current="agent.id === highlightedId ? 'true' : undefined"
+            :class="agent.id === highlightedId ? 'ring-2 ring-accent' : ''"
+          />
+          <button
             v-if="agentsByLayer[layer.id].length === 0"
-            class="self-stretch rounded-card border border-dashed border-line py-3 text-center text-small text-muted"
+            type="button"
+            class="self-stretch rounded-card border border-dashed border-line py-3 text-center text-small text-muted focus:outline-2 focus:outline-solid focus:outline-accent"
+            @click="emit('addAgent')"
           >
             {{ EMPTY_CELL_LABEL }}
-          </span>
+          </button>
         </div>
       </div>
     </div>
