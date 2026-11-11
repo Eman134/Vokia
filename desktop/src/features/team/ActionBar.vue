@@ -170,6 +170,10 @@ const pillWidthClass = computed(() => {
 })
 const statusLabel = computed(() => (flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow]))
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
+// Minimizada e sem pendência nem check, o botão ficaria vazio e deixaria um vão à direita da pílula.
+const showDecisionsButton = computed(
+  () => !flow.active && (expanded.value || decisions.pendingCount > 0 || statusStore.status === 'done'),
+)
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
 )
@@ -551,7 +555,7 @@ function onPointerLeave(): void {
       </div>
       <PinnedProject v-if="canAsk && hasMultipleProjects" />
       <UiButton
-        v-if="!flow.active"
+        v-if="showDecisionsButton"
         variant="quiet"
         size="sm"
         :aria-label="decisionsTitle"

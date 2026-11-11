@@ -73,6 +73,8 @@ export const useRequestNotices = defineStore('requestNotices', () => {
   }
 
   function announceSent(info: SentInfo): void {
+    // Conversas mostra o feed de todos os agentes: o pedido já aparece ali, o balão seria redundante.
+    if (navigation.page === 'conversas') return
     remember(info)
     balloons.enqueue(buildSentBalloon(info, sentText(info)))
   }
