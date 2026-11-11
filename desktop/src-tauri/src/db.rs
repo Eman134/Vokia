@@ -164,6 +164,9 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE projects ADD COLUMN permission_level TEXT NOT NULL DEFAULT 'liberado' CHECK (permission_level IN ('liberado','edicao','leitura'));
 ",
+    "
+    UPDATE agent_sessions SET agent = lower(agent);
+",
 ];
 
 #[derive(Debug)]
@@ -308,7 +311,7 @@ pub struct DbProblem {
     pub reason: String,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentPause {
     pub project_id: i64,
@@ -602,7 +605,7 @@ impl Db {
              VALUES (?1, ?2, ?3, CAST(unixepoch('subsec') * 1000 AS INTEGER)) \
              ON CONFLICT(project_id, agent) DO UPDATE SET \
              session_id = excluded.session_id, updated_at = excluded.updated_at",
-            params![key.project_id, key.agent.name(), session_id],
+            params![key.project_id, key.agent.as_str(), session_id],
         )?;
         Ok(())
     }
@@ -612,7 +615,7 @@ impl Db {
         let session_id = conn
             .query_row(
                 "SELECT session_id FROM agent_sessions WHERE project_id = ?1 AND agent = ?2",
-                params![key.project_id, key.agent.name()],
+                params![key.project_id, key.agent.as_str()],
                 |row| row.get(0),
             )
             .optional()?;
@@ -623,16 +626,16 @@ impl Db {
         let conn = self.conn()?;
         conn.execute(
             "DELETE FROM agent_sessions WHERE project_id = ?1 AND agent = ?2",
-            params![key.project_id, key.agent.name()],
+            params![key.project_id, key.agent.as_str()],
         )?;
         Ok(())
     }
 
-    pub fn clear_agent_sessions(&self, agent: Agent) -> Result<(), DbError> {
+    pub fn clear_agent_sessions(&self, agent: &Agent) -> Result<(), DbError> {
         let conn = self.conn()?;
         conn.execute(
             "DELETE FROM agent_sessions WHERE agent = ?1",
-            params![agent.name()],
+            params![agent.as_str()],
         )?;
         Ok(())
     }
@@ -664,7 +667,7 @@ impl Db {
         paused: bool,
     ) -> Result<(), DbError> {
         let conn = self.conn()?;
-        let key = agent_key(agent);
+        let key = agent_key(&agent);
         if !paused {
             conn.execute(
                 "DELETE FROM agent_pauses WHERE project_id = ?1 AND agent = ?2",
@@ -805,15 +808,12 @@ impl Db {
     }
 }
 
-fn agent_key(agent: Agent) -> String {
-    agent.name().to_lowercase()
+fn agent_key(agent: &Agent) -> String {
+    agent.as_str().to_string()
 }
 
 fn parse_agent(value: &str) -> Result<Agent, DbError> {
-    Agent::ALL
-        .into_iter()
-        .find(|agent| agent_key(*agent) == value)
-        .ok_or_else(|| DbError::InvalidAgent(value.to_string()))
+    Agent::from_stored(value).ok_or_else(|| DbError::InvalidAgent(value.to_string()))
 }
 
 fn parse_speaker(value: &str) -> Result<Speaker, DbError> {

@@ -1,6 +1,7 @@
 // Sem isso o executável release abre uma janela de console junto com a do app no Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agents;
 mod backlog;
 mod cache;
 mod claude;
@@ -72,13 +73,17 @@ fn main() {
             commands::save_backlog_item,
             commands::move_backlog_item,
             commands::save_item_plan,
-            commands::set_permission_level
+            commands::set_permission_level,
+            commands::list_agents,
+            commands::create_agent,
+            commands::update_agent
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            app.manage(agents::AgentRegistry::load(&data_dir));
             app.manage(DbState::open(&data_dir));
             tray::setup_tray(app)
         })

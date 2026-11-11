@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use tauri::{AppHandle, Manager, State};
 
+use crate::agents::{Agent, AgentDraft, AgentError, AgentProfile, AgentRegistry, TeamListing};
 use crate::backlog::{BacklogItem, BacklogSnapshot, ItemPlanInput};
 use crate::claude::CliProblem;
 use crate::connectivity;
 use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
-use crate::events::{Agent, VokiaEvent};
+use crate::events::VokiaEvent;
 use crate::orchestrator::{self, RequestOutcome};
 use crate::permission_level::PermissionLevel;
 use crate::permissions::PermissionError;
@@ -37,6 +38,7 @@ pub async fn send_request(
     run_id: Option<u64>,
     item_id: Option<String>,
 ) -> Result<RequestOutcome, String> {
+    ensure_agent_exists(&app.state::<AgentRegistry>(), &to)?;
     let context = RequestContext::new(run_id, item_id);
     match orchestrator::handle_request(&app, &state, &text, to, project_id, context).await {
         Ok(outcome) => Ok(outcome),
@@ -240,13 +242,47 @@ pub fn list_agent_pauses(state: State<'_, DbState>) -> Result<Vec<AgentPause>, S
 #[tauri::command]
 pub fn set_agent_paused(
     state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
     project_id: i64,
     agent: Agent,
     paused: bool,
 ) -> Result<(), String> {
+    ensure_agent_exists(&registry, &agent)?;
     let db = state.require().map_err(|error| error.to_string())?;
     db.set_agent_paused(project_id, agent, paused)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_agents(registry: State<'_, AgentRegistry>) -> Result<TeamListing, String> {
+    registry.listing().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_agent(
+    registry: State<'_, AgentRegistry>,
+    draft: AgentDraft,
+) -> Result<AgentProfile, String> {
+    registry.create(&draft).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_agent(
+    registry: State<'_, AgentRegistry>,
+    id: Agent,
+    draft: AgentDraft,
+) -> Result<AgentProfile, String> {
+    registry
+        .update(&id, &draft)
+        .map_err(|error| error.to_string())
+}
+
+fn ensure_agent_exists(registry: &AgentRegistry, agent: &Agent) -> Result<(), String> {
+    let team = registry.team().map_err(|error| error.to_string())?;
+    if team.profile(agent).is_none() {
+        return Err(AgentError::UnknownAgent(agent.to_string()).to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]

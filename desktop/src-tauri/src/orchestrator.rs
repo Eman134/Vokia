@@ -11,6 +11,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
+use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::cache::{
     parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
     RECOVERY_CONVERSATION_ITEMS,
@@ -22,25 +23,22 @@ use crate::claude::{
 use crate::db::{
     Db, DbError, DbState, Project, GRANT_SESSION, ORIGIN_GITHUB, SETTING_PERMISSION_GRANT,
 };
-use crate::events::{
-    Agent, AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME,
-};
+use crate::events::{AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 use crate::permissions::PermissionGate;
 use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision, QueuedJob, RequestContext};
 use crate::task::MAX_LIVE_SESSIONS;
 use crate::task::{
-    agent_named, call_mode, degrades_to_fresh, long_request_text, parse_definition, ActiveTask,
-    CallMode, TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS,
-    SESSION_IDLE_LIMIT_SECS, SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
+    call_mode, degrades_to_fresh, long_request_text, parse_definition, ActiveTask, CallMode,
+    TaskDefinition, TaskOutcome, TaskRecord, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
+    SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
 };
 
 const PERCENT_SCALE: f64 = 100.0;
 const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
 const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 const NO_CONVERSATION: usize = 0;
-const TEAM_ROSTER: &str = "Time desta sessão: Iara (tech lead) e Davi (dev frontend).";
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
@@ -108,7 +106,8 @@ pub enum FlowError {
     UnknownDecision,
     SessionStore(DbError),
     Settings(DbError),
-    SessionNotHeld(Agent),
+    SessionNotHeld(String),
+    Team(AgentError),
 }
 
 impl fmt::Display for FlowError {
@@ -161,13 +160,13 @@ impl fmt::Display for FlowError {
             FlowError::Settings(error) => {
                 write!(f, "Não foi possível ler as configurações: {error}")
             }
-            FlowError::SessionNotHeld(agent) => {
+            FlowError::SessionNotHeld(name) => {
                 write!(
                     f,
-                    "A sessão de {} não foi reservada para esta conversa.",
-                    agent.name()
+                    "A sessão de {name} não foi reservada para esta conversa."
                 )
             }
+            FlowError::Team(error) => write!(f, "{error}"),
         }
     }
 }
@@ -220,22 +219,26 @@ pub async fn handle_request(
         .cli
         .as_ref()
         .map_err(|problem| FlowError::CliUnavailable(problem.reason.clone()))?;
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(FlowError::Team)?;
     project_dir(app, project_id)?;
     emit_message(
         app,
         project_id,
         Speaker::User,
-        Speaker::from(recipient),
+        Speaker::from(recipient.clone()),
         request,
     )?;
     let key = SessionKey {
         project_id,
         agent: recipient,
     };
-    if !start_or_enqueue(state, key, request, context.clone())? {
+    if !start_or_enqueue(state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
-    run_flow(app, state, cli, key, request, context).await
+    run_flow(app, state, cli, key, request, context, &team).await
 }
 
 pub async fn answer_decision(
@@ -301,6 +304,7 @@ async fn run_flow(
     key: SessionKey,
     request: &str,
     context: RequestContext,
+    team: &Team,
 ) -> Result<RequestOutcome, FlowError> {
     let mut request = request.to_string();
     let mut item_id = context.item_id;
@@ -309,7 +313,17 @@ async fn run_flow(
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = None;
     loop {
-        let this = match run_exchange(app, state, cli, key, &request, item_id.as_deref()).await {
+        let exchange = run_exchange(
+            app,
+            state,
+            cli,
+            key.clone(),
+            &request,
+            item_id.as_deref(),
+            team,
+        )
+        .await;
+        let this = match exchange {
             Ok(TaskOutcome::Finished) => RequestOutcome::Finished,
             Ok(_) => RequestOutcome::Failed,
             Err(error) => {
@@ -328,7 +342,7 @@ async fn run_flow(
             )?;
         }
         first.get_or_insert(this);
-        match next_job(state, key)? {
+        match next_job(state, key.clone())? {
             Some(job) => {
                 request = job.text;
                 current_run = job.context.run_id;
@@ -347,13 +361,15 @@ async fn run_exchange(
     key: SessionKey,
     request: &str,
     item_id: Option<&str>,
+    team: &Team,
 ) -> Result<TaskOutcome, FlowError> {
-    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id).await;
-    let result = exchange_turns(app, state, cli, key, request, item_id, &mut sessions).await;
+    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, team).await;
+    let result = exchange_turns(app, state, cli, key, request, item_id, &mut sessions, team).await;
     sessions.release().await;
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn exchange_turns(
     app: &AppHandle,
     state: &AppState,
@@ -362,16 +378,17 @@ async fn exchange_turns(
     request: &str,
     item_id: Option<&str>,
     sessions: &mut ExchangeSessions,
+    team: &Team,
 ) -> Result<TaskOutcome, FlowError> {
-    emit_state(app, key.project_id, key.agent, AgentState::Sending)?;
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
     let project_dir = project_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
     // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
-    let definition = interpret_task(app, state, cli, request, key).await?;
-    if first_speaker(&definition, key.agent) != key.agent {
-        emit_state(app, key.project_id, key.agent, AgentState::Idle)?;
+    let definition = interpret_task(app, state, cli, request, key.clone(), team).await?;
+    if first_speaker(&definition, &key.agent) != key.agent {
+        emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
@@ -387,8 +404,9 @@ async fn exchange_turns(
         project_context: &context,
         request,
         item_id,
-        key,
+        key: key.clone(),
         definition: &definition,
+        team,
     };
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {
@@ -407,8 +425,10 @@ async fn interpret_task(
     cli: &Path,
     request: &str,
     key: SessionKey,
+    team: &Team,
 ) -> Result<TaskDefinition, FlowError> {
     let origin = key.agent;
+    let profile = profile_of(team, &origin)?;
     let names = with_cache(state, key.project_id, |cache| Ok(cache.names().join(", ")))?;
     let names = if names.is_empty() {
         NO_NAMES.to_string()
@@ -416,12 +436,18 @@ async fn interpret_task(
         names
     };
     let message = format!(
-        "{TEAM_ROSTER} Destinatário: {}. Variáveis existentes: {names}. Pedido: {request}",
-        origin.name()
+        "{} Destinatário: {}. Variáveis existentes: {names}. Pedido: {request}",
+        team.roster_line(),
+        team.name_of(&origin)
     );
-    let reply = claude::ask(cli, &message, INTERPRETER_ROLE).await?;
+    let reply = claude::ask(cli, &message, INTERPRETER_ROLE, &profile.model).await?;
     report_limits(app, reply.limits)?;
-    Ok(parse_definition(&reply.text, origin, request))
+    Ok(parse_definition(&reply.text, &origin, request, team))
+}
+
+fn profile_of<'a>(team: &'a Team, agent: &Agent) -> Result<&'a AgentProfile, FlowError> {
+    team.profile(agent)
+        .ok_or_else(|| FlowError::Team(AgentError::UnknownAgent(agent.to_string())))
 }
 
 fn begin_task(
@@ -465,7 +491,6 @@ fn close_task(
     })
 }
 
-#[derive(Clone, Copy)]
 struct Exchange<'a> {
     app: &'a AppHandle,
     state: &'a AppState,
@@ -476,6 +501,7 @@ struct Exchange<'a> {
     item_id: Option<&'a str>,
     key: SessionKey,
     definition: &'a TaskDefinition,
+    team: &'a Team,
 }
 
 async fn run_turns(
@@ -489,13 +515,12 @@ async fn run_turns(
         request,
         key,
         definition,
+        team,
         ..
-    } = *exchange;
-    let SessionKey {
-        project_id,
-        agent: origin,
-    } = key;
-    let mut turn = Turn::first(definition, origin, request);
+    } = exchange;
+    let project_id = key.project_id;
+    let origin = key.agent.clone();
+    let mut turn = Turn::first(definition, &origin, request);
     let mut loop_guard = LoopGuard::default();
     let mut stalled = 0;
     loop {
@@ -504,11 +529,11 @@ async fn run_turns(
             Ok(StepPrompts::build(
                 cache,
                 definition,
-                turn.speaker,
+                &turn.speaker,
                 &instruction,
             ))
         })?;
-        let reply = ask_step(exchange, sessions, turn.speaker, &prompts).await?;
+        let reply = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
         if let Some(parsed) = parse_decision(&reply) {
             return raise_decision(exchange, transcript, &turn, parsed);
         }
@@ -516,23 +541,29 @@ async fn run_turns(
             visible,
             delegation,
             updates,
-        } = parse_reply(&reply, turn.speaker);
+        } = parse_reply(&reply, &turn.speaker, team);
         let applied = with_cache(state, project_id, |cache| {
-            Ok(cache.apply_reply(turn.speaker, updates))
+            Ok(cache.apply_reply(&turn.speaker, updates, team))
         })?;
         let delegation = delegation.filter(|_| !definition.alternate);
         if !applied.rejected.is_empty() {
             if !visible.is_empty() {
-                let to = next_turn(definition, &turn, &visible, None)
+                let to = next_turn(definition, &turn, &visible, None, team)
                     .map_or(Speaker::User, |next| Speaker::from(next.speaker));
-                emit_message(app, project_id, Speaker::from(turn.speaker), to, &visible)?;
+                emit_message(
+                    app,
+                    project_id,
+                    Speaker::from(turn.speaker.clone()),
+                    to,
+                    &visible,
+                )?;
             }
             stalled += 1;
             if stalled == STALL_LIMIT {
                 stop_with_error(app, project_id, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
-            sessions.review(turn.speaker, stalled, 0)?.await;
+            sessions.review(&turn.speaker, stalled, 0, team)?.await;
             turn.rejection = Some(applied.rejected.join("; "));
             continue;
         }
@@ -551,14 +582,23 @@ async fn run_turns(
                     app,
                     project_id,
                     transcript,
-                    turn.speaker,
+                    &turn.speaker,
                     Speaker::User,
                     text,
+                    team,
                 )?;
             }
-            emit_state(app, project_id, turn.speaker, AgentState::Idle)?;
+            emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
             let message = format!("Tarefa concluída: {}.", definition.objetivo);
-            say(app, project_id, transcript, origin, Speaker::User, &message)?;
+            say(
+                app,
+                project_id,
+                transcript,
+                &origin,
+                Speaker::User,
+                &message,
+                team,
+            )?;
             return Ok(TaskOutcome::Finished);
         }
 
@@ -570,7 +610,7 @@ async fn run_turns(
                 stop_with_error(app, project_id, stall_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
-            sessions.review(turn.speaker, stalled, 0)?.await;
+            sessions.review(&turn.speaker, stalled, 0, team)?.await;
         }
 
         let next = next_turn(
@@ -578,21 +618,23 @@ async fn run_turns(
             &turn,
             feed.as_deref().unwrap_or_default(),
             delegation.as_ref(),
+            team,
         );
         let to = next
             .as_ref()
-            .map_or(Speaker::User, |next| Speaker::from(next.speaker));
+            .map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
         if let Some(text) = &feed {
-            say(app, project_id, transcript, turn.speaker, to, text)?;
+            say(app, project_id, transcript, &turn.speaker, to, text, team)?;
         }
         if let Some((helper, helper_request)) = &delegation {
             say(
                 app,
                 project_id,
                 transcript,
-                turn.speaker,
-                Speaker::from(*helper),
+                &turn.speaker,
+                Speaker::from(helper.clone()),
                 helper_request,
+                team,
             )?;
         }
         let speaker_state = if delegation.is_some() {
@@ -600,15 +642,15 @@ async fn run_turns(
         } else {
             AgentState::Idle
         };
-        emit_state(app, project_id, turn.speaker, speaker_state)?;
+        emit_state(app, project_id, turn.speaker.clone(), speaker_state)?;
         match next {
             Some(next) => {
-                let repeats = loop_guard.register(next.speaker, &next.received);
+                let repeats = loop_guard.register(next.speaker.clone(), &next.received);
                 if repeats >= LOOP_REPEAT_LIMIT {
                     stop_with_error(app, project_id, LOOP_MESSAGE.to_string())?;
                     return Ok(TaskOutcome::Stalled);
                 }
-                sessions.review(next.speaker, 0, repeats)?.await;
+                sessions.review(&next.speaker, 0, repeats, team)?.await;
                 turn = next;
             }
             None => return Ok(TaskOutcome::Finished),
@@ -629,8 +671,9 @@ fn raise_decision(
         request,
         item_id,
         key,
+        team,
         ..
-    } = *exchange;
+    } = exchange;
     let project_id = key.project_id;
     let ParsedDecision {
         kind,
@@ -639,10 +682,18 @@ fn raise_decision(
         options,
         visible,
     } = parsed;
-    let agent = turn.speaker;
-    let visible = parse_reply(&visible, agent).visible;
+    let agent = turn.speaker.clone();
+    let visible = parse_reply(&visible, &agent, team).visible;
     if !visible.is_empty() {
-        say(app, project_id, transcript, agent, Speaker::User, &visible)?;
+        say(
+            app,
+            project_id,
+            transcript,
+            &agent,
+            Speaker::User,
+            &visible,
+            team,
+        )?;
     }
     let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
     state
@@ -652,7 +703,7 @@ fn raise_decision(
         .insert(
             id,
             PendingDecision {
-                agent,
+                agent: agent.clone(),
                 project_id,
                 title: title.clone(),
                 request: request.to_string(),
@@ -663,7 +714,7 @@ fn raise_decision(
         app,
         VokiaEvent::Decision {
             id,
-            agent,
+            agent: agent.clone(),
             kind,
             title,
             detail,
@@ -673,14 +724,18 @@ fn raise_decision(
         },
     )?;
     for requester in &turn.requesters {
-        emit_state(app, project_id, *requester, AgentState::Idle)?;
+        emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
     }
     emit_state(app, project_id, agent, AgentState::Waiting)?;
     Ok(TaskOutcome::Finished)
 }
 
-fn first_speaker(definition: &TaskDefinition, origin: Agent) -> Agent {
-    definition.participants.first().copied().unwrap_or(origin)
+fn first_speaker(definition: &TaskDefinition, origin: &Agent) -> Agent {
+    definition
+        .participants
+        .first()
+        .cloned()
+        .unwrap_or_else(|| origin.clone())
 }
 
 struct Turn {
@@ -702,7 +757,7 @@ impl Turn {
         }
     }
 
-    fn first(definition: &TaskDefinition, origin: Agent, request: &str) -> Self {
+    fn first(definition: &TaskDefinition, origin: &Agent, request: &str) -> Self {
         let speaker = first_speaker(definition, origin);
         Self::new(
             speaker,
@@ -725,33 +780,34 @@ fn next_turn(
     turn: &Turn,
     feed: &str,
     delegation: Option<&(Agent, String)>,
+    team: &Team,
 ) -> Option<Turn> {
-    let speaker = turn.speaker;
+    let speaker = turn.speaker.clone();
     if definition.alternate {
-        let agent = next_participant(&definition.participants, speaker);
+        let agent = next_participant(&definition.participants, &speaker);
         return Some(Turn::new(agent, ALTERNATE_INSTRUCTION, feed, Vec::new()));
     }
     if let Some((helper, request)) = delegation {
         let mut requesters = turn.requesters.clone();
         requesters.push(speaker);
-        return Some(Turn::new(*helper, request, request, requesters));
+        return Some(Turn::new(helper.clone(), request, request, requesters));
     }
     let (requester, remaining) = turn.requesters.split_last()?;
-    let message = format!("{}{REPLY_PREFIX}{feed}", speaker.name());
+    let message = format!("{}{REPLY_PREFIX}{feed}", team.name_of(&speaker));
     Some(Turn::new(
-        *requester,
+        requester.clone(),
         &message,
         &message,
         remaining.to_vec(),
     ))
 }
 
-fn next_participant(participants: &[Agent], speaker: Agent) -> Agent {
+fn next_participant(participants: &[Agent], speaker: &Agent) -> Agent {
     let index = participants
         .iter()
-        .position(|agent| *agent == speaker)
+        .position(|agent| agent == speaker)
         .map_or(0, |index| index + 1);
-    participants[index % participants.len()]
+    participants[index % participants.len()].clone()
 }
 
 fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
@@ -768,12 +824,13 @@ fn say(
     app: &AppHandle,
     project_id: i64,
     transcript: &mut Vec<String>,
-    from: Agent,
+    from: &Agent,
     to: Speaker,
     text: &str,
+    team: &Team,
 ) -> Result<(), FlowError> {
-    emit_message(app, project_id, Speaker::from(from), to, text)?;
-    transcript.push(format!("{}: {text}", from.name()));
+    emit_message(app, project_id, Speaker::from(from.clone()), to, text)?;
+    transcript.push(format!("{}: {text}", team.name_of(from)));
     Ok(())
 }
 
@@ -793,7 +850,7 @@ struct StepPrompts {
 }
 
 impl StepPrompts {
-    fn build(cache: &Cache, definition: &TaskDefinition, agent: Agent, instruction: &str) -> Self {
+    fn build(cache: &Cache, definition: &TaskDefinition, agent: &Agent, instruction: &str) -> Self {
         let prompt = |conversation_items, with_request| {
             step_prompt(
                 cache,
@@ -816,7 +873,7 @@ impl StepPrompts {
 fn step_prompt(
     cache: &Cache,
     definition: &TaskDefinition,
-    agent: Agent,
+    agent: &Agent,
     instruction: &str,
     conversation_items: usize,
     with_request: bool,
@@ -849,7 +906,7 @@ fn step_prompt(
     sections.join("\n")
 }
 
-fn variables_listing(cache: &Cache, agent: Agent) -> String {
+fn variables_listing(cache: &Cache, agent: &Agent) -> String {
     let lines: Vec<String> = cache
         .visible_to(agent)
         .into_iter()
@@ -991,14 +1048,20 @@ pub fn report_failure(
 
 fn stop_with_error(app: &AppHandle, project_id: i64, message: String) -> Result<(), FlowError> {
     emit(app, VokiaEvent::Error { message })?;
-    emit_state(app, project_id, Agent::Iara, AgentState::Idle)?;
-    emit_state(app, project_id, Agent::Davi, AgentState::Idle)
+    let agents = match app.state::<AgentRegistry>().team() {
+        Ok(team) => team.ids().cloned().collect(),
+        Err(_) => vec![Agent::iara(), Agent::davi()],
+    };
+    for agent in agents {
+        emit_state(app, project_id, agent, AgentState::Idle)?;
+    }
+    Ok(())
 }
 
 async fn ask_step(
     exchange: &Exchange<'_>,
     sessions: &mut ExchangeSessions,
-    agent: Agent,
+    agent: &Agent,
     prompts: &StepPrompts,
 ) -> Result<String, FlowError> {
     let Exchange {
@@ -1008,12 +1071,17 @@ async fn ask_step(
         project,
         project_context,
         key,
+        team,
         ..
-    } = *exchange;
-    emit_state(app, key.project_id, agent, AgentState::Thinking)?;
-    let agent_role = role(agent, project_context);
-    let first = sessions.opened.insert(agent);
-    let held = sessions.held(agent)?;
+    } = exchange;
+    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
+    let profile = profile_of(team, agent)?;
+    let call = AgentCall {
+        role: role(profile, &team.roster_line(), project_context),
+        model: profile.model.clone(),
+    };
+    let first = sessions.opened.insert(agent.clone());
+    let held = sessions.held(agent, team)?;
     if first {
         held.guard.begin_exchange();
     }
@@ -1028,7 +1096,7 @@ async fn ask_step(
     let gate = PermissionGate {
         app,
         broker: &state.permissions,
-        agent,
+        agent: agent.clone(),
         project_id: key.project_id,
         granted: &granted,
         grant_per_session,
@@ -1037,13 +1105,13 @@ async fn ask_step(
         app,
         key: SessionKey {
             project_id: key.project_id,
-            agent,
+            agent: agent.clone(),
         },
     };
     let live = match call_mode(held.guard.fresh_only) {
         CallMode::Live => {
             held.guard
-                .reply(cli, project, gate, &store, &agent_role, prompts, first)
+                .reply(cli, *project, gate.clone(), &store, &call, prompts, first)
                 .await?
         }
         CallMode::Fresh => None,
@@ -1056,14 +1124,7 @@ async fn ask_step(
                 grant_per_session: false,
                 ..gate
             };
-            fresh_reply(
-                exchange,
-                gate,
-                &held.slot.pid,
-                &agent_role,
-                &prompts.opening,
-            )
-            .await?
+            fresh_reply(exchange, gate, &held.slot.pid, &call, &prompts.opening).await?
         }
     };
     report_limits(app, reply.limits)?;
@@ -1086,12 +1147,20 @@ async fn fresh_reply(
     exchange: &Exchange<'_>,
     gate: PermissionGate<'_>,
     pid: &AtomicU32,
-    role: &str,
+    call: &AgentCall,
     message: &str,
 ) -> Result<Reply, ClaudeError> {
-    let mut live = LiveSession::open(exchange.cli, role, Access::Project(exchange.project), None)?;
+    let mut live = LiveSession::open(
+        exchange.cli,
+        &call.role,
+        &call.model,
+        Access::Project(exchange.project),
+        None,
+    )?;
     pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
-    let reply = live.send(message, |request| gate.decide(request)).await;
+    let reply = live
+        .send(message, |request| gate.clone().decide(request))
+        .await;
     live.close(SESSION_CLOSE_GRACE).await;
     pid.store(NO_PID, Ordering::SeqCst);
     reply
@@ -1158,7 +1227,7 @@ impl SessionPool {
         end_slots(self.matching(|key| key.project_id == project_id)).await;
     }
 
-    // Gancho da remoção do agente: a Etapa 50A ainda não existe para chamá-lo.
+    // Gancho da remoção do agente (O4): ainda sem chamador.
     #[allow(dead_code)]
     pub(crate) async fn close_agent(&self, db: &Db, agent: Agent) -> Result<(), DbError> {
         let removed: Vec<Arc<SessionSlot>> = {
@@ -1166,12 +1235,12 @@ impl SessionPool {
             let keys: Vec<SessionKey> = slots
                 .keys()
                 .filter(|key| key.agent == agent)
-                .copied()
+                .cloned()
                 .collect();
             keys.iter().filter_map(|key| slots.remove(key)).collect()
         };
         end_slots(removed).await;
-        db.clear_agent_sessions(agent)
+        db.clear_agent_sessions(&agent)
     }
 
     // Na saída do app o processo é encerrado pelo pid, sem esperar o lock de um passo em andamento.
@@ -1238,12 +1307,15 @@ struct ExchangeSessions {
 }
 
 impl ExchangeSessions {
-    async fn acquire(pool: &SessionPool, project_id: i64) -> Self {
+    async fn acquire(pool: &SessionPool, project_id: i64, team: &Team) -> Self {
         let mut held = Vec::new();
-        for agent in Agent::ALL {
-            let slot = pool.slot(SessionKey { project_id, agent });
+        for agent in team.ids() {
+            let slot = pool.slot(SessionKey {
+                project_id,
+                agent: agent.clone(),
+            });
             let guard = Arc::clone(&slot.session).lock_owned().await;
-            held.push((agent, Held { slot, guard }));
+            held.push((agent.clone(), Held { slot, guard }));
         }
         Self {
             held,
@@ -1251,21 +1323,22 @@ impl ExchangeSessions {
         }
     }
 
-    fn held(&mut self, agent: Agent) -> Result<&mut Held, FlowError> {
+    fn held(&mut self, agent: &Agent, team: &Team) -> Result<&mut Held, FlowError> {
         self.held
             .iter_mut()
-            .find(|(held_agent, _)| *held_agent == agent)
+            .find(|(held_agent, _)| held_agent == agent)
             .map(|(_, held)| held)
-            .ok_or(FlowError::SessionNotHeld(agent))
+            .ok_or_else(|| FlowError::SessionNotHeld(team.name_of(agent).to_string()))
     }
 
     fn review(
         &mut self,
-        agent: Agent,
+        agent: &Agent,
         stalls: u32,
         repeats: u32,
+        team: &Team,
     ) -> Result<impl std::future::Future<Output = ()> + '_, FlowError> {
-        let session = &mut self.held(agent)?.guard;
+        let session = &mut self.held(agent, team)?.guard;
         Ok(async move {
             if degrades_to_fresh(stalls, repeats, session.recoveries) {
                 session.degrade().await;
@@ -1369,14 +1442,14 @@ impl AgentSession {
         project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
         store: &SessionStore<'_>,
-        role: &str,
+        call: &AgentCall,
         prompts: &StepPrompts,
         first: bool,
     ) -> Result<Option<Reply>, FlowError> {
         let mut next = self.first_attempt(store).await?;
         while let Some(attempt) = next {
             match self
-                .attempt(cli, project, gate, role, attempt, prompts, first)
+                .attempt(cli, project, gate.clone(), call, attempt, prompts, first)
                 .await
             {
                 Ok(reply) => {
@@ -1435,7 +1508,7 @@ impl AgentSession {
         cli: &Path,
         project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
-        role: &str,
+        call: &AgentCall,
         attempt: Attempt,
         prompts: &StepPrompts,
         first: bool,
@@ -1457,12 +1530,21 @@ impl AgentSession {
                     Attempt::Resume => self.session_id.as_deref(),
                     _ => None,
                 };
-                LiveSession::open(cli, role, Access::Project(project), resume)?
+                LiveSession::open(
+                    cli,
+                    &call.role,
+                    &call.model,
+                    Access::Project(project),
+                    resume,
+                )?
             }
         };
         self.pid
             .store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
-        match live.send(message, |request| gate.decide(request)).await {
+        match live
+            .send(message, |request| gate.clone().decide(request))
+            .await
+        {
             Ok(reply) => {
                 self.session_id = live.session_id().map(str::to_string);
                 self.live = Some(live);
@@ -1621,14 +1703,15 @@ fn project_description(project: &Project) -> Option<String> {
     Some(format!("{truncated}{TRUNCATION_MARK}"))
 }
 
-fn role(agent: Agent, project_context: &str) -> String {
-    let title = match agent {
-        Agent::Iara => "tech lead",
-        Agent::Davi => "dev frontend",
-    };
+struct AgentCall {
+    role: String,
+    model: String,
+}
+
+fn role(profile: &AgentProfile, roster: &str, project_context: &str) -> String {
     format!(
-        "Você é {}, {title}. {TEAM_ROSTER} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE} {project_context}",
-        agent.name()
+        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE} {project_context}",
+        profile.name, profile.role
     )
 }
 
@@ -1698,14 +1781,14 @@ struct ParsedReply {
     updates: Vec<Result<Change, String>>,
 }
 
-fn parse_reply(reply: &str, from: Agent) -> ParsedReply {
+fn parse_reply(reply: &str, from: &Agent, team: &Team) -> ParsedReply {
     let mut visible = Vec::new();
     let mut delegation = None;
     let mut updates = Vec::new();
     for line in reply.lines() {
         if let Some(update) = parse_update_line(line) {
             updates.push(update);
-        } else if let Some((agent, request)) = delegation_request(line, from) {
+        } else if let Some((agent, request)) = delegation_request(line, from, team) {
             delegation = Some((agent, request.to_string()));
         } else {
             visible.push(line);
@@ -1718,12 +1801,12 @@ fn parse_reply(reply: &str, from: Agent) -> ParsedReply {
     }
 }
 
-fn delegation_request(line: &str, from: Agent) -> Option<(Agent, &str)> {
+fn delegation_request<'a>(line: &'a str, from: &Agent, team: &Team) -> Option<(Agent, &'a str)> {
     let rest = line.trim().strip_prefix(DELEGATION_MARK)?;
     let (name, request) = rest.split_once(DELEGATION_SEPARATOR)?;
-    let agent = agent_named(name.trim())?;
+    let agent = team.named(name.trim())?;
     let request = request.trim();
-    (agent != from && !request.is_empty()).then_some((agent, request))
+    (agent != *from && !request.is_empty()).then_some((agent, request))
 }
 
 fn emit_message(
@@ -1735,7 +1818,7 @@ fn emit_message(
 ) -> Result<(), FlowError> {
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
-        db.insert_message(project_id, from, to, text, time)?;
+        db.insert_message(project_id, from.clone(), to.clone(), text, time)?;
     }
     emit(
         app,

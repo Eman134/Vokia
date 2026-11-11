@@ -1,10 +1,10 @@
 use serde::Serialize;
 use serde_json::Value as Json;
 
+use crate::agents::{Agent, Team};
 use crate::cache::{
     validate_name, validate_value, Cache, Rule, VarValue, Variable, CONVERSATION_VAR,
 };
-use crate::events::Agent;
 
 const NUMBER_TYPE: &str = "numero";
 const TEXT_TYPE: &str = "texto";
@@ -116,28 +116,22 @@ pub fn degrades_to_fresh(stalls: u32, repeats: u32, recoveries: u32) -> bool {
         || recoveries >= SESSION_RECOVERY_LIMIT
 }
 
-pub fn agent_named(name: &str) -> Option<Agent> {
-    Agent::ALL
-        .into_iter()
-        .find(|agent| agent.name().eq_ignore_ascii_case(name))
+pub fn parse_definition(reply: &str, origin: &Agent, request: &str, team: &Team) -> TaskDefinition {
+    definition_from_json(reply, origin, team).unwrap_or_else(|| safe_definition(origin, request))
 }
 
-pub fn parse_definition(reply: &str, origin: Agent, request: &str) -> TaskDefinition {
-    definition_from_json(reply, origin).unwrap_or_else(|| safe_definition(origin, request))
-}
-
-fn safe_definition(origin: Agent, request: &str) -> TaskDefinition {
+fn safe_definition(origin: &Agent, request: &str) -> TaskDefinition {
     TaskDefinition {
         nova_tarefa: false,
         objetivo: request.to_string(),
-        participants: vec![origin],
+        participants: vec![origin.clone()],
         alternate: false,
         variables: Vec::new(),
         stop: None,
     }
 }
 
-fn definition_from_json(reply: &str, origin: Agent) -> Option<TaskDefinition> {
+fn definition_from_json(reply: &str, origin: &Agent, team: &Team) -> Option<TaskDefinition> {
     let start = reply.find('{')?;
     let end = reply.rfind('}')?;
     let json: Json = serde_json::from_str(reply.get(start..=end)?).ok()?;
@@ -146,7 +140,7 @@ fn definition_from_json(reply: &str, origin: Agent) -> Option<TaskDefinition> {
         return None;
     }
     let variables = variables_from_json(json.get("variaveis")?.as_array()?);
-    let participants = participants_from_json(json.get("participantes")?.as_array()?, origin);
+    let participants = participants_from_json(json.get("participantes")?.as_array()?, origin, team);
     let alternate =
         json.get("alternar")?.as_bool()? && participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS;
     // Sem revezamento não há estado compartilhado: variáveis e parada ficariam sem uso.
@@ -166,22 +160,22 @@ fn definition_from_json(reply: &str, origin: Agent) -> Option<TaskDefinition> {
     })
 }
 
-fn participants_from_json(names: &[Json], origin: Agent) -> Vec<Agent> {
+fn participants_from_json(names: &[Json], origin: &Agent, team: &Team) -> Vec<Agent> {
     let mut participants: Vec<Agent> = Vec::new();
     for agent in names
         .iter()
-        .filter_map(|name| name.as_str().and_then(agent_named))
+        .filter_map(|name| name.as_str().and_then(|name| team.named(name)))
     {
         if !participants.contains(&agent) {
             participants.push(agent);
         }
     }
-    if let Some(index) = participants.iter().position(|agent| *agent == origin) {
+    if let Some(index) = participants.iter().position(|agent| agent == origin) {
         let agent = participants.remove(index);
         participants.insert(0, agent);
     }
     if participants.is_empty() {
-        participants.push(origin);
+        participants.push(origin.clone());
     }
     participants
 }

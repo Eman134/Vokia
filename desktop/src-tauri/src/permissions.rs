@@ -42,7 +42,7 @@ struct PendingPermission {
     sender: oneshot::Sender<bool>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct PermissionGate<'a> {
     pub app: &'a AppHandle,
     pub broker: &'a PermissionBroker,
@@ -60,7 +60,7 @@ impl PermissionGate<'_> {
         }
         let allowed = self
             .broker
-            .request(self.app, self.agent, self.project_id, request)
+            .request(self.app, self.agent.clone(), self.project_id, request)
             .await;
         if allowed && self.grant_per_session {
             self.remember(approval);
@@ -108,7 +108,7 @@ impl PermissionBroker {
             .unwrap_or(0);
         let event = VokiaEvent::Permission {
             id: request.id.clone(),
-            agent,
+            agent: agent.clone(),
             tool: request.tool.clone(),
             detail: command.clone(),
             project_id: Some(project_id),
@@ -119,7 +119,7 @@ impl PermissionBroker {
             self.forget(&request.id);
             return false;
         }
-        emit_agent_state(app, agent, AgentState::Waiting, project_id);
+        emit_agent_state(app, &agent, AgentState::Waiting, project_id);
         let outcome = match timeout(PERMISSION_WAIT_LIMIT, receiver).await {
             Ok(Ok(true)) => PermissionOutcome::Allowed,
             Ok(Ok(false)) | Ok(Err(_)) => PermissionOutcome::Denied,
@@ -148,7 +148,7 @@ impl PermissionBroker {
                 outcome,
             },
         );
-        emit_agent_state(app, agent, AgentState::Thinking, project_id);
+        emit_agent_state(app, &agent, AgentState::Thinking, project_id);
         outcome == PermissionOutcome::Allowed
     }
 
@@ -202,11 +202,11 @@ impl PermissionBroker {
     }
 }
 
-fn emit_agent_state(app: &AppHandle, agent: Agent, state: AgentState, project_id: i64) {
+fn emit_agent_state(app: &AppHandle, agent: &Agent, state: AgentState, project_id: i64) {
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::AgentState {
-            agent,
+            agent: agent.clone(),
             state,
             project_id: Some(project_id),
         },

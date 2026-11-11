@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::events::Agent;
+use crate::agents::{Agent, Team};
 use crate::task::{ActiveTask, TaskOutcome, TaskRecord};
 
 pub const VAR_NAME_MAX: usize = 32;
@@ -72,7 +72,7 @@ pub enum Rule {
     ReadOnly,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Creator {
     System,
     Agent(Agent),
@@ -149,11 +149,11 @@ impl Cache {
         self.find(name)?.value.as_number()
     }
 
-    pub fn visible_to(&self, agent: Agent) -> Vec<&Variable> {
+    pub fn visible_to(&self, agent: &Agent) -> Vec<&Variable> {
         self.variables
             .iter()
             .filter(|variable| {
-                variable.scope == Scope::Team || variable.creator == Creator::Agent(agent)
+                variable.scope == Scope::Team || variable.creator == Creator::Agent(agent.clone())
             })
             .collect()
     }
@@ -228,11 +228,16 @@ impl Cache {
         items.drain(..excess);
     }
 
-    pub fn apply_reply(&mut self, author: Agent, updates: Vec<Result<Change, String>>) -> Applied {
+    pub fn apply_reply(
+        &mut self,
+        author: &Agent,
+        updates: Vec<Result<Change, String>>,
+        team: &Team,
+    ) -> Applied {
         let backup = self.variables.clone();
         let mut applied = Applied::default();
         for update in updates {
-            match update.and_then(|change| self.apply(author, &change).map(|()| change)) {
+            match update.and_then(|change| self.apply(author, &change, team).map(|()| change)) {
                 Ok(change) => applied.accepted.push(change),
                 Err(motive) => applied.rejected.push(motive),
             }
@@ -244,20 +249,21 @@ impl Cache {
         applied
     }
 
-    fn apply(&mut self, author: Agent, change: &Change) -> Result<(), String> {
+    fn apply(&mut self, author: &Agent, change: &Change, team: &Team) -> Result<(), String> {
         match change {
-            Change::Set { name, value, share } => self.set(author, name, value, *share),
-            Change::Append { name, item } => self.append(author, name, item),
-            Change::Share { name } => self.share(author, name),
+            Change::Set { name, value, share } => self.set(author, name, value, *share, team),
+            Change::Append { name, item } => self.append(author, name, item, team),
+            Change::Share { name } => self.share(author, name, team),
         }
     }
 
     fn set(
         &mut self,
-        author: Agent,
+        author: &Agent,
         name: &str,
         value: &VarValue,
         share: bool,
+        team: &Team,
     ) -> Result<(), String> {
         validate_value(value)?;
         let Some(variable) = self.find_mut(name) else {
@@ -268,11 +274,11 @@ impl Cache {
                 value: value.clone(),
                 scope: if share { Scope::Team } else { Scope::Private },
                 rule: Rule::Free,
-                creator: Creator::Agent(author),
+                creator: Creator::Agent(author.clone()),
             });
             return Ok(());
         };
-        ensure_visible(variable, author)?;
+        ensure_visible(variable, author, team)?;
         if variable.rule == Rule::ReadOnly {
             return Err(format!("a variável {name} é somente leitura"));
         }
@@ -295,7 +301,7 @@ impl Cache {
                 ));
             }
         }
-        if share && variable.creator != Creator::Agent(author) {
+        if share && variable.creator != Creator::Agent(author.clone()) {
             return Err(format!("só quem criou {name} pode compartilhá-la"));
         }
         variable.value = value.clone();
@@ -305,7 +311,13 @@ impl Cache {
         Ok(())
     }
 
-    fn append(&mut self, author: Agent, name: &str, item: &str) -> Result<(), String> {
+    fn append(
+        &mut self,
+        author: &Agent,
+        name: &str,
+        item: &str,
+        team: &Team,
+    ) -> Result<(), String> {
         check_text(item)?;
         let Some(variable) = self.find_mut(name) else {
             validate_name(name)?;
@@ -315,11 +327,11 @@ impl Cache {
                 value: VarValue::List(vec![item.to_string()]),
                 scope: Scope::Private,
                 rule: Rule::Append,
-                creator: Creator::Agent(author),
+                creator: Creator::Agent(author.clone()),
             });
             return Ok(());
         };
-        ensure_visible(variable, author)?;
+        ensure_visible(variable, author, team)?;
         if variable.rule == Rule::ReadOnly {
             return Err(format!("a variável {name} é somente leitura"));
         }
@@ -339,12 +351,12 @@ impl Cache {
         Ok(())
     }
 
-    fn share(&mut self, author: Agent, name: &str) -> Result<(), String> {
+    fn share(&mut self, author: &Agent, name: &str, team: &Team) -> Result<(), String> {
         let Some(variable) = self.find_mut(name) else {
             return Err(format!("a variável {name} não existe"));
         };
-        ensure_visible(variable, author)?;
-        if variable.creator != Creator::Agent(author) {
+        ensure_visible(variable, author, team)?;
+        if variable.creator != Creator::Agent(author.clone()) {
             return Err(format!("só quem criou {name} pode compartilhá-la"));
         }
         variable.scope = Scope::Team;
@@ -370,11 +382,15 @@ impl Cache {
     }
 }
 
-fn ensure_visible(variable: &Variable, author: Agent) -> Result<(), String> {
-    match variable.creator {
-        Creator::Agent(owner) if variable.scope == Scope::Private && owner != author => Err(
-            format!("a variável {} é privada de {}", variable.name, owner.name()),
-        ),
+fn ensure_visible(variable: &Variable, author: &Agent, team: &Team) -> Result<(), String> {
+    match &variable.creator {
+        Creator::Agent(owner) if variable.scope == Scope::Private && owner != author => {
+            Err(format!(
+                "a variável {} é privada de {}",
+                variable.name,
+                team.name_of(owner)
+            ))
+        }
         _ => Ok(()),
     }
 }

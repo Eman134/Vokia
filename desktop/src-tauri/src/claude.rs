@@ -20,7 +20,7 @@ const STDERR_TAIL_LINES: usize = 5;
 const STDERR_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const SESSION_EOF: &str = "o processo encerrou antes de enviar o resultado";
 const CLI_NAME: &str = "claude";
-const MODEL: &str = "haiku";
+pub const DEFAULT_MODEL: &str = "haiku";
 const TEXT_ONLY_MAX_TURNS: &str = "3";
 const PROJECT_MAX_TURNS: &str = "40";
 const CLI_TIMEOUT: Duration = Duration::from_secs(120);
@@ -293,8 +293,8 @@ fn timeout_for(access: Access<'_>) -> Duration {
     }
 }
 
-pub async fn ask(cli: &Path, message: &str, role: &str) -> Result<Reply, ClaudeError> {
-    let mut command = agent_command(cli, &["-p", message], role, Access::TextOnly);
+pub async fn ask(cli: &Path, message: &str, role: &str, model: &str) -> Result<Reply, ClaudeError> {
+    let mut command = agent_command(cli, &["-p", message], role, model, Access::TextOnly);
     let limit = timeout_for(Access::TextOnly);
     let output = timeout(limit, command.output())
         .await
@@ -338,11 +338,17 @@ impl LiveSession {
     pub fn open(
         cli: &Path,
         role: &str,
+        model: &str,
         access: Access<'_>,
         resume: Option<&str>,
     ) -> Result<Self, ClaudeError> {
-        let mut command =
-            agent_command(cli, &["-p", "--input-format", "stream-json"], role, access);
+        let mut command = agent_command(
+            cli,
+            &["-p", "--input-format", "stream-json"],
+            role,
+            model,
+            access,
+        );
         command.args([
             "--permission-prompts",
             "host",
@@ -646,7 +652,13 @@ fn parse_stream(stdout: &[u8]) -> Result<(CliResponse, Option<RateLimits>), Clau
     accumulator.finish()
 }
 
-fn agent_command(cli: &Path, leading: &[&str], role: &str, access: Access<'_>) -> Command {
+fn agent_command(
+    cli: &Path,
+    leading: &[&str],
+    role: &str,
+    model: &str,
+    access: Access<'_>,
+) -> Command {
     let mut command = base_command(cli);
     command.kill_on_drop(true);
     // A mensagem de `-p` vem antes das opções variádicas (`--tools`, `--allowedTools`),
@@ -657,7 +669,7 @@ fn agent_command(cli: &Path, leading: &[&str], role: &str, access: Access<'_>) -
         "stream-json",
         "--verbose",
         "--model",
-        MODEL,
+        model,
     ]);
     match access {
         Access::TextOnly => {
