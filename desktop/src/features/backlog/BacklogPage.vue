@@ -42,7 +42,7 @@ import { useBacklog } from './useBacklog'
 import { useItemPlan, type PlanTab } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
+const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-6 pb-[150px] pl-2'
 const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
 const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
 const SUBTITLE_CLASSES = 'mt-1 max-w-[70ch] text-body text-muted'
@@ -51,8 +51,8 @@ const SEARCH_CLASSES =
   'h-9 w-55 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint disabled:opacity-40'
 const MINE_CLASSES = 'h-7.5 rounded-control-sm border border-line px-3 text-caption text-muted disabled:opacity-40'
 const TAG_FILTER_CLASSES = 'h-7 rounded-control-sm px-2.5 text-label font-medium'
-const GRID_SCROLL_CLASSES = 'shrink-0 overflow-x-auto'
-const GRID_CLASSES = 'grid min-w-0 grid-cols-[repeat(5,minmax(210px,1fr))] items-start gap-3'
+const GRID_SCROLL_CLASSES = 'min-w-0'
+const GRID_CLASSES = 'grid min-w-0 grid-cols-[repeat(5,minmax(0,1fr))] items-start gap-2'
 const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'
 const TAG_TINT_PERCENT = 11
 const TAG_TINT_ACTIVE_PERCENT = 22
@@ -225,7 +225,7 @@ watch(
             <b>{{ column.name }}</b>
             <span class="text-caption text-muted">{{ column.cards.length }}</span>
           </div>
-          <span v-if="density === 'normal'" class="text-caption text-muted">{{ column.hint }}</span>
+          <span v-if="density === 'normal'" class="truncate text-caption text-muted">{{ column.hint }}</span>
           <BacklogCard
             v-for="item in column.cards"
             :key="item.id"

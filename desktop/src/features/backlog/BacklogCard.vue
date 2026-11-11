@@ -16,7 +16,6 @@ import {
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import { tagColor, tagLabel, tagTextColor } from './tags'
-import { YOU_INITIAL } from '../team/portraitArt'
 import { DEFAULT_COLUMN, READY_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
 
 const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity; planLine?: string }>(), {
@@ -27,7 +26,6 @@ const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
-const VOCE = 'voce'
 
 const isCompact = computed(() => props.density === 'compacta')
 const featureColor = computed(() => colorVar(FEATURE_COLOR[props.item.feature ?? ''] ?? DEFAULT_FEATURE_COLOR))
@@ -62,8 +60,6 @@ const percent = computed(() => {
   return Math.round((progress.value.filled / progress.value.total) * 100)
 })
 
-const authorInitial = computed(() => (props.item.who === VOCE ? YOU_INITIAL : props.item.who.charAt(0).toUpperCase()))
-
 const showPlan = computed(() => !isCompact.value && Boolean(props.planLine))
 
 function tagPillStyle(tag: BacklogTag) {
@@ -77,7 +73,7 @@ function tagPillStyle(tag: BacklogTag) {
 
 <template>
   <article
-    class="flex cursor-pointer flex-col gap-2 rounded-card border border-line bg-surface p-3.5"
+    class="flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-card border border-line bg-surface p-2.5"
     :class="[isCompact && 'border-l-4', item.error && 'border-danger']"
     :style="isCompact ? { borderLeftColor: featureColor } : undefined"
     @click="emit('open')"
@@ -86,7 +82,7 @@ function tagPillStyle(tag: BacklogTag) {
       <span>{{ item.id }}</span>
       <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
-      <ul v-if="!isCompact && item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1.5">
+      <ul v-if="!isCompact && item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
         <li
           v-for="tag in item.tags"
           :key="tag"
@@ -110,7 +106,7 @@ function tagPillStyle(tag: BacklogTag) {
       </div>
     </header>
 
-    <p v-if="item.parent && !isCompact" class="text-caption text-muted">↳ {{ item.parent }}</p>
+    <p v-if="item.parent && !isCompact" class="truncate text-caption text-muted">↳ {{ item.parent }}</p>
     <h3 class="text-control font-semibold text-ink" :class="isCompact ? 'truncate' : 'wrap-break-word'">
       {{ item.title }}
     </h3>
@@ -146,8 +142,8 @@ function tagPillStyle(tag: BacklogTag) {
       </UiButton>
     </div>
 
-    <p v-if="!isCompact && item.description" class="text-caption text-muted">{{ item.description }}</p>
-    <p v-if="showPlan" class="wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
+    <p v-if="!isCompact && item.description" class="line-clamp-2 wrap-break-word text-caption text-muted">{{ item.description }}</p>
+    <p v-if="showPlan" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
 
     <div v-if="progress" class="flex flex-col gap-1.5">
       <p v-if="progress.showText" class="flex justify-between text-caption text-muted">
@@ -164,14 +160,8 @@ function tagPillStyle(tag: BacklogTag) {
       </div>
     </div>
 
-    <footer v-if="!isCompact" class="flex items-center gap-2 text-caption text-muted">
-      <span
-        class="grid size-5 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-tiny font-semibold text-ink"
-      >
-        {{ authorInitial }}
-      </span>
-      <span>{{ item.by }}</span>
-      <UiBadge v-if="!isCompact" class="ml-auto" :status="chip.status" :label="chip.label" />
+    <footer v-if="!isCompact" class="flex items-center text-caption text-muted">
+      <UiBadge class="ml-auto" :status="chip.status" :label="chip.label" />
     </footer>
   </article>
 </template>
