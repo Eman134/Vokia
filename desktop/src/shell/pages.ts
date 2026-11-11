@@ -10,6 +10,7 @@ import PlanosPage from '../features/plans/PlanosPage.vue'
 import ProjetosPage from '../features/projects/ProjetosPage.vue'
 import NovoProjetoPage from '../features/projects/NovoProjetoPage.vue'
 import BacklogPage from '../features/backlog/BacklogPage.vue'
+import MapaPage from '../features/teammap/MapaPage.vue'
 import type { AppPage } from './railNav'
 
 export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
@@ -23,4 +24,5 @@ export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
   projetos: [ProjetosPage],
   'novo-projeto': [NovoProjetoPage],
   backlog: [BacklogPage],
+  mapa: [MapaPage],
 }
