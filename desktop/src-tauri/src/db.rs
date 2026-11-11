@@ -34,9 +34,21 @@ pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
-const SETTINGS_SCHEMA: &[(&str, &[&str])] = &[
-    (SETTING_THEME, THEME_VALUES),
-    (SETTING_PERMISSION_GRANT, PERMISSION_GRANT_VALUES),
+const SETTING_AVATAR_PROFILES: &str = "avatar_profiles";
+
+enum SettingRule {
+    OneOf(&'static [&'static str]),
+    // O formato do JSON é validado no front (useAvatarProfiles); aqui só se recusa texto que não é JSON.
+    Json,
+}
+
+const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
+    (SETTING_THEME, SettingRule::OneOf(THEME_VALUES)),
+    (
+        SETTING_PERMISSION_GRANT,
+        SettingRule::OneOf(PERMISSION_GRANT_VALUES),
+    ),
+    (SETTING_AVATAR_PROFILES, SettingRule::Json),
 ];
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
 const SETTING_DEFAULTS: &[(&str, &str)] = &[(SETTING_PERMISSION_GRANT, GRANT_SESSION)];
@@ -782,7 +794,7 @@ impl Db {
         let mut settings = HashMap::new();
         for row in rows {
             let (key, value) = row?;
-            if is_valid_setting(&key, &value) {
+            if is_loadable_setting(&key, &value) {
                 settings.insert(key, value);
             }
         }
@@ -820,10 +832,26 @@ fn parse_speaker(value: &str) -> Result<Speaker, DbError> {
     Speaker::parse(value).ok_or_else(|| DbError::InvalidSpeaker(value.to_string()))
 }
 
+impl SettingRule {
+    fn accepts(&self, value: &str) -> bool {
+        match self {
+            SettingRule::OneOf(allowed) => allowed.contains(&value),
+            SettingRule::Json => serde_json::from_str::<serde_json::Value>(value).is_ok(),
+        }
+    }
+}
+
+// Valor JSON inválido sai bruto: o front precisa vê-lo para avisar e não gravar por cima.
+fn is_loadable_setting(key: &str, value: &str) -> bool {
+    SETTINGS_SCHEMA.iter().any(|(known, rule)| {
+        *known == key && (matches!(rule, SettingRule::Json) || rule.accepts(value))
+    })
+}
+
 fn is_valid_setting(key: &str, value: &str) -> bool {
     SETTINGS_SCHEMA
         .iter()
-        .any(|(known, allowed)| *known == key && allowed.contains(&value))
+        .any(|(known, rule)| *known == key && rule.accepts(value))
 }
 
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

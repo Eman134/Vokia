@@ -5,7 +5,8 @@ import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import { trapFocus } from '../backlog/dialogFocus'
-import { AVATAR_PROFILES, renderAvatarArt } from '../identities/avatarProfiles'
+import { AVATAR_PROFILES } from '../identities/avatarProfiles'
+import AvatarPicker from '../identities/AvatarPicker.vue'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import {
@@ -19,14 +20,12 @@ import {
   ROLE_LABEL,
 } from './agentFormCopy'
 
-const AVATAR_SIZE = 40
 
 const emit = defineEmits<{ created: [agent: AgentProfile]; close: [] }>()
 
 const roster = useRoster()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
-const avatarGroup = ref<HTMLElement>()
 const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
 
 const usedAvatars = new Set(roster.agents.map((agent) => agent.avatar))
@@ -91,14 +90,6 @@ async function submit(): Promise<void> {
   }
 }
 
-function moveAvatar(event: KeyboardEvent, step: number): void {
-  event.preventDefault()
-  const index = AVATAR_PROFILES.findIndex((profile) => profile.id === avatar.value)
-  const next = AVATAR_PROFILES[(index + step + AVATAR_PROFILES.length) % AVATAR_PROFILES.length]
-  avatar.value = next.id
-  avatarGroup.value?.querySelector<HTMLElement>(`[data-avatar="${next.id}"]`)?.focus()
-}
-
 onMounted(focusName)
 </script>
 
@@ -122,34 +113,7 @@ onMounted(focusName)
       </div>
       <div class="flex flex-col gap-1.5">
         <span :id="`${titleId}-avatar`" class="text-label font-medium text-muted">{{ AVATAR_LABEL }}</span>
-        <div
-          ref="avatarGroup"
-          role="radiogroup"
-          :aria-labelledby="`${titleId}-avatar`"
-          class="flex flex-wrap gap-1.5"
-        >
-          <button
-            v-for="profile in AVATAR_PROFILES"
-            :key="profile.id"
-            type="button"
-            role="radio"
-            :data-avatar="profile.id"
-            :aria-checked="avatar === profile.id"
-            :aria-label="profile.nome"
-            :tabindex="avatar === profile.id ? 0 : -1"
-            class="rounded-control p-1 focus:outline-2 focus:outline-solid focus:outline-accent"
-            :class="avatar === profile.id ? 'bg-accent-soft ring-2 ring-accent' : 'border border-line'"
-            @click="avatar = profile.id"
-            @keydown.right="moveAvatar($event, 1)"
-            @keydown.down="moveAvatar($event, 1)"
-            @keydown.left="moveAvatar($event, -1)"
-            @keydown.up="moveAvatar($event, -1)"
-          >
-            <svg :width="AVATAR_SIZE" :height="AVATAR_SIZE" viewBox="0 0 64 64" aria-hidden="true">
-              <g v-html="renderAvatarArt(profile)" />
-            </svg>
-          </button>
-        </div>
+        <AvatarPicker v-model="avatar" :label-id="`${titleId}-avatar`" />
       </div>
       <div class="flex gap-3">
         <label class="flex flex-col gap-1.5">

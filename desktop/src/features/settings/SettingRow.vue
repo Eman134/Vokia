@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import ThemeSwitch from '../theme/ThemeSwitch.vue'
 import { useTeam } from '../team/useTeam'
 import { useTheme } from '../theme/useTheme'
+import { useAvatarProfiles } from '../identities/useAvatarProfiles'
 import { useProjects } from '../projects/useProjects'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
@@ -18,6 +19,7 @@ const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
 const team = useTeam()
 const theme = useTheme()
+const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
 const ONBOARDING_PAGE = 'onboarding'
 const ACTION_HANDLERS: Record<SettingsActionId, () => void> = {
@@ -55,6 +57,7 @@ async function eraseEverything(): Promise<void> {
     await projects.load()
     await team.restoreHistory()
     await theme.load()
+    await avatarProfiles.load()
     navigation.goTo(ONBOARDING_PAGE)
   } catch (error) {
     eraseError.value = `Dados apagados, mas a tela não recarregou: ${String(error)}`

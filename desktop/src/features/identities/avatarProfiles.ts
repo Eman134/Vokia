@@ -111,13 +111,14 @@ function findColor(id: string): AvatarColor | undefined {
   return AVATAR_COLORS.find((color) => color.id === id)
 }
 
-function isRenderable(profile: AvatarProfile): boolean {
+export function isRenderable(profile: AvatarProfile): boolean {
   return findColor(profile.cor) !== undefined && findShape(profile.forma)?.faces[profile.expressao] !== undefined
 }
 
-export function resolveAvatarProfile(id: string): AvatarProfile {
+export function resolveAvatarProfile(id: string, userProfiles: readonly AvatarProfile[] = []): AvatarProfile {
   const key = id.trim().toLowerCase()
-  const profile = AVATAR_PROFILES.find((candidate) => candidate.id === key)
+  const profile =
+    AVATAR_PROFILES.find((candidate) => candidate.id === key) ?? userProfiles.find((candidate) => candidate.id === key)
   if (profile && isRenderable(profile)) return profile
   if (!warnedIds.has(key)) {
     warnedIds.add(key)
