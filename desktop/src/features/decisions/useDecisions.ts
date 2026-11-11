@@ -30,11 +30,18 @@ interface Awaiting {
   timer: ReturnType<typeof setTimeout>
 }
 
+export interface AnswerLogEntry {
+  decisionId: number
+  text: string
+  kind: 'answered' | 'undone'
+}
+
 export const useDecisions = defineStore('decisions', () => {
   const team = useTeam()
   const balloons = useBalloons()
   const pending = ref<VokiaDecision[]>([])
   const resolved = ref<ResolvedEntry[]>([])
+  const answerLog = ref<AnswerLogEntry[]>([])
   const open = ref(false)
   const awaiting = new Map<number, Awaiting>()
 
@@ -75,6 +82,7 @@ export const useDecisions = defineStore('decisions', () => {
     }
     pending.value = pending.value.filter((candidate) => candidate.id !== id)
     resolved.value.push({ key: `decisao-${id}`, message, decisionId: id, sent: false })
+    answerLog.value.push({ decisionId: id, text, kind: 'answered' })
     awaiting.set(id, { decision, answer: text, timer: setTimeout(() => void send(id), UNDO_WINDOW_MS) })
   }
 
@@ -104,6 +112,7 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.delete(id)
     resolved.value = resolved.value.filter((candidate) => candidate.decisionId !== id)
     pending.value = [...pending.value, entry.decision].sort((a, b) => a.id - b.id)
+    answerLog.value.push({ decisionId: id, text: '', kind: 'undone' })
   }
 
   function answerPermission(id: string, allow: boolean, message: string): void {
@@ -130,5 +139,5 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.clear()
   }
 
-  return { pending, resolved, cards, pendingCount, open, apply, answer, undo, answerPermission, setOpen, toggle, stop }
+  return { pending, resolved, answerLog, cards, pendingCount, open, apply, answer, undo, answerPermission, setOpen, toggle, stop }
 })

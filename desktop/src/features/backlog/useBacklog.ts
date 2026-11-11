@@ -9,7 +9,7 @@ import {
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
-import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem } from './backlogTypes'
+import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem, type TriageQuestion } from './backlogTypes'
 import { normalizeTag } from './tags'
 
 interface ItemQueue {
@@ -187,6 +187,27 @@ export const useBacklog = defineStore('backlog', () => {
     saveItem(itemId)
   }
 
+  function addQuestion(itemId: string, question: TriageQuestion): void {
+    const item = editable(itemId)
+    if (!item) return
+    item.questions = [...(item.questions ?? []), question]
+    saveItem(itemId)
+  }
+
+  function clearAnswer(itemId: string, questionId: string): void {
+    const question = editable(itemId)?.questions?.find((current) => current.id === questionId)
+    if (!question || question.selected === undefined) return
+    delete question.selected
+    saveItem(itemId)
+  }
+
+  function removeQuestions(itemId: string, ids: string[]): void {
+    const item = editable(itemId)
+    if (!item?.questions || ids.length === 0) return
+    item.questions = item.questions.filter((question) => !ids.includes(question.id))
+    saveItem(itemId)
+  }
+
   function toggleCriterion(itemId: string, criterionId: string): void {
     const criterion = editable(itemId)?.criteria?.find((current) => current.id === criterionId)
     if (!criterion) return
@@ -212,6 +233,9 @@ export const useBacklog = defineStore('backlog', () => {
     addActivity,
     setRunColumn,
     answer,
+    addQuestion,
+    clearAnswer,
+    removeQuestions,
     toggleCriterion,
     savePlan,
   }

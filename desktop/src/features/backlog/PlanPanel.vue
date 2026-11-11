@@ -4,7 +4,10 @@ import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import type { Agent } from '../team/events'
 import { AGENTS, DEFAULT_RECIPIENT, useTeam } from '../team/useTeam'
+import { useDecisions } from '../decisions/useDecisions'
 import type { BacklogItem } from './backlogTypes'
+import { parseProposal } from './planProposal'
+import { tagLabel } from './tags'
 import {
   DEFAULT_DEPTH,
   NO_PLAN_TEXT,
@@ -21,17 +24,29 @@ const DEPTH_OPTIONS: { id: PlanDepth; label: string }[] = [
   { id: 'completo', label: 'Completo · com pesquisa' },
 ]
 const RECOMMENDED_LABEL = ' (recomendada)'
+const PENDING_QUESTION_TEXT = 'Há uma pergunta esperando você no painel de Decisões.'
+const ADJUST_LABEL = 'O que ajustar'
+
+const lotsLabel = (count: number, estimate: string): string => {
+  const base = `propôs ${count} ${count === 1 ? 'lote' : 'lotes'}`
+  return estimate ? `${base} · ${estimate}` : base
+}
 
 const itemPlan = useItemPlan()
 const team = useTeam()
+const decisions = useDecisions()
 const tab = ref<PlanTab>(itemPlan.takePreferredTab())
 const agent = ref<Agent>(DEFAULT_RECIPIENT)
 const depth = ref<PlanDepth>(DEFAULT_DEPTH)
 const chosenPlanId = ref<string | null>(null)
+const adjusting = ref(false)
+const adjustText = ref('')
 
 const current = computed(() => itemPlan.planOf(props.item.id))
 const agentName = computed(() => AGENTS.find((profile) => profile.id === (current.value.agent ?? agent.value))?.name ?? '')
 const requestBlocked = computed(() => team.checking || team.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value))
+const parsed = computed(() => parseProposal(current.value.proposal ?? ''))
+const pendingQuestion = computed(() => itemPlan.hasPendingQuestion(props.item.id))
 
 function requestPlan(): void {
   if (requestBlocked.value) return
@@ -47,6 +62,12 @@ function linkChosen(): void {
 function unlink(): void {
   itemPlan.unlink(props.item.id)
   chosenPlanId.value = null
+}
+
+function sendAdjust(): void {
+  void itemPlan.adjust(props.item.id, adjustText.value)
+  adjustText.value = ''
+  adjusting.value = false
 }
 </script>
 
@@ -120,15 +141,60 @@ function unlink(): void {
           {{ index < PLAN_STEPS.length - 1 ? '✓' : '…' }} {{ step }}
         </li>
       </ol>
+      <p v-if="current.interim" class="whitespace-pre-wrap text-caption text-muted">{{ current.interim }}</p>
+      <template v-if="pendingQuestion">
+        <p class="text-control text-ink">{{ PENDING_QUESTION_TEXT }}</p>
+        <UiButton class="self-start" variant="approve" size="sm" @press="decisions.setOpen(true)">Responder</UiButton>
+      </template>
+      <UiButton
+        v-else-if="current.interim"
+        class="self-start"
+        variant="quiet"
+        size="sm"
+        @press="itemPlan.promoteInterim(item.id)"
+      >
+        Usar a última resposta como proposta
+      </UiButton>
       <UiButton class="self-start" variant="quiet" size="sm" @press="itemPlan.cancel(item.id)">Cancelar</UiButton>
     </template>
 
     <template v-else-if="current.state === 'proposto'">
-      <p class="text-label font-semibold text-ink">Proposta de {{ agentName }}</p>
-      <p class="whitespace-pre-wrap text-control text-ink">{{ current.proposal }}</p>
-      <div class="flex gap-2">
+      <template v-if="parsed.lots.length">
+        <p class="text-label font-semibold text-ink">
+          {{ agentName }} {{ lotsLabel(parsed.lots.length, parsed.estimate) }}
+        </p>
+        <ol class="flex flex-col gap-1.5">
+          <li v-for="lot in parsed.lots" :key="lot.n" class="text-control text-ink">
+            <b>{{ lot.n }}. {{ lot.title }}</b>
+            <span v-if="lot.meta" class="text-caption text-muted"> · {{ lot.meta }}</span>
+            <p v-if="lot.tasks" class="text-caption text-muted">{{ lot.tasks }}</p>
+          </li>
+        </ol>
+        <p v-if="parsed.risk" class="text-caption text-ink">Risco: {{ parsed.risk }}</p>
+        <div v-if="parsed.tags.length" class="flex flex-wrap items-center gap-1.5">
+          <span class="text-caption text-muted">Etiquetas sugeridas</span>
+          <span v-for="tag in parsed.tags" :key="tag" class="rounded-chip bg-surface-2 px-2 text-meta text-ink">{{ tagLabel(tag) }}</span>
+        </div>
+        <p v-if="parsed.summary" class="whitespace-pre-wrap text-caption text-muted">{{ parsed.summary }}</p>
+      </template>
+      <template v-else>
+        <p class="text-label font-semibold text-ink">Proposta de {{ agentName }}</p>
+        <p class="whitespace-pre-wrap text-control text-ink">{{ current.proposal }}</p>
+      </template>
+      <div class="flex flex-wrap gap-2">
         <UiButton variant="approve" size="lg" @press="itemPlan.accept(item.id)">Aceitar e vincular</UiButton>
+        <UiButton variant="quiet" size="lg" @press="adjusting = !adjusting">Ajustar</UiButton>
         <UiButton variant="quiet" size="lg" @press="itemPlan.discard(item.id)">Descartar</UiButton>
+      </div>
+      <div v-if="adjusting" class="flex flex-col gap-1.5">
+        <textarea
+          v-model="adjustText"
+          :aria-label="ADJUST_LABEL"
+          :placeholder="ADJUST_LABEL"
+          rows="3"
+          class="w-full rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint"
+        />
+        <UiButton class="self-start" variant="primary" size="sm" :disabled="adjustText.trim() === ''" @press="sendAdjust">Enviar ajuste</UiButton>
       </div>
     </template>
 

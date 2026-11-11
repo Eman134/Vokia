@@ -59,6 +59,14 @@ export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'D
 export const DEFAULT_COLUMN: BacklogColumn = 'Backlog'
 export const AUTO_COLUMNS_HINT = 'In progress e In review andam sozinhos'
 export const OTHER_OPTION = 'Outro…'
+export const QUESTIONS_TITLE = (leader: string): string => `Perguntas de ${leader} · triagem`
+export const OTHER_PLACEHOLDER = (leader: string): string => `Escreva sua resposta para a ${leader}`
+export const OTHER_INPUT_LABEL = 'Sua resposta'
+export const MICRO_SUMMARY = (total: number, done: number): string => `${total} micro-tarefas · ${done} feitas`
+export const MICRO_EXPLANATION = (leader: string): string =>
+  `Cada micro-tarefa vem com um roteiro fechado: contexto, arquivos, passos, teste e limites. Modelos leves só executam; quem decide é a ${leader}. Se uma micro-tarefa volta da revisão, a ${leader} detalha o roteiro com o que faltou e o mesmo modelo tenta de novo; só na 2ª vez sobe o modelo; depois disso, chama você. O que faltou vira fato na memória, e os próximos roteiros parecidos já nascem detalhados.`
+export const CONVERSATIONS_LABEL = 'Abrir conversas'
+export const DECISION_QUESTION_PREFIX = 'dec-'
 export const MAIN_ACTION: Record<BacklogState, string> = {
   triagem: 'Responder à líder',
   vazio: 'Mandar para a triagem',

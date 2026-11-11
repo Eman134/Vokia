@@ -1,12 +1,14 @@
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
-import { sendRequest } from '../team/teamApi'
+import { sendRequest, type RequestOutcome } from '../team/teamApi'
 import { useProjects } from '../projects/useProjects'
+import { useDecisions } from '../decisions/useDecisions'
 import { agentName, useTeam } from '../team/useTeam'
 import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
-import type { BacklogItem, BacklogState } from './backlogTypes'
+import { DECISION_QUESTION_PREFIX, type BacklogItem, type BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
+import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal } from './planProposal'
 
 export type PlanTab = 'vincular' | 'pedir'
 export type PlanDepth = 'rapido' | 'completo'
@@ -25,6 +27,7 @@ const ACCEPTED_PLAN_META = 'proposta aceita'
 const PLAN_LINE_SEPARATOR = ' · '
 const PLAN_LINE_PROPOSED = 'proposta'
 const PLAN_LINE_GENERATING = 'escrevendo o plano…'
+const NO_REPLY_ERROR = 'O agente terminou sem mandar um plano.'
 
 export interface LinkedPlan {
   id: string
@@ -39,6 +42,7 @@ export interface ItemPlan {
   agent?: Agent
   error?: string
   cancelled?: boolean
+  interim?: string
 }
 
 const EMPTY_PLAN: ItemPlan = { state: 'vazio' }
@@ -55,10 +59,6 @@ function linkedPlansOf(entries: ItemPlanEntry[]): LinkedPlan[] {
   return [...byId.values()]
 }
 
-export function planPrompt(item: BacklogItem, depth: PlanDepth): string {
-  return `Escreva um plano para o item "${item.title}". ${depth === 'rapido' ? 'Um lote.' : 'Com pesquisa.'} Responda em português, em lotes.`
-}
-
 export const useItemPlan = defineStore('itemPlan', () => {
   const states = ref<Record<string, ItemPlan>>({})
   const plans = ref<LinkedPlan[]>([])
@@ -67,6 +67,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const team = useTeam()
   const backlog = useBacklog()
   const projects = useProjects()
+  const decisions = useDecisions()
 
   function planOf(itemId: string): ItemPlan {
     return states.value[itemId] ?? EMPTY_PLAN
@@ -86,7 +87,11 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (state === 'vazio') return undefined
     if (state === 'vinculado' && saved?.plan) return [saved.plan.name, saved.plan.meta].join(PLAN_LINE_SEPARATOR)
     if (state === 'proposto' && saved?.agent) return [agentName(saved.agent), PLAN_LINE_PROPOSED].join(PLAN_LINE_SEPARATOR)
-    if (state === 'gerando' && saved?.agent) return [agentName(saved.agent), PLAN_LINE_GENERATING].join(PLAN_LINE_SEPARATOR)
+    if (state === 'gerando' && saved?.agent) {
+      const open = item.questions?.filter((question) => question.id.startsWith(DECISION_QUESTION_PREFIX) && question.selected === undefined).length ?? 0
+      const text = open > 0 ? `${open} ${open === 1 ? 'pergunta' : 'perguntas'} para você` : PLAN_LINE_GENERATING
+      return [agentName(saved.agent), text].join(PLAN_LINE_SEPARATOR)
+    }
     return item.plan
   }
 
@@ -142,24 +147,57 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return Object.keys(states.value).find((id) => isAwaiting(states.value[id], agent))
   }
 
-  async function request(itemId: string, agent: Agent, depth: PlanDepth): Promise<void> {
-    const item = backlog.items.find((current) => current.id === itemId)
-    if (!item || isAgentAwaiting(agent)) return
-    const entry: ItemPlan = { state: 'gerando', agent }
-    states.value[itemId] = entry
+  function hasPendingQuestion(itemId: string): boolean {
+    return decisions.pending.some((decision) => decision.itemId === itemId && decision.projectId === projects.selected?.id)
+  }
+
+  function promoteInterim(itemId: string): void {
+    const current = states.value[itemId]
+    if (current?.state !== 'gerando' || current.agent === undefined) return
+    if (current.interim === undefined) {
+      states.value[itemId] = { state: 'vazio', error: NO_REPLY_ERROR }
+      return
+    }
+    states.value[itemId] = { state: 'proposto', agent: current.agent, proposal: current.interim }
+    persist(itemId)
+  }
+
+  async function dispatch(item: BacklogItem, agent: Agent, prompt: string): Promise<void> {
+    const itemId = item.id
+    states.value[itemId] = { state: 'gerando', agent }
     const tracked = states.value[itemId]
+    let outcome: RequestOutcome | undefined
     try {
       if (projects.selected === null) {
         throw new Error('Nenhum projeto está selecionado.')
       }
-      await sendRequest(planPrompt(item, depth), agent, projects.selected.id)
+      outcome = await sendRequest(prompt, agent, projects.selected.id, undefined, itemId)
     } catch (error) {
       if (states.value[itemId] === tracked) {
         states.value[itemId] = tracked.cancelled ? { state: 'vazio' } : { state: 'vazio', error: String(error) }
       }
     }
+    // Deixa o watcher do feed processar a resposta antes de decidir pelo atalho.
+    await nextTick()
+    if (states.value[itemId] !== tracked) return
     // O backend entrega a resposta dentro de send_request: um cancelado ainda sem resposta não a receberá mais.
-    if (states.value[itemId] === tracked && tracked.cancelled) reset(itemId)
+    if (tracked.cancelled) reset(itemId)
+    else if (outcome === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
+  }
+
+  async function request(itemId: string, agent: Agent, depth: PlanDepth): Promise<void> {
+    const item = backlog.items.find((current) => current.id === itemId)
+    if (!item || isAgentAwaiting(agent)) return
+    await dispatch(item, agent, buildPlanPrompt(item, depth))
+  }
+
+  async function adjust(itemId: string, instruction: string): Promise<void> {
+    const item = backlog.items.find((current) => current.id === itemId)
+    const current = states.value[itemId]
+    const text = instruction.trim()
+    if (!item || current?.state !== 'proposto' || !current.agent || !current.proposal || text === '') return
+    if (isAgentAwaiting(current.agent)) return
+    await dispatch(item, current.agent, buildAdjustPrompt(item, current.proposal, text))
   }
 
   function cancel(itemId: string): void {
@@ -186,6 +224,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
       agent: states.value[itemId]?.agent,
     }
     persist(itemId)
+    backlog.addTags(itemId, parseProposal(states.value[itemId]?.proposal ?? '').tags)
   }
 
   function link(itemId: string, planId: string): void {
@@ -213,8 +252,13 @@ export const useItemPlan = defineStore('itemPlan', () => {
       states.value[id] = { state: 'vazio' }
       return
     }
-    states.value[id] = { state: 'proposto', agent: entry.from, proposal: entry.text }
-    persist(id)
+    if (isFinalReply(entry.text)) {
+      states.value[id] = { state: 'proposto', agent: entry.from, proposal: entry.text }
+      persist(id)
+      return
+    }
+    const current = states.value[id]
+    if (current) current.interim = entry.text
   }
 
   watch(
@@ -253,6 +297,9 @@ export const useItemPlan = defineStore('itemPlan', () => {
     takePreferredTab,
     isAgentAwaiting,
     request,
+    hasPendingQuestion,
+    promoteInterim,
+    adjust,
     cancel,
     accept,
     discard,
