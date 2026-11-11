@@ -65,7 +65,9 @@ const REVEAL_ENTER_FROM_CLASS = 'opacity-0'
 const REVEAL_ENTER_ACTIVE_CLASS = `transition-opacity ${BAR_MOTION_CLASSES}`
 const REVEAL_LEAVE_ACTIVE_CLASS = REVEAL_ENTER_ACTIVE_CLASS
 const REVEAL_LEAVE_TO_CLASS = REVEAL_ENTER_FROM_CLASS
-const COMPACT_WIDTH_CLASS = 'w-fit max-w-80'
+const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
+// Deve casar com o duration-180 de BAR_MOTION_CLASSES.
+const COLLAPSE_MS = 180
 const EXPANDED_WIDTH_CLASS = 'w-full'
 const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
 // Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
@@ -97,6 +99,8 @@ const listboxId = useId()
 const menuDismissed = ref(false)
 const highlightedIndex = ref(0)
 const hovered = ref(false)
+const collapsing = ref(false)
+let collapseTimer: ReturnType<typeof setTimeout> | undefined
 const focusWithin = ref(false)
 const actionMenuOpen = ref(false)
 const queueOpen = ref(false)
@@ -164,6 +168,7 @@ const pillWidthClass = computed(() => {
   }
   return flow.active ? CONTENT_WIDTH_CLASS : COMPACT_WIDTH_CLASS
 })
+const statusLabel = computed(() => (flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow]))
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 const activeOptionId = computed(() =>
   menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
@@ -183,6 +188,15 @@ const queueHint = computed(() => {
 watch([menuKind, () => activeMatch.value?.query], () => {
   menuDismissed.value = false
   highlightedIndex.value = 0
+})
+
+// Sem isto o rótulo é cortado com "…" nos quadros em que a pílula já está mais estreita que o texto.
+watch(interacting, (active) => {
+  clearTimeout(collapseTimer)
+  collapsing.value = !active
+  if (!active) {
+    collapseTimer = setTimeout(() => (collapsing.value = false), COLLAPSE_MS)
+  }
 })
 
 watch(menuOpen, (open) => {
@@ -228,7 +242,10 @@ watch(
 )
 
 onMounted(() => window.addEventListener('keydown', onShortcut))
-onUnmounted(() => window.removeEventListener('keydown', onShortcut))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onShortcut)
+  clearTimeout(collapseTimer)
+})
 
 function dashClass(agent: Agent): string {
   if (control.isPaused(agent)) {
@@ -451,10 +468,20 @@ function onPointerLeave(): void {
         />
       </span>
       <span class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
-        <span class="truncate text-label font-semibold text-muted" :class="{ 'max-xl:hidden': !canAsk }">
-          {{ flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow] }}
+        <span
+          class="text-label font-semibold text-muted"
+          :class="[collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate', { 'max-xl:hidden': !canAsk }]"
+          :title="statusLabel"
+        >
+          {{ statusLabel }}
         </span>
-        <span v-if="flow.active" class="truncate text-meta text-muted max-lg:hidden">{{ stepTitle }}</span>
+        <span
+          v-if="flow.active"
+          class="text-meta text-muted max-lg:hidden"
+          :class="collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate'"
+          :title="stepTitle"
+          >{{ stepTitle }}</span
+        >
       </span>
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
@@ -540,7 +567,7 @@ function onPointerLeave(): void {
           >{{ decisions.pendingCount }}</span
         >
         <svg
-          v-else-if="!expanded"
+          v-else-if="statusStore.status === 'done' && !expanded"
           class="size-3 text-ok"
           viewBox="0 0 16 16"
           fill="none"

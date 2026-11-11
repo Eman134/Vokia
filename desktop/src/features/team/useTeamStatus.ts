@@ -64,6 +64,7 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   }
 
   function startDone(): void {
+    stopDoneTimer()
     now.value = Date.now()
     doneUntil.value = now.value + DONE_HOLD_MS
     doneTimer = setInterval(tickDone, DONE_TICK_MS)
@@ -85,6 +86,13 @@ export const useTeamStatus = defineStore('teamStatus', () => {
       }
     },
   )
+
+  watch(status, (current) => {
+    if (current !== 'done') {
+      stopDoneTimer()
+      doneUntil.value = 0
+    }
+  })
 
   onScopeDispose(stopDoneTimer)
 
