@@ -1,7 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::db::{Db, DbError};
+use super::connection::Db;
+use super::error::DbError;
 
 const DEFAULT_COLUMN: &str = "Backlog";
 const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", "In progress", "In review", "Done"];

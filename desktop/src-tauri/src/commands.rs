@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Manager, State};
 
 use crate::agents::{Agent, AgentDraft, AgentError, AgentProfile, AgentRegistry, TeamListing};
-use crate::backlog::{BacklogItem, BacklogSnapshot, ItemPlanInput};
 use crate::claude::{self, CliProblem};
-use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
+use crate::db::{
+    AgentPause, BacklogItem, BacklogSnapshot, DbError, DbProblem, DbState, ItemPlanInput, Project,
+};
 use crate::events::VokiaEvent;
 use crate::orchestrator::{self, RequestOutcome};
 use crate::permissions::{PermissionError, PermissionLevel};
