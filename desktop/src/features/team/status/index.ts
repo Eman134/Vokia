@@ -1,16 +1,24 @@
-import { PAUSE_THRESHOLD } from '../usage/usagePlans'
-import type { AgentProfile } from './teamApi'
+import type { AgentProfile } from '../teamApi'
+import { doneRule } from './doneRule'
+import { errorRule } from './errorRule'
+import { needsYouRule } from './needsYouRule'
+import { pausedRule } from './pausedRule'
+import { restRule } from './restRule'
+import type { StatusCopy, StatusRule, TeamStatus, TeamStatusInput } from './types'
+import { workingRule } from './workingRule'
 
-export type TeamStatus = 'paused' | 'error' | 'needs-you' | 'working' | 'done' | 'rest'
+export type { StatusCopy, StatusRule, TeamStatus, TeamStatusInput } from './types'
 
-export const STATUS_PRIORITY: readonly TeamStatus[] = ['paused', 'error', 'needs-you', 'working', 'done', 'rest']
+export const STATUS_RULES: readonly StatusRule[] = [
+  pausedRule,
+  errorRule,
+  needsYouRule,
+  workingRule,
+  doneRule,
+  restRule,
+]
+export const STATUS_PRIORITY: readonly TeamStatus[] = STATUS_RULES.map((rule) => rule.status)
 export const DONE_HOLD_MS = 15000
-
-export interface StatusCopy {
-  status: string
-  detail: string
-  placeholder: string
-}
 
 export const STATUS_COPY: Record<Exclude<TeamStatus, 'working' | 'needs-you'>, StatusCopy> = {
   paused: {
@@ -36,25 +44,8 @@ export const STATUS_RING: Record<TeamStatus, string> = {
   rest: 'stroke-faint',
 }
 
-export interface TeamStatusInput {
-  fiveHour: number | null
-  lastIsError: boolean
-  pendingDecisions: number
-  activeAgents: AgentProfile[]
-  doneUntil: number
-  now: number
-}
-
 export function resolveTeamStatus(input: TeamStatusInput): TeamStatus {
-  const active: Record<TeamStatus, boolean> = {
-    paused: input.fiveHour !== null && input.fiveHour >= PAUSE_THRESHOLD,
-    error: input.lastIsError,
-    'needs-you': input.pendingDecisions > 0,
-    working: input.activeAgents.length > 0,
-    done: input.now < input.doneUntil,
-    rest: true,
-  }
-  return STATUS_PRIORITY.find((status) => active[status]) ?? 'rest'
+  return STATUS_RULES.find((rule) => rule.applies(input))?.status ?? 'rest'
 }
 
 // O contador de decisões já mostra quantas esperam; repetir aqui só polui a barra.

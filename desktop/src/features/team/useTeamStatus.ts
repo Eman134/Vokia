@@ -11,7 +11,7 @@ import {
   STATUS_RING,
   type TeamStatus,
   workingCopy,
-} from './teamStatus'
+} from './status'
 
 const DONE_TICK_MS = 1000
 

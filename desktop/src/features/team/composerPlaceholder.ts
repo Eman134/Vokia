@@ -1,5 +1,5 @@
 import type { RailPage } from '../../shell/railNav'
-import type { TeamStatus } from './teamStatus'
+import type { TeamStatus } from './status'
 
 export const PAGE_PLACEHOLDER: Partial<Record<RailPage, (project: string) => string>> = {
   projetos: () => 'Peça algo e escolha o projeto',
