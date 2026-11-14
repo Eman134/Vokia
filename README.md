@@ -64,14 +64,18 @@ A chave privada nunca vai para o repositório. Detalhes do fluxo de distribuiç�
 
 Núcleo Rust (`desktop/src-tauri/src/`):
 - `main.rs`: ponto de entrada; declara os módulos e monta o Builder do Tauri.
-- `state.rs`: `AppState`, com o caminho da CLI e as sessões dos agentes.
-- `commands.rs`: comandos expostos ao frontend (`cli_problem`, `send_request`, `check_connection`); só delegam.
-- `window.rs`: janela principal, instância única e relato de erro de janela.
-- `tray.rs`: ícone e menu da bandeja.
-- `claude.rs`: adaptador da CLI do Claude Code.
-- `orchestrator.rs`: fluxo da Iara e do Davi.
-- `events.rs`: eventos enviados ao frontend.
-- `connectivity.rs`: checagem de alcance da API, sem enviar dados.
+- `state.rs`: `AppState` (CLI, cache, fila de fluxos, sessões, permissões e decisões pendentes).
+- `events.rs`: eventos enviados ao frontend (`vokia://event`).
+- `session_key.rs`: chave (projeto, agente) das sessões.
+- `agents.rs`: registro do time (`agents.json`), perfis e validação.
+- `commands/`: comandos Tauri por domínio (`team`, `projects`, `agents`, `settings`, `backlog`); só delegam.
+- `orchestrator/`: fluxo dos pedidos, turnos, sessões dos agentes, prompts e marcadores.
+- `claude/`: integração com a CLI do Claude Code (localizar, montar o comando, sessão viva, stream, permissões do stream) e checagem de alcance da API.
+- `db/`: SQLite (conexão, migrações, projetos, mensagens, sessões, aprovações, configurações, backlog).
+- `projects/`: pastas, git, GitHub (gh) e árvore da pasta do projeto.
+- `task/`: definição da tarefa e variáveis (cache).
+- `permissions/`: pedidos de permissão (broker) e nível do projeto.
+- `shell/`: janela principal, instância única e bandeja.
 
 Frontend (`desktop/src/`):
 - `main.ts` e `App.vue` na raiz; `styles/` com tokens e CSS global; `shell/` com a moldura do app.
