@@ -90,6 +90,7 @@ pub enum RequestOutcome {
 #[derive(Debug)]
 pub enum FlowError {
     CliUnavailable(String),
+    DatabaseUnavailable(String),
     Claude(ClaudeError),
     Emit(tauri::Error),
     CachePoisoned,
@@ -114,6 +115,7 @@ impl fmt::Display for FlowError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FlowError::CliUnavailable(reason) => write!(f, "{reason}"),
+            FlowError::DatabaseUnavailable(reason) => write!(f, "{reason}"),
             FlowError::Claude(error) => write!(f, "{error}"),
             FlowError::Emit(error) => write!(f, "Não foi possível emitir o evento: {error}"),
             FlowError::CachePoisoned => write!(
@@ -215,6 +217,9 @@ pub async fn handle_request(
     project_id: i64,
     context: RequestContext,
 ) -> Result<RequestOutcome, FlowError> {
+    if let Some(problem) = app.state::<DbState>().problem() {
+        return Err(FlowError::DatabaseUnavailable(problem.reason));
+    }
     let cli = state
         .cli
         .as_ref()
