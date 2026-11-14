@@ -186,6 +186,7 @@ pub enum DbError {
     Io(PathBuf, std::io::Error),
     Corrupt(PathBuf),
     Inaccessible(PathBuf, rusqlite::Error),
+    ReadOnly(PathBuf),
     Sqlite(rusqlite::Error),
     Poisoned,
     Unavailable(String),
@@ -227,6 +228,11 @@ impl fmt::Display for DbError {
             DbError::Inaccessible(path, error) => write!(
                 f,
                 "Sem acesso ao banco de dados {}: {error}",
+                path.display()
+            ),
+            DbError::ReadOnly(path) => write!(
+                f,
+                "Sem acesso ao banco de dados {}: o arquivo está somente leitura.",
                 path.display()
             ),
             DbError::Sqlite(error) => write!(f, "Erro no banco de dados: {error}"),
@@ -416,6 +422,13 @@ impl Db {
         fs::create_dir_all(dir).map_err(|error| DbError::Io(dir.to_path_buf(), error))?;
         let path = dir.join(DB_FILE);
         let mut conn = Connection::open(&path).map_err(|error| classify(&path, error))?;
+        // SQLite cai para modo somente leitura sem erro na abertura; a falha só apareceria na primeira escrita.
+        if conn
+            .is_readonly("main")
+            .map_err(|error| classify(&path, error))?
+        {
+            return Err(DbError::ReadOnly(path));
+        }
         conn.pragma_update(None, "foreign_keys", true)
             .map_err(|error| classify(&path, error))?;
         migrate(&mut conn).map_err(|error| classify(&path, error))?;
