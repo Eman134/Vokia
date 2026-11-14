@@ -11,7 +11,7 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
-use crate::permission_level::PermissionLevel;
+use crate::permissions::PermissionLevel;
 
 const USER_MESSAGE_KIND: &str = "user";
 const USER_ROLE: &str = "user";

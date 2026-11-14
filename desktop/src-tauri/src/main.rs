@@ -10,7 +10,6 @@ mod connectivity;
 mod db;
 mod events;
 mod orchestrator;
-mod permission_level;
 mod permissions;
 mod projects;
 mod session_key;

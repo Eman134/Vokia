@@ -8,7 +8,7 @@ use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::events::{Agent, Speaker, VokiaEvent};
-use crate::permission_level::PermissionLevel;
+use crate::permissions::PermissionLevel;
 use crate::session_key::SessionKey;
 
 pub const DB_FILE: &str = "vokia.db";

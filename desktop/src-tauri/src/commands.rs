@@ -9,8 +9,7 @@ use crate::connectivity;
 use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::VokiaEvent;
 use crate::orchestrator::{self, RequestOutcome};
-use crate::permission_level::PermissionLevel;
-use crate::permissions::PermissionError;
+use crate::permissions::{PermissionError, PermissionLevel};
 use crate::projects::{
     self, FolderInfo, GithubRepoInfo, NewProjectInput, ProjectEdit, ProjectError,
 };
