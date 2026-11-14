@@ -19,16 +19,10 @@ mod task;
 mod tray;
 mod window;
 
-use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
-use std::sync::Mutex;
-
 use tauri::{Manager, RunEvent};
 
 use db::DbState;
-use orchestrator::SessionPool;
-use permissions::PermissionBroker;
-use state::{AppState, FlowQueue};
+use state::AppState;
 
 fn main() {
     let cli = tauri::async_runtime::block_on(claude::locate());
@@ -36,16 +30,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(
             window::handle_second_instance,
         ))
-        .manage(AppState {
-            cli,
-            cache: Mutex::new(HashMap::new()),
-            flow: Mutex::new(FlowQueue::default()),
-            sessions: SessionPool::default(),
-            archive: Mutex::new(Vec::new()),
-            permissions: PermissionBroker::default(),
-            decisions: Mutex::new(HashMap::new()),
-            next_decision_id: AtomicU64::new(0),
-        })
+        .manage(AppState::new(cli))
         .invoke_handler(tauri::generate_handler![
             commands::cli_problem,
             commands::send_request,

@@ -1,31 +1,22 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant, SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
-use crate::cache::{
-    parse_update_line, Cache, Change, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
-    RECOVERY_CONVERSATION_ITEMS,
-};
+use crate::cache::{Cache, Change};
 use crate::claude::{
-    self, kill_process_tree, Access, ClaudeError, LimitWindow, LiveSession, ProjectAccess,
-    RateLimits, Reply,
+    self, kill_process_tree, Access, ClaudeError, LiveSession, ProjectAccess, Reply,
 };
-use crate::db::{
-    Db, DbError, DbState, Project, GRANT_SESSION, ORIGIN_GITHUB, SETTING_PERMISSION_GRANT,
-};
-use crate::events::{AgentState, DecisionKind, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
+use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
+use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::permissions::PermissionGate;
-use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision, QueuedJob, RequestContext};
 use crate::task::MAX_LIVE_SESSIONS;
@@ -35,179 +26,32 @@ use crate::task::{
     SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
 };
 
-const PERCENT_SCALE: f64 = 100.0;
+use self::emit::{emit, emit_message, emit_state, report_limits};
+use self::markers::{parse_decision, parse_reply, ParsedDecision, ParsedReply};
+use self::project_context::{load_project, project_context, project_dir, scan_structure};
+use self::prompts::{
+    role, StepPrompts, ALTERNATE_INSTRUCTION, INTERPRETER_ROLE, NO_NAMES, REJECTION_PREFIX,
+    REPLY_PREFIX,
+};
+
+mod emit;
+mod error;
+mod markers;
+mod project_context;
+mod prompts;
+
+pub use emit::now_millis;
+pub use error::{FlowError, RequestOutcome};
+
 const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
 const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 const NO_CONVERSATION: usize = 0;
-const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
-const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
-const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
-const NO_FOLDER_MESSAGE: &str =
-    "O projeto do pedido não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
-const PROJECT_RULE: &str =
-    "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
-const PROJECT_IDENTITY_PREFIX: &str = "Projeto em contexto: \"";
-const PROJECT_IDENTITY_PATH_PREFIX: &str = "\", na pasta ";
-const PROJECT_DESCRIPTION_PREFIX: &str = "Descrição do projeto: ";
-const PROJECT_DESCRIPTION_LIMIT: usize = 500;
-const PROJECT_REPO_PREFIX: &str = "Repositório do projeto no GitHub: ";
-const PROJECT_NAME_RULE_PREFIX: &str = "O nome do projeto é só \"";
-const PROJECT_NAME_RULE_SUFFIX: &str = "\": mesmo que a pasta, o repositório ou o programa que você roda tenham outro nome, não o use e não proponha renomear nada por causa disso. Quando o usuário falar do projeto, é esse.";
-const TRUNCATION_MARK: &str = "…";
-const PROJECT_TREE_HEADER_PREFIX: &str = "Estrutura da pasta do projeto, até ";
-const PROJECT_TREE_HEADER_SUFFIX: &str = " níveis, um caminho relativo por linha e pastas terminadas em \"/\". É um retrato do momento em que a sessão abriu; pastas de dependência e de build ficam de fora; use as ferramentas se precisar do estado atual:";
-const PROJECT_TREE_OMITTED_PREFIX: &str = "… e mais ";
-const PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX: &str = "… e mais de ";
-const PROJECT_TREE_OMITTED_SUFFIX: &str = " entradas não listadas.";
-const PROJECT_TREE_EMPTY: &str = "A pasta do projeto está vazia.";
-pub const DECISION_MARK: &str = "#decisao";
-pub const DECISION_FIELD_SEPARATOR: char = '|';
-pub const DECISION_OPTION_SEPARATOR: char = ';';
-const DECISION_FIELD_COUNT: usize = 4;
-const DELEGATION_MARK: char = '@';
-const DELEGATION_SEPARATOR: char = ':';
-const REPLY_PREFIX: &str = " respondeu: ";
-const ALTERNATE_INSTRUCTION: &str = "É a sua vez. Atualize as variáveis conforme o objetivo.";
-const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 const LOOP_REPEAT_LIMIT: u32 = 3;
 const LOOP_MESSAGE: &str = "A conversa entre os agentes parou: a mesma mensagem se repetiu em turnos seguidos sem avançar a tarefa.";
 const STALL_LIMIT: u32 = 3;
 const USER_LABEL: &str = "Usuário";
 const ARCHIVE_LIMIT: usize = 20;
 const ARCHIVE_FILE: &str = "tasks-archive.json";
-const NO_NAMES: &str = "nenhuma";
-const NO_VARIABLES: &str = "- nenhuma";
-const INTERPRETER_ROLE: &str = "Você extrai a definição de uma tarefa e não conversa. Responda somente com um objeto JSON, sem texto fora dele, com os campos: nova_tarefa (true se o pedido inicia um assunto diferente do anterior, false se continua o anterior); objetivo (frase curta); participantes (só quem precisa agir: por padrão o destinatário, ou o agente que o pedido cita; inclua os dois apenas quando o pedido mandar os dois agirem); alternar (true somente se o pedido pedir revezamento explícito entre os dois, como alternadamente, um de cada vez ou revezando; sem esse pedido é false, e então variaveis é [] e parada é null); variaveis (lista de {\"nome\", \"tipo\": \"numero\" | \"texto\" | \"lista\", \"valor\", \"regra\": \"livre\" | \"mais_um\" | \"so_leitura\"}); parada ({\"variavel\", \"alcanca\": nome de uma variável numérica ou inteiro}, ou null). Exemplos: \"contem até 20 alternadamente\" → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20 alternadamente\",\"participantes\":[\"Iara\",\"Davi\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"contagem\",\"tipo\":\"numero\",\"valor\":0,\"regra\":\"mais_um\"},{\"nome\":\"limite\",\"tipo\":\"numero\",\"valor\":20,\"regra\":\"so_leitura\"}],\"parada\":{\"variavel\":\"contagem\",\"alcanca\":\"limite\"}}. \"fale um animal alternadamente, você e o davi\" → {\"nova_tarefa\":true,\"objetivo\":\"alternar animais\",\"participantes\":[\"Davi\",\"Iara\"],\"alternar\":true,\"variaveis\":[{\"nome\":\"animais\",\"tipo\":\"lista\",\"valor\":[],\"regra\":\"livre\"}],\"parada\":null}. \"quanto é 1+1?\" → {\"nova_tarefa\":true,\"objetivo\":\"responder 1+1\",\"participantes\":[\"Iara\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}. \"conte até 20\" para o Davi, sem pedir revezamento → {\"nova_tarefa\":true,\"objetivo\":\"contar até 20\",\"participantes\":[\"Davi\"],\"alternar\":false,\"variaveis\":[],\"parada\":null}.";
-
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RequestOutcome {
-    Finished,
-    Failed,
-    Queued,
-}
-
-#[derive(Debug)]
-pub enum FlowError {
-    CliUnavailable(String),
-    DatabaseUnavailable(String),
-    Claude(ClaudeError),
-    Emit(tauri::Error),
-    CachePoisoned,
-    Cache(String),
-    QueuePoisoned,
-    ArchivePoisoned,
-    ArchivePath(tauri::Error),
-    ArchiveIo(std::io::Error),
-    ArchiveJson(serde_json::Error),
-    Clock(SystemTimeError),
-    History(DbError),
-    ProjectFolder(String),
-    DecisionsPoisoned,
-    UnknownDecision,
-    SessionStore(DbError),
-    Settings(DbError),
-    SessionNotHeld(String),
-    Team(AgentError),
-}
-
-impl fmt::Display for FlowError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FlowError::CliUnavailable(reason) => write!(f, "{reason}"),
-            FlowError::DatabaseUnavailable(reason) => write!(f, "{reason}"),
-            FlowError::Claude(error) => write!(f, "{error}"),
-            FlowError::Emit(error) => write!(f, "Não foi possível emitir o evento: {error}"),
-            FlowError::CachePoisoned => write!(
-                f,
-                "O cache de variáveis ficou inconsistente após uma falha anterior."
-            ),
-            FlowError::Cache(reason) => write!(f, "{reason}"),
-            FlowError::QueuePoisoned => write!(
-                f,
-                "A fila de pedidos ficou inconsistente após uma falha anterior."
-            ),
-            FlowError::ArchivePoisoned => write!(
-                f,
-                "O arquivo de tarefas ficou inconsistente após uma falha anterior."
-            ),
-            FlowError::ArchivePath(error) => write!(
-                f,
-                "Não foi possível localizar a pasta de dados do app: {error}"
-            ),
-            FlowError::ArchiveIo(error) => {
-                write!(f, "Não foi possível gravar o arquivo de tarefas: {error}")
-            }
-            FlowError::ArchiveJson(error) => {
-                write!(
-                    f,
-                    "Não foi possível serializar o arquivo de tarefas: {error}"
-                )
-            }
-            FlowError::Clock(error) => {
-                write!(f, "O relógio do sistema está antes de 1970: {error}")
-            }
-            FlowError::History(error) => {
-                write!(f, "Não foi possível gravar o histórico: {error}")
-            }
-            FlowError::ProjectFolder(reason) => write!(f, "{reason}"),
-            FlowError::DecisionsPoisoned => write!(
-                f,
-                "As decisões pendentes ficaram inconsistentes após uma falha anterior."
-            ),
-            FlowError::UnknownDecision => write!(f, "Esta decisão não existe mais."),
-            FlowError::SessionStore(error) => {
-                write!(f, "Não foi possível guardar a sessão do agente: {error}")
-            }
-            FlowError::Settings(error) => {
-                write!(f, "Não foi possível ler as configurações: {error}")
-            }
-            FlowError::SessionNotHeld(name) => {
-                write!(
-                    f,
-                    "A sessão de {name} não foi reservada para esta conversa."
-                )
-            }
-            FlowError::Team(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl From<ClaudeError> for FlowError {
-    fn from(error: ClaudeError) -> Self {
-        FlowError::Claude(error)
-    }
-}
-
-impl From<tauri::Error> for FlowError {
-    fn from(error: tauri::Error) -> Self {
-        FlowError::Emit(error)
-    }
-}
-
-impl From<DbError> for FlowError {
-    fn from(error: DbError) -> Self {
-        FlowError::History(error)
-    }
-}
-
-fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, FlowError> {
-    let state = app.state::<DbState>();
-    let db = state
-        .require()
-        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
-    db.project(project_id)
-        .map_err(|error| FlowError::ProjectFolder(error.to_string()))
-}
-
-fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
-    let project = load_project(app, project_id)?;
-    if project.path.trim().is_empty() {
-        return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
-    }
-    projects::ensure_directory(&project.path)
-        .map_err(|error| FlowError::ProjectFolder(error.message().to_string()))
-}
 
 pub async fn handle_request(
     app: &AppHandle,
@@ -846,105 +690,6 @@ fn with_cache<T>(
 ) -> Result<T, FlowError> {
     let mut caches = state.cache.lock().map_err(|_| FlowError::CachePoisoned)?;
     action(caches.entry(project_id).or_default()).map_err(FlowError::Cache)
-}
-
-struct StepPrompts {
-    opening: String,
-    follow_up: String,
-    minimal: String,
-}
-
-impl StepPrompts {
-    fn build(cache: &Cache, definition: &TaskDefinition, agent: &Agent, instruction: &str) -> Self {
-        let prompt = |conversation_items, with_request| {
-            step_prompt(
-                cache,
-                definition,
-                agent,
-                instruction,
-                conversation_items,
-                with_request,
-            )
-        };
-        Self {
-            opening: prompt(CONVERSATION_ITEMS, true),
-            follow_up: prompt(NO_CONVERSATION, false),
-            minimal: prompt(RECOVERY_CONVERSATION_ITEMS, true),
-        }
-    }
-}
-
-// O estado compartilhado só entra quando há revezamento; fora dele o agente recebe o pedido puro.
-fn step_prompt(
-    cache: &Cache,
-    definition: &TaskDefinition,
-    agent: &Agent,
-    instruction: &str,
-    conversation_items: usize,
-    with_request: bool,
-) -> String {
-    let mut sections = vec![format!("Objetivo: {}", definition.objetivo)];
-    if let Some(request) = cache.long_request().filter(|_| with_request) {
-        sections.push(format!(
-            "Pedido original:
-{request}"
-        ));
-    }
-    if definition.alternate {
-        sections.push(format!(
-            "Variáveis visíveis:\n{}",
-            variables_listing(cache, agent)
-        ));
-    }
-    let conversation = cache.recent_conversation(conversation_items);
-    if !conversation.is_empty() {
-        let entries: Vec<String> = conversation
-            .into_iter()
-            .map(|entry| format!("- {entry}"))
-            .collect();
-        sections.push(format!("Conversa recente:\n{}", entries.join("\n")));
-    }
-    sections.push(format!("Instrução: {instruction}"));
-    if definition.alternate {
-        sections.push(PROMPT_RULES.to_string());
-    }
-    sections.join("\n")
-}
-
-fn variables_listing(cache: &Cache, agent: &Agent) -> String {
-    let lines: Vec<String> = cache
-        .visible_to(agent)
-        .into_iter()
-        .filter(|variable| variable.name != CONVERSATION_VAR)
-        .map(describe_variable)
-        .collect();
-    if lines.is_empty() {
-        NO_VARIABLES.to_string()
-    } else {
-        lines.join("\n")
-    }
-}
-
-fn describe_variable(variable: &Variable) -> String {
-    let read_only = if variable.rule == Rule::ReadOnly {
-        ", somente leitura"
-    } else {
-        ""
-    };
-    format!(
-        "- {} ({}, {}{read_only}) = {}",
-        variable.name,
-        variable.value.type_label(),
-        scope_label(variable.scope),
-        variable.value.display()
-    )
-}
-
-fn scope_label(scope: Scope) -> &'static str {
-    match scope {
-        Scope::Private => "privada",
-        Scope::Team => "compartilhada",
-    }
 }
 
 fn archive_task(app: &AppHandle, state: &AppState, record: TaskRecord) -> Result<(), FlowError> {
@@ -1600,266 +1345,7 @@ impl AgentSession {
     }
 }
 
-fn report_limits(app: &AppHandle, limits: Option<RateLimits>) -> Result<(), FlowError> {
-    let Some(limits) = limits else {
-        return Ok(());
-    };
-    emit(
-        app,
-        VokiaEvent::PlanUsage {
-            five_hour: usage_window(limits.five_hour),
-            seven_day: usage_window(limits.seven_day),
-        },
-    )
-}
-
-fn usage_window(window: LimitWindow) -> UsageWindow {
-    UsageWindow {
-        percent: (window.utilization * PERCENT_SCALE)
-            .round()
-            .clamp(0.0, PERCENT_SCALE) as u8,
-        resets_at: window.resets_at,
-    }
-}
-
-async fn scan_structure(dir: &Path) -> Option<FolderTree> {
-    let owned = dir.to_path_buf();
-    let scanned = tauri::async_runtime::spawn_blocking(move || projects::folder_tree(&owned)).await;
-    let error = match scanned {
-        Ok(Ok(tree)) => return Some(tree),
-        Ok(Err(error)) => error.to_string(),
-        Err(error) => error.to_string(),
-    };
-    eprintln!(
-        "Não foi possível ler a estrutura da pasta do projeto {}: {error}",
-        dir.display()
-    );
-    None
-}
-
-fn project_context(project: &Project, tree: Option<&FolderTree>) -> String {
-    let name = project.name.trim();
-    let mut sentences = vec![format!(
-        "{PROJECT_IDENTITY_PREFIX}{name}{PROJECT_IDENTITY_PATH_PREFIX}{}.",
-        project.path
-    )];
-    if let Some(description) = project_description(project) {
-        sentences.push(format!("{PROJECT_DESCRIPTION_PREFIX}{description}"));
-    }
-    if project.origin_kind == ORIGIN_GITHUB {
-        if let Some(repo) = project
-            .origin_repo
-            .as_deref()
-            .map(str::trim)
-            .filter(|repo| !repo.is_empty())
-        {
-            sentences.push(format!("{PROJECT_REPO_PREFIX}{repo}."));
-        }
-    }
-    sentences.push(format!(
-        "{PROJECT_NAME_RULE_PREFIX}{name}{PROJECT_NAME_RULE_SUFFIX}"
-    ));
-    let mut context = sentences.join(" ");
-    if let Some(tree) = tree {
-        context.push('\n');
-        context.push_str(&project_tree_block(tree));
-    }
-    context
-}
-
-fn project_tree_block(tree: &FolderTree) -> String {
-    if tree.entries.is_empty() && tree.omitted == 0 {
-        return PROJECT_TREE_EMPTY.to_string();
-    }
-    let mut lines = vec![format!(
-        "{PROJECT_TREE_HEADER_PREFIX}{TREE_MAX_DEPTH}{PROJECT_TREE_HEADER_SUFFIX}"
-    )];
-    lines.extend(tree.entries.iter().cloned());
-    if tree.omitted > 0 {
-        let prefix = if tree.omitted_is_lower_bound {
-            PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX
-        } else {
-            PROJECT_TREE_OMITTED_PREFIX
-        };
-        lines.push(format!(
-            "{prefix}{}{PROJECT_TREE_OMITTED_SUFFIX}",
-            tree.omitted
-        ));
-    }
-    lines.join("\n")
-}
-
-fn project_description(project: &Project) -> Option<String> {
-    let description = project
-        .description
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    if description.is_empty() {
-        return None;
-    }
-    if description.chars().count() <= PROJECT_DESCRIPTION_LIMIT {
-        return Some(description);
-    }
-    let truncated: String = description
-        .chars()
-        .take(PROJECT_DESCRIPTION_LIMIT)
-        .collect();
-    Some(format!("{truncated}{TRUNCATION_MARK}"))
-}
-
 struct AgentCall {
     role: String,
     model: String,
-}
-
-fn role(profile: &AgentProfile, roster: &str, project_context: &str) -> String {
-    format!(
-        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {PROJECT_RULE} {project_context}",
-        profile.name, profile.role
-    )
-}
-
-struct ParsedDecision {
-    kind: DecisionKind,
-    title: String,
-    detail: String,
-    options: Vec<String>,
-    visible: String,
-}
-
-fn parse_decision(reply: &str) -> Option<ParsedDecision> {
-    let lines: Vec<&str> = reply.lines().collect();
-    let (index, decision) = lines
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, line)| decision_line(line).map(|decision| (index, decision)))?;
-    let visible: Vec<&str> = lines
-        .iter()
-        .enumerate()
-        .filter(|(position, _)| *position != index)
-        .map(|(_, line)| *line)
-        .collect();
-    Some(ParsedDecision {
-        visible: visible.join(
-            "
-",
-        ),
-        ..decision
-    })
-}
-
-fn decision_line(line: &str) -> Option<ParsedDecision> {
-    let rest = line.trim().strip_prefix(DECISION_MARK)?;
-    let mut fields = rest.splitn(DECISION_FIELD_COUNT, DECISION_FIELD_SEPARATOR);
-    let kind = DecisionKind::parse(fields.next()?.trim())?;
-    let title = fields.next()?.trim();
-    if title.is_empty() {
-        return None;
-    }
-    let detail = fields.next().unwrap_or_default().trim();
-    let options: Vec<String> = fields
-        .next()
-        .unwrap_or_default()
-        .split(DECISION_OPTION_SEPARATOR)
-        .map(str::trim)
-        .filter(|option| !option.is_empty())
-        .map(str::to_string)
-        .collect();
-    // Escolha sem opções não tem como ser respondida; a linha vira texto comum.
-    if kind == DecisionKind::Escolha && options.is_empty() {
-        return None;
-    }
-    Some(ParsedDecision {
-        kind,
-        title: title.to_string(),
-        detail: detail.to_string(),
-        options,
-        visible: String::new(),
-    })
-}
-
-struct ParsedReply {
-    visible: String,
-    delegation: Option<(Agent, String)>,
-    updates: Vec<Result<Change, String>>,
-}
-
-fn parse_reply(reply: &str, from: &Agent, team: &Team) -> ParsedReply {
-    let mut visible = Vec::new();
-    let mut delegation = None;
-    let mut updates = Vec::new();
-    for line in reply.lines() {
-        if let Some(update) = parse_update_line(line) {
-            updates.push(update);
-        } else if let Some((agent, request)) = delegation_request(line, from, team) {
-            delegation = Some((agent, request.to_string()));
-        } else {
-            visible.push(line);
-        }
-    }
-    ParsedReply {
-        visible: visible.join("\n").trim().to_string(),
-        delegation,
-        updates,
-    }
-}
-
-fn delegation_request<'a>(line: &'a str, from: &Agent, team: &Team) -> Option<(Agent, &'a str)> {
-    let rest = line.trim().strip_prefix(DELEGATION_MARK)?;
-    let (name, request) = rest.split_once(DELEGATION_SEPARATOR)?;
-    let agent = team.named(name.trim())?;
-    let request = request.trim();
-    (agent != *from && !request.is_empty()).then_some((agent, request))
-}
-
-fn emit_message(
-    app: &AppHandle,
-    project_id: i64,
-    from: Speaker,
-    to: Speaker,
-    text: &str,
-) -> Result<(), FlowError> {
-    let time = now_millis()?;
-    if let Some(db) = app.state::<DbState>().db() {
-        db.insert_message(project_id, from.clone(), to.clone(), text, time)?;
-    }
-    emit(
-        app,
-        VokiaEvent::Message {
-            from,
-            to,
-            text: text.to_string(),
-            time,
-            project_id: Some(project_id),
-        },
-    )
-}
-
-fn emit_state(
-    app: &AppHandle,
-    project_id: i64,
-    agent: Agent,
-    state: AgentState,
-) -> Result<(), FlowError> {
-    emit(
-        app,
-        VokiaEvent::AgentState {
-            agent,
-            state,
-            project_id: Some(project_id),
-        },
-    )
-}
-
-fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {
-    Ok(app.emit(EVENT_NAME, event)?)
-}
-
-pub fn now_millis() -> Result<u64, FlowError> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(FlowError::Clock)?;
-    Ok(elapsed.as_millis() as u64)
 }

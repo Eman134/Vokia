@@ -22,6 +22,21 @@ pub struct AppState {
     pub next_decision_id: AtomicU64,
 }
 
+impl AppState {
+    pub fn new(cli: Result<PathBuf, CliProblem>) -> Self {
+        Self {
+            cli,
+            cache: Mutex::new(HashMap::new()),
+            flow: Mutex::new(FlowQueue::default()),
+            sessions: SessionPool::default(),
+            archive: Mutex::new(Vec::new()),
+            permissions: PermissionBroker::default(),
+            decisions: Mutex::new(HashMap::new()),
+            next_decision_id: AtomicU64::new(0),
+        }
+    }
+}
+
 pub struct PendingDecision {
     pub agent: Agent,
     pub project_id: i64,
