@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDecisions } from '../decisions/useDecisions'
 import { useUsage } from '../usage/useUsage'
-import { useTeam } from './useTeam'
+import { useFeed } from './useFeed'
 import {
   DONE_HOLD_MS,
   needsYouCopy,
@@ -16,7 +16,7 @@ import {
 const DONE_TICK_MS = 1000
 
 export const useTeamStatus = defineStore('teamStatus', () => {
-  const team = useTeam()
+  const feed = useFeed()
   const usage = useUsage()
   const decisions = useDecisions()
   const now = ref(Date.now())
@@ -25,7 +25,7 @@ export const useTeamStatus = defineStore('teamStatus', () => {
 
   // Mensagens do usuário também entram no feed; só erro ou resposta de agente mudam o estado.
   const outcomes = computed(() =>
-    team.feed.filter((entry) => entry.type === 'error' || (entry.type === 'message' && entry.from !== 'user')),
+    feed.feed.filter((entry) => entry.type === 'error' || (entry.type === 'message' && entry.from !== 'user')),
   )
   const lastIsError = computed(() => outcomes.value.at(-1)?.type === 'error')
 
@@ -34,14 +34,14 @@ export const useTeamStatus = defineStore('teamStatus', () => {
       fiveHour: usage.fiveHour,
       lastIsError: lastIsError.value,
       pendingDecisions: decisions.pendingCount,
-      activeAgents: team.activeAgents,
+      activeAgents: feed.activeAgents,
       doneUntil: doneUntil.value,
       now: now.value,
     }),
   )
   const copy = computed(() => {
     if (status.value === 'working') {
-      return workingCopy(team.activeAgents)
+      return workingCopy(feed.activeAgents)
     }
     return status.value === 'needs-you' ? needsYouCopy() : STATUS_COPY[status.value]
   })
@@ -71,12 +71,12 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   }
 
   function lastIsAgentReply(): boolean {
-    const last = team.feed.at(-1)
+    const last = feed.feed.at(-1)
     return last?.type === 'message' && last.to === 'user'
   }
 
   watch(
-    () => team.activeAgents.length,
+    () => feed.activeAgents.length,
     (count, previous) => {
       if (count > 0 && previous === 0) {
         stopDoneTimer()

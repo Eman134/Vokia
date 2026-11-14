@@ -5,7 +5,7 @@ import { sendRequest, type RequestOutcome } from '../team/teamApi'
 import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
 import { agentName } from '../team/agents'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
 import { DECISION_QUESTION_PREFIX, DEFAULT_COLUMN, READY_COLUMN, type BacklogItem, type BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
@@ -65,7 +65,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const plans = ref<LinkedPlan[]>([])
   const dialogItemId = ref<string | null>(null)
   const preferredTab = ref<PlanTab | null>(null)
-  const team = useTeam()
+  const feed = useFeed()
   const backlog = useBacklog()
   const projects = useProjects()
   const decisions = useDecisions()
@@ -251,7 +251,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return states.value[itemId]?.state === 'vinculado' && states.value[itemId]?.plan?.meta === REVIEWED_PLAN_META
   }
 
-  function receive(entry: (typeof team.feed)[number]): void {
+  function receive(entry: (typeof feed.feed)[number]): void {
     if (entry.type === 'notice' || entry.type === 'permission-result') return
     if (entry.type === 'error') {
       const id = oldestAwaiting()
@@ -275,9 +275,9 @@ export const useItemPlan = defineStore('itemPlan', () => {
   }
 
   watch(
-    () => team.feed.length,
+    () => feed.feed.length,
     (length, previous) => {
-      if (length > previous) team.feed.slice(previous).forEach(receive)
+      if (length > previous) feed.feed.slice(previous).forEach(receive)
     },
   )
 

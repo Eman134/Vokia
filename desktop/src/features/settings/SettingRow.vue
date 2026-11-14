@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import ThemeSwitch from '../theme/ThemeSwitch.vue'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import { useTheme } from '../theme/useTheme'
 import { useAvatarProfiles } from '../identities/useAvatarProfiles'
 import { useProjects } from '../projects/useProjects'
@@ -17,7 +17,7 @@ import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
-const team = useTeam()
+const feed = useFeed()
 const theme = useTheme()
 const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
@@ -55,7 +55,7 @@ async function eraseEverything(): Promise<void> {
   }
   try {
     await projects.load()
-    await team.restoreHistory()
+    await feed.restoreHistory()
     await theme.load()
     await avatarProfiles.load()
     navigation.goTo(ONBOARDING_PAGE)

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useBalloons } from '../balloon/useBalloons'
 import type { Agent, VokiaDecision } from '../team/events'
 import { answerDecision } from '../team/teamApi'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import { UNDO_WINDOW_MS, type CardKind } from './decisionCopy'
 
 export interface PanelCard {
@@ -39,7 +39,7 @@ export interface AnswerLogEntry {
 const ANSWER_LOG_LIMIT = 200
 
 export const useDecisions = defineStore('decisions', () => {
-  const team = useTeam()
+  const feed = useFeed()
   const balloons = useBalloons()
   const pending = ref<VokiaDecision[]>([])
   const resolved = ref<ResolvedEntry[]>([])
@@ -50,7 +50,7 @@ export const useDecisions = defineStore('decisions', () => {
   const awaiting = new Map<number, Awaiting>()
 
   const cards = computed<PanelCard[]>(() => [
-    ...team.permissions.map((permission) => ({
+    ...feed.permissions.map((permission) => ({
       key: `permissao-${permission.id}`,
       kind: 'permissao' as const,
       agent: permission.agent,
@@ -108,7 +108,7 @@ export const useDecisions = defineStore('decisions', () => {
     try {
       await answerDecision(id, entry.answer)
     } catch (error) {
-      team.feed.push({ type: 'error', message: String(error) })
+      feed.feed.push({ type: 'error', message: String(error) })
     }
   }
 
@@ -125,7 +125,7 @@ export const useDecisions = defineStore('decisions', () => {
   }
 
   function answerPermission(id: string, allow: boolean, message: string): void {
-    void team.decidePermission(id, allow)
+    void feed.decidePermission(id, allow)
     resolved.value.push({ key: `permissao-${id}`, message, decisionId: null, sent: true })
   }
 

@@ -3,17 +3,25 @@ import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
-import { useTeam } from './useTeam'
+import { useConnection } from './useConnection'
+import { useFeed } from './useFeed'
+import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 
-const team = useTeam()
+const connection = useConnection()
+
+
+const feed = useFeed()
+
+
+const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
 
 function presence(agent: Agent) {
-  return presenceOf(team.stateOf(agent), control.isPaused(agent))
+  return presenceOf(feed.stateOf(agent), control.isPaused(agent))
 }
 </script>
 
@@ -26,8 +34,8 @@ function presence(agent: Agent) {
           type="button"
           class="flex w-full cursor-pointer items-center gap-3 rounded-card border border-line p-3 text-left focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
           :aria-label="`Mencionar ${agent.name}`"
-          :disabled="team.checking"
-          @click="team.requestMention(agent.id)"
+          :disabled="connection.checking"
+          @click="requests.requestMention(agent.id)"
         >
           <span class="flex shrink-0" aria-hidden="true">
             <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.list" />

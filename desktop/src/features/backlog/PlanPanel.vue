@@ -5,7 +5,8 @@ import UiChip from '../../ui/UiChip.vue'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { DEFAULT_RECIPIENT } from '../team/agents'
-import { useTeam } from '../team/useTeam'
+import { useConnection } from '../team/useConnection'
+import { useFeed } from '../team/useFeed'
 import { useDecisions } from '../decisions/useDecisions'
 import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogTypes'
 import { parseProposal } from './planProposal'
@@ -37,7 +38,9 @@ const lotsLabel = (count: number, estimate: string): string => {
 }
 
 const itemPlan = useItemPlan()
-const team = useTeam()
+const connection = useConnection()
+
+const feed = useFeed()
 const roster = useRoster()
 const decisions = useDecisions()
 const tab = ref<PlanTab>(itemPlan.takePreferredTab())
@@ -50,7 +53,7 @@ const adjustText = ref('')
 const current = computed(() => itemPlan.planOf(props.item.id))
 const canUnlink = computed(() => UNLINKABLE_COLUMNS.includes(props.item.column ?? DEFAULT_COLUMN))
 const agentName = computed(() => roster.profileOf(current.value.agent ?? agent.value)?.name ?? '')
-const requestBlocked = computed(() => team.checking || team.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value))
+const requestBlocked = computed(() => connection.checking || feed.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value))
 const parsed = computed(() => parseProposal(current.value.proposal ?? ''))
 const pendingQuestion = computed(() => itemPlan.hasPendingQuestion(props.item.id))
 

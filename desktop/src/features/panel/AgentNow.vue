@@ -8,7 +8,8 @@ import { presenceOf } from '../team/agentStateStyle'
 import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
+import { useRequests } from '../team/useRequests'
 import {
   BADGE_BY_STATUS,
   DONE_TODAY_LABEL,
@@ -29,7 +30,10 @@ import { useAgentControl } from './useAgentControl'
 
 const props = defineProps<{ agent: Agent }>()
 
-const team = useTeam()
+const feed = useFeed()
+
+
+const requests = useRequests()
 const decisions = useDecisions()
 const control = useAgentControl()
 const { task, since, recent, queue, doneToday, status, step } = useAgentActivity(props.agent)
@@ -43,12 +47,12 @@ function formatTime(time: number): string {
 
 function openChat(): void {
   decisions.setOpen(false)
-  team.requestMention(props.agent)
+  requests.requestMention(props.agent)
 }
 
 async function submit(): Promise<void> {
   const text = message.value.trim()
-  if (text !== '' && (await team.send(text, props.agent))) {
+  if (text !== '' && (await requests.send(text, props.agent))) {
     message.value = ''
   }
 }
@@ -59,7 +63,7 @@ async function submit(): Promise<void> {
     <header class="flex flex-wrap items-center gap-2">
       <span
         class="size-1.75 rounded-full"
-        :class="presenceOf(team.stateOf(agent), control.isPaused(agent)).dot"
+        :class="presenceOf(feed.stateOf(agent), control.isPaused(agent)).dot"
         aria-hidden="true"
       />
       <p class="text-label font-semibold text-ink">{{ profile?.name ?? props.agent }} · {{ profile?.role }}</p>
@@ -67,7 +71,7 @@ async function submit(): Promise<void> {
       <UiBadge :status="BADGE_BY_STATUS[status]" :label="status" data-testid="agent-now-status" />
       <span v-if="since !== null" class="text-caption text-muted">{{ elapsedLabel(since, Date.now()) }}</span>
       <span class="ml-auto flex gap-1">
-        <UiButton variant="quiet" size="sm" data-testid="agent-now-pause" @press="team.togglePause(agent)">
+        <UiButton variant="quiet" size="sm" data-testid="agent-now-pause" @press="feed.togglePause(agent)">
           {{ control.isPaused(agent) ? RESUME_LABEL : PAUSE_LABEL }}
         </UiButton>
         <UiButton variant="quiet" size="sm" @press="openChat">{{ OPEN_CHAT_LABEL }}</UiButton>

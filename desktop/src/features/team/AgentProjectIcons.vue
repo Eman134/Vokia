@@ -3,19 +3,19 @@ import { computed } from 'vue'
 import ProjectIcon from '../projects/ProjectIcon.vue'
 import { useProjects } from '../projects/useProjects'
 import type { Agent } from './events'
-import { useTeam } from './useTeam'
+import { useFeed } from './useFeed'
 
 const MAX_ICONS = 2
 
 const props = defineProps<{ agent: Agent }>()
 
-const team = useTeam()
+const feed = useFeed()
 const projects = useProjects()
 
-const working = computed(() => team.activeAgents.some((profile) => profile.id === props.agent))
+const working = computed(() => feed.activeAgents.some((profile) => profile.id === props.agent))
 const active = computed(() =>
   working.value
-    ? team.projectsOf(props.agent).flatMap((id) => projects.projects.find((project) => project.id === id) ?? [])
+    ? feed.projectsOf(props.agent).flatMap((id) => projects.projects.find((project) => project.id === id) ?? [])
     : [],
 )
 const shown = computed(() => active.value.slice(0, MAX_ICONS))

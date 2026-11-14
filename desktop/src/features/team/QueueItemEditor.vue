@@ -1,23 +1,23 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useTeam, type QueuedRequest } from './useTeam'
+import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_KEEP, QUEUE_SAVE } from './queueCopy'
 import UiButton from '../../ui/UiButton.vue'
 
 const props = defineProps<{ request: QueuedRequest }>()
 
-const team = useTeam()
+const requests = useRequests()
 const text = ref(props.request.text)
 const field = ref<HTMLTextAreaElement | null>(null)
 
 onMounted(() => field.value?.focus())
 
 function save(): void {
-  team.saveEdit(props.request.id, text.value)
+  requests.saveEdit(props.request.id, text.value)
 }
 
 function keep(): void {
-  team.cancelEdit(props.request.id)
+  requests.cancelEdit(props.request.id)
 }
 
 function onKeydown(event: KeyboardEvent): void {

@@ -16,7 +16,7 @@ import VokiaLogo from '../features/brand/VokiaLogo.vue'
 import { projectIconOf } from '../features/projects/projectIcons'
 import type { Project } from '../features/projects/projectsApi'
 import { useProjects } from '../features/projects/useProjects'
-import { useTeam } from '../features/team/useTeam'
+import { useFeed } from '../features/team/useFeed'
 
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
@@ -41,7 +41,7 @@ const railPage = computed<AppPage>(() =>
 )
 const expanded = ref(false)
 const projectsStore = useProjects()
-const team = useTeam()
+const feed = useFeed()
 const openProject = ref<string | null>(projectsStore.selected?.name ?? null)
 watch(
   () => projectsStore.selected?.name ?? null,
@@ -73,7 +73,7 @@ async function enterProject(project: Project) {
   try {
     await navigation.enterProject(project)
   } catch (cause) {
-    team.feed.push({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+    feed.feed.push({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
   }
 }
 

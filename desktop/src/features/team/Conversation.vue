@@ -8,7 +8,8 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoster } from './useRoster'
-import { useTeam } from './useTeam'
+import { useFeed } from './useFeed'
+import { useRequests } from './useRequests'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import QueuedEntry from './QueuedEntry.vue'
@@ -20,7 +21,10 @@ import UiNotice from '../../ui/UiNotice.vue'
 
 const AT_END_TOLERANCE_PX = 4
 
-const team = useTeam()
+const feed = useFeed()
+
+
+const requests = useRequests()
 const roster = useRoster()
 const agentGroupTitle = computed(() => roster.agents.map((agent) => agent.name).join(' ↔ '))
 const projectsStore = useProjects()
@@ -36,7 +40,7 @@ function countLabel(count: number): string {
 async function clearConversation(): Promise<void> {
   clearFailure.value = null
   try {
-    await team.clearFeed()
+    await feed.clearFeed()
   } catch (error) {
     clearFailure.value = `Não foi possível limpar a conversa: ${String(error)}`
   }
@@ -56,7 +60,7 @@ async function followEnd(): Promise<void> {
   }
 }
 
-watch([() => team.feed.length, () => team.queue.length, () => team.permissions.length, () => team.thinkingAgent], followEnd)
+watch([() => feed.feed.length, () => requests.queue.length, () => feed.permissions.length, () => feed.thinkingAgent], followEnd)
 onMounted(followEnd)
 </script>
 
@@ -65,7 +69,7 @@ onMounted(followEnd)
     <header class="mb-6 flex items-center justify-between gap-4">
       <h1 class="text-title text-ink">Conversas</h1>
       <UiConfirm
-        v-if="team.feed.length > 0"
+        v-if="feed.feed.length > 0"
         label="Limpar"
         message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
         confirm-label="Limpar conversa"
@@ -78,13 +82,13 @@ onMounted(followEnd)
         <VokiaMascot look="tudo-em-dia" />
       </template>
     </UiEmpty>
-    <UiEmpty v-else-if="team.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+    <UiEmpty v-else-if="feed.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />
       </template>
     </UiEmpty>
     <ol class="flex max-w-3xl flex-col gap-3">
-      <li v-for="item in team.timeline" :key="item.start">
+      <li v-for="item in feed.timeline" :key="item.start">
         <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
           <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
             <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="agentGroupTitle">{{ agentGroupTitle }}</span>
@@ -99,30 +103,30 @@ onMounted(followEnd)
         <MessageEntry v-else :entry="item.entry" />
       </li>
     </ol>
-    <ol v-if="team.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
-      <li v-for="permission in team.permissions" :key="permission.id">
-        <PermissionPrompt :permission="permission" @decide="(allow) => team.decidePermission(permission.id, allow)" />
+    <ol v-if="feed.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
+      <li v-for="permission in feed.permissions" :key="permission.id">
+        <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
       </li>
     </ol>
-    <ol v-if="team.queue.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
-      <li v-for="request in team.queue" :key="request.id">
+    <ol v-if="requests.queue.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
+      <li v-for="request in requests.queue" :key="request.id">
         <QueuedEntry :request="request" />
       </li>
     </ol>
     <div
       role="status"
-      :aria-label="team.thinkingAgent ? `${team.thinkingAgent.name} está pensando` : undefined"
+      :aria-label="feed.thinkingAgent ? `${feed.thinkingAgent.name} está pensando` : undefined"
       class="mt-3 flex max-w-3xl items-start gap-2.5"
     >
-      <template v-if="team.thinkingAgent">
+      <template v-if="feed.thinkingAgent">
         <span
           class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
         >
-          {{ team.thinkingAgent.name.charAt(0) }}
+          {{ feed.thinkingAgent.name.charAt(0) }}
         </span>
         <div class="min-w-0">
           <header class="flex items-baseline gap-2">
-            <span class="text-caption font-semibold text-ink">{{ team.thinkingAgent.name }}</span>
+            <span class="text-caption font-semibold text-ink">{{ feed.thinkingAgent.name }}</span>
             <span class="text-caption text-muted">pensando</span>
           </header>
           <div class="mt-1.5 flex items-center gap-1">

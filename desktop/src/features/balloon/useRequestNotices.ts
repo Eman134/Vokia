@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { useNavigation } from '../../shell/useNavigation'
 import type { Agent } from '../team/events'
 import { agentName } from '../team/agents'
-import { useTeam } from '../team/useTeam'
+import { useRequests } from '../team/useRequests'
 import type { BalloonItem } from './balloonTypes'
 import { useBalloons } from './useBalloons'
 
@@ -32,7 +32,7 @@ const sentBalloonId = (id: number) => `request:sent:${id}`
 
 export const useRequestNotices = defineStore('requestNotices', () => {
   const balloons = useBalloons()
-  const team = useTeam()
+  const requests = useRequests()
   const navigation = useNavigation()
   const sent = new Map<number, SentInfo>()
 
@@ -57,8 +57,8 @@ export const useRequestNotices = defineStore('requestNotices', () => {
           label: ACTION_UNDO,
           disabled: info.dispatched,
           run: () => {
-            if (!team.queue.some((request) => request.id === info.id)) return ALREADY_STARTED_TEXT
-            team.removeQueued(info.id)
+            if (!requests.queue.some((request) => request.id === info.id)) return ALREADY_STARTED_TEXT
+            requests.removeQueued(info.id)
             return UNDONE_TEXT
           },
         },

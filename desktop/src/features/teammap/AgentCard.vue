@@ -5,7 +5,7 @@ import AgentPortrait from '../team/AgentPortrait.vue'
 import { presenceOf } from '../team/agentStateStyle'
 import type { AgentState } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 
 const CARD_PORTRAIT_SIZE = 36
 
@@ -18,11 +18,11 @@ const TONE_CLASSES: Record<AgentState, string> = {
 
 const props = defineProps<{ agent: AgentProfile }>()
 
-const team = useTeam()
+const feed = useFeed()
 const control = useAgentControl()
 
 const paused = computed(() => control.isPaused(props.agent.id))
-const state = computed(() => team.stateOf(props.agent.id))
+const state = computed(() => feed.stateOf(props.agent.id))
 const presence = computed(() => presenceOf(state.value, paused.value))
 const toneClass = computed(() => TONE_CLASSES[paused.value ? 'idle' : state.value])
 </script>

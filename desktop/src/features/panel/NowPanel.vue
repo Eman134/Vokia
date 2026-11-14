@@ -9,7 +9,7 @@ import AgentProjectIcons from '../team/AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import AgentNow from './AgentNow.vue'
 import {
   agentTabLabel,
@@ -23,7 +23,7 @@ import {
 import { useAgentActivity } from './useAgentActivity'
 import { useAgentControl } from './useAgentControl'
 
-const team = useTeam()
+const feed = useFeed()
 const roster = useRoster()
 const control = useAgentControl()
 const tab = ref<NowTab>('todos')
@@ -48,7 +48,7 @@ const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: act
   <div class="flex flex-col gap-2">
     <div class="flex flex-wrap gap-1.5">
       <UiChip
-        :label="`${ALL_TAB_LABEL} ${team.activeAgents.length}`"
+        :label="`${ALL_TAB_LABEL} ${feed.activeAgents.length}`"
         :selected="tab === 'todos'"
         data-testid="now-subtab-todos"
         @press="tab = 'todos'"
@@ -80,12 +80,12 @@ const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: act
           <span class="flex items-center gap-1.5 text-caption text-ink">
             <span
               class="size-1.75 rounded-full"
-              :class="presenceOf(team.stateOf(row.agent.id), control.isPaused(row.agent.id)).dot"
+              :class="presenceOf(feed.stateOf(row.agent.id), control.isPaused(row.agent.id)).dot"
             />
             {{ row.activity.step }}
           </span>
         </span>
-        <UiButton variant="quiet" size="sm" @press="team.togglePause(row.agent.id)">
+        <UiButton variant="quiet" size="sm" @press="feed.togglePause(row.agent.id)">
           {{ control.isPaused(row.agent.id) ? RESUME_LABEL : PAUSE_LABEL }}
         </UiButton>
       </li>

@@ -2,7 +2,8 @@ import { computed } from 'vue'
 import { useDecisions } from '../decisions/useDecisions'
 import { STATE_LABELS } from '../team/agentStateStyle'
 import type { Agent, VokiaMessage } from '../team/events'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
+import { useRequests } from '../team/useRequests'
 import { PAUSED_STEP, type AgentStatus } from './nowCopy'
 import { useAgentControl } from './useAgentControl'
 
@@ -24,12 +25,14 @@ function isToday(time: number): boolean {
 }
 
 export function useAgentActivity(agent: Agent) {
-  const team = useTeam()
+  const feed = useFeed()
+
+  const requests = useRequests()
   const control = useAgentControl()
   const decisions = useDecisions()
 
   const involved = computed(() =>
-    team.feed.filter(
+    feed.feed.filter(
       (entry): entry is VokiaMessage => entry.type === 'message' && (entry.from === agent || entry.to === agent),
     ),
   )
@@ -48,7 +51,7 @@ export function useAgentActivity(agent: Agent) {
       .reverse()
       .map((message) => ({ time: message.time, text: truncate(message.text) })),
   )
-  const queue = computed(() => team.queuedFor(agent))
+  const queue = computed(() => requests.queuedFor(agent))
   const doneToday = computed(
     () =>
       involved.value.filter((message) => message.from === agent && message.to === 'user' && isToday(message.time))
@@ -61,9 +64,9 @@ export function useAgentActivity(agent: Agent) {
     if (decisions.cards.some((card) => card.agent === agent)) {
       return 'precisa de você'
     }
-    return team.stateOf(agent) === 'idle' ? 'livre' : 'trabalhando'
+    return feed.stateOf(agent) === 'idle' ? 'livre' : 'trabalhando'
   })
-  const step = computed(() => (status.value === 'pausado' ? PAUSED_STEP : STATE_LABELS[team.stateOf(agent)]))
+  const step = computed(() => (status.value === 'pausado' ? PAUSED_STEP : STATE_LABELS[feed.stateOf(agent)]))
 
   return { task, since, recent, queue, doneToday, status, step }
 }

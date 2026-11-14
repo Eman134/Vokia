@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import {
   fetchBacklog,
   moveBacklogItem,
@@ -28,7 +28,7 @@ export const useBacklog = defineStore('backlog', () => {
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
   const loadError = ref<string | null>(null)
-  const team = useTeam()
+  const feed = useFeed()
   const queues = new Map<string, ItemQueue>()
   let loadSeq = 0
 
@@ -53,7 +53,7 @@ export const useBacklog = defineStore('backlog', () => {
   }
 
   function reportError(error: unknown): void {
-    team.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+    feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
   }
 
   function clearLoaded(): void {

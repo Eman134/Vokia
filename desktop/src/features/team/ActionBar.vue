@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { DEFAULT_RECIPIENT } from './agents'
-import { useTeam } from './useTeam'
+import { useConnection } from './useConnection'
+import { useFeed } from './useFeed'
+import { useRequests } from './useRequests'
 import { normalizeName, useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import { useTeamStatus } from './useTeamStatus'
@@ -83,7 +85,9 @@ const emit = defineEmits<{
   compose: [size: ComposeSize]
 }>()
 
-const team = useTeam()
+const connection = useConnection()
+const feed = useFeed()
+const requests = useRequests()
 const roster = useRoster()
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
@@ -116,7 +120,7 @@ const pageActions = computed<readonly PageAction[]>(() =>
   railPage.value === null ? [] : PAGE_ACTIONS[railPage.value],
 )
 
-const locked = computed(() => team.checking)
+const locked = computed(() => connection.checking)
 const projectsStore = useProjects()
 const placeholder = computed(() =>
   flow.flow !== null
@@ -160,7 +164,7 @@ const interacting = computed(
   () => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
-const inlinePermission = computed(() => !flow.active && expanded.value && team.permissions.length > 0)
+const inlinePermission = computed(() => !flow.active && expanded.value && feed.permissions.length > 0)
 const canAsk = computed(() => flow.flow !== 'onboarding')
 const hasMultipleProjects = computed(() => projectsStore.projects.length > 1)
 const stepTitle = computed(() =>
@@ -186,7 +190,7 @@ const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
 const segments = computed(() => mentionSegments(draft.value, spans.value))
 const queueHint = computed(() => {
   const target = recipient.value
-  if (target === null || team.stateOf(target) === 'idle') {
+  if (target === null || feed.stateOf(target) === 'idle') {
     return null
   }
   const onlyMentions = segments.value.every((segment) => segment.agent !== null || segment.text.trim() === '')
@@ -239,9 +243,9 @@ watch([activeMatch, scrollLeft], async () => {
 })
 
 watch(
-  () => team.pendingMention,
+  () => requests.pendingMention,
   () => {
-    const requestedId = team.takePendingMention()
+    const requestedId = requests.takePendingMention()
     const requested = roster.agents.find((agent) => agent.id === requestedId)
     if (requested !== undefined) {
       insertAtCaret(requested)
@@ -259,10 +263,10 @@ function dashClass(agent: Agent): string {
   if (control.isPaused(agent)) {
     return PAUSED_DOT_CLASS
   }
-  if (team.permissions.some((permission) => permission.agent === agent)) {
+  if (feed.permissions.some((permission) => permission.agent === agent)) {
     return 'bg-danger motion-safe:animate-pulse'
   }
-  return team.stateOf(agent) === 'waiting' ? 'bg-warn' : 'bg-ok'
+  return feed.stateOf(agent) === 'waiting' ? 'bg-warn' : 'bg-ok'
 }
 
 function anchorLeft(): number {
@@ -294,7 +298,7 @@ async function submit(): Promise<void> {
   const pendingConfirmed = confirmed.value
   draft.value = ''
   if (
-    !(await team.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
+    !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
       onEnqueued: requestNotices.announceSent,
       onQueued: requestNotices.markBackendQueued,
     }))
@@ -433,7 +437,7 @@ function onPointerLeave(): void {
 </script>
 
 <template>
-  <div v-if="team.online" :class="BAR_WRAP_CLASSES">
+  <div v-if="connection.online" :class="BAR_WRAP_CLASSES">
     <Balloon />
     <PanelShell />
     <form
@@ -446,7 +450,7 @@ function onPointerLeave(): void {
       @submit.prevent="submit"
     >
       <svg
-        v-if="team.activeAgents.length < 2"
+        v-if="feed.activeAgents.length < 2"
         class="size-6.5 shrink-0"
         :class="{
           'animate-spin': !flow.active && statusStore.status === 'working',
@@ -469,7 +473,7 @@ function onPointerLeave(): void {
       </svg>
       <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
         <span
-          v-for="agent in team.activeAgents"
+          v-for="agent in feed.activeAgents"
           :key="agent.id"
           class="h-1 w-3.5 rounded-full"
           :class="dashClass(agent.id)"
@@ -590,14 +594,14 @@ function onPointerLeave(): void {
         <span v-if="expanded">{{ decisionsTitle }}</span>
       </UiButton>
       <UiButton
-        v-if="team.queue.length > 0"
+        v-if="requests.queue.length > 0"
         variant="quiet"
         size="sm"
         aria-haspopup="dialog"
         :aria-expanded="queueOpen"
         @press="queueOpen = !queueOpen"
       >
-        {{ QUEUE_BADGE(team.queue.length) }}
+        {{ QUEUE_BADGE(requests.queue.length) }}
       </UiButton>
       <CommandMenu
         v-if="menuOpen && menuKind === 'command'"
@@ -621,11 +625,11 @@ function onPointerLeave(): void {
         @run="runAction"
         @close="actionMenuOpen = false"
       />
-      <QueuePopover v-if="queueOpen && team.queue.length > 0" @close="queueOpen = false" />
+      <QueuePopover v-if="queueOpen && requests.queue.length > 0" @close="queueOpen = false" />
     </form>
   </div>
-  <div role="status" :class="team.online ? undefined : BAR_WRAP_CLASSES">
-    <div v-if="!team.online" :class="[PILL_CLASSES, 'w-full justify-center']">
+  <div role="status" :class="connection.online ? undefined : BAR_WRAP_CLASSES">
+    <div v-if="!connection.online" :class="[PILL_CLASSES, 'w-full justify-center']">
       <svg
         class="size-4 shrink-0 text-danger"
         viewBox="0 0 24 24"

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import NowPanel from './NowPanel.vue'
 import { NOW_TAB_LABEL } from './nowCopy'
-import { useTeam } from '../team/useTeam'
+import { useFeed } from '../team/useFeed'
 import DecisionPanel from '../decisions/DecisionPanel.vue'
 import { PANEL_TITLE } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
@@ -17,11 +17,11 @@ interface TabEntry {
 const TOGGLE_KEY_CODE = 'KeyJ'
 
 const decisions = useDecisions()
-const team = useTeam()
+const feed = useFeed()
 const panelTab = usePanelTab()
 const tabs = computed<TabEntry[]>(() => [
   { id: 'decisoes', label: PANEL_TITLE, count: decisions.pendingCount },
-  { id: 'agora', label: NOW_TAB_LABEL, count: team.activeAgents.length },
+  { id: 'agora', label: NOW_TAB_LABEL, count: feed.activeAgents.length },
 ])
 
 function onKeydown(event: KeyboardEvent): void {

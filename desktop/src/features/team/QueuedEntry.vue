@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { agentName, DEFAULT_RECIPIENT } from './agents'
-import { useTeam, type QueuedRequest } from './useTeam'
+import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
 import UiButton from '../../ui/UiButton.vue'
@@ -9,7 +9,7 @@ const USER_INITIAL = 'V'
 
 defineProps<{ request: QueuedRequest }>()
 
-const team = useTeam()
+const requests = useRequests()
 </script>
 
 <template>
@@ -27,8 +27,8 @@ const team = useTeam()
           {{ request.text }}
         </p>
         <div class="flex gap-1">
-          <UiButton variant="quiet" size="sm" @press="team.startEdit(request.id)">{{ QUEUE_EDIT }}</UiButton>
-          <UiButton variant="quiet" size="sm" @press="team.removeQueued(request.id)">{{ QUEUE_REMOVE }}</UiButton>
+          <UiButton variant="quiet" size="sm" @press="requests.startEdit(request.id)">{{ QUEUE_EDIT }}</UiButton>
+          <UiButton variant="quiet" size="sm" @press="requests.removeQueued(request.id)">{{ QUEUE_REMOVE }}</UiButton>
         </div>
       </template>
     </div>

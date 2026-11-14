@@ -2,7 +2,7 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
-import { useTeam, type RunResult } from '../team/useTeam'
+import { useRequests, type RunResult } from '../team/useRequests'
 import { useProjects } from '../projects/useProjects'
 import { DEFAULT_COLUMN, type BacklogColumn, type BacklogItem } from './backlogTypes'
 import { useBacklog, type RunColumn } from './useBacklog'
@@ -70,7 +70,7 @@ export const useRunItem = defineStore('runItem', () => {
   const awayRuns = new Map<string, AwayRun>()
   const backlog = useBacklog()
   const itemPlan = useItemPlan()
-  const team = useTeam()
+  const requests = useRequests()
   const projects = useProjects()
 
   function findItem(itemId: string): BacklogItem | undefined {
@@ -160,7 +160,7 @@ export const useRunItem = defineStore('runItem', () => {
     const agent = delegateTo ?? itemPlan.planOf(itemId).agent ?? DEFAULT_RECIPIENT
     running.value[runKey(projectId, itemId)] = true
     backlog.setRunColumn(itemId, 'In progress', SENT_NOTE(agentName(agent)))
-    const accepted = await team.send(buildRunPrompt(item, planTextOf(itemId)), agent, {
+    const accepted = await requests.send(buildRunPrompt(item, planTextOf(itemId)), agent, {
       projectId,
       onQueued: () => noteQueued(projectId, itemId, agent),
       onSettled: (result) => settle(projectId, itemId, { result, agent }),

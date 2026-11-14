@@ -32,7 +32,7 @@ export const useTheme = defineStore('theme', () => {
       choice.value = theme
       applyTheme(theme)
     } catch (error) {
-      // O motivo do banco indisponível já aparece no feed (useTeam.restoreHistory); aqui só mantém o tema padrão.
+      // O motivo do banco indisponível já aparece no feed (useFeed.restoreHistory); aqui só mantém o tema padrão.
       console.error(`Não foi possível ler o tema salvo: ${String(error)}`)
     }
   }
