@@ -452,6 +452,21 @@ export const useTeam = defineStore('team', () => {
     )
   }
 
+  // Sem projeto porque o banco não abriu, o motivo do banco é o que o usuário precisa ver.
+  async function notifyMissingProject(): Promise<void> {
+    try {
+      const problem = await fetchDbProblem()
+      if (problem !== null) {
+        feed.value.push({ type: 'error', message: problem.reason })
+        return
+      }
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+      return
+    }
+    notify(NO_PROJECT_NOTICE)
+  }
+
   async function targetProjectId(text: string): Promise<number | null> {
     const selected = projects.selected
     const resolution = resolveProject(text, projects.projects, selected?.id ?? null)
@@ -460,7 +475,7 @@ export const useTeam = defineStore('team', () => {
       return null
     }
     if (resolution.kind === 'no-project') {
-      notify(NO_PROJECT_NOTICE)
+      await notifyMissingProject()
       return null
     }
     const { project } = resolution
