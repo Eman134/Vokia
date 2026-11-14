@@ -6,8 +6,10 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useRoster } from './useRoster'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import type { VokiaMessage } from './events'
+import { agentName } from './agents'
+import { groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import { useRequests } from './useRequests'
 import MessageEntry from './MessageEntry.vue'
@@ -20,13 +22,17 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const AT_END_TOLERANCE_PX = 4
+const GROUP_SEPARATOR = ' ↔ '
 
 const feed = useFeed()
 
 
 const requests = useRequests()
-const roster = useRoster()
-const agentGroupTitle = computed(() => roster.agents.map((agent) => agent.name).join(' ↔ '))
+
+function groupTitle(messages: readonly VokiaMessage[]): string {
+  return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
+}
+
 const projectsStore = useProjects()
 const scroller = ref<HTMLElement | null>(null)
 // Só o próprio scroll decide: arrastar a barra ou rolar com a roda sai do fim e volta ao chegar nele.
@@ -91,7 +97,7 @@ onMounted(followEnd)
       <li v-for="item in feed.timeline" :key="item.start">
         <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
           <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
-            <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="agentGroupTitle">{{ agentGroupTitle }}</span>
+            <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupTitle(item.messages) }}</span>
             <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
           </summary>
           <ol class="mt-3 flex flex-col gap-3">
