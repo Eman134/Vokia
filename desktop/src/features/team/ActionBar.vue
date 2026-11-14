@@ -1,85 +1,32 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import { DEFAULT_RECIPIENT } from './agents'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import type { ComposeSize } from './pageActions'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
-import { useRequests } from './useRequests'
-import { normalizeName, useRoster } from './useRoster'
-import type { AgentProfile } from './teamApi'
-import { useTeamStatus } from './useTeamStatus'
-import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from './pageActions'
-import { placeholderFor, QUEUE_SUFFIX } from './composerPlaceholder'
-import { QUEUE_BADGE } from './queueCopy'
-import {
-  findTrigger,
-  insertMention,
-  mentionSegments,
-  mentionSpans,
-  MENTION_TRIGGER,
-  replaceTrigger,
-  type TriggerMatch,
-} from './composerMentions'
-import {
-  COMMAND_TRIGGER,
-  expandCommand,
-  findCommandTrigger,
-  SLASH_COMMANDS,
-  type SlashCommand,
-} from './slashCommands'
-import { PAUSED_DOT_CLASS } from './agentStateStyle'
+import { useFlow } from './useFlow'
 import { useProjects } from '../projects/useProjects'
-import type { Agent } from './events'
-import type { RailPage } from '../../shell/railNav'
-import { useNavigation } from '../../shell/useNavigation'
-import PermissionInline from './PermissionInline.vue'
-import MentionMenu from './MentionMenu.vue'
-import CommandMenu from './CommandMenu.vue'
 import ActionMenu from './ActionMenu.vue'
+import PermissionInline from './PermissionInline.vue'
 import PinnedProject from './PinnedProject.vue'
-import QueuePopover from './QueuePopover.vue'
 import PausedAgents from './PausedAgents.vue'
 import FlowSteps from './FlowSteps.vue'
-import { FLOW_LABEL, FLOW_PLACEHOLDER } from './flowSteps'
-import { useFlow } from './useFlow'
 import Balloon from '../balloon/Balloon.vue'
-import { panelTitleFor } from '../decisions/decisionCopy'
-import { useDecisions } from '../decisions/useDecisions'
-import { useRequestNotices } from '../balloon/useRequestNotices'
-import { useAgentControl } from '../panel/useAgentControl'
 import PanelShell from '../panel/PanelShell.vue'
-import { MAX_PERCENT, ringDash } from '../usage/usagePlans'
-import UiButton from '../../ui/UiButton.vue'
+import { BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
+import ComposerField from './bar/ComposerField.vue'
+import DecisionsButton from './bar/DecisionsButton.vue'
+import OfflineNotice from './bar/OfflineNotice.vue'
+import PageActionsButton from './bar/PageActionsButton.vue'
+import QueueButton from './bar/QueueButton.vue'
+import StatusRing from './bar/StatusRing.vue'
+import { useComposerSubmit } from './bar/useComposerSubmit'
+import { usePageActions } from './bar/usePageActions'
 
-const RING_BOX = 28
-const RING_CENTER = RING_BOX / 2
-const RING_RADIUS = 11
-const RING_STROKE = 2.5
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
-const SPINNING_ARC = RING_CIRCUMFERENCE / 4
-const FULL_RING_DASH = `${RING_CIRCUMFERENCE} 0`
-const SPINNING_RING_DASH = `${SPINNING_ARC} ${RING_CIRCUMFERENCE - SPINNING_ARC}`
-// Centraliza na janela, mas a borda esquerda nunca entra na coluna fixa do trilho (--rail-w vem de App.vue).
-// O invólucro deixa passar o ponteiro: só a pílula captura, para o resto da janela continuar clicável.
-const BAR_WRAP_CLASSES =
-  'pointer-events-none fixed bottom-6 left-[max(--spacing(6),calc(50%-var(--container-bar)/2),var(--rail-w,0px))] right-[max(--spacing(6),calc(50%-var(--container-bar)/2))] flex justify-center'
-const BAR_MOTION_CLASSES = 'duration-180 ease-out motion-reduce:transition-none'
-// `relative` ancora o menu de @ (MentionMenu é absolute) à pílula, não ao invólucro.
-// interpolate-size deixa o width animar entre w-fit e w-full; sem suporte a largura só troca.
-const PILL_CLASSES = `pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float transition-[width] [interpolate-size:allow-keywords] ${BAR_MOTION_CLASSES}`
-const REVEAL_ENTER_FROM_CLASS = 'opacity-0'
-const REVEAL_ENTER_ACTIVE_CLASS = `transition-opacity ${BAR_MOTION_CLASSES}`
-const REVEAL_LEAVE_ACTIVE_CLASS = REVEAL_ENTER_ACTIVE_CLASS
-const REVEAL_LEAVE_TO_CLASS = REVEAL_ENTER_FROM_CLASS
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
 // Deve casar com o duration-180 de BAR_MOTION_CLASSES.
 const COLLAPSE_MS = 180
 const EXPANDED_WIDTH_CLASS = 'w-full'
 const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
-// Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
-const FIELD_PADDING_X = 14
-// Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
-const MENU_WIDTH_BY_KIND = { mention: 260, command: 300 } as const
-const ACTION_SHORTCUT_CODES = ['Digit1', 'Digit2']
 
 const emit = defineEmits<{
   compose: [size: ComposeSize]
@@ -87,119 +34,31 @@ const emit = defineEmits<{
 
 const connection = useConnection()
 const feed = useFeed()
-const requests = useRequests()
-const roster = useRoster()
-const statusStore = useTeamStatus()
-const decisions = useDecisions()
-const requestNotices = useRequestNotices()
 const flow = useFlow()
-const control = useAgentControl()
-const draft = ref('')
-const caret = ref(0)
-const scrollLeft = ref(0)
-const menuLeft = ref(0)
-const confirmed = ref<Set<Agent>>(new Set())
-const inputRef = ref<HTMLInputElement | null>(null)
-const wrapperRef = ref<HTMLElement | null>(null)
-const measureRef = ref<HTMLElement | null>(null)
+const projectsStore = useProjects()
 const pillRef = ref<HTMLElement | null>(null)
-const listboxId = useId()
-const menuDismissed = ref(false)
-const highlightedIndex = ref(0)
+const { draft, confirmed, submit } = useComposerSubmit()
+const composer = ref<InstanceType<typeof ComposerField> | null>(null)
 const hovered = ref(false)
 const collapsing = ref(false)
 let collapseTimer: ReturnType<typeof setTimeout> | undefined
 const focusWithin = ref(false)
 const actionMenuOpen = ref(false)
 const queueOpen = ref(false)
-const navigation = useNavigation()
-const railPage = computed<RailPage | null>(() =>
-  navigation.page === 'novo-projeto' || navigation.page === 'onboarding' ? null : navigation.page,
-)
-const pageActions = computed<readonly PageAction[]>(() =>
-  railPage.value === null ? [] : PAGE_ACTIONS[railPage.value],
-)
+const menuOpen = ref(false)
+const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
-const locked = computed(() => connection.checking)
-const projectsStore = useProjects()
-const placeholder = computed(() =>
-  flow.flow !== null
-    ? FLOW_PLACEHOLDER[flow.flow]
-    : placeholderFor(railPage.value, projectsStore.selected?.name ?? '', statusStore.status, statusStore.placeholder),
-)
-const ringDashArray = computed(() =>
-  flow.active ? ringDash(flow.progress * MAX_PERCENT, RING_RADIUS) : statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH,
-)
-const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
-const commandMatch = computed<TriggerMatch | null>(() => findCommandTrigger(draft.value, caret.value))
-const menuKind = computed<'command' | 'mention' | null>(() =>
-  commandMatch.value ? 'command' : mentionMatch.value ? 'mention' : null,
-)
-const activeMatch = computed(() => commandMatch.value ?? mentionMatch.value)
-const mentionQuery = computed<string | null>(() => mentionMatch.value?.query ?? null)
-const mentionMatches = computed<AgentProfile[]>(() => {
-  const query = mentionQuery.value
-  if (query === null) {
-    return []
-  }
-  const prefix = normalizeName(query)
-  return roster.agents.filter((agent) => normalizeName(agent.name).startsWith(prefix))
-})
-const commandMatches = computed<SlashCommand[]>(() => {
-  const match = commandMatch.value
-  if (match === null) {
-    return []
-  }
-  const prefix = match.query.toLowerCase()
-  return SLASH_COMMANDS.filter((command) => command.id.startsWith(prefix))
-})
-const menuCount = computed(() => (menuKind.value === 'command' ? commandMatches.value : mentionMatches.value).length)
-const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
-  menuKind.value === 'command'
-    ? commandMatches.value.at(highlightedIndex.value)
-    : mentionMatches.value.at(highlightedIndex.value),
-)
-const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
 const interacting = computed(
   () => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() => !flow.active && expanded.value && feed.permissions.length > 0)
 const canAsk = computed(() => flow.flow !== 'onboarding')
-const hasMultipleProjects = computed(() => projectsStore.projects.length > 1)
-const stepTitle = computed(() =>
-  flow.active ? `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}` : '',
-)
 const pillWidthClass = computed(() => {
   if (canAsk.value && interacting.value) {
     return EXPANDED_WIDTH_CLASS
   }
   return flow.active ? CONTENT_WIDTH_CLASS : COMPACT_WIDTH_CLASS
-})
-const statusLabel = computed(() => (flow.flow === null ? statusStore.statusText : FLOW_LABEL[flow.flow]))
-const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
-// Minimizada e sem pendência nem check, o botão ficaria vazio e deixaria um vão à direita da pílula.
-const showDecisionsButton = computed(
-  () => !flow.active && (expanded.value || decisions.pendingCount > 0 || statusStore.status === 'done'),
-)
-const activeOptionId = computed(() =>
-  menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
-)
-const spans = computed(() => mentionSpans(draft.value, confirmed.value))
-const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
-const segments = computed(() => mentionSegments(draft.value, spans.value))
-const queueHint = computed(() => {
-  const target = recipient.value
-  if (target === null || feed.stateOf(target) === 'idle') {
-    return null
-  }
-  const onlyMentions = segments.value.every((segment) => segment.agent !== null || segment.text.trim() === '')
-  return onlyMentions ? QUEUE_SUFFIX : null
-})
-
-watch([menuKind, () => activeMatch.value?.query], () => {
-  menuDismissed.value = false
-  highlightedIndex.value = 0
 })
 
 // Sem isto o rótulo é cortado com "…" nos quadros em que a pílula já está mais estreita que o texto.
@@ -230,136 +89,7 @@ watch(queueOpen, (open) => {
   }
 })
 
-watch(draft, (text) => {
-  const present = new Set(mentionSpans(text, confirmed.value).map((span) => span.agent))
-  if (present.size !== confirmed.value.size) {
-    confirmed.value = present
-  }
-})
-
-watch([activeMatch, scrollLeft], async () => {
-  await nextTick()
-  menuLeft.value = anchorLeft()
-})
-
-watch(
-  () => requests.pendingMention,
-  () => {
-    const requestedId = requests.takePendingMention()
-    const requested = roster.agents.find((agent) => agent.id === requestedId)
-    if (requested !== undefined) {
-      insertAtCaret(requested)
-    }
-  },
-)
-
-onMounted(() => window.addEventListener('keydown', onShortcut))
-onUnmounted(() => {
-  window.removeEventListener('keydown', onShortcut)
-  clearTimeout(collapseTimer)
-})
-
-function dashClass(agent: Agent): string {
-  if (control.isPaused(agent)) {
-    return PAUSED_DOT_CLASS
-  }
-  if (feed.permissions.some((permission) => permission.agent === agent)) {
-    return 'bg-danger motion-safe:animate-pulse'
-  }
-  return feed.stateOf(agent) === 'waiting' ? 'bg-warn' : 'bg-ok'
-}
-
-function anchorLeft(): number {
-  const wrapper = wrapperRef.value
-  const measure = measureRef.value
-  const pill = pillRef.value
-  if (wrapper === null || measure === null || pill === null) {
-    return 0
-  }
-  const atX = wrapper.offsetLeft + FIELD_PADDING_X + measure.offsetWidth - scrollLeft.value
-  const width = MENU_WIDTH_BY_KIND[menuKind.value ?? 'mention']
-  return Math.max(0, Math.min(atX, pill.clientWidth - width))
-}
-
-function syncCaret(): void {
-  caret.value = inputRef.value?.selectionStart ?? draft.value.length
-  scrollLeft.value = inputRef.value?.scrollLeft ?? 0
-}
-
-async function submit(): Promise<void> {
-  const text = draft.value.trim()
-  if (text === '' || locked.value) {
-    return
-  }
-  const to = recipient.value
-  const expandedCommand = expandCommand(text)
-  const pending = draft.value
-  // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
-  const pendingConfirmed = confirmed.value
-  draft.value = ''
-  if (
-    !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
-      onEnqueued: requestNotices.announceSent,
-      onQueued: requestNotices.markBackendQueued,
-    }))
-  ) {
-    draft.value = pending
-    confirmed.value = pendingConfirmed
-  }
-}
-
-function applyMention(next: { text: string; caret: number }, agent: AgentProfile): void {
-  draft.value = next.text
-  caret.value = next.caret
-  confirmed.value = new Set(confirmed.value).add(agent.id)
-  void placeCaret(next.caret)
-}
-
-async function placeCaret(position: number): Promise<void> {
-  await nextTick()
-  inputRef.value?.focus()
-  inputRef.value?.setSelectionRange(position, position)
-  syncCaret()
-}
-
-function chooseMentionAgent(agent: AgentProfile): void {
-  const trigger = mentionMatch.value
-  if (trigger === null) {
-    return
-  }
-  applyMention(insertMention(draft.value, trigger, caret.value, agent.name), agent)
-}
-
-function chooseCommand(command: SlashCommand): void {
-  const trigger = commandMatch.value
-  if (trigger === null || !command.enabled) {
-    return
-  }
-  const next = replaceTrigger(draft.value, trigger, caret.value, `${COMMAND_TRIGGER}${command.id} `)
-  draft.value = next.text
-  caret.value = next.caret
-  void placeCaret(next.caret)
-}
-
-function chooseHighlighted(item: AgentProfile | SlashCommand): void {
-  if ('role' in item) {
-    chooseMentionAgent(item)
-  } else {
-    chooseCommand(item)
-  }
-}
-
-function insertAtCaret(agent: AgentProfile): void {
-  const before = draft.value.slice(0, caret.value)
-  const separator = before === '' || /\s$/.test(before) ? '' : ' '
-  const start = before.length + separator.length
-  const text = before + separator + draft.value.slice(caret.value)
-  applyMention(insertMention(text, { start, query: '' }, start, agent.name), agent)
-}
-
-function dismissMenu(): void {
-  menuDismissed.value = true
-}
+onUnmounted(() => clearTimeout(collapseTimer))
 
 function onFocusOut(event: FocusEvent): void {
   if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
@@ -367,70 +97,9 @@ function onFocusOut(event: FocusEvent): void {
   }
 }
 
-function moveHighlight(step: number): void {
-  const count = menuCount.value
-  if (count === 0) {
-    return
-  }
-  highlightedIndex.value = (highlightedIndex.value + step + count) % count
-}
-
-function handleMenuKey(event: KeyboardEvent): void {
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault()
-      moveHighlight(1)
-      break
-    case 'ArrowUp':
-      event.preventDefault()
-      moveHighlight(-1)
-      break
-    case 'Enter':
-    case 'Tab': {
-      const item = highlighted.value
-      if (item === undefined && event.key === 'Tab') {
-        break
-      }
-      // Enter com a lista aberta nunca envia, mesmo sem resultado.
-      event.preventDefault()
-      if (item !== undefined) {
-        chooseHighlighted(item)
-      }
-      break
-    }
-    case 'Escape':
-      event.preventDefault()
-      dismissMenu()
-      break
-  }
-}
-
-function onKeydown(event: KeyboardEvent): void {
-  if (menuOpen.value) {
-    handleMenuKey(event)
-  }
-}
-
-function runAction(action: PageAction): void {
-  actionMenuOpen.value = false
-  if (action.size !== undefined) {
-    emit('compose', action.size)
-  }
-}
-
-function onShortcut(event: KeyboardEvent): void {
-  const index = ACTION_SHORTCUT_CODES.indexOf(event.code)
-  const action = index >= 0 ? pageActions.value[index] : undefined
-  if (action === undefined || !event.getModifierState(ACTION_SHORTCUT_MODIFIER)) {
-    return
-  }
-  event.preventDefault()
-  runAction(action)
-}
-
 function onPointerLeave(): void {
   hovered.value = false
-  if (document.activeElement !== inputRef.value) {
+  if (!composer.value?.isFocused()) {
     actionMenuOpen.value = false
   }
 }
@@ -449,204 +118,32 @@ function onPointerLeave(): void {
       @focusout="onFocusOut"
       @submit.prevent="submit"
     >
-      <svg
-        v-if="feed.activeAgents.length < 2"
-        class="size-6.5 shrink-0"
-        :class="{
-          'animate-spin': !flow.active && statusStore.status === 'working',
-          'animate-pulse motion-reduce:animate-none': !flow.active && statusStore.status === 'needs-you',
-        }"
-        :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
-        fill="none"
-        :stroke-width="RING_STROKE"
-        aria-hidden="true"
-      >
-        <circle :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_RADIUS" class="stroke-line" />
-        <circle
-          :cx="RING_CENTER"
-          :cy="RING_CENTER"
-          :r="RING_RADIUS"
-          :class="statusStore.ring"
-          stroke-linecap="round"
-          :stroke-dasharray="ringDashArray"
-        />
-      </svg>
-      <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
-        <span
-          v-for="agent in feed.activeAgents"
-          :key="agent.id"
-          class="h-1 w-3.5 rounded-full"
-          :class="dashClass(agent.id)"
-        />
-      </span>
-      <span class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
-        <span
-          class="text-label font-semibold text-muted"
-          :class="[collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate', { 'max-xl:hidden': !canAsk }]"
-          :title="statusLabel"
-        >
-          {{ statusLabel }}
-        </span>
-        <span
-          v-if="flow.active"
-          class="text-meta text-muted max-lg:hidden"
-          :class="collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate'"
-          :title="stepTitle"
-          >{{ stepTitle }}</span
-        >
-      </span>
+      <StatusRing :expanded="expanded" :collapsing="collapsing" :can-ask="canAsk" />
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
       <FlowSteps v-if="flow.active" />
-      <Transition
-        :enter-from-class="REVEAL_ENTER_FROM_CLASS"
-        :enter-active-class="REVEAL_ENTER_ACTIVE_CLASS"
-        :leave-active-class="REVEAL_LEAVE_ACTIVE_CLASS"
-        :leave-to-class="REVEAL_LEAVE_TO_CLASS"
-      >
-        <span v-if="expanded && !inlinePermission && !flow.active" class="flex shrink-0 items-center gap-3">
-          <span class="h-5.5 w-px shrink-0 bg-line" aria-hidden="true" />
-          <UiButton
-            variant="quiet"
-            size="sm"
-            aria-label="Ações da página"
-            title="Ações da página"
-            aria-haspopup="menu"
-            :aria-expanded="actionMenuOpen"
-            @press="actionMenuOpen = !actionMenuOpen"
-          >
-            ☰
-          </UiButton>
-        </span>
-      </Transition>
-      <div
-        v-if="canAsk"
-        ref="wrapperRef"
-        class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
-        :class="{ 'sr-only': !interacting || (inlinePermission && draft === '') }"
-      >
-        <div
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3.5 text-label"
-          :style="{ transform: `translateX(${-scrollLeft}px)` }"
-        >
-          <span
-            v-for="(segment, index) in segments"
-            :key="index"
-            :class="segment.agent === null ? 'text-ink' : 'text-accent'"
-            >{{ segment.text }}</span
-          >
-          <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
-          <span ref="measureRef" class="invisible absolute whitespace-pre">{{
-            draft.slice(0, activeMatch?.start ?? 0)
-          }}</span>
-        </div>
-        <input
-          ref="inputRef"
-          v-model="draft"
-          role="combobox"
-          aria-autocomplete="list"
-          :aria-expanded="menuOpen"
-          :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
-          :aria-activedescendant="activeOptionId"
-          class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent-soft focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-          :placeholder="placeholder"
-          :disabled="locked"
-          @keydown="onKeydown"
-          @input="syncCaret"
-          @click="syncCaret"
-          @keyup="syncCaret"
-          @select="syncCaret"
-          @scroll="syncCaret"
-          @blur="dismissMenu"
-        />
-      </div>
-      <PinnedProject v-if="canAsk && hasMultipleProjects" />
-      <UiButton
-        v-if="showDecisionsButton"
-        variant="quiet"
-        size="sm"
-        :aria-label="decisionsTitle"
-        :aria-expanded="decisions.open"
-        class="gap-1.75"
-        data-testid="decisions-button"
-        @press="decisions.toggle()"
-      >
-        <span
-          v-if="decisions.pendingCount > 0"
-          class="grid h-4.5 min-w-4.5 place-items-center rounded-full bg-warn px-1.25 text-tiny font-semibold text-bg"
-          data-testid="decisions-count"
-          >{{ decisions.pendingCount }}</span
-        >
-        <svg
-          v-else-if="statusStore.status === 'done' && !expanded"
-          class="size-3 text-ok"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M2.5 8.5L6 12l7.5-8" />
-        </svg>
-        <span v-if="expanded">{{ decisionsTitle }}</span>
-      </UiButton>
-      <UiButton
-        v-if="requests.queue.length > 0"
-        variant="quiet"
-        size="sm"
-        aria-haspopup="dialog"
-        :aria-expanded="queueOpen"
-        @press="queueOpen = !queueOpen"
-      >
-        {{ QUEUE_BADGE(requests.queue.length) }}
-      </UiButton>
-      <CommandMenu
-        v-if="menuOpen && menuKind === 'command'"
-        :id="listboxId"
-        :commands="commandMatches"
-        :active-index="highlightedIndex"
-        :left="menuLeft"
-        @choose="chooseCommand"
+      <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
+      <ComposerField
+        ref="composer"
+        v-model:draft="draft"
+        v-model:confirmed="confirmed"
+        :can-ask="canAsk"
+        :interacting="interacting"
+        :inline-permission="inlinePermission"
+        :rail-page="railPage"
+        :pill="pillRef"
+        @menu-open="menuOpen = $event"
       />
-      <MentionMenu
-        v-else-if="menuOpen"
-        :id="listboxId"
-        :agents="mentionMatches"
-        :active-index="highlightedIndex"
-        :left="menuLeft"
-        @choose="chooseMentionAgent"
-      />
+      <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
+      <DecisionsButton :expanded="expanded" />
+      <QueueButton v-model:open="queueOpen" />
       <ActionMenu
         v-if="actionMenuOpen && railPage !== null"
         :page="railPage"
         @run="runAction"
         @close="actionMenuOpen = false"
       />
-      <QueuePopover v-if="queueOpen && requests.queue.length > 0" @close="queueOpen = false" />
     </form>
   </div>
-  <div role="status" :class="connection.online ? undefined : BAR_WRAP_CLASSES">
-    <div v-if="!connection.online" :class="[PILL_CLASSES, 'w-full justify-center']">
-      <svg
-        class="size-4 shrink-0 text-danger"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.4"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M12 19.5h.01" />
-        <path d="M8.5 15.5a5 5 0 0 1 7 0" />
-        <path d="M5 12a10 10 0 0 1 14 0" />
-        <path d="M2 8.8a15 15 0 0 1 20 0" />
-        <path d="M3 3l18 18" />
-      </svg>
-      <span class="text-label font-semibold text-danger">Sem conexão</span>
-    </div>
-  </div>
+  <OfflineNotice />
 </template>
