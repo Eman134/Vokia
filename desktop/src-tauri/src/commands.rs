@@ -4,8 +4,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::agents::{Agent, AgentDraft, AgentError, AgentProfile, AgentRegistry, TeamListing};
 use crate::backlog::{BacklogItem, BacklogSnapshot, ItemPlanInput};
-use crate::claude::CliProblem;
-use crate::connectivity;
+use crate::claude::{self, CliProblem};
 use crate::db::{AgentPause, DbError, DbProblem, DbState, Project};
 use crate::events::VokiaEvent;
 use crate::orchestrator::{self, RequestOutcome};
@@ -24,7 +23,7 @@ pub fn cli_problem(state: State<'_, AppState>) -> Option<CliProblem> {
 
 #[tauri::command]
 pub async fn check_connection() -> bool {
-    connectivity::is_reachable().await
+    claude::is_reachable().await
 }
 
 #[tauri::command]

@@ -5,7 +5,6 @@ mod agents;
 mod backlog;
 mod claude;
 mod commands;
-mod connectivity;
 mod db;
 mod events;
 mod orchestrator;
