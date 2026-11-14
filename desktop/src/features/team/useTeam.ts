@@ -25,7 +25,7 @@ import {
 } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
-import { clearConversation, fetchDbProblem, loadHistory } from '../projects/projectsApi'
+import { clearConversation, fetchDbProblem, loadHistory, type DbProblem } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { normalizeName, useRoster } from './useRoster'
@@ -185,9 +185,37 @@ export const useTeam = defineStore('team', () => {
     }
   }
 
-  async function start(): Promise<void> {
+  // Nunca lança: uma falha da própria consulta vai ao feed e vale como "sem problema de banco" para quem chama.
+  async function checkDbProblem(): Promise<DbProblem | null> {
+    try {
+      return await fetchDbProblem()
+    } catch (error) {
+      feed.value.push({ type: 'error', message: String(error) })
+      return null
+    }
+  }
+
+  // Com banco indisponível, o motivo do banco é a mensagem única: restoreHistory (CLI ok) ou reportDbProblem (CLI com problema).
+  async function loadRoster(): Promise<void> {
     try {
       await roster.load()
+    } catch (error) {
+      if ((await checkDbProblem()) === null) {
+        feed.value.push({ type: 'error', message: String(error) })
+      }
+    }
+  }
+
+  async function reportDbProblem(): Promise<void> {
+    const problem = await checkDbProblem()
+    if (problem !== null) {
+      feed.value.push({ type: 'error', message: problem.reason })
+    }
+  }
+
+  async function start(): Promise<void> {
+    try {
+      await loadRoster()
       cliProblem.value = await fetchCliProblem()
       if (cliProblem.value === null) {
         await restoreHistory()
@@ -201,6 +229,8 @@ export const useTeam = defineStore('team', () => {
         )
         void refreshConnection()
         pollTimer = setInterval(() => void refreshConnection(), CONNECTIVITY_POLL_INTERVAL_MS)
+      } else {
+        await reportDbProblem()
       }
       cliChecked.value = true
     } catch (error) {
