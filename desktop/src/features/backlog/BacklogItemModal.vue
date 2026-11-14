@@ -35,7 +35,7 @@ import { useRunItem } from './useRunItem'
 import { trapFocus } from './dialogFocus'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
-import { agentName, DEFAULT_RECIPIENT } from '../team/useTeam'
+import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 
 const TAG_TINT_PERCENT = 13

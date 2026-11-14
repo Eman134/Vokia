@@ -4,14 +4,12 @@ import {
   type Agent,
   type AgentState,
   type CliProblem,
-  type FeedNotice,
-  type FeedPermissionResult,
   type VokiaAgentState,
-  type VokiaError,
   type VokiaEvent,
-  type VokiaMessage,
   type VokiaPermission,
 } from './events'
+import { DEFAULT_RECIPIENT, agentName, findNamedAgent, selectActiveAgents } from './agents'
+import { buildTimeline, type FeedEntry, type TimelineItem } from './timeline'
 import {
   answerPermission,
   checkConnection,
@@ -28,18 +26,11 @@ import { useAgentControl } from '../panel/useAgentControl'
 import { clearConversation, fetchDbProblem, loadHistory, type DbProblem } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
-import { normalizeName, useRoster } from './useRoster'
+import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
 import { ASK_PROJECT_NOTICE, NO_PROJECT_NOTICE, resolveProject } from './projectResolution'
 
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
-export const DEFAULT_RECIPIENT: Agent = 'iara'
-
-export function agentName(id: Agent): string {
-  return useRoster().nameOf(id)
-}
-
-export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
 
 // 'queued' não é desfecho: o término do pedido enfileirado chega depois pelo evento request-settled.
 export type RunResult = Exclude<RequestOutcome, 'queued'> | 'cancelled'
@@ -55,26 +46,6 @@ export interface QueuedRequest {
 }
 
 export type QueueMove = 'up' | 'down'
-
-export type TimelineItem =
-  | { type: 'entry'; start: number; entry: FeedEntry }
-  | { type: 'group'; start: number; messages: VokiaMessage[] }
-
-export function isBetweenAgents(message: VokiaMessage): boolean {
-  return message.from !== 'user' && message.to !== 'user'
-}
-
-export function findNamedAgent(text: string): Agent | null {
-  let found: { agent: Agent; index: number } | null = null
-  const normalizedText = normalizeName(text)
-  for (const profile of useRoster().agents) {
-    const index = normalizedText.search(new RegExp(`(?<!\\p{L})${normalizeName(profile.name)}(?!\\p{L})`, 'u'))
-    if (index !== -1 && (found === null || index < found.index)) {
-      found = { agent: profile.id, index }
-    }
-  }
-  return found?.agent ?? null
-}
 
 export const useTeam = defineStore('team', () => {
   const cliChecked = ref(false)
@@ -111,21 +82,8 @@ export const useTeam = defineStore('team', () => {
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     roster.agents.find((agent) => stateOf(agent.id) === 'thinking'),
   )
-  const activeAgents = computed<AgentProfile[]>(() => roster.agents.filter((agent) => stateOf(agent.id) !== 'idle'))
-  const timeline = computed<TimelineItem[]>(() => {
-    const items: TimelineItem[] = []
-    feed.value.forEach((entry, index) => {
-      const last = items.at(-1)
-      if (entry.type !== 'message' || !isBetweenAgents(entry)) {
-        items.push({ type: 'entry', start: index, entry })
-      } else if (last?.type === 'group') {
-        last.messages.push(entry)
-      } else {
-        items.push({ type: 'group', start: index, messages: [entry] })
-      }
-    })
-    return items
-  })
+  const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
+  const timeline = computed<TimelineItem[]>(() => buildTimeline(feed.value))
 
   function refreshConnection(): Promise<boolean> {
     if (pendingCheck === null) {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiButton from '../../ui/UiButton.vue'
 import type { VokiaPermission } from './events'
-import { agentName } from './useTeam'
+import { agentName } from './agents'
 import { usePermissionCountdown } from './usePermissionCountdown'
 
 const props = defineProps<{ permission: VokiaPermission }>()

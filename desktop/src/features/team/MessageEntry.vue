@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { agentName, DEFAULT_RECIPIENT, isBetweenAgents, type FeedEntry } from './useTeam'
+import { agentName, DEFAULT_RECIPIENT } from './agents'
+import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'

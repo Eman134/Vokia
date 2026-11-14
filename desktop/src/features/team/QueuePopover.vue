@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
-import { agentName, useTeam } from './useTeam'
+import { agentName } from './agents'
+import { useTeam } from './useTeam'
 import {
   QUEUE_DOWN,
   QUEUE_EDIT,

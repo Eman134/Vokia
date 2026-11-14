@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
-import { DEFAULT_RECIPIENT, useTeam } from './useTeam'
+import { DEFAULT_RECIPIENT } from './agents'
+import { useTeam } from './useTeam'
 import { normalizeName, useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import { useTeamStatus } from './useTeamStatus'

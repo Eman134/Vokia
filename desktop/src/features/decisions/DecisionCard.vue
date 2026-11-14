@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import UiField from '../../ui/UiField.vue'
-import { agentName } from '../team/useTeam'
+import { agentName } from '../team/agents'
 import {
   actionsFor,
   ANSWER_LABEL,

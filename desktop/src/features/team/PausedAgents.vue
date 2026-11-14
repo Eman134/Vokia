@@ -5,7 +5,7 @@ import { PAUSED_BADGE, pausedEntryLabel } from '../panel/nowCopy'
 import { useAgentControl } from '../panel/useAgentControl'
 import { usePanelTab } from '../panel/usePanelTab'
 import { useProjects } from '../projects/useProjects'
-import { agentName } from './useTeam'
+import { agentName } from './agents'
 
 const control = useAgentControl()
 const projects = useProjects()

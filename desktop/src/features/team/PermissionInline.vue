@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import UiButton from '../../ui/UiButton.vue'
-import { agentName, useTeam } from './useTeam'
+import { agentName } from './agents'
+import { useTeam } from './useTeam'
 
 const team = useTeam()
 </script>

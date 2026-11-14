@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { agentName, DEFAULT_RECIPIENT, useTeam, type QueuedRequest } from './useTeam'
+import { agentName, DEFAULT_RECIPIENT } from './agents'
+import { useTeam, type QueuedRequest } from './useTeam'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
 import UiButton from '../../ui/UiButton.vue'

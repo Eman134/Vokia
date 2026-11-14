@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { useNavigation } from '../../shell/useNavigation'
 import type { Agent } from '../team/events'
-import { agentName, useTeam } from '../team/useTeam'
+import { agentName } from '../team/agents'
+import { useTeam } from '../team/useTeam'
 import type { BalloonItem } from './balloonTypes'
 import { useBalloons } from './useBalloons'
 
