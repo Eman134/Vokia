@@ -4,12 +4,11 @@ use std::sync::atomic::Ordering;
 use tauri::AppHandle;
 
 use crate::agents::{Agent, Team};
-use crate::cache::{Cache, Change};
 use crate::claude::ProjectAccess;
 use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
-use crate::task::{TaskDefinition, TaskOutcome};
+use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::ask_step;
 use super::emit::{emit, emit_message, emit_state};

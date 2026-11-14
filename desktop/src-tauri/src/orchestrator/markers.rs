@@ -1,6 +1,6 @@
 use crate::agents::{Agent, Team};
-use crate::cache::{parse_update_line, Change};
 use crate::events::DecisionKind;
+use crate::task::{parse_update_line, Change};
 
 pub(super) const DECISION_MARK: &str = "#decisao";
 pub(super) const DECISION_FIELD_SEPARATOR: char = '|';

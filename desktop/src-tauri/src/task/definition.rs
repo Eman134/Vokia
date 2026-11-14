@@ -2,7 +2,8 @@ use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::agents::{Agent, Team};
-use crate::cache::{
+
+use super::cache::{
     validate_name, validate_value, Cache, Rule, VarValue, Variable, CONVERSATION_VAR,
 };
 
@@ -16,12 +17,6 @@ const MULTI_AGENT_MIN_PARTICIPANTS: usize = 2;
 const LONG_REQUEST_CHARS: usize = 1200;
 const REQUEST_PROMPT_MAX: usize = 8000;
 const REQUEST_TRUNCATED: &str = " (pedido truncado)";
-pub const FRESH_AFTER_STALLS: u32 = 2;
-pub const SESSION_RECOVERY_LIMIT: u32 = 2;
-pub const SESSION_ROTATE_MESSAGES: u32 = 30;
-pub const SESSION_IDLE_LIMIT_SECS: u64 = 600;
-pub const SESSION_CLOSE_TIMEOUT_SECS: u64 = 3;
-pub const MAX_LIVE_SESSIONS: usize = 16;
 
 #[derive(Debug)]
 pub struct TaskDefinition {
@@ -81,12 +76,6 @@ pub struct TaskRecord {
     pub outcome: TaskOutcome,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CallMode {
-    Fresh,
-    Live,
-}
-
 fn is_long_request(request: &str) -> bool {
     request.chars().count() > LONG_REQUEST_CHARS
 }
@@ -100,20 +89,6 @@ pub fn long_request_text(request: &str) -> Option<String> {
     }
     let head: String = request.chars().take(REQUEST_PROMPT_MAX).collect();
     Some(format!("{head}{REQUEST_TRUNCATED}"))
-}
-
-pub fn call_mode(fresh_only: bool) -> CallMode {
-    if fresh_only {
-        CallMode::Fresh
-    } else {
-        CallMode::Live
-    }
-}
-
-pub fn degrades_to_fresh(stalls: u32, repeats: u32, recoveries: u32) -> bool {
-    stalls >= FRESH_AFTER_STALLS
-        || repeats >= FRESH_AFTER_STALLS
-        || recoveries >= SESSION_RECOVERY_LIMIT
 }
 
 pub fn parse_definition(reply: &str, origin: &Agent, request: &str, team: &Team) -> TaskDefinition {

@@ -1,8 +1,8 @@
 use crate::agents::{Agent, AgentProfile};
-use crate::cache::{
-    Cache, Rule, Scope, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR, RECOVERY_CONVERSATION_ITEMS,
+use crate::task::{
+    Cache, Rule, Scope, TaskDefinition, Variable, CONVERSATION_ITEMS, CONVERSATION_VAR,
+    RECOVERY_CONVERSATION_ITEMS,
 };
-use crate::task::TaskDefinition;
 
 use super::project_context::PROJECT_RULE;
 use super::turns::NO_CONVERSATION;

@@ -3,7 +3,6 @@
 
 mod agents;
 mod backlog;
-mod cache;
 mod claude;
 mod commands;
 mod connectivity;

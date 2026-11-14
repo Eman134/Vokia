@@ -3,13 +3,12 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
-use crate::cache::Cache;
 use crate::claude::CliProblem;
 use crate::events::Agent;
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
 use crate::session_key::SessionKey;
-use crate::task::TaskRecord;
+use crate::task::{Cache, TaskRecord};
 
 pub struct AppState {
     pub cli: Result<PathBuf, CliProblem>,

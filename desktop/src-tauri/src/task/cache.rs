@@ -1,7 +1,8 @@
 use serde::Serialize;
 
 use crate::agents::{Agent, Team};
-use crate::task::{ActiveTask, TaskOutcome, TaskRecord};
+
+use super::definition::{ActiveTask, TaskOutcome, TaskRecord};
 
 pub const VAR_NAME_MAX: usize = 32;
 pub const VAR_VALUE_MAX: usize = 500;

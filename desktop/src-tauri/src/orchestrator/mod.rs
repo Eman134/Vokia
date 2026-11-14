@@ -7,6 +7,7 @@ mod loop_guard;
 mod markers;
 mod project_context;
 mod prompts;
+mod session_policy;
 mod session_pool;
 mod turns;
 

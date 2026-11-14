@@ -8,10 +8,10 @@ use crate::agents::{Agent, Team};
 use crate::claude::kill_process_tree;
 use crate::db::{Db, DbError};
 use crate::session_key::SessionKey;
-use crate::task::{degrades_to_fresh, MAX_LIVE_SESSIONS};
 
 use super::agent_session::AgentSession;
 use super::error::FlowError;
+use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS};
 
 pub(super) const NO_PID: u32 = 0;
 

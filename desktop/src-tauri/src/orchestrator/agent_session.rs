@@ -12,15 +12,15 @@ use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
-use crate::task::{
-    call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
-    SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
-};
 
 use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::flow::profile_of;
 use super::prompts::{role, StepPrompts};
+use super::session_policy::{
+    call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
+    SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
+};
 use super::session_pool::{ExchangeSessions, NO_PID};
 use super::turns::Exchange;
 
