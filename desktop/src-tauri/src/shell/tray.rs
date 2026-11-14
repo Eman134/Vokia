@@ -4,7 +4,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle};
 
-use crate::window::{report_window_error, show_main_window};
+use super::window::{report_window_error, show_main_window};
 
 const TRAY_OPEN_ID: &str = "open";
 const TRAY_QUIT_ID: &str = "quit";

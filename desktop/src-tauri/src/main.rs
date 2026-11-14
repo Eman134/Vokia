@@ -14,10 +14,9 @@ mod permission_level;
 mod permissions;
 mod projects;
 mod session_key;
+mod shell;
 mod state;
 mod task;
-mod tray;
-mod window;
 
 use tauri::{Manager, RunEvent};
 
@@ -28,7 +27,7 @@ fn main() {
     let cli = tauri::async_runtime::block_on(claude::locate());
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
-            window::handle_second_instance,
+            shell::handle_second_instance,
         ))
         .manage(AppState::new(cli))
         .invoke_handler(tauri::generate_handler![
@@ -70,9 +69,9 @@ fn main() {
             let data_dir = app.path().app_data_dir()?;
             app.manage(agents::AgentRegistry::load(&data_dir));
             app.manage(DbState::open(&data_dir));
-            tray::setup_tray(app)
+            shell::setup_tray(app)
         })
-        .on_window_event(window::hide_main_window_on_close)
+        .on_window_event(shell::hide_main_window_on_close)
         .build(tauri::generate_context!())
         .expect("falha ao iniciar o app Vokia")
         .run(|app, event| {
