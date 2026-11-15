@@ -172,7 +172,7 @@ defineExpose({ isFocused })
       :aria-expanded="menuOpen"
       :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
       :aria-activedescendant="activeOptionId"
-      class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent-soft focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+      class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent/25 selection:text-transparent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
       :placeholder="placeholder"
       :disabled="locked"
       @keydown="onKeydown"

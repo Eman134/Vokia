@@ -4,7 +4,8 @@ import { BAR_MOTION_CLASSES } from './barClasses'
 
 const REVEAL_ENTER_FROM_CLASS = 'opacity-0'
 const REVEAL_ENTER_ACTIVE_CLASS = `transition-opacity ${BAR_MOTION_CLASSES}`
-const REVEAL_LEAVE_ACTIVE_CLASS = REVEAL_ENTER_ACTIVE_CLASS
+// Saindo, o botão deixa o fluxo: senão a largura final da pílula o conta e ela salta quando ele some.
+const REVEAL_LEAVE_ACTIVE_CLASS = `absolute ${REVEAL_ENTER_ACTIVE_CLASS}`
 const REVEAL_LEAVE_TO_CLASS = REVEAL_ENTER_FROM_CLASS
 
 defineProps<{ visible: boolean }>()

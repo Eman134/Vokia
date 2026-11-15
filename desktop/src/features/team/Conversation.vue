@@ -1,15 +1,17 @@
 <script lang="ts">
 export const EMPTY_FEED_TITLE = 'Nenhuma mensagem ainda.'
 export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
+export const EMPTY_SCREEN_TITLE_PREFIX = 'Nenhuma mensagem com '
+export const EMPTY_SCREEN_TITLE_SUFFIX = ' ainda.'
 export const NO_PROJECT_TITLE = 'Nenhum projeto ainda.'
 export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o time.'
 </script>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { VokiaMessage } from './events'
 import { agentName } from './agents'
-import { groupParticipants } from './timeline'
+import { ALL_SCREEN_LABEL, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import { useRequests } from './useRequests'
 import MessageEntry from './MessageEntry.vue'
@@ -36,6 +38,8 @@ function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
 }
 
+const screenLabel = computed(() => (feed.screen.kind === 'all' ? ALL_SCREEN_LABEL : agentName(feed.screen.agent)))
+
 const projectsStore = useProjects()
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
@@ -60,6 +64,7 @@ watch(
     () => requests.queue.length,
     () => feed.permissions.length,
     () => feed.thinkingAgent,
+    () => feed.screen,
     () => (feed.thinkingAgent ? consoleStore.entriesOf(feed.thinkingAgent.id).length : 0),
   ],
   followEnd,
@@ -70,9 +75,12 @@ onMounted(followEnd)
 <template>
   <section ref="scroller" class="flex-1 overflow-y-auto px-8 pb-40 pt-6" @scroll="onScroll">
     <header class="mb-6 flex items-center justify-between gap-4">
-      <h1 class="text-title text-ink">Conversas</h1>
+      <div class="flex min-w-0 items-baseline gap-3">
+        <h1 class="text-title text-ink">Conversas</h1>
+        <span class="truncate text-lead text-muted" data-testid="conversation-screen">{{ screenLabel }}</span>
+      </div>
       <UiConfirm
-        v-if="feed.feed.length > 0"
+        v-if="feed.screen.kind === 'all' && feed.feed.length > 0"
         label="Limpar"
         message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
         confirm-label="Limpar conversa"
@@ -86,6 +94,15 @@ onMounted(followEnd)
       </template>
     </UiEmpty>
     <UiEmpty v-else-if="feed.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+      <template #mascot>
+        <VokiaMascot look="tudo-em-dia" />
+      </template>
+    </UiEmpty>
+    <UiEmpty
+      v-else-if="feed.timeline.length === 0"
+      :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
+      :text="EMPTY_FEED_TEXT"
+    >
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />
       </template>

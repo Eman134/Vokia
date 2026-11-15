@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
   type Agent,
@@ -9,7 +9,7 @@ import {
   type VokiaRequestSettled,
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
-import { buildTimeline, type FeedEntry, type TimelineItem } from './timeline'
+import { ALL_SCREEN, buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
 import { answerPermission, type AgentProfile } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
@@ -30,6 +30,7 @@ export const useFeed = defineStore('feed', () => {
   const pausesLoaded = ref(false)
   const activity = ref<Record<string, AgentState>>({})
   const lastProject = ref<Record<Agent, number | null>>({})
+  const screen = ref<ConversationScreen>(ALL_SCREEN)
   let requestSettledHandler: ((event: VokiaRequestSettled) => void) | null = null
 
   function stateOf(agent: Agent): AgentState {
@@ -40,7 +41,7 @@ export const useFeed = defineStore('feed', () => {
     roster.agents.find((agent) => stateOf(agent.id) === 'thinking'),
   )
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
-  const timeline = computed<TimelineItem[]>(() => buildTimeline(feed.value))
+  const timeline = computed<TimelineItem[]>(() => buildTimeline(screenEntries(feed.value, screen.value)))
 
   async function restoreHistory(): Promise<void> {
     try {
@@ -166,6 +167,12 @@ export const useFeed = defineStore('feed', () => {
     feed.value.push({ type: 'notice', text, time: Date.now() })
   }
 
+  function showScreen(next: ConversationScreen): void {
+    screen.value = next
+  }
+
+  watch(() => projects.selected?.id, () => showScreen(ALL_SCREEN))
+
   return {
     feed,
     states,
@@ -173,6 +180,8 @@ export const useFeed = defineStore('feed', () => {
     thinkingAgent,
     activeAgents,
     timeline,
+    screen,
+    showScreen,
     permissions,
     activity,
     lastProject,

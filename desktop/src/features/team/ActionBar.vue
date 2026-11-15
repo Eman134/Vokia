@@ -12,7 +12,7 @@ import PausedAgents from './PausedAgents.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
 import PanelShell from '../panel/PanelShell.vue'
-import { BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
+import { BAR_RESIZE_MS, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
 import OfflineNotice from './bar/OfflineNotice.vue'
@@ -23,9 +23,8 @@ import { useComposerSubmit } from './bar/useComposerSubmit'
 import { usePageActions } from './bar/usePageActions'
 
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
-// Deve casar com o duration-180 de BAR_MOTION_CLASSES.
-const COLLAPSE_MS = 180
-const EXPANDED_WIDTH_CLASS = 'w-full'
+const COLLAPSE_MS = BAR_RESIZE_MS
+const EXPANDED_WIDTH_CLASS = 'w-full max-w-full'
 const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
 
 const emit = defineEmits<{

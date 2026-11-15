@@ -22,6 +22,28 @@ export function groupParticipants(messages: readonly VokiaMessage[]): Agent[] {
   return participants
 }
 
+export type ConversationScreen = { kind: 'all' } | { kind: 'agent'; agent: Agent }
+
+export const ALL_SCREEN: ConversationScreen = { kind: 'all' }
+export const ALL_SCREEN_LABEL = 'Todos'
+
+export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
+  switch (entry.type) {
+    case 'message':
+      return entry.from === agent || entry.to === agent
+    case 'permission-result':
+      return entry.agent === agent
+    case 'notice':
+    case 'error':
+      return false
+  }
+}
+
+// Filtra antes de agrupar: na tela de um agente, um grupo misto mostra só as mensagens dele (P4).
+export function screenEntries(feed: readonly FeedEntry[], screen: ConversationScreen): readonly FeedEntry[] {
+  return screen.kind === 'all' ? feed : feed.filter((entry) => entryInvolves(entry, screen.agent))
+}
+
 export function buildTimeline(feed: readonly FeedEntry[]): TimelineItem[] {
   const items: TimelineItem[] = []
   feed.forEach((entry, index) => {
