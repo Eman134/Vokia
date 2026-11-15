@@ -2,9 +2,11 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::agents::{Agent, AgentError, AgentRegistry};
 use crate::claude::{self, CliProblem};
+use crate::console_log::ConsoleEntry;
 use crate::db::{AgentPause, DbState};
 use crate::orchestrator::{self, RequestOutcome};
 use crate::permissions::PermissionError;
+use crate::session_key::SessionKey;
 use crate::state::{AppState, RequestContext};
 
 #[tauri::command]
@@ -15,6 +17,15 @@ pub fn cli_problem(state: State<'_, AppState>) -> Option<CliProblem> {
 #[tauri::command]
 pub async fn check_connection() -> bool {
     claude::is_reachable().await
+}
+
+#[tauri::command]
+pub fn agent_console(
+    state: State<'_, AppState>,
+    project_id: i64,
+    agent: Agent,
+) -> Vec<ConsoleEntry> {
+    state.console.snapshot(&SessionKey { project_id, agent })
 }
 
 #[tauri::command]

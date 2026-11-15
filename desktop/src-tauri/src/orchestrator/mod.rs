@@ -1,5 +1,6 @@
 mod agent_session;
 mod archive;
+mod console;
 mod emit;
 mod error;
 mod flow;

@@ -1,5 +1,6 @@
 use serde::{Serialize, Serializer};
 
+use crate::claude::ConsoleKind;
 use crate::orchestrator::RequestOutcome;
 
 pub use crate::agents::Agent;
@@ -154,5 +155,14 @@ pub enum VokiaEvent {
         run_id: u64,
         project_id: i64,
         outcome: RequestOutcome,
+    },
+    #[serde(rename_all = "camelCase")]
+    ConsoleLine {
+        agent: Agent,
+        project_id: i64,
+        seq: u64,
+        kind: ConsoleKind,
+        text: String,
+        time: u64,
     },
 }

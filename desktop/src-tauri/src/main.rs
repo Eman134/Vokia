@@ -4,6 +4,7 @@
 mod agents;
 mod claude;
 mod commands;
+mod console_log;
 mod db;
 mod events;
 mod orchestrator;
@@ -34,6 +35,7 @@ fn main() {
             commands::team::list_agent_pauses,
             commands::team::set_agent_paused,
             commands::team::check_connection,
+            commands::team::agent_console,
             commands::settings::db_problem,
             commands::projects::list_projects,
             commands::projects::select_project,

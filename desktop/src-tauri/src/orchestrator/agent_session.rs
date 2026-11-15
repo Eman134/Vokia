@@ -13,6 +13,7 @@ use crate::events::{AgentState, VokiaEvent};
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
 
+use super::console::ConsoleSink;
 use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::flow::profile_of;
@@ -33,6 +34,28 @@ pub(super) async fn ask_step(
     agent: &Agent,
     prompts: &StepPrompts,
 ) -> Result<String, FlowError> {
+    let Exchange { app, key, .. } = exchange;
+    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
+    let console = ConsoleSink::new(
+        app,
+        SessionKey {
+            project_id: key.project_id,
+            agent: agent.clone(),
+        },
+    );
+    console.started();
+    let result = run_step(exchange, sessions, agent, prompts, &console).await;
+    console.finished(&result);
+    result
+}
+
+async fn run_step(
+    exchange: &Exchange<'_>,
+    sessions: &mut ExchangeSessions,
+    agent: &Agent,
+    prompts: &StepPrompts,
+    console: &ConsoleSink<'_>,
+) -> Result<String, FlowError> {
     let Exchange {
         app,
         state,
@@ -43,7 +66,6 @@ pub(super) async fn ask_step(
         team,
         ..
     } = exchange;
-    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
     let profile = profile_of(team, agent)?;
     let call = AgentCall {
         role: role(profile, &team.roster_line(), project_context),
@@ -80,7 +102,16 @@ pub(super) async fn ask_step(
     let live = match call_mode(held.guard.fresh_only) {
         CallMode::Live => {
             held.guard
-                .reply(cli, *project, gate.clone(), &store, &call, prompts, first)
+                .reply(
+                    cli,
+                    *project,
+                    gate.clone(),
+                    &store,
+                    &call,
+                    prompts,
+                    first,
+                    console,
+                )
                 .await?
         }
         CallMode::Fresh => None,
@@ -93,7 +124,15 @@ pub(super) async fn ask_step(
                 grant_per_session: false,
                 ..gate
             };
-            fresh_reply(exchange, gate, &held.slot.pid, &call, &prompts.opening).await?
+            fresh_reply(
+                exchange,
+                gate,
+                &held.slot.pid,
+                &call,
+                &prompts.opening,
+                console,
+            )
+            .await?
         }
     };
     report_limits(app, reply.limits)?;
@@ -118,6 +157,7 @@ async fn fresh_reply(
     pid: &AtomicU32,
     call: &AgentCall,
     message: &str,
+    console: &ConsoleSink<'_>,
 ) -> Result<Reply, ClaudeError> {
     let mut live = LiveSession::open(
         exchange.cli,
@@ -128,7 +168,11 @@ async fn fresh_reply(
     )?;
     pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
     let reply = live
-        .send(message, |request| gate.clone().decide(request))
+        .send(
+            message,
+            |request| gate.clone().decide(request),
+            |line| console.record(line),
+        )
         .await;
     live.close(SESSION_CLOSE_GRACE).await;
     pid.store(NO_PID, Ordering::SeqCst);
@@ -224,11 +268,21 @@ impl AgentSession {
         call: &AgentCall,
         prompts: &StepPrompts,
         first: bool,
+        console: &ConsoleSink<'_>,
     ) -> Result<Option<Reply>, FlowError> {
         let mut next = self.first_attempt(store).await?;
         while let Some(attempt) = next {
             match self
-                .attempt(cli, project, gate.clone(), call, attempt, prompts, first)
+                .attempt(
+                    cli,
+                    project,
+                    gate.clone(),
+                    call,
+                    attempt,
+                    prompts,
+                    first,
+                    console,
+                )
                 .await
             {
                 Ok(reply) => {
@@ -291,6 +345,7 @@ impl AgentSession {
         attempt: Attempt,
         prompts: &StepPrompts,
         first: bool,
+        console: &ConsoleSink<'_>,
     ) -> Result<Reply, ClaudeError> {
         let message = match attempt {
             Attempt::Open => &prompts.opening,
@@ -321,7 +376,11 @@ impl AgentSession {
         self.pid
             .store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
         match live
-            .send(message, |request| gate.clone().decide(request))
+            .send(
+                message,
+                |request| gate.clone().decide(request),
+                |line| console.record(line),
+            )
             .await
         {
             Ok(reply) => {

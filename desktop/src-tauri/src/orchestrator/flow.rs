@@ -328,6 +328,7 @@ pub(crate) fn forget_project(state: &AppState, project_id: i64) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|_, decision| decision.project_id != project_id);
+    state.console.forget_project(project_id);
 }
 
 pub fn report_failure(

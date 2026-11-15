@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 
 use crate::claude::CliProblem;
+use crate::console_log::ConsoleLog;
 use crate::events::Agent;
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
@@ -19,6 +20,7 @@ pub struct AppState {
     pub permissions: PermissionBroker,
     pub decisions: Mutex<HashMap<u64, PendingDecision>>,
     pub next_decision_id: AtomicU64,
+    pub console: ConsoleLog,
 }
 
 impl AppState {
@@ -32,6 +34,7 @@ impl AppState {
             permissions: PermissionBroker::default(),
             decisions: Mutex::new(HashMap::new()),
             next_decision_id: AtomicU64::new(0),
+            console: ConsoleLog::default(),
         }
     }
 }

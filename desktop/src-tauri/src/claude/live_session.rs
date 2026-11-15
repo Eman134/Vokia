@@ -10,6 +10,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 use super::command::{agent_command, timeout_for, Access};
+use super::console::{tool_summary, ConsoleKind, ConsoleLine, ConsoleParser};
 use super::control::{parse_control_request, ControlRequest, PermissionRequest};
 use super::error::ClaudeError;
 use super::stream::{into_reply, CliResponse, RateLimits, Reply, StreamAccumulator};
@@ -23,6 +24,7 @@ const SESSION_EOF: &str = "o processo encerrou antes de enviar o resultado";
 const PERMISSION_PROMPT_TOOL: &str = "stdio";
 const CONTROL_RESPONSE_KIND: &str = "control_response";
 const DENIED_MESSAGE: &str = "O usuário negou este comando.";
+const PERMISSION_WAIT_PREFIX: &str = "aguardando sua permissão: ";
 
 pub struct LiveSession {
     child: Child,
@@ -92,26 +94,34 @@ impl LiveSession {
         self.child.id()
     }
 
-    pub async fn send<D, F>(&mut self, message: &str, decide: D) -> Result<Reply, ClaudeError>
+    pub async fn send<D, F, O>(
+        &mut self,
+        message: &str,
+        decide: D,
+        mut observe: O,
+    ) -> Result<Reply, ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
         F: Future<Output = bool>,
+        O: FnMut(ConsoleLine),
     {
-        let (response, limits) = self.exchange(message, decide).await?;
+        let (response, limits) = self.exchange(message, decide, &mut observe).await?;
         if !response.session_id.is_empty() {
             self.session_id = Some(response.session_id.clone());
         }
         into_reply(response, limits)
     }
 
-    async fn exchange<D, F>(
+    async fn exchange<D, F, O>(
         &mut self,
         message: &str,
         decide: D,
+        observe: &mut O,
     ) -> Result<(CliResponse, Option<RateLimits>), ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
         F: Future<Output = bool>,
+        O: FnMut(ConsoleLine),
     {
         let payload = serde_json::json!({
             "type": USER_MESSAGE_KIND,
@@ -126,6 +136,7 @@ impl LiveSession {
             .await
             .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
         let mut accumulator = StreamAccumulator::default();
+        let mut console = ConsoleParser::default();
         loop {
             // O limite vale entre linhas: a espera pela decisão do usuário não conta, e um agente que segue produzindo não estoura.
             let line = timeout(self.timeout, self.lines.next_line())
@@ -139,6 +150,13 @@ impl LiveSession {
                 Some(ControlRequest::Permission(request)) => {
                     let id = request.id.clone();
                     let input = request.input.clone();
+                    observe(ConsoleLine::new(
+                        ConsoleKind::Permission,
+                        &format!(
+                            "{PERMISSION_WAIT_PREFIX}{}",
+                            tool_summary(&request.tool, &request.input)
+                        ),
+                    ));
                     let allowed = decide(request).await;
                     self.answer_permission(&id, allowed.then_some(input))
                         .await?;
@@ -147,6 +165,9 @@ impl LiveSession {
                     self.answer_permission(&id, None).await?;
                 }
                 None => {
+                    for console_line in console.lines(line.as_bytes()) {
+                        observe(console_line);
+                    }
                     if accumulator.push_line(line.as_bytes())? {
                         return accumulator.finish();
                     }
