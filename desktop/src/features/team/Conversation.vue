@@ -6,7 +6,7 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 </script>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import type { VokiaMessage } from './events'
 import { agentName } from './agents'
 import { groupParticipants } from './timeline'
@@ -20,14 +20,17 @@ import { useProjects } from '../projects/useProjects'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { useFollowEnd } from '../../ui/useFollowEnd'
+import ConsoleCard from '../console/ConsoleCard.vue'
+import { useConsole } from '../console/useConsole'
 
-const AT_END_TOLERANCE_PX = 4
 const GROUP_SEPARATOR = ' ↔ '
 
 const feed = useFeed()
 
 
 const requests = useRequests()
+const consoleStore = useConsole()
 
 function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
@@ -35,8 +38,7 @@ function groupTitle(messages: readonly VokiaMessage[]): string {
 
 const projectsStore = useProjects()
 const scroller = ref<HTMLElement | null>(null)
-// Só o próprio scroll decide: arrastar a barra ou rolar com a roda sai do fim e volta ao chegar nele.
-const followingEnd = ref(true)
+const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
 
 function countLabel(count: number): string {
@@ -52,21 +54,16 @@ async function clearConversation(): Promise<void> {
   }
 }
 
-function onScroll(): void {
-  const element = scroller.value
-  if (element === null) return
-  followingEnd.value = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END_TOLERANCE_PX
-}
-
-async function followEnd(): Promise<void> {
-  await nextTick()
-  const element = scroller.value
-  if (followingEnd.value && element !== null) {
-    element.scrollTop = element.scrollHeight
-  }
-}
-
-watch([() => feed.feed.length, () => requests.queue.length, () => feed.permissions.length, () => feed.thinkingAgent], followEnd)
+watch(
+  [
+    () => feed.feed.length,
+    () => requests.queue.length,
+    () => feed.permissions.length,
+    () => feed.thinkingAgent,
+    () => (feed.thinkingAgent ? consoleStore.entriesOf(feed.thinkingAgent.id).length : 0),
+  ],
+  followEnd,
+)
 onMounted(followEnd)
 </script>
 
@@ -130,17 +127,7 @@ onMounted(followEnd)
         >
           {{ feed.thinkingAgent.name.charAt(0) }}
         </span>
-        <div class="min-w-0">
-          <header class="flex items-baseline gap-2">
-            <span class="text-caption font-semibold text-ink">{{ feed.thinkingAgent.name }}</span>
-            <span class="text-caption text-muted">pensando</span>
-          </header>
-          <div class="mt-1.5 flex items-center gap-1">
-            <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-1" />
-            <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-2" />
-            <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-3" />
-          </div>
-        </div>
+        <ConsoleCard :agent="feed.thinkingAgent" />
       </template>
     </div>
   </section>

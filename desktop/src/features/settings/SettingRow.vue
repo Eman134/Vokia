@@ -5,6 +5,7 @@ import { useFeed } from '../team/useFeed'
 import { useTheme } from '../theme/useTheme'
 import { useAvatarProfiles } from '../identities/useAvatarProfiles'
 import { useProjects } from '../projects/useProjects'
+import { useConsole } from '../console/useConsole'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -17,6 +18,7 @@ import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
+const consoleStore = useConsole()
 const feed = useFeed()
 const theme = useTheme()
 const avatarProfiles = useAvatarProfiles()
@@ -53,6 +55,7 @@ async function eraseEverything(): Promise<void> {
     erasing.value = false
     return
   }
+  consoleStore.forgetAll()
   try {
     await projects.load()
     await feed.restoreHistory()

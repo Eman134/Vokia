@@ -9,6 +9,10 @@ import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
+import { useConsole } from '../console/useConsole'
+import UiButton from '../../ui/UiButton.vue'
+
+const CONSOLE_LABEL = 'Console'
 
 const connection = useConnection()
 
@@ -19,6 +23,7 @@ const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
+const consoleStore = useConsole()
 
 function presence(agent: Agent) {
   return presenceOf(feed.stateOf(agent), control.isPaused(agent))
@@ -52,6 +57,16 @@ function presence(agent: Agent) {
             </span>
           </span>
         </button>
+        <UiButton
+          v-if="consoleStore.entriesOf(agent.id).length > 0"
+          class="mt-1"
+          variant="quiet"
+          size="sm"
+          :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
+          @press="consoleStore.open(agent.id)"
+        >
+          {{ CONSOLE_LABEL }}
+        </UiButton>
       </li>
     </ul>
   </aside>

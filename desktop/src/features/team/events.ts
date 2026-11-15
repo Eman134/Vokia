@@ -93,6 +93,21 @@ export interface VokiaRequestSettled {
   outcome: 'finished' | 'failed'
 }
 
+export type ConsoleKind = 'start' | 'text' | 'tool' | 'output' | 'error' | 'permission' | 'done' | 'failed'
+
+export interface ConsoleEntry {
+  seq: number
+  kind: ConsoleKind
+  text: string
+  time: number
+}
+
+export interface VokiaConsoleLine extends ConsoleEntry {
+  type: 'console-line'
+  agent: Agent
+  projectId: number
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -102,6 +117,7 @@ export type VokiaEvent =
   | VokiaDecision
   | VokiaPlanUsage
   | VokiaRequestSettled
+  | VokiaConsoleLine
 
 export interface CliProblem {
   reason: string

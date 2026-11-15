@@ -5,6 +5,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useNavigation } from '../../shell/useNavigation'
 import { useFeed } from '../team/useFeed'
+import { useConsole } from '../console/useConsole'
 import ProjectCard from './ProjectCard.vue'
 import ProjectEditForm from './ProjectEditForm.vue'
 import { NEW_PROJECT_LABEL, PROJECTS_SUBTITLE, PROJECTS_TITLE } from './projetosSample'
@@ -27,6 +28,7 @@ const GRID_CLASSES = 'grid grid-cols-[repeat(auto-fill,minmax(440px,1fr))] gap-4
 const navigation = useNavigation()
 const projectsStore = useProjects()
 const feed = useFeed()
+const consoleStore = useConsole()
 const failure = ref<string | null>(null)
 const editingId = ref<number | null>(null)
 
@@ -56,6 +58,7 @@ async function save(project: Project, input: ProjectEdit, level: PermissionLevel
 async function remove(project: Project) {
   try {
     await projectsStore.remove(project.id)
+    consoleStore.forgetProject(project.id)
     if (project.selected) await feed.restoreHistory()
   } catch (cause) {
     failure.value = describe(cause)

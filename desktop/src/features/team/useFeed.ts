@@ -18,6 +18,7 @@ import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
+import { useConsole } from '../console/useConsole'
 
 export const useFeed = defineStore('feed', () => {
   const feed = ref<FeedEntry[]>([])
@@ -68,6 +69,7 @@ export const useFeed = defineStore('feed', () => {
     }
     await clearConversation(project.id)
     feed.value = []
+    useConsole().forgetProject(project.id)
   }
 
   async function restorePauses(): Promise<void> {
@@ -118,6 +120,9 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'request-settled':
         requestSettledHandler?.(event)
+        break
+      case 'console-line':
+        useConsole().apply(event)
         break
       case 'plan-usage':
         break

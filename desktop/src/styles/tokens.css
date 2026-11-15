@@ -31,6 +31,16 @@
   --color-feature-purple: light-dark(#6250d6, #6250d6);
   --color-client: light-dark(#c2185b, #c2185b);
 
+  /* Terminal do console: escuro nos dois temas, com os valores do tema escuro acima. */
+  --color-term-bg: #1a1a1e;
+  --color-term-line: #2f2f36;
+  --color-term-ink: #ececf0;
+  --color-term-muted: #a1a1ac;
+  --color-term-ok: #5fd08e;
+  --color-term-warn: #ffa257;
+  --color-term-danger: #ff7f70;
+  --color-term-accent: #a8a5ff;
+
   /* Sombras derivam das cores de tinta e véu para não repetir os valores. */
   --shadow-float: 0 10px 28px light-dark(color-mix(in srgb, var(--color-ink) 8%, transparent), rgb(0 0 0 / 45%));
   --shadow-seg: 0 1px 2px rgb(0 0 0 / 8%);
