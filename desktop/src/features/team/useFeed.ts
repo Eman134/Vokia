@@ -10,6 +10,7 @@ import {
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
 import { ALL_SCREEN, buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
+import { useChannels } from '../channels/useChannels'
 import { answerPermission, type AgentProfile } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
@@ -41,7 +42,10 @@ export const useFeed = defineStore('feed', () => {
     roster.agents.find((agent) => stateOf(agent.id) === 'thinking'),
   )
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
-  const timeline = computed<TimelineItem[]>(() => buildTimeline(screenEntries(feed.value, screen.value)))
+  const channels = useChannels()
+  const timeline = computed<TimelineItem[]>(() =>
+    buildTimeline(screenEntries(feed.value, screen.value, channels.channels)),
+  )
 
   async function restoreHistory(): Promise<void> {
     try {

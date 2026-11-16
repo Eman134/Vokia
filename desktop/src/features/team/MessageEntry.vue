@@ -5,12 +5,16 @@ import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
 import MarkdownText from './MarkdownText.vue'
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
+import UiButton from '../../ui/UiButton.vue'
 
 defineProps<{ entry: FeedEntry }>()
 
 const roster = useRoster()
 
 const USER_NAME = 'Você'
+const TURN_INTO_REQUEST_LABEL = '+ virar pedido'
 
 const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
   allowed: '✓ Aprovado:',
@@ -58,17 +62,18 @@ function highlightedNames(message: VokiaMessage): string[] {
     </span>
   </div>
   <div v-else-if="entry.type === 'message'" class="flex items-start gap-2.5">
-    <span
-      class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-    >
-      {{ profile(entry.from)?.name.charAt(0) }}
+    <span class="flex shrink-0" aria-hidden="true">
+      <AgentPortrait :who="entry.from" :size="PORTRAIT_SIZES.chat" />
     </span>
-    <div class="min-w-0">
+    <div class="min-w-0 flex-1">
       <header class="flex items-baseline gap-2">
         <span class="text-caption font-semibold text-ink">{{ author(entry) }}</span>
         <time class="text-caption text-muted">
           {{ profile(entry.from)?.role }} · {{ TIME_FORMAT.format(entry.time) }}
         </time>
+        <UiButton class="ml-auto" variant="quiet" size="sm" disabled aria-disabled="true">
+          {{ TURN_INTO_REQUEST_LABEL }}
+        </UiButton>
       </header>
       <div class="mt-0.5">
         <MarkdownText :text="entry.text" />

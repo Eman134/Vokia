@@ -1,6 +1,5 @@
 import type { Component } from 'vue'
-import AgentList from '../features/team/AgentList.vue'
-import Conversation from '../features/team/Conversation.vue'
+import ConversasPage from '../features/team/ConversasPage.vue'
 import ConsolePanel from '../features/console/ConsolePanel.vue'
 import SkillsPage from '../features/skills/SkillsPage.vue'
 import ArtefatosPage from '../features/artifacts/ArtefatosPage.vue'
@@ -15,7 +14,7 @@ import MapaPage from '../features/teammap/MapaPage.vue'
 import type { AppPage } from './railNav'
 
 export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
-  conversas: [AgentList, Conversation, ConsolePanel],
+  conversas: [ConversasPage, ConsolePanel],
   skills: [SkillsPage],
   canvas: [ArtefatosPage],
   config: [ConfiguracoesPage],

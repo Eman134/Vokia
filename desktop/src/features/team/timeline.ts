@@ -1,4 +1,6 @@
 import type { Agent, FeedNotice, FeedPermissionResult, VokiaError, VokiaMessage } from './events'
+import type { Channel } from '../channels/channelsApi'
+import { channelOf, GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 
 export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
 
@@ -22,7 +24,10 @@ export function groupParticipants(messages: readonly VokiaMessage[]): Agent[] {
   return participants
 }
 
-export type ConversationScreen = { kind: 'all' } | { kind: 'agent'; agent: Agent }
+export type ConversationScreen =
+  | { kind: 'all' }
+  | { kind: 'agent'; agent: Agent }
+  | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
 
 export const ALL_SCREEN: ConversationScreen = { kind: 'all' }
 export const ALL_SCREEN_LABEL = 'Todos'
@@ -40,8 +45,31 @@ export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
 }
 
 // Filtra antes de agrupar: na tela de um agente, um grupo misto mostra só as mensagens dele (P4).
-export function screenEntries(feed: readonly FeedEntry[], screen: ConversationScreen): readonly FeedEntry[] {
-  return screen.kind === 'all' ? feed : feed.filter((entry) => entryInvolves(entry, screen.agent))
+export function screenEntries(
+  feed: readonly FeedEntry[],
+  screen: ConversationScreen,
+  channels: readonly Channel[],
+): readonly FeedEntry[] {
+  switch (screen.kind) {
+    case 'all':
+      return feed
+    case 'agent':
+      return feed.filter((entry) => entryInvolves(entry, screen.agent))
+    case 'channel':
+      return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
+  }
+}
+
+// #geral recebe o que não tem canal específico e os pedidos de permissão (E7); canal específico recebe só as suas mensagens.
+function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNEL_NAME, channels: readonly Channel[]): boolean {
+  if (entry.type === 'permission-result') {
+    return target === GENERAL_CHANNEL_NAME
+  }
+  if (entry.type !== 'message') {
+    return false
+  }
+  const channel = channelOf(entry, channels)
+  return target === GENERAL_CHANNEL_NAME ? channel === null : channel === target
 }
 
 export function buildTimeline(feed: readonly FeedEntry[]): TimelineItem[] {

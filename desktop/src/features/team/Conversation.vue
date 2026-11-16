@@ -13,10 +13,14 @@ import type { VokiaMessage } from './events'
 import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
-import { useRequests } from './useRequests'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
-import QueuedEntry from './QueuedEntry.vue'
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
+import { useRoster } from './useRoster'
+import { useChannels } from '../channels/useChannels'
+import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
+import UiSegmented from '../../ui/UiSegmented.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -27,18 +31,55 @@ import ConsoleCard from '../console/ConsoleCard.vue'
 import { useConsole } from '../console/useConsole'
 
 const GROUP_SEPARATOR = ' ↔ '
+const PANEL_CLASSES =
+  'flex min-h-0 min-w-0 flex-[1_1_520px] flex-col overflow-hidden rounded-dialog border border-line bg-surface'
+const HEADER_CLASSES = 'flex items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
+const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
+const FILTER_LABEL = 'Filtrar conversa'
+const FILTERS = [
+  { label: 'Tudo', value: 'all' },
+  { label: 'Mensagens', value: 'messages' },
+  { label: 'Terminal', value: 'terminal' },
+] as const
 
 const feed = useFeed()
 
-
-const requests = useRequests()
+const roster = useRoster()
+const channels = useChannels()
+const filter = ref<(typeof FILTERS)[number]['value']>('all')
 const consoleStore = useConsole()
 
 function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
 }
 
-const screenLabel = computed(() => (feed.screen.kind === 'all' ? ALL_SCREEN_LABEL : agentName(feed.screen.agent)))
+function channelName(target: number | typeof GENERAL_CHANNEL_NAME): string | null {
+  if (target === GENERAL_CHANNEL_NAME) {
+    return GENERAL_CHANNEL_NAME
+  }
+  return channels.channels.find((channel) => channel.id === target)?.name ?? null
+}
+
+function groupLabel(messages: readonly VokiaMessage[]): string {
+  const name = namingChannel(
+    groupParticipants(messages),
+    channels.channels,
+    roster.agents.map((agent) => agent.id),
+  )
+  return name === null ? groupTitle(messages) : `#${name}`
+}
+
+const screenLabel = computed(() => {
+  if (feed.screen.kind === 'agent') {
+    return agentName(feed.screen.agent)
+  }
+  if (feed.screen.kind === 'channel') {
+    const name = channelName(feed.screen.channel)
+    return name === null ? ALL_SCREEN_LABEL : `#${name}`
+  }
+  return ALL_SCREEN_LABEL
+})
+const screenRole = computed(() => (feed.screen.kind === 'agent' ? (roster.profileOf(feed.screen.agent)?.role ?? '') : ''))
 
 const projectsStore = useProjects()
 const scroller = ref<HTMLElement | null>(null)
@@ -61,7 +102,6 @@ async function clearConversation(): Promise<void> {
 watch(
   [
     () => feed.feed.length,
-    () => requests.queue.length,
     () => feed.permissions.length,
     () => feed.thinkingAgent,
     () => feed.screen,
@@ -73,33 +113,41 @@ onMounted(followEnd)
 </script>
 
 <template>
-  <section ref="scroller" class="flex-1 overflow-y-auto px-8 pb-40 pt-6" @scroll="onScroll">
-    <header class="mb-6 flex items-center justify-between gap-4">
-      <div class="flex min-w-0 items-baseline gap-3">
-        <h1 class="text-title text-ink">Conversas</h1>
-        <span class="truncate text-lead text-muted" data-testid="conversation-screen">{{ screenLabel }}</span>
+  <section :class="PANEL_CLASSES">
+    <header :class="HEADER_CLASSES">
+      <div class="flex min-w-0 items-center gap-3">
+        <AgentPortrait v-if="feed.screen.kind === 'agent'" :who="feed.screen.agent" :size="PORTRAIT_SIZES.list" />
+        <div class="flex min-w-0 flex-col">
+          <span class="truncate text-lead text-ink" data-testid="conversation-screen">{{ screenLabel }}</span>
+          <span v-if="screenRole" class="truncate text-caption text-muted">{{ screenRole }}</span>
+        </div>
       </div>
-      <UiConfirm
-        v-if="feed.screen.kind === 'all' && feed.feed.length > 0"
-        label="Limpar"
-        message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
-        confirm-label="Limpar conversa"
-        @confirm="clearConversation"
-      />
+      <div class="flex shrink-0 items-center gap-3">
+        <UiSegmented v-model="filter" :options="FILTERS" :label="FILTER_LABEL" disabled />
+        <UiConfirm
+          v-if="feed.screen.kind === 'all' && feed.feed.length > 0"
+          label="Limpar"
+          message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
+          confirm-label="Limpar conversa"
+          @confirm="clearConversation"
+        />
+      </div>
     </header>
+    <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
-    <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
+    <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />
       </template>
     </UiEmpty>
-    <UiEmpty v-else-if="feed.feed.length === 0" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+    <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
       <template #mascot>
         <VokiaMascot look="tudo-em-dia" />
       </template>
     </UiEmpty>
     <UiEmpty
       v-else-if="feed.timeline.length === 0"
+      class="m-auto"
       :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
       :text="EMPTY_FEED_TEXT"
     >
@@ -111,7 +159,7 @@ onMounted(followEnd)
       <li v-for="item in feed.timeline" :key="item.start">
         <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
           <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
-            <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupTitle(item.messages) }}</span>
+            <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
             <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
           </summary>
           <ol class="mt-3 flex flex-col gap-3">
@@ -128,11 +176,6 @@ onMounted(followEnd)
         <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
       </li>
     </ol>
-    <ol v-if="requests.queue.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
-      <li v-for="request in requests.queue" :key="request.id">
-        <QueuedEntry :request="request" />
-      </li>
-    </ol>
     <div
       role="status"
       :aria-label="feed.thinkingAgent ? `${feed.thinkingAgent.name} está pensando` : undefined"
@@ -147,5 +190,6 @@ onMounted(followEnd)
         <ConsoleCard :agent="feed.thinkingAgent" />
       </template>
     </div>
+    </section>
   </section>
 </template>
