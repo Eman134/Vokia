@@ -13,8 +13,9 @@ export function placeholderFor(
   project: string,
   status: TeamStatus,
   statusPlaceholder: string,
+  screenText?: string,
 ): string {
   // Só o repouso usa o texto da página: erro e pausado precisam continuar visíveis.
   const pagePlaceholder = page === null || status !== 'rest' ? undefined : PAGE_PLACEHOLDER[page]
-  return pagePlaceholder?.(project) || statusPlaceholder
+  return screenText && pagePlaceholder ? screenText : pagePlaceholder?.(project) || statusPlaceholder
 }
