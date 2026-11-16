@@ -7,7 +7,7 @@ import { useRequests } from './useRequests'
 
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-4 transition-[flex] duration-300 ease-in-out motion-reduce:transition-none'
-const EXPANDED_CLASSES = 'flex-[1_1_300px]'
+const EXPANDED_CLASSES = 'flex-none max-h-72 xl:max-h-none xl:flex-[1_1_300px]'
 const COLLAPSED_CLASSES = 'flex-[0_0_9rem]'
 const TEAM_TITLE = 'Fila do time'
 const AGENT_TITLE_PREFIX = 'Fila de '

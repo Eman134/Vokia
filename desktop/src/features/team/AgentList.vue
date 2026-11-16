@@ -23,7 +23,7 @@ import UiNotice from '../../ui/UiNotice.vue'
 const CONSOLE_LABEL = 'Console'
 const SEARCH_LABEL = 'Buscar conversas'
 const PANEL_CLASSES =
-  'flex min-h-0 w-59 shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5'
+  'flex min-h-0 w-full max-h-72 shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 xl:w-59 xl:max-h-none'
 const SEARCH_CLASSES =
   'mb-3 h-8.5 w-full rounded-control bg-surface-2 px-3 text-label text-ink placeholder:text-muted disabled:opacity-40'
 const QUEUE_BADGE_CLASSES =

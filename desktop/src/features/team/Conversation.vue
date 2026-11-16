@@ -32,8 +32,8 @@ import { useConsole } from '../console/useConsole'
 
 const GROUP_SEPARATOR = ' ↔ '
 const PANEL_CLASSES =
-  'flex min-h-0 min-w-0 flex-[1_1_520px] flex-col overflow-hidden rounded-dialog border border-line bg-surface'
-const HEADER_CLASSES = 'flex items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
+  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-dialog border border-line bg-surface min-h-[20rem] xl:min-h-0 xl:flex-[1_1_520px]'
+const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
 const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
 const FILTER_LABEL = 'Filtrar conversa'
 const FILTERS = [

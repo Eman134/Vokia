@@ -6,9 +6,9 @@ import AgentList from './AgentList.vue'
 import Conversation from './Conversation.vue'
 import QueuePanel from './QueuePanel.vue'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 pb-[150px] pl-2 pr-8 pt-7'
+const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-hidden px-4 pb-[150px] pt-7 xl:pl-2 xl:pr-8'
 const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
-const PANELS_CLASSES = 'flex min-h-0 flex-1 gap-3.5'
+const PANELS_CLASSES = 'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto xl:flex-row xl:overflow-hidden'
 const SUBTITLE = 'Cada agente tem a sua conversa: o que ele disse, o que rodou no terminal e o que vem na fila dele.'
 
 const projectsStore = useProjects()
