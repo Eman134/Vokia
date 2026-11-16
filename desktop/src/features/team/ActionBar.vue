@@ -114,6 +114,15 @@ watch(queueOpen, (open) => {
   }
 })
 
+// O pointerleave se perde quando a pílula muda sob o cursor parado; sem reconciliar, hovered fica true e a barra não recolhe.
+watch(hovered, (isHovered, _previous, onCleanup) => {
+  if (!isHovered) {
+    return
+  }
+  document.addEventListener('pointermove', reconcileHover)
+  onCleanup(() => document.removeEventListener('pointermove', reconcileHover))
+})
+
 onUnmounted(() => {
   clearTimeout(collapseTimer)
 })
@@ -121,6 +130,12 @@ onUnmounted(() => {
 function onFocusOut(event: FocusEvent): void {
   if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
     focusWithin.value = false
+  }
+}
+
+function reconcileHover(): void {
+  if (!pillElement.value?.matches(':hover')) {
+    hovered.value = false
   }
 }
 
