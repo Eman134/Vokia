@@ -50,6 +50,7 @@ const wrapperRef = ref<HTMLElement | null>(null)
 const measureRef = ref<HTMLElement | null>(null)
 
 const locked = computed(() => connection.checking)
+const composerHidden = computed(() => !props.interacting || (props.inlinePermission && draft.value === ''))
 const {
   menuKind,
   activeMatch,
@@ -143,10 +144,9 @@ defineExpose({ isFocused })
 
 <template>
   <div
-    v-if="canAsk"
+    v-if="canAsk && !composerHidden"
     ref="wrapperRef"
     class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
-    :class="{ 'sr-only': !interacting || (inlinePermission && draft === '') }"
   >
     <div
       aria-hidden="true"

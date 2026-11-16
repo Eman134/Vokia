@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { motion } from 'motion-v'
 import type { ComposeSize } from './pageActions'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
 import { useFlow } from './useFlow'
+import { useTeamStatus } from './useTeamStatus'
+import { useRequests } from './useRequests'
+import { useDecisions } from '../decisions/useDecisions'
+import { useAgentControl } from '../panel/useAgentControl'
 import { useProjects } from '../projects/useProjects'
 import ActionMenu from './ActionMenu.vue'
 import PermissionInline from './PermissionInline.vue'
@@ -12,7 +17,7 @@ import PausedAgents from './PausedAgents.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
 import PanelShell from '../panel/PanelShell.vue'
-import { BAR_RESIZE_MS, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
+import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
 import OfflineNotice from './bar/OfflineNotice.vue'
@@ -23,7 +28,7 @@ import { useComposerSubmit } from './bar/useComposerSubmit'
 import { usePageActions } from './bar/usePageActions'
 
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
-const COLLAPSE_MS = BAR_RESIZE_MS
+const COLLAPSE_MS = BAR_COLLAPSE_TOTAL_MS
 const EXPANDED_WIDTH_CLASS = 'w-full max-w-full'
 const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
 
@@ -35,7 +40,8 @@ const connection = useConnection()
 const feed = useFeed()
 const flow = useFlow()
 const projectsStore = useProjects()
-const pillRef = ref<HTMLElement | null>(null)
+const pillRef = ref<ComponentPublicInstance | null>(null)
+const pillElement = computed(() => pillRef.value?.$el ?? null)
 const { draft, confirmed, submit } = useComposerSubmit()
 const composer = ref<InstanceType<typeof ComposerField> | null>(null)
 const hovered = ref(false)
@@ -47,12 +53,30 @@ const queueOpen = ref(false)
 const menuOpen = ref(false)
 const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
+const hasDraft = computed(() => draft.value !== '')
 const interacting = computed(
-  () => hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
+  () => hasDraft.value || hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() => !flow.active && expanded.value && feed.permissions.length > 0)
 const canAsk = computed(() => flow.flow !== 'onboarding')
+const statusStore = useTeamStatus()
+const requests = useRequests()
+const decisions = useDecisions()
+const control = useAgentControl()
+// O `layout` do Motion só remede quando a própria barra re-renderiza; mudanças de conteúdo nos filhos precisam desta chave.
+const layoutKey = computed(() =>
+  [
+    flow.flow,
+    flow.step,
+    statusStore.statusText,
+    decisions.pendingCount,
+    requests.queue.length,
+    control.pausedList.length,
+    feed.permissions.length,
+    feed.activeAgents.length,
+  ].join('|'),
+)
 const pillWidthClass = computed(() => {
   if (canAsk.value && interacting.value) {
     return EXPANDED_WIDTH_CLASS
@@ -88,7 +112,9 @@ watch(queueOpen, (open) => {
   }
 })
 
-onUnmounted(() => clearTimeout(collapseTimer))
+onUnmounted(() => {
+  clearTimeout(collapseTimer)
+})
 
 function onFocusOut(event: FocusEvent): void {
   if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node | null)) {
@@ -108,8 +134,11 @@ function onPointerLeave(): void {
   <div v-if="connection.online" :class="BAR_WRAP_CLASSES">
     <Balloon />
     <PanelShell />
-    <form
+    <motion.form
       ref="pillRef"
+      layout
+      :layout-dependency="layoutKey"
+      :transition="BAR_SPRING"
       :class="[PILL_CLASSES, pillWidthClass]"
       @pointerenter="hovered = true"
       @pointerleave="onPointerLeave"
@@ -130,7 +159,7 @@ function onPointerLeave(): void {
         :interacting="interacting"
         :inline-permission="inlinePermission"
         :rail-page="railPage"
-        :pill="pillRef"
+        :pill="pillElement"
         @menu-open="menuOpen = $event"
       />
       <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
@@ -142,7 +171,7 @@ function onPointerLeave(): void {
         @run="runAction"
         @close="actionMenuOpen = false"
       />
-    </form>
+    </motion.form>
   </div>
   <OfflineNotice />
 </template>
