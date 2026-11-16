@@ -10,7 +10,8 @@ import { useTeamStatus } from '../useTeamStatus'
 import { placeholderFor, QUEUE_SUFFIX } from '../composerPlaceholder'
 import { mentionSegments, mentionSpans } from '../composerMentions'
 import { FLOW_PLACEHOLDER } from '../flowSteps'
-import { screenAgent, screenPlaceholder } from '../screenRecipient'
+import { screenDestination, screenPlaceholder } from '../screenRecipient'
+import { useChannels } from '../../channels/useChannels'
 import type { Agent } from '../events'
 import type { RailPage } from '../../../shell/railNav'
 import { useProjects } from '../../projects/useProjects'
@@ -39,6 +40,8 @@ const connection = useConnection()
 const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
+const channelsStore = useChannels()
+const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const statusStore = useTeamStatus()
 const flow = useFlow()
 const projectsStore = useProjects()
@@ -77,11 +80,15 @@ const placeholder = computed(() =>
         projectsStore.selected?.name ?? '',
         statusStore.status,
         statusStore.placeholder,
-        screenPlaceholder(props.railPage, feed.screen, agentName),
+        screenPlaceholder(props.railPage, feed.screen, agentName, channelsStore.channels, rosterOrder.value),
       ),
 )
 const spans = computed(() => mentionSpans(draft.value, confirmed.value))
-const recipient = computed<Agent | null>(() => spans.value[0]?.agent ?? screenAgent(props.railPage, feed.screen))
+const recipient = computed<Agent | null>(
+  () =>
+    screenDestination(props.railPage, feed.screen, channelsStore.channels, rosterOrder.value, spans.value[0]?.agent ?? null)
+      .to,
+)
 const segments = computed(() => mentionSegments(draft.value, spans.value))
 const queueHint = computed(() => {
   const target = recipient.value

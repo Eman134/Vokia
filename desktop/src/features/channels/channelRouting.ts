@@ -5,6 +5,9 @@ export const GENERAL_CHANNEL_NAME = 'geral'
 
 // Mensagem com o usuário fica em #geral e na tela do agente, nunca em canal específico (P6).
 export function channelOf(message: VokiaMessage, channels: readonly Channel[]): number | null {
+  if (message.channelId !== undefined) {
+    return channels.some((channel) => channel.id === message.channelId) ? message.channelId : null
+  }
   if (message.from === 'user' || message.to === 'user') {
     return null
   }

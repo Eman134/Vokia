@@ -7,8 +7,10 @@ import { useConnection } from '../useConnection'
 import { useRequests } from '../useRequests'
 import { useRequestNotices } from '../../balloon/useRequestNotices'
 import { useNavigation } from '../../../shell/useNavigation'
-import { screenAgent } from '../screenRecipient'
+import { screenDestination } from '../screenRecipient'
 import { useFeed } from '../useFeed'
+import { useRoster } from '../useRoster'
+import { useChannels } from '../../channels/useChannels'
 
 // Rascunho e envio vivem no pai: o campo é desmontado offline, e a restauração após falha precisa sobreviver a isso.
 export function useComposerSubmit() {
@@ -17,6 +19,8 @@ export function useComposerSubmit() {
   const requestNotices = useRequestNotices()
   const feed = useFeed()
   const navigation = useNavigation()
+  const channels = useChannels()
+  const roster = useRoster()
   const draft = ref('')
   const confirmed = ref(new Set<Agent>())
 
@@ -25,7 +29,14 @@ export function useComposerSubmit() {
     if (text === '' || connection.checking) {
       return
     }
-    const to = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? screenAgent(navigation.page, feed.screen)
+    const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
+    const { to, channelId } = screenDestination(
+      navigation.page,
+      feed.screen,
+      channels.channels,
+      roster.agents.map((profile) => profile.id),
+      mention,
+    )
     const expandedCommand = expandCommand(text)
     const pending = draft.value
     // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
@@ -33,6 +44,7 @@ export function useComposerSubmit() {
     draft.value = ''
     if (
       !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
+        channelId: channelId ?? undefined,
         onEnqueued: requestNotices.announceSent,
         onQueued: requestNotices.markBackendQueued,
       }))

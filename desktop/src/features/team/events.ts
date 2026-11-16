@@ -13,6 +13,7 @@ export interface VokiaMessage {
   text: string
   time: number
   projectId: number | null
+  channelId?: number
 }
 
 export interface VokiaAgentState {

@@ -61,8 +61,9 @@ export function sendRequest(
   projectId: number,
   runId?: number,
   itemId?: string,
+  channelId?: number,
 ): Promise<RequestOutcome> {
-  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId })
+  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId, channelId })
 }
 
 export function answerPermission(id: string, allow: boolean): Promise<void> {
