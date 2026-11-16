@@ -6,6 +6,7 @@ pub(super) const LOOP_REPEAT_LIMIT: u32 = 3;
 pub(super) const LOOP_MESSAGE: &str = "A conversa entre os agentes parou: a mesma mensagem se repetiu em turnos seguidos sem avançar a tarefa.";
 pub(super) const PASS_REPEAT_LIMIT: u32 = 3;
 pub(super) const REJECTION_LIMIT: u32 = 3;
+pub(super) const SEM_AVANCO_LIMIT: u32 = 3;
 
 #[derive(Default)]
 pub(super) struct LoopGuard {
@@ -69,7 +70,7 @@ impl PassCounter {
         self.pairs.clear();
     }
 
-    fn history(&self, team: &Team) -> String {
+    pub(super) fn history(&self, team: &Team) -> String {
         self.pairs
             .iter()
             .map(|(from, to, count)| {
@@ -96,6 +97,14 @@ pub(super) fn pass_limit_message(
 
 pub(super) fn rejection_message() -> String {
     format!("A tarefa parou: o estado não avançou em {REJECTION_LIMIT} turnos seguidos.")
+}
+
+pub(super) fn idle_limit_message(step: usize, from: &Agent, to: &Agent, team: &Team) -> String {
+    format!(
+        "A tarefa parou: sem avanço desde o passo {step}, par {} → {}.",
+        team.name_of(from),
+        team.name_of(to),
+    )
 }
 
 #[cfg(test)]

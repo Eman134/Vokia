@@ -4,6 +4,7 @@ mod console;
 mod emit;
 mod error;
 mod flow;
+mod goal;
 mod loop_guard;
 mod markers;
 mod project_context;

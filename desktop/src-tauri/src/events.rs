@@ -98,6 +98,15 @@ pub enum PermissionOutcome {
     Expired,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GoalState {
+    Atingido,
+    Incompleto,
+    SemAvanco,
+    Repetindo,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum VokiaEvent {
@@ -164,5 +173,13 @@ pub enum VokiaEvent {
         kind: ConsoleKind,
         text: String,
         time: u64,
+    },
+    #[serde(rename_all = "camelCase")]
+    GoalState {
+        project_id: i64,
+        state: Option<GoalState>,
+        objective: String,
+        reason: String,
+        checks: u32,
     },
 }

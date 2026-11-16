@@ -5,7 +5,7 @@ use tauri::AppHandle;
 
 use crate::agents::{Agent, Team};
 use crate::claude::ProjectAccess;
-use crate::events::{AgentState, Speaker, VokiaEvent};
+use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
@@ -14,9 +14,10 @@ use super::agent_session::ask_step;
 use super::emit::{emit, emit_message, emit_state};
 use super::error::FlowError;
 use super::flow::stop_with_error;
+use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
-    pass_limit_message, rejection_message, LoopGuard, PassCounter, LOOP_MESSAGE, LOOP_REPEAT_LIMIT,
-    PASS_REPEAT_LIMIT, REJECTION_LIMIT,
+    idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
+    LOOP_MESSAGE, LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, REJECTION_LIMIT, SEM_AVANCO_LIMIT,
 };
 use super::markers::{parse_decision, parse_reply, ParsedDecision, ParsedReply};
 use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX, REPLY_PREFIX};
@@ -55,8 +56,7 @@ pub(super) async fn run_turns(
     let project_id = key.project_id;
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
-    let mut loop_guard = LoopGuard::default();
-    let mut passes = PassCounter::default();
+    let mut counters = Counters::default();
     let mut rejections = 0;
     loop {
         let instruction = turn.instruction();
@@ -95,8 +95,18 @@ pub(super) async fn run_turns(
             }
             rejections += 1;
             if rejections >= REJECTION_LIMIT {
-                stop_with_error(app, project_id, rejection_message())?;
-                return Ok(TaskOutcome::Stalled);
+                let trigger = Trigger::Stall {
+                    state: GoalState::SemAvanco,
+                    message: rejection_message(),
+                };
+                match resolve(exchange, transcript, &mut counters, &turn.speaker, trigger).await? {
+                    Step::Continue(continuation) => {
+                        rejections = 0;
+                        turn = continuation;
+                        continue;
+                    }
+                    Step::End(outcome) => return Ok(outcome),
+                }
             }
             sessions.review(&turn.speaker, rejections, 0, team)?.await;
             turn.rejection = Some(applied.rejected.join("; "));
@@ -124,20 +134,28 @@ pub(super) async fn run_turns(
                     team,
                 )?;
             }
-            emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+            emit_goal(
+                app,
+                project_id,
+                &definition.objetivo,
+                Some(GoalState::Atingido),
+                "",
+                counters.goal.checks(),
+            )?;
             let message = format!("Tarefa concluída: {}.", definition.objetivo);
-            say(
+            conclude(
                 app,
                 project_id,
                 transcript,
+                &turn.speaker,
                 &origin,
-                Speaker::User,
                 &message,
                 team,
             )?;
             return Ok(TaskOutcome::Finished);
         }
 
+        counters.goal.register_turn(advanced);
         let next = next_turn(
             definition,
             &turn,
@@ -145,26 +163,73 @@ pub(super) async fn run_turns(
             delegation.as_ref(),
             team,
         );
-        if advanced {
-            passes.reset();
-        } else if let Some(next) = next.as_ref() {
-            let repeats = passes.register(&turn.speaker, &next.speaker);
-            if repeats >= PASS_REPEAT_LIMIT {
-                let message = pass_limit_message(&passes, &turn.speaker, &next.speaker, team);
-                stop_with_error(app, project_id, message)?;
-                return Ok(TaskOutcome::Stalled);
-            }
-            sessions
-                .review(&turn.speaker, passes.by_speaker(&turn.speaker), 0, team)?
-                .await;
-        }
-
         let to = next
             .as_ref()
             .map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
         if let Some(text) = &feed {
             say(app, project_id, transcript, &turn.speaker, to, text, team)?;
         }
+        let Some(next) = next else {
+            match resolve(
+                exchange,
+                transcript,
+                &mut counters,
+                &turn.speaker,
+                Trigger::EndOfChain,
+            )
+            .await?
+            {
+                Step::Continue(continuation) => {
+                    turn = continuation;
+                    continue;
+                }
+                Step::End(outcome) => return Ok(outcome),
+            }
+        };
+
+        let pair_repeats = if advanced {
+            counters.passes.reset();
+            0
+        } else {
+            counters.passes.register(&turn.speaker, &next.speaker)
+        };
+        let loop_repeats = counters
+            .loop_guard
+            .register(next.speaker.clone(), &next.received);
+        let trigger = if pair_repeats >= PASS_REPEAT_LIMIT {
+            Some(Trigger::Stall {
+                state: GoalState::Repetindo,
+                message: pass_limit_message(&counters.passes, &turn.speaker, &next.speaker, team),
+            })
+        } else if loop_repeats >= LOOP_REPEAT_LIMIT {
+            Some(Trigger::Stall {
+                state: GoalState::Repetindo,
+                message: LOOP_MESSAGE.to_string(),
+            })
+        } else if !definition.variables.is_empty() && counters.goal.idle_turns() >= SEM_AVANCO_LIMIT
+        {
+            Some(Trigger::Stall {
+                state: GoalState::SemAvanco,
+                message: idle_limit_message(
+                    counters.goal.last_advance_step(),
+                    &turn.speaker,
+                    &next.speaker,
+                    team,
+                ),
+            })
+        } else {
+            None
+        };
+        if let Some(trigger) = trigger {
+            match resolve(exchange, transcript, &mut counters, &turn.speaker, trigger).await? {
+                Step::Continue(continuation) => {
+                    turn = continuation;
+                    continue;
+                }
+                Step::End(outcome) => return Ok(outcome),
+            }
+        }
+
         if let Some((helper, helper_request)) = &delegation {
             say(
                 app,
@@ -182,19 +247,109 @@ pub(super) async fn run_turns(
             AgentState::Idle
         };
         emit_state(app, project_id, turn.speaker.clone(), speaker_state)?;
-        match next {
-            Some(next) => {
-                let repeats = loop_guard.register(next.speaker.clone(), &next.received);
-                if repeats >= LOOP_REPEAT_LIMIT {
-                    stop_with_error(app, project_id, LOOP_MESSAGE.to_string())?;
-                    return Ok(TaskOutcome::Stalled);
-                }
-                sessions.review(&next.speaker, 0, repeats, team)?.await;
-                turn = next;
-            }
-            None => return Ok(TaskOutcome::Finished),
+        if !advanced {
+            sessions
+                .review(
+                    &turn.speaker,
+                    counters.passes.by_speaker(&turn.speaker),
+                    0,
+                    team,
+                )?
+                .await;
         }
+        sessions.review(&next.speaker, 0, loop_repeats, team)?.await;
+        turn = next;
     }
+}
+
+#[derive(Default)]
+struct Counters {
+    passes: PassCounter,
+    loop_guard: LoopGuard,
+    goal: GoalTracker,
+}
+
+impl Counters {
+    fn reset_stalls(&mut self) {
+        self.passes.reset();
+        self.loop_guard = LoopGuard::default();
+    }
+}
+
+enum Step {
+    Continue(Turn),
+    End(TaskOutcome),
+}
+
+async fn resolve(
+    exchange: &Exchange<'_>,
+    transcript: &mut Vec<String>,
+    counters: &mut Counters,
+    speaker: &Agent,
+    trigger: Trigger,
+) -> Result<Step, FlowError> {
+    let Exchange {
+        app,
+        key,
+        definition,
+        team,
+        ..
+    } = exchange;
+    let project_id = key.project_id;
+    let origin = &key.agent;
+    let settlement = settle(
+        exchange,
+        transcript.as_slice(),
+        &mut counters.goal,
+        &counters.passes,
+        trigger,
+    )
+    .await?;
+    Ok(match settlement {
+        Settlement::Achieved { reason } => {
+            let message = achieved_message(&definition.objetivo, &reason);
+            conclude(app, project_id, transcript, speaker, origin, &message, team)?;
+            Step::End(TaskOutcome::Finished)
+        }
+        Settlement::Continue { instruction } => {
+            counters.reset_stalls();
+            Step::Continue(Turn::new(
+                first_speaker(definition, origin),
+                &instruction,
+                &instruction,
+                Vec::new(),
+            ))
+        }
+        Settlement::Stalled { message } => {
+            stop_with_error(app, project_id, message)?;
+            Step::End(TaskOutcome::Stalled)
+        }
+        Settlement::Ended => {
+            emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
+            Step::End(TaskOutcome::Finished)
+        }
+    })
+}
+
+fn conclude(
+    app: &AppHandle,
+    project_id: i64,
+    transcript: &mut Vec<String>,
+    speaker: &Agent,
+    origin: &Agent,
+    message: &str,
+    team: &Team,
+) -> Result<(), FlowError> {
+    emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
+    say(
+        app,
+        project_id,
+        transcript,
+        origin,
+        Speaker::User,
+        message,
+        team,
+    )
 }
 
 // Quem decide fica Waiting até a resposta virar um novo pedido; quem delegou a ele volta a Idle.

@@ -4,7 +4,7 @@ use serde_json::Value as Json;
 use crate::agents::{Agent, Team};
 
 use super::cache::{
-    validate_name, validate_value, Cache, Rule, VarValue, Variable, CONVERSATION_VAR,
+    truncate, validate_name, validate_value, Cache, Rule, VarValue, Variable, CONVERSATION_VAR,
 };
 
 const NUMBER_TYPE: &str = "numero";
@@ -13,15 +13,19 @@ const LIST_TYPE: &str = "lista";
 const FREE_RULE: &str = "livre";
 const INCREMENT_RULE: &str = "mais_um";
 const READ_ONLY_RULE: &str = "so_leitura";
+const EXISTS_LIMIT: &str = "existe";
 const MULTI_AGENT_MIN_PARTICIPANTS: usize = 2;
 const LONG_REQUEST_CHARS: usize = 1200;
 const REQUEST_PROMPT_MAX: usize = 8000;
 const REQUEST_TRUNCATED: &str = " (pedido truncado)";
+const CRITERION_MAX_CHARS: usize = 300;
 
 #[derive(Debug)]
 pub struct TaskDefinition {
     pub nova_tarefa: bool,
     pub objetivo: String,
+    pub criterion: String,
+    pub verify: bool,
     pub participants: Vec<Agent>,
     pub alternate: bool,
     pub variables: Vec<Variable>,
@@ -38,18 +42,21 @@ pub struct StopCondition {
 pub enum StopLimit {
     Value(i64),
     Variable(String),
+    Exists,
 }
 
 impl StopCondition {
     pub fn reached(&self, cache: &Cache) -> bool {
-        let Some(current) = cache.number(&self.variable) else {
-            return false;
-        };
-        let limit = match &self.limit {
-            StopLimit::Value(value) => Some(*value),
-            StopLimit::Variable(name) => cache.number(name),
-        };
-        limit.is_some_and(|limit| current >= limit)
+        match &self.limit {
+            StopLimit::Exists => cache.exists(&self.variable),
+            StopLimit::Value(value) => cache
+                .number(&self.variable)
+                .is_some_and(|current| current >= *value),
+            StopLimit::Variable(name) => match (cache.number(&self.variable), cache.number(name)) {
+                (Some(current), Some(limit)) => current >= limit,
+                _ => false,
+            },
+        }
     }
 }
 
@@ -99,6 +106,8 @@ fn safe_definition(origin: &Agent, request: &str) -> TaskDefinition {
     TaskDefinition {
         nova_tarefa: false,
         objetivo: request.to_string(),
+        criterion: request.to_string(),
+        verify: false,
         participants: vec![origin.clone()],
         alternate: false,
         variables: Vec::new(),
@@ -118,16 +127,25 @@ fn definition_from_json(reply: &str, origin: &Agent, team: &Team) -> Option<Task
     let participants = participants_from_json(json.get("participantes")?.as_array()?, origin, team);
     let alternate =
         json.get("alternar")?.as_bool()? && participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS;
-    // Sem revezamento não há estado compartilhado: variáveis e parada ficariam sem uso.
-    let (variables, stop) = if alternate {
-        let stop = stop_from_json(json.get("parada"), &variables);
-        (variables, stop)
-    } else {
-        (Vec::new(), None)
-    };
+    let stop = stop_from_json(json.get("parada"), &variables);
+    let criterion = json
+        .get("criterio")
+        .and_then(Json::as_str)
+        .map(str::trim)
+        .filter(|criterion| !criterion.is_empty())
+        .map_or_else(
+            || objetivo.to_string(),
+            |criterion| truncate(criterion, CRITERION_MAX_CHARS),
+        );
+    let verify = json
+        .get("verificar")
+        .and_then(Json::as_bool)
+        .unwrap_or(false);
     Some(TaskDefinition {
         nova_tarefa: json.get("nova_tarefa")?.as_bool()?,
         objetivo: objetivo.to_string(),
+        criterion,
+        verify,
         participants,
         alternate,
         variables,
@@ -201,22 +219,32 @@ fn value_from_json(kind: &str, value: &Json) -> Option<VarValue> {
 fn stop_from_json(json: Option<&Json>, variables: &[Variable]) -> Option<StopCondition> {
     let json = json?;
     let variable = json.get("variavel")?.as_str()?;
-    if !is_number_variable(variables, variable) {
+    if !has_variable(variables, variable) {
         return None;
     }
     let limit = match json.get("alcanca")? {
+        Json::String(name) if name == EXISTS_LIMIT => StopLimit::Exists,
         Json::String(name) => {
-            if !is_number_variable(variables, name) {
+            if !is_number_variable(variables, variable) || !is_number_variable(variables, name) {
                 return None;
             }
             StopLimit::Variable(name.clone())
         }
-        other => StopLimit::Value(other.as_i64()?),
+        other => {
+            if !is_number_variable(variables, variable) {
+                return None;
+            }
+            StopLimit::Value(other.as_i64()?)
+        }
     };
     Some(StopCondition {
         variable: variable.to_string(),
         limit,
     })
+}
+
+fn has_variable(variables: &[Variable], name: &str) -> bool {
+    variables.iter().any(|variable| variable.name == name)
 }
 
 fn is_number_variable(variables: &[Variable], name: &str) -> bool {

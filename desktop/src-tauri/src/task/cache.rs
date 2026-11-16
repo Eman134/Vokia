@@ -39,6 +39,14 @@ impl VarValue {
         }
     }
 
+    fn has_content(&self) -> bool {
+        match self {
+            VarValue::Number(_) => true,
+            VarValue::Text(text) => !text.is_empty(),
+            VarValue::List(items) => !items.is_empty(),
+        }
+    }
+
     pub fn display(&self) -> String {
         match self {
             VarValue::Number(number) => number.to_string(),
@@ -157,6 +165,11 @@ impl Cache {
 
     pub fn number(&self, name: &str) -> Option<i64> {
         self.find(name)?.value.as_number()
+    }
+
+    pub fn exists(&self, name: &str) -> bool {
+        self.find(name)
+            .is_some_and(|variable| variable.value.has_content())
     }
 
     pub fn visible_to(&self, agent: &Agent) -> Vec<&Variable> {
@@ -449,7 +462,7 @@ pub fn validate_value(value: &VarValue) -> Result<(), String> {
     }
 }
 
-fn truncate(text: &str, max: usize) -> String {
+pub fn truncate(text: &str, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
