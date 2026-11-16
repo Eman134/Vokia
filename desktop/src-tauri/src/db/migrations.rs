@@ -126,6 +126,16 @@ const MIGRATIONS: &[&str] = &[
     "
     UPDATE agent_sessions SET agent = lower(agent);
 ",
+    "
+    CREATE TABLE channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        name TEXT NOT NULL,
+        members TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        UNIQUE (project_id, name)
+    );
+",
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

@@ -22,6 +22,8 @@ pub enum DbError {
     InvalidSpeaker(String),
     InvalidAgent(String),
     InvalidSetting(String, String),
+    ChannelNameTaken(String),
+    ChannelNotFound,
     InvalidPermissionLevel(String),
     InvalidBacklogColumn(String),
     ColumnNotMovable(String),
@@ -89,6 +91,10 @@ impl fmt::Display for DbError {
             DbError::InvalidSetting(key, value) => {
                 write!(f, "A configuração {key} não aceita o valor {value:?}.")
             }
+            DbError::ChannelNameTaken(name) => {
+                write!(f, "Já existe um canal #{name} neste projeto.")
+            }
+            DbError::ChannelNotFound => write!(f, "Canal não encontrado."),
             DbError::InvalidPermissionLevel(value) => {
                 write!(f, "O nível de permissão {value:?} não existe.")
             }

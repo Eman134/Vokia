@@ -18,6 +18,7 @@ const PROJECT_CHILD_TABLES: &[&str] = &[
     "agent_pauses",
     "permission_approvals",
     "agent_sessions",
+    "channels",
 ];
 
 pub const ORIGIN_FOLDER: &str = "folder";
