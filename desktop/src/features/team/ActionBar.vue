@@ -64,9 +64,11 @@ const statusStore = useTeamStatus()
 const requests = useRequests()
 const decisions = useDecisions()
 const control = useAgentControl()
-// O `layout` do Motion só remede quando a própria barra re-renderiza; mudanças de conteúdo nos filhos precisam desta chave.
+// Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
 const layoutKey = computed(() =>
   [
+    interacting.value,
+    flow.active,
     flow.flow,
     flow.step,
     statusStore.statusText,

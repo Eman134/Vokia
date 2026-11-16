@@ -6,6 +6,6 @@ export const BAR_MOTION_CLASSES = 'duration-180 ease-out motion-reduce:transitio
 // Largura e altura da pílula são animadas pelo `layout` do Motion (FLIP com mola), não por transição CSS.
 export const PILL_CLASSES =
   'pointer-events-auto relative flex h-12 items-center gap-3 rounded-full border border-line bg-surface pl-2.5 pr-1.5 shadow-float'
-export const BAR_SPRING = { type: 'spring', stiffness: 600, damping: 48 } as const
+export const BAR_SPRING = { type: 'spring', stiffness: 850, damping: 58 } as const
 // Rótulo do recolhimento do texto de status (overflow-hidden), enquanto a pílula muda de tamanho.
 export const BAR_COLLAPSE_TOTAL_MS = 400
