@@ -104,7 +104,7 @@ pub(super) async fn run_turns(
         }
         rejections = 0;
 
-        let advanced = applied.created_variable;
+        let advanced = applied.created_variable || applied.changed_value;
         let feed = feed_text(&visible, &applied.accepted);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition

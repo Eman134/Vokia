@@ -138,6 +138,7 @@ pub struct Applied {
     pub rejected: Vec<String>,
     // Uma Change aceita criou uma chave que a tarefa ainda não tinha: é avanço de estado.
     pub created_variable: bool,
+    pub changed_value: bool,
 }
 
 #[derive(Default)]
@@ -249,9 +250,18 @@ impl Cache {
             let creates = update
                 .as_ref()
                 .is_ok_and(|change| self.find(change.name()).is_none());
+            let before = update
+                .as_ref()
+                .ok()
+                .and_then(|change| self.find(change.name()))
+                .map(|variable| variable.value.clone());
             match update.and_then(|change| self.apply(author, &change, team).map(|()| change)) {
                 Ok(change) => {
+                    let after = self
+                        .find(change.name())
+                        .map(|variable| variable.value.clone());
                     applied.created_variable |= creates;
+                    applied.changed_value |= before.is_some() && before != after;
                     applied.accepted.push(change);
                 }
                 Err(motive) => applied.rejected.push(motive),
@@ -261,6 +271,7 @@ impl Cache {
             self.variables = backup;
             applied.accepted.clear();
             applied.created_variable = false;
+            applied.changed_value = false;
         }
         applied
     }
