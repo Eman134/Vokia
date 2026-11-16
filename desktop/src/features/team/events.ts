@@ -108,6 +108,17 @@ export interface VokiaConsoleLine extends ConsoleEntry {
   projectId: number
 }
 
+export type GoalState = 'atingido' | 'incompleto' | 'sem-avanco' | 'repetindo'
+
+export interface VokiaGoalState {
+  type: 'goal-state'
+  projectId: number
+  state: GoalState | null
+  objective: string
+  reason: string
+  checks: number
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -118,6 +129,7 @@ export type VokiaEvent =
   | VokiaPlanUsage
   | VokiaRequestSettled
   | VokiaConsoleLine
+  | VokiaGoalState
 
 export interface CliProblem {
   reason: string

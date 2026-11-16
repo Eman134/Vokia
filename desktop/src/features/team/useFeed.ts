@@ -5,6 +5,7 @@ import {
   type AgentState,
   type VokiaAgentState,
   type VokiaEvent,
+  type VokiaGoalState,
   type VokiaPermission,
   type VokiaRequestSettled,
 } from './events'
@@ -20,6 +21,7 @@ import { useProjects } from '../projects/useProjects'
 import { pauseNotice } from '../panel/nowCopy'
 import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
+import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
@@ -132,8 +134,22 @@ export const useFeed = defineStore('feed', () => {
       case 'console-line':
         useConsole().apply(event)
         break
+      case 'goal-state':
+        showGoalState(event)
+        break
       case 'plan-usage':
         break
+    }
+  }
+
+  // O aviso não leva projectId no feed: só entra quando o projeto do evento é o aberto.
+  function showGoalState(event: VokiaGoalState): void {
+    if (event.projectId !== projects.selected?.id) {
+      return
+    }
+    const text = goalNotice(event)
+    if (text !== null) {
+      notify(text)
     }
   }
 
