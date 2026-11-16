@@ -11,6 +11,13 @@ const TEXT_ONLY_MAX_TURNS: &str = "3";
 const PROJECT_MAX_TURNS: &str = "40";
 const CLI_TIMEOUT: Duration = Duration::from_secs(120);
 const PROJECT_CLI_TIMEOUT: Duration = Duration::from_secs(600);
+// Com uma destas no ambiente a CLI cobraria por uso da API em vez de usar a assinatura. O token OAuth da
+// assinatura (CLAUDE_CODE_OAUTH_TOKEN) e a rota (ANTHROPIC_BASE_URL) ficam.
+const STRIPPED_AUTH_ENV: [&str; 3] = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "AWS_BEARER_TOKEN_BEDROCK",
+];
 const PERMISSION_MODE: &str = "manual";
 // Ignora hooks e regras do usuário (um hook que reescreve o comando faz a regra não casar).
 const NO_SETTING_SOURCES: &str = "";
@@ -173,6 +180,9 @@ pub(crate) fn base_command(cli: &Path) -> Command {
     let mut command = Command::new(cli);
     // Com stdin aberto a CLI espera 3 s por dados antes de responder.
     command.stdin(Stdio::null());
+    for name in STRIPPED_AUTH_ENV {
+        command.env_remove(name);
+    }
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
     command
