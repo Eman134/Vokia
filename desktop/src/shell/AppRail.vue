@@ -96,10 +96,10 @@ function toggle() {
 </script>
 
 <template>
-  <div class="relative shrink-0 self-start" :style="{ width: `${RAIL_COLLAPSED_WIDTH}px` }">
+  <div class="relative shrink-0" :style="{ width: `${RAIL_COLLAPSED_WIDTH}px` }">
     <div
       :class="[
-        `absolute top-0 left-0 z-30 flex flex-col items-start gap-3 bg-bg px-4.75 py-5 font-sans transition-[width] ${RAIL_MOTION}`,
+        `absolute top-0 left-0 z-30 flex max-h-full flex-col items-start gap-3 bg-bg px-4.75 py-5 font-sans transition-[width] ${RAIL_MOTION}`,
         expanded && 'shadow-float',
       ]"
       :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
