@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, ref } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -7,49 +8,48 @@ import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
 import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
-import { ALL_SCREEN, ALL_SCREEN_LABEL } from './timeline'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import type { Channel } from '../channels/channelsApi'
 import ChannelForm from '../channels/ChannelForm.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
-import { ref } from 'vue'
 import { useConsole } from '../console/useConsole'
+import { trapFocus } from '../backlog/dialogFocus'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const CONSOLE_LABEL = 'Console'
 const SEARCH_LABEL = 'Buscar conversas'
+const NEW_CHANNEL_LABEL = 'Novo canal'
+const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
+const CLOSE_LABEL = 'Fechar'
 const PANEL_CLASSES =
   'flex min-h-0 w-full max-h-72 shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 xl:w-59 xl:max-h-none'
 const SEARCH_CLASSES =
   'mb-3 h-8.5 w-full rounded-control bg-surface-2 px-3 text-label text-ink placeholder:text-muted disabled:opacity-40'
 const QUEUE_BADGE_CLASSES =
-  'absolute right-3 top-10 grid min-w-5 place-items-center rounded-full bg-accent-soft px-1.5 text-tiny font-semibold text-accent'
+  'absolute right-2 top-2 grid min-w-5 place-items-center rounded-full bg-accent-soft px-1.5 text-tiny font-semibold text-accent'
 const MENTION_LABEL = 'Mencionar'
 const OPEN_CONVERSATION_PREFIX = 'Abrir conversa de '
-const ALL_CONVERSATION_LABEL = 'Abrir conversa de todos'
 const CARD_CLASSES =
-  'flex w-full cursor-pointer items-center gap-3 rounded-card border p-3 pr-10 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
+  'flex w-full cursor-pointer items-center gap-2 rounded-card border p-2 pr-8 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
 const MENTION_CLASSES =
-  'absolute right-3 top-3 grid size-6 cursor-pointer place-items-center rounded-full text-label font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40 motion-reduce:transition-none'
+  'absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40 motion-reduce:transition-none'
 const MENTION_GLYPH = '@'
+const CONSOLE_BUTTON_CLASSES =
+  'absolute right-2 top-2 grid size-5 cursor-pointer place-items-center rounded-control text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
+const CONSOLE_GLYPH_PATH = 'M3 4.5l3 2.5-3 2.5M7.5 10.5h5'
 const SELECTED_CLASSES = 'border-accent bg-accent-soft'
+const UNSELECTED_CLASSES = 'border-line'
 const CHANNEL_CLASSES =
-  'flex w-full cursor-pointer items-center rounded-control border px-3 py-2 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
+  'flex w-full cursor-pointer items-center rounded-control border px-3 py-1.5 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
 const DELETE_CHANNEL_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'
 const DELETE_CHANNEL_LABEL = 'Excluir canal'
-const NEW_CHANNEL_LABEL = 'Novo canal'
-const UNSELECTED_CLASSES = 'border-line'
 
 const connection = useConnection()
-
-
 const feed = useFeed()
-
-
 const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
@@ -57,6 +57,8 @@ const consoleStore = useConsole()
 const channels = useChannels()
 const creating = ref(false)
 const channelError = ref<string | null>(null)
+const dialog = ref<HTMLElement>()
+const opener = ref<HTMLElement | null>(null)
 
 function presence(agent: Agent) {
   return presenceOf(feed.stateOf(agent), control.isPaused(agent))
@@ -75,28 +77,34 @@ async function removeChannel(channel: Channel): Promise<void> {
   try {
     await channels.remove(channel.id)
     if (channelShown(channel.id)) {
-      feed.showScreen(ALL_SCREEN)
+      feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })
     }
   } catch (error) {
     channelError.value = String(error)
   }
+}
+
+function openChannelDialog(): void {
+  opener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  creating.value = true
+  void nextTick(() => dialog.value?.querySelector<HTMLElement>('input')?.focus())
+}
+
+function closeChannelDialog(): void {
+  creating.value = false
+  opener.value?.focus()
 }
 </script>
 
 <template>
   <aside :class="PANEL_CLASSES">
     <input type="search" :class="SEARCH_CLASSES" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" disabled />
-    <button
-      type="button"
-      class="mb-4 text-body font-semibold text-ink"
-      :class="[CARD_CLASSES, feed.screen.kind === 'all' ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
-      :aria-label="ALL_CONVERSATION_LABEL"
-      :aria-pressed="feed.screen.kind === 'all'"
-      @click="feed.showScreen(ALL_SCREEN)"
-    >
-      {{ ALL_SCREEN_LABEL }}
-    </button>
-    <h2 class="mb-3 text-small font-semibold text-muted">Canais</h2>
+    <div class="mb-2 flex items-center justify-between">
+      <h2 class="text-small font-semibold text-muted">Canais</h2>
+      <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog">
+        +
+      </UiButton>
+    </div>
     <ul class="mb-4 flex flex-col gap-2">
       <li>
         <button
@@ -127,13 +135,9 @@ async function removeChannel(channel: Channel): Promise<void> {
         />
       </li>
     </ul>
-    <UiButton variant="quiet" size="sm" class="mb-3" :aria-expanded="creating" @press="creating = !creating">
-      {{ NEW_CHANNEL_LABEL }}
-    </UiButton>
-    <ChannelForm v-if="creating" class="mb-4" @done="creating = false" />
     <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
-    <h2 class="mb-3 text-small font-semibold text-muted">Agentes</h2>
-    <ul class="flex flex-col gap-2">
+    <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
+    <ul class="flex flex-col gap-1.5">
       <li v-for="agent in roster.agents" :key="agent.id" class="relative">
         <button
           type="button"
@@ -143,18 +147,18 @@ async function removeChannel(channel: Channel): Promise<void> {
           @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
         >
           <span class="flex shrink-0" aria-hidden="true">
-            <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.list" />
+            <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
           </span>
           <span class="flex min-w-0 flex-col">
-            <span class="flex items-center gap-1.5 text-body font-semibold text-ink">
-              {{ agent.name }}
+            <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold text-ink">
+              <span class="truncate">{{ agent.name }}</span>
               <AgentProjectIcons :agent="agent.id" />
             </span>
-            <span class="block text-caption text-muted">{{ agent.role }}</span>
-            <span class="mt-1 flex items-center gap-1.5 text-caption text-ink">
-              <span class="size-1.75 rounded-full" :class="presence(agent.id).dot" />
-              {{ presence(agent.id).label }}
+            <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
+              <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
+              <span class="truncate">{{ presence(agent.id).label }}</span>
             </span>
+            <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
           </span>
         </button>
         <button
@@ -173,17 +177,39 @@ async function removeChannel(channel: Channel): Promise<void> {
         >
           {{ requests.queuedFor(agent.id).length }}
         </span>
-        <UiButton
+        <button
           v-if="consoleStore.entriesOf(agent.id).length > 0"
-          class="mt-1"
-          variant="quiet"
-          size="sm"
+          type="button"
+          :class="CONSOLE_BUTTON_CLASSES"
           :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
-          @press="consoleStore.open(agent.id)"
+          :title="`${CONSOLE_LABEL} de ${agent.name}`"
+          @click="consoleStore.open(agent.id)"
         >
-          {{ CONSOLE_LABEL }}
-        </UiButton>
+          <svg class="size-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path :d="CONSOLE_GLYPH_PATH" />
+          </svg>
+        </button>
       </li>
     </ul>
   </aside>
+  <div
+    v-if="creating"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+    @click.self="closeChannelDialog"
+  >
+    <section
+      ref="dialog"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="NEW_CHANNEL_TITLE_ID"
+      tabindex="-1"
+      class="flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      @keydown.esc.stop="closeChannelDialog"
+      @keydown.tab="trapFocus($event, dialog)"
+    >
+      <h2 :id="NEW_CHANNEL_TITLE_ID" class="text-control font-bold text-ink">{{ NEW_CHANNEL_LABEL }}</h2>
+      <ChannelForm @done="closeChannelDialog" />
+      <UiButton variant="quiet" size="sm" @press="closeChannelDialog">{{ CLOSE_LABEL }}</UiButton>
+    </section>
+  </div>
 </template>

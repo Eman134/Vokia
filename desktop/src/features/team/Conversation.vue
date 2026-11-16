@@ -79,6 +79,9 @@ const screenLabel = computed(() => {
   }
   return ALL_SCREEN_LABEL
 })
+const clearable = computed(
+  () => feed.screen.kind === 'all' || (feed.screen.kind === 'channel' && feed.screen.channel === GENERAL_CHANNEL_NAME),
+)
 const screenRole = computed(() => (feed.screen.kind === 'agent' ? (roster.profileOf(feed.screen.agent)?.role ?? '') : ''))
 
 const projectsStore = useProjects()
@@ -125,7 +128,7 @@ onMounted(followEnd)
       <div class="flex shrink-0 items-center gap-3">
         <UiSegmented v-model="filter" :options="FILTERS" :label="FILTER_LABEL" disabled />
         <UiConfirm
-          v-if="feed.screen.kind === 'all' && feed.feed.length > 0"
+          v-if="clearable && feed.feed.length > 0"
           label="Limpar"
           message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
           confirm-label="Limpar conversa"

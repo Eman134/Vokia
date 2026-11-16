@@ -9,8 +9,9 @@ import {
   type VokiaRequestSettled,
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
-import { ALL_SCREEN, buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
+import { buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
 import { useChannels } from '../channels/useChannels'
+import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import { answerPermission, type AgentProfile } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
@@ -20,6 +21,8 @@ import { pauseNotice } from '../panel/nowCopy'
 import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
 import { useConsole } from '../console/useConsole'
+
+const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
 
 export const useFeed = defineStore('feed', () => {
   const feed = ref<FeedEntry[]>([])
@@ -31,7 +34,7 @@ export const useFeed = defineStore('feed', () => {
   const pausesLoaded = ref(false)
   const activity = ref<Record<string, AgentState>>({})
   const lastProject = ref<Record<Agent, number | null>>({})
-  const screen = ref<ConversationScreen>(ALL_SCREEN)
+  const screen = ref<ConversationScreen>(GENERAL_SCREEN)
   let requestSettledHandler: ((event: VokiaRequestSettled) => void) | null = null
 
   function stateOf(agent: Agent): AgentState {
@@ -175,7 +178,7 @@ export const useFeed = defineStore('feed', () => {
     screen.value = next
   }
 
-  watch(() => projects.selected?.id, () => showScreen(ALL_SCREEN))
+  watch(() => projects.selected?.id, () => showScreen(GENERAL_SCREEN))
 
   return {
     feed,
