@@ -51,14 +51,19 @@ pub struct PendingDecision {
 pub struct RequestContext {
     pub run_id: Option<u64>,
     pub item_id: Option<String>,
+    pub channel_id: Option<i64>,
 }
 
 impl RequestContext {
-    pub fn new(run_id: Option<u64>, item_id: Option<String>) -> Self {
+    pub fn new(run_id: Option<u64>, item_id: Option<String>, channel_id: Option<i64>) -> Self {
         let item_id = item_id
             .map(|id| id.trim().to_string())
             .filter(|id| !id.is_empty());
-        Self { run_id, item_id }
+        Self {
+            run_id,
+            item_id,
+            channel_id,
+        }
     }
 }
 

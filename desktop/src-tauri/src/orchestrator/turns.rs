@@ -34,6 +34,7 @@ pub(super) struct Exchange<'a> {
     pub(super) project_context: &'a str,
     pub(super) request: &'a str,
     pub(super) item_id: Option<&'a str>,
+    pub(super) channel_id: Option<i64>,
     pub(super) key: SessionKey,
     pub(super) definition: &'a TaskDefinition,
     pub(super) team: &'a Team,
@@ -48,6 +49,7 @@ pub(super) async fn run_turns(
         app,
         state,
         request,
+        channel_id,
         key,
         definition,
         team,
@@ -91,6 +93,7 @@ pub(super) async fn run_turns(
                     Speaker::from(turn.speaker.clone()),
                     to,
                     &visible,
+                    *channel_id,
                 )?;
             }
             rejections += 1;
@@ -132,6 +135,7 @@ pub(super) async fn run_turns(
                     Speaker::User,
                     text,
                     team,
+                    *channel_id,
                 )?;
             }
             emit_goal(
@@ -151,6 +155,7 @@ pub(super) async fn run_turns(
                 &origin,
                 &message,
                 team,
+                *channel_id,
             )?;
             return Ok(TaskOutcome::Finished);
         }
@@ -167,7 +172,16 @@ pub(super) async fn run_turns(
             .as_ref()
             .map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
         if let Some(text) = &feed {
-            say(app, project_id, transcript, &turn.speaker, to, text, team)?;
+            say(
+                app,
+                project_id,
+                transcript,
+                &turn.speaker,
+                to,
+                text,
+                team,
+                *channel_id,
+            )?;
         }
         let Some(next) = next else {
             match resolve(
@@ -239,6 +253,7 @@ pub(super) async fn run_turns(
                 Speaker::from(helper.clone()),
                 helper_request,
                 team,
+                *channel_id,
             )?;
         }
         let speaker_state = if delegation.is_some() {
@@ -290,6 +305,7 @@ async fn resolve(
 ) -> Result<Step, FlowError> {
     let Exchange {
         app,
+        channel_id,
         key,
         definition,
         team,
@@ -308,7 +324,16 @@ async fn resolve(
     Ok(match settlement {
         Settlement::Achieved { reason } => {
             let message = achieved_message(&definition.objetivo, &reason);
-            conclude(app, project_id, transcript, speaker, origin, &message, team)?;
+            conclude(
+                app,
+                project_id,
+                transcript,
+                speaker,
+                origin,
+                &message,
+                team,
+                *channel_id,
+            )?;
             Step::End(TaskOutcome::Finished)
         }
         Settlement::Continue { instruction } => {
@@ -339,6 +364,7 @@ fn conclude(
     origin: &Agent,
     message: &str,
     team: &Team,
+    channel_id: Option<i64>,
 ) -> Result<(), FlowError> {
     emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
     say(
@@ -349,6 +375,7 @@ fn conclude(
         Speaker::User,
         message,
         team,
+        channel_id,
     )
 }
 
@@ -364,6 +391,7 @@ fn raise_decision(
         state,
         request,
         item_id,
+        channel_id,
         key,
         team,
         ..
@@ -387,6 +415,7 @@ fn raise_decision(
             Speaker::User,
             &visible,
             team,
+            *channel_id,
         )?;
     }
     let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
@@ -522,8 +551,16 @@ fn say(
     to: Speaker,
     text: &str,
     team: &Team,
+    channel_id: Option<i64>,
 ) -> Result<(), FlowError> {
-    emit_message(app, project_id, Speaker::from(from.clone()), to, text)?;
+    emit_message(
+        app,
+        project_id,
+        Speaker::from(from.clone()),
+        to,
+        text,
+        channel_id,
+    )?;
     transcript.push(format!("{}: {text}", team.name_of(from)));
     Ok(())
 }

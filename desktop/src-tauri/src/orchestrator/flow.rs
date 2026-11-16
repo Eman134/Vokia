@@ -16,8 +16,8 @@ use super::archive::archive_task;
 use super::emit::{emit, emit_message, emit_state, report_limits};
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{load_project, project_context, project_dir, scan_structure};
-use super::prompts::INTERPRETER_ROLE;
 use super::prompts::NO_NAMES;
+use super::prompts::{channel_note, INTERPRETER_ROLE};
 use super::session_pool::ExchangeSessions;
 use super::turns::{first_speaker, run_turns, with_cache, Exchange, USER_LABEL};
 
@@ -47,6 +47,7 @@ pub async fn handle_request(
         Speaker::User,
         Speaker::from(recipient.clone()),
         request,
+        context.channel_id,
     )?;
     let key = SessionKey {
         project_id,
@@ -74,7 +75,7 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    let context = RequestContext::new(None, decision.item_id);
+    let context = RequestContext::new(None, decision.item_id, None);
     handle_request(
         app,
         state,
@@ -125,6 +126,7 @@ async fn run_flow(
 ) -> Result<RequestOutcome, FlowError> {
     let mut request = request.to_string();
     let mut item_id = context.item_id;
+    let mut channel_id = context.channel_id;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
@@ -137,6 +139,7 @@ async fn run_flow(
             key.clone(),
             &request,
             item_id.as_deref(),
+            channel_id,
             team,
         )
         .await;
@@ -164,6 +167,7 @@ async fn run_flow(
                 request = job.text;
                 current_run = job.context.run_id;
                 item_id = job.context.item_id;
+                channel_id = job.context.channel_id;
             }
             None => return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed)),
         }
@@ -178,10 +182,22 @@ async fn run_exchange(
     key: SessionKey,
     request: &str,
     item_id: Option<&str>,
+    channel_id: Option<i64>,
     team: &Team,
 ) -> Result<TaskOutcome, FlowError> {
     let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, team).await;
-    let result = exchange_turns(app, state, cli, key, request, item_id, &mut sessions, team).await;
+    let result = exchange_turns(
+        app,
+        state,
+        cli,
+        key,
+        request,
+        item_id,
+        channel_id,
+        &mut sessions,
+        team,
+    )
+    .await;
     sessions.release().await;
     result
 }
@@ -194,10 +210,14 @@ async fn exchange_turns(
     key: SessionKey,
     request: &str,
     item_id: Option<&str>,
+    channel_id: Option<i64>,
     sessions: &mut ExchangeSessions,
     team: &Team,
 ) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
+    let channel = find_channel(app, key.project_id, channel_id, team);
+    let request = with_channel_note(request, channel.as_ref());
+    let request = request.as_str();
     let project_dir = project_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
     // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
@@ -221,6 +241,7 @@ async fn exchange_turns(
         project_context: &context,
         request,
         item_id,
+        channel_id: channel.as_ref().map(|found| found.id),
         key: key.clone(),
         definition: &definition,
         team,
@@ -234,6 +255,45 @@ async fn exchange_turns(
     result?;
     closed?;
     Ok(outcome)
+}
+
+struct FoundChannel {
+    id: i64,
+    note: String,
+}
+
+// Id de canal excluído ou de outro projeto vira "sem canal": o pedido segue normalmente.
+fn find_channel(
+    app: &AppHandle,
+    project_id: i64,
+    channel_id: Option<i64>,
+    team: &Team,
+) -> Option<FoundChannel> {
+    let wanted = channel_id?;
+    let channels = app
+        .state::<DbState>()
+        .db()?
+        .list_channels(project_id)
+        .ok()?;
+    let channel = channels.into_iter().find(|channel| channel.id == wanted)?;
+    let names: Vec<String> = channel
+        .members
+        .iter()
+        .filter_map(|member| Agent::from_stored(member))
+        .filter(|agent| team.profile(agent).is_some())
+        .map(|agent| team.name_of(&agent).to_string())
+        .collect();
+    Some(FoundChannel {
+        id: channel.id,
+        note: channel_note(&channel.name, &names),
+    })
+}
+
+fn with_channel_note(request: &str, channel: Option<&FoundChannel>) -> String {
+    match channel {
+        Some(found) => format!("{request}\n{}", found.note),
+        None => request.to_string(),
+    }
 }
 
 async fn interpret_task(
@@ -353,4 +413,32 @@ pub(super) fn stop_with_error(
         emit_state(app, project_id, agent, AgentState::Idle)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pedido_sem_canal_chega_ao_agente_identico_byte_a_byte() {
+        assert_eq!(
+            with_channel_note("faça isso\ne aquilo", None),
+            "faça isso\ne aquilo"
+        );
+    }
+
+    #[test]
+    fn nota_do_canal_entra_uma_vez_no_fim_do_pedido() {
+        let found = FoundChannel {
+            id: 1,
+            note: channel_note("front", &["Davi".to_string(), "Nina".to_string()]),
+        };
+
+        let request = with_channel_note("faça isso", Some(&found));
+
+        assert_eq!(
+            request,
+            "faça isso\nMensagem enviada no canal #front (membros: Davi, Nina)."
+        );
+    }
 }

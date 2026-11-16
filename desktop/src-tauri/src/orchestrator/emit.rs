@@ -39,10 +39,12 @@ pub(super) fn emit_message(
     from: Speaker,
     to: Speaker,
     text: &str,
+    channel_id: Option<i64>,
 ) -> Result<(), FlowError> {
+    let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
-        db.insert_message(project_id, from.clone(), to.clone(), text, time)?;
+        db.insert_message(project_id, from.clone(), to.clone(), text, time, channel_id)?;
     }
     emit(
         app,
@@ -52,6 +54,7 @@ pub(super) fn emit_message(
             text: text.to_string(),
             time,
             project_id: Some(project_id),
+            channel_id,
         },
     )
 }

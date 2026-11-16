@@ -117,6 +117,8 @@ pub enum VokiaEvent {
         text: String,
         time: u64,
         project_id: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     AgentState {

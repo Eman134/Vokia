@@ -37,9 +37,10 @@ pub async fn send_request(
     project_id: i64,
     run_id: Option<u64>,
     item_id: Option<String>,
+    channel_id: Option<i64>,
 ) -> Result<RequestOutcome, String> {
     ensure_agent_exists(&app.state::<AgentRegistry>(), &to)?;
-    let context = RequestContext::new(run_id, item_id);
+    let context = RequestContext::new(run_id, item_id, channel_id);
     match orchestrator::handle_request(&app, &state, &text, to, project_id, context).await {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
