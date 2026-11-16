@@ -1,5 +1,8 @@
+use chrono::Local;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use crate::events::Agent;
 
 use super::connection::Db;
 use super::error::DbError;
@@ -21,17 +24,31 @@ const CHILDREN_INCOMPLETE: &str = "o total e os feitos dos filhos precisam vir j
 const ITEM_WITH_ERROR: &str = "o item tem erro de leitura e não pode ser gravado de novo.";
 const FALLBACK_ITEM_TYPE: &str = "task";
 const FALLBACK_ITEM_STATE: &str = "vazio";
+const ORIGIN_USER: &str = "usuario";
+const ORIGIN_CONVERSATION: &str = "conversa";
+const ORIGIN_AGENT: &str = "agente";
+const ORIGINS: &[&str] = &[ORIGIN_USER, ORIGIN_CONVERSATION, ORIGIN_AGENT];
+const DONE_COLUMN: &str = "Done";
+const AGENT_FORBIDDEN_COLUMN: &str = "Ready";
+const USER_OWNER: &str = "voce";
+const USER_CARD_TYPE: &str = "feature";
+const AGENT_CARD_TYPE: &str = "task";
+const NEW_CARD_STATE: &str = "vazio";
+const CARD_ID_PREFIX: &str = "item-";
+const USER_CREATED_TEXT: &str = "Pedido criado por você.";
+const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
+const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
 
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
-    questions, links, activity, children_total, children_done";
+    questions, links, activity, children_total, children_done, origin";
 
 const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
     priority, estimate, tags, tasks, criteria, questions, links, activity, children_total, \
-    children_done, position) \
+    children_done, origin, position) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
-    ?20, ?21, ?22, ?23, ?24, ?25, \
+    ?20, ?21, ?22, ?23, ?24, ?25, ?26, \
     (SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1)) \
     ON CONFLICT(project_id, id) DO UPDATE SET \
     title = excluded.title, \"type\" = excluded.\"type\", state = excluded.state, \
@@ -42,6 +59,10 @@ const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title,
     tags = excluded.tags, tasks = excluded.tasks, criteria = excluded.criteria, \
     questions = excluded.questions, links = excluded.links, activity = excluded.activity, \
     children_total = excluded.children_total, children_done = excluded.children_done";
+
+const INSERT_CARD_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
+    is_new, \"column\", who, \"by\", description, origin, activity, links, position) \
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)";
 
 const UPSERT_PLAN_SQL: &str = "INSERT INTO item_plans (project_id, item_id, state, text, plan_id, \
     plan_name, plan_meta, agent, linked_at) \
@@ -159,6 +180,8 @@ pub struct BacklogItem {
     pub activity: Vec<Activity>,
     #[serde(default)]
     pub links: Vec<Link>,
+    #[serde(default = "default_origin")]
+    pub origin: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ItemError>,
 }
@@ -207,6 +230,62 @@ pub struct BacklogSnapshot {
     pub plans: Vec<ItemPlanEntry>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewCard {
+    pub title: String,
+    pub description: Option<String>,
+    pub origin: String,
+    #[serde(default)]
+    pub links: Vec<Link>,
+}
+
+pub struct AgentActor {
+    pub id: Agent,
+    pub name: String,
+    pub current_card: Option<String>,
+}
+
+pub enum CardOperation {
+    Create {
+        title: String,
+        description: Option<String>,
+    },
+    Move {
+        id: String,
+        column: String,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum CardOutcome {
+    #[serde(rename = "criado")]
+    Created,
+    #[serde(rename = "movido")]
+    Moved,
+    #[serde(rename = "sem mudança")]
+    Unchanged,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardResult {
+    pub id: String,
+    pub title: String,
+    pub column: String,
+    pub outcome: CardOutcome,
+}
+
+struct CardDraft<'a> {
+    title: String,
+    kind: &'a str,
+    owner: &'a str,
+    description: Option<String>,
+    origin: &'a str,
+    activity: Vec<Activity>,
+    links: Vec<Link>,
+}
+
 impl Db {
     pub fn list_backlog(&self, project_id: i64) -> Result<BacklogSnapshot, DbError> {
         let conn = self.conn()?;
@@ -245,6 +324,58 @@ impl Db {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
         Ok(())
+    }
+
+    pub fn create_card(&self, project_id: i64, card: &NewCard) -> Result<BacklogItem, DbError> {
+        let title = normalized_title(&card.title)?;
+        let origin = user_origin(&card.origin)?;
+        let text = if origin == ORIGIN_CONVERSATION {
+            CONVERSATION_CREATED_TEXT
+        } else {
+            USER_CREATED_TEXT
+        };
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let (id, position) = next_card_id(&tx, project_id)?;
+        let draft = CardDraft {
+            title,
+            kind: USER_CARD_TYPE,
+            owner: USER_OWNER,
+            description: normalized_description(card.description.as_deref()),
+            origin,
+            activity: vec![activity_entry(&id, 1, text.to_string())],
+            links: card.links.clone(),
+        };
+        insert_card(&tx, project_id, &fresh_card(&id, draft), position)?;
+        let stored = find_card(&tx, project_id, &id)?;
+        tx.commit()?;
+        Ok(stored)
+    }
+
+    pub fn apply_card_operations(
+        &self,
+        project_id: i64,
+        actor: &AgentActor,
+        operations: &[CardOperation],
+    ) -> Result<Vec<CardResult>, DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let mut results = Vec::with_capacity(operations.len());
+        for operation in operations {
+            let result = match operation {
+                CardOperation::Create { title, description } => {
+                    create_agent_card(&tx, project_id, actor, title, description.as_deref())?
+                }
+                CardOperation::Move { id, column } => {
+                    move_agent_card(&tx, project_id, actor, id, column)?
+                }
+            };
+            results.push(result);
+        }
+        tx.commit()?;
+        Ok(results)
     }
 
     pub fn save_item_plan(
@@ -296,6 +427,9 @@ fn validate_item(item: &BacklogItem) -> Result<(), DbError> {
             item_id: item.id.clone(),
             reason: ITEM_WITH_ERROR.to_string(),
         });
+    }
+    if !ORIGINS.contains(&item.origin.as_str()) {
+        return Err(DbError::InvalidBacklogOrigin(item.origin.clone()));
     }
     if !ITEM_TYPES.contains(&item.kind.as_str()) {
         return Err(DbError::InvalidBacklogType(item.kind.clone()));
@@ -358,6 +492,238 @@ fn ensure_item(conn: &Connection, project_id: i64, item_id: &str) -> Result<(), 
     .ok_or_else(|| DbError::BacklogItemNotFound(item_id.to_string()))
 }
 
+fn default_origin() -> String {
+    ORIGIN_USER.to_string()
+}
+
+fn origin_from_row(row: &Row<'_>) -> rusqlite::Result<String> {
+    let origin: String = row.get("origin")?;
+    Ok(if ORIGINS.contains(&origin.as_str()) {
+        origin
+    } else {
+        ORIGIN_USER.to_string()
+    })
+}
+
+fn normalized_title(raw: &str) -> Result<String, DbError> {
+    let title = raw.trim();
+    if title.is_empty() {
+        return Err(DbError::EmptyCardTitle);
+    }
+    Ok(title.to_string())
+}
+
+fn normalized_description(description: Option<&str>) -> Option<String> {
+    description
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn user_origin(origin: &str) -> Result<&'static str, DbError> {
+    match origin {
+        ORIGIN_USER => Ok(ORIGIN_USER),
+        ORIGIN_CONVERSATION => Ok(ORIGIN_CONVERSATION),
+        ORIGIN_AGENT => Err(DbError::AgentOriginNotAllowed),
+        other => Err(DbError::InvalidBacklogOrigin(other.to_string())),
+    }
+}
+
+fn board_column(requested: &str) -> Result<&'static str, DbError> {
+    BOARD_COLUMNS
+        .iter()
+        .copied()
+        .find(|column| column.eq_ignore_ascii_case(requested))
+        .ok_or_else(|| DbError::InvalidBacklogColumn(requested.to_string()))
+}
+
+fn next_card_id(conn: &Connection, project_id: i64) -> Result<(String, i64), DbError> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1",
+        [project_id],
+        |row| row.get(0),
+    )?;
+    Ok((format!("{CARD_ID_PREFIX}{position}"), position))
+}
+
+fn ensure_title_free(conn: &Connection, project_id: i64, title: &str) -> Result<(), DbError> {
+    let wanted = title.trim().to_lowercase();
+    let mut statement = conn.prepare(
+        "SELECT id, title FROM backlog_items WHERE project_id = ?1 AND \"column\" <> ?2",
+    )?;
+    let rows = statement.query_map(params![project_id, DONE_COLUMN], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (id, existing) = row?;
+        if existing.trim().to_lowercase() == wanted {
+            return Err(DbError::DuplicateCardTitle(id));
+        }
+    }
+    Ok(())
+}
+
+fn activity_entry(card_id: &str, number: usize, text: String) -> Activity {
+    Activity {
+        id: format!("{card_id}-{number}"),
+        text,
+        at: Local::now().format(ACTIVITY_TIME_FORMAT).to_string(),
+    }
+}
+
+fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
+    BacklogItem {
+        id: id.to_string(),
+        title: draft.title,
+        kind: draft.kind.to_string(),
+        state: NEW_CARD_STATE.to_string(),
+        stage: None,
+        triage_step: None,
+        parent: None,
+        feature: None,
+        tags: Vec::new(),
+        description: draft.description,
+        plan: None,
+        children: None,
+        who: draft.owner.to_string(),
+        by: draft.owner.to_string(),
+        is_new: Some(true),
+        column: Some(DEFAULT_COLUMN.to_string()),
+        priority: None,
+        estimate: None,
+        questions: Vec::new(),
+        micro: Vec::new(),
+        criteria: Vec::new(),
+        activity: draft.activity,
+        links: draft.links,
+        error: None,
+        origin: draft.origin.to_string(),
+    }
+}
+
+fn insert_card(
+    conn: &Connection,
+    project_id: i64,
+    item: &BacklogItem,
+    position: i64,
+) -> Result<(), DbError> {
+    conn.execute(
+        INSERT_CARD_SQL,
+        params![
+            project_id,
+            item.id,
+            item.title,
+            item.kind,
+            item.state,
+            item.is_new,
+            item.column.as_deref().unwrap_or(DEFAULT_COLUMN),
+            item.who,
+            item.by,
+            item.description,
+            item.origin,
+            to_json(&item.id, "activity", &item.activity)?,
+            to_json(&item.id, "links", &item.links)?,
+            position,
+        ],
+    )?;
+    Ok(())
+}
+
+fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
+    conn.query_row(
+        &format!("SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 AND id = ?2"),
+        params![project_id, id],
+        read_item,
+    )
+    .optional()?
+    .ok_or_else(|| DbError::BacklogItemNotFound(id.to_string()))
+}
+
+fn create_agent_card(
+    conn: &Connection,
+    project_id: i64,
+    actor: &AgentActor,
+    title: &str,
+    description: Option<&str>,
+) -> Result<CardResult, DbError> {
+    let title = normalized_title(title)?;
+    ensure_title_free(conn, project_id, &title)?;
+    let (id, position) = next_card_id(conn, project_id)?;
+    let draft = CardDraft {
+        title: title.clone(),
+        kind: AGENT_CARD_TYPE,
+        owner: actor.id.as_str(),
+        description: normalized_description(description),
+        origin: ORIGIN_AGENT,
+        activity: vec![activity_entry(
+            &id,
+            1,
+            format!("{} criou o card na conversa.", actor.name),
+        )],
+        links: Vec::new(),
+    };
+    insert_card(conn, project_id, &fresh_card(&id, draft), position)?;
+    Ok(CardResult {
+        id,
+        title,
+        column: DEFAULT_COLUMN.to_string(),
+        outcome: CardOutcome::Created,
+    })
+}
+
+fn move_agent_card(
+    conn: &Connection,
+    project_id: i64,
+    actor: &AgentActor,
+    id: &str,
+    requested_column: &str,
+) -> Result<CardResult, DbError> {
+    let column = board_column(requested_column)?;
+    if column == AGENT_FORBIDDEN_COLUMN {
+        return Err(DbError::AgentForbiddenColumn(column.to_string()));
+    }
+    let mut card = find_card(conn, project_id, id)?;
+    validate_item(&card)?;
+    let current = card
+        .column
+        .clone()
+        .unwrap_or_else(|| DEFAULT_COLUMN.to_string());
+    if current == DONE_COLUMN {
+        return Err(DbError::CardClosed(card.id));
+    }
+    let owned =
+        card.who == actor.id.as_str() || actor.current_card.as_deref() == Some(card.id.as_str());
+    if !owned {
+        return Err(DbError::CardNotOwned(card.id));
+    }
+    if current == column {
+        return Ok(CardResult {
+            id: card.id,
+            title: card.title,
+            column: current,
+            outcome: CardOutcome::Unchanged,
+        });
+    }
+    let text = format!("{} moveu de {current} para {column}.", actor.name);
+    card.activity
+        .push(activity_entry(&card.id, card.activity.len() + 1, text));
+    conn.execute(
+        "UPDATE backlog_items SET \"column\" = ?3, activity = ?4 WHERE project_id = ?1 AND id = ?2",
+        params![
+            project_id,
+            card.id,
+            column,
+            to_json(&card.id, "activity", &card.activity)?,
+        ],
+    )?;
+    Ok(CardResult {
+        id: card.id,
+        title: card.title,
+        column: column.to_string(),
+        outcome: CardOutcome::Moved,
+    })
+}
+
 fn to_json<T: Serialize>(item_id: &str, field: &str, value: &T) -> Result<String, DbError> {
     serde_json::to_string(value).map_err(|error| DbError::BacklogItemData {
         item_id: item_id.to_string(),
@@ -407,6 +773,7 @@ fn upsert_item(conn: &Connection, project_id: i64, item: &BacklogItem) -> Result
             to_json(&item.id, "activity", &item.activity)?,
             children.map(|children| children.total),
             children.map(|children| children.done),
+            item.origin,
         ],
     )?;
     Ok(())
@@ -457,6 +824,7 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
         children: None,
         who: row.get("who")?,
         by: row.get("by")?,
+        origin: origin_from_row(row)?,
         is_new: None,
         column: BOARD_COLUMNS.contains(&column.as_str()).then_some(column),
         priority: None,
@@ -510,6 +878,7 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         criteria: json_column(row, "criteria", &id)?,
         activity: json_column(row, "activity", &id)?,
         links: json_column(row, "links", &id)?,
+        origin: row.get("origin")?,
         error: None,
         id,
     };

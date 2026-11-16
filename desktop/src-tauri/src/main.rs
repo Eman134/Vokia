@@ -56,6 +56,7 @@ fn main() {
             commands::channels::delete_channel,
             commands::backlog::list_backlog,
             commands::backlog::save_backlog_item,
+            commands::backlog::create_backlog_item,
             commands::backlog::move_backlog_item,
             commands::backlog::save_item_plan,
             commands::projects::set_permission_level,

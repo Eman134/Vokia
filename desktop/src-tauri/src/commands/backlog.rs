@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::db::{BacklogItem, BacklogSnapshot, DbState, ItemPlanInput};
+use crate::db::{BacklogItem, BacklogSnapshot, DbState, ItemPlanInput, NewCard};
 
 #[tauri::command]
 pub fn list_backlog(state: State<'_, DbState>, project_id: i64) -> Result<BacklogSnapshot, String> {
@@ -17,6 +17,17 @@ pub fn save_backlog_item(
 ) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.save_backlog_item(project_id, &item)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_backlog_item(
+    state: State<'_, DbState>,
+    project_id: i64,
+    request: NewCard,
+) -> Result<BacklogItem, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.create_card(project_id, &request)
         .map_err(|error| error.to_string())
 }
 

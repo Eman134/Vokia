@@ -35,6 +35,13 @@ pub enum DbError {
     InvalidBacklogPlan(&'static str),
     BacklogItemNotFound(String),
     BacklogItemData { item_id: String, reason: String },
+    EmptyCardTitle,
+    DuplicateCardTitle(String),
+    InvalidBacklogOrigin(String),
+    AgentOriginNotAllowed,
+    AgentForbiddenColumn(String),
+    CardClosed(String),
+    CardNotOwned(String),
 }
 
 impl fmt::Display for DbError {
@@ -130,6 +137,21 @@ impl fmt::Display for DbError {
                 f,
                 "Os dados do item {item_id} do backlog são inválidos: {reason}"
             ),
+            DbError::EmptyCardTitle => write!(f, "O título do card não pode ser vazio."),
+            DbError::DuplicateCardTitle(id) => {
+                write!(f, "Já existe o card {id} com esse título.")
+            }
+            DbError::InvalidBacklogOrigin(value) => write!(f, "A origem {value} não existe."),
+            DbError::AgentOriginNotAllowed => {
+                write!(f, "A origem agente só vale para card criado por agente.")
+            }
+            DbError::AgentForbiddenColumn(column) => {
+                write!(f, "Agente não move card para {column}.")
+            }
+            DbError::CardClosed(id) => write!(f, "O card {id} já está em Done."),
+            DbError::CardNotOwned(id) => {
+                write!(f, "O card {id} não é seu nem do pedido atual.")
+            }
         }
     }
 }

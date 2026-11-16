@@ -10,7 +10,10 @@ mod projects;
 mod settings;
 
 pub use agent_sessions::AgentPause;
-pub use backlog::{BacklogItem, BacklogSnapshot, ItemPlanInput};
+pub use backlog::{
+    AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResult,
+    ItemPlanInput, NewCard,
+};
 pub use channels::Channel;
 pub use connection::{Db, DbState};
 pub use error::{DbError, DbProblem};

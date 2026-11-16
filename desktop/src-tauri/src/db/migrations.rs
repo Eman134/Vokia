@@ -136,6 +136,9 @@ const MIGRATIONS: &[&str] = &[
         UNIQUE (project_id, name)
     );
 ",
+    "
+    ALTER TABLE backlog_items ADD COLUMN origin TEXT NOT NULL DEFAULT 'usuario';
+",
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
