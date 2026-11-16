@@ -117,6 +117,12 @@ pub enum Change {
 }
 
 impl Change {
+    pub fn name(&self) -> &str {
+        match self {
+            Change::Set { name, .. } | Change::Append { name, .. } | Change::Share { name } => name,
+        }
+    }
+
     pub fn feed(&self) -> Option<String> {
         match self {
             Change::Set { value, .. } => Some(value.display()),
@@ -130,6 +136,8 @@ impl Change {
 pub struct Applied {
     pub accepted: Vec<Change>,
     pub rejected: Vec<String>,
+    // Uma Change aceita criou uma chave que a tarefa ainda não tinha: é avanço de estado.
+    pub created_variable: bool,
 }
 
 #[derive(Default)]
@@ -238,14 +246,21 @@ impl Cache {
         let backup = self.variables.clone();
         let mut applied = Applied::default();
         for update in updates {
+            let creates = update
+                .as_ref()
+                .is_ok_and(|change| self.find(change.name()).is_none());
             match update.and_then(|change| self.apply(author, &change, team).map(|()| change)) {
-                Ok(change) => applied.accepted.push(change),
+                Ok(change) => {
+                    applied.created_variable |= creates;
+                    applied.accepted.push(change);
+                }
                 Err(motive) => applied.rejected.push(motive),
             }
         }
         if !applied.rejected.is_empty() {
             self.variables = backup;
             applied.accepted.clear();
+            applied.created_variable = false;
         }
         applied
     }

@@ -14,7 +14,10 @@ use super::agent_session::ask_step;
 use super::emit::{emit, emit_message, emit_state};
 use super::error::FlowError;
 use super::flow::stop_with_error;
-use super::loop_guard::{stall_message, LoopGuard, LOOP_MESSAGE, LOOP_REPEAT_LIMIT, STALL_LIMIT};
+use super::loop_guard::{
+    pass_limit_message, rejection_message, LoopGuard, PassCounter, LOOP_MESSAGE, LOOP_REPEAT_LIMIT,
+    PASS_REPEAT_LIMIT, REJECTION_LIMIT,
+};
 use super::markers::{parse_decision, parse_reply, ParsedDecision, ParsedReply};
 use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX, REPLY_PREFIX};
 use super::session_pool::ExchangeSessions;
@@ -53,7 +56,8 @@ pub(super) async fn run_turns(
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
     let mut loop_guard = LoopGuard::default();
-    let mut stalled = 0;
+    let mut passes = PassCounter::default();
+    let mut rejections = 0;
     loop {
         let instruction = turn.instruction();
         let prompts = with_cache(state, project_id, |cache| {
@@ -89,17 +93,18 @@ pub(super) async fn run_turns(
                     &visible,
                 )?;
             }
-            stalled += 1;
-            if stalled == STALL_LIMIT {
-                stop_with_error(app, project_id, stall_message())?;
+            rejections += 1;
+            if rejections >= REJECTION_LIMIT {
+                stop_with_error(app, project_id, rejection_message())?;
                 return Ok(TaskOutcome::Stalled);
             }
-            sessions.review(&turn.speaker, stalled, 0, team)?.await;
+            sessions.review(&turn.speaker, rejections, 0, team)?.await;
             turn.rejection = Some(applied.rejected.join("; "));
             continue;
         }
+        rejections = 0;
 
-        let progressed = !applied.accepted.is_empty();
+        let advanced = applied.created_variable;
         let feed = feed_text(&visible, &applied.accepted);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition
@@ -133,17 +138,6 @@ pub(super) async fn run_turns(
             return Ok(TaskOutcome::Finished);
         }
 
-        if progressed {
-            stalled = 0;
-        } else if definition.alternate || delegation.is_some() {
-            stalled += 1;
-            if stalled == STALL_LIMIT {
-                stop_with_error(app, project_id, stall_message())?;
-                return Ok(TaskOutcome::Stalled);
-            }
-            sessions.review(&turn.speaker, stalled, 0, team)?.await;
-        }
-
         let next = next_turn(
             definition,
             &turn,
@@ -151,6 +145,20 @@ pub(super) async fn run_turns(
             delegation.as_ref(),
             team,
         );
+        if advanced {
+            passes.reset();
+        } else if let Some(next) = next.as_ref() {
+            let repeats = passes.register(&turn.speaker, &next.speaker);
+            if repeats >= PASS_REPEAT_LIMIT {
+                let message = pass_limit_message(&passes, &turn.speaker, &next.speaker, team);
+                stop_with_error(app, project_id, message)?;
+                return Ok(TaskOutcome::Stalled);
+            }
+            sessions
+                .review(&turn.speaker, passes.by_speaker(&turn.speaker), 0, team)?
+                .await;
+        }
+
         let to = next
             .as_ref()
             .map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
