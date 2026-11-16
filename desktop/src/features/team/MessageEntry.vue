@@ -8,10 +8,13 @@ import MarkdownText from './MarkdownText.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UiButton from '../../ui/UiButton.vue'
+import { useBacklog } from '../backlog/useBacklog'
+import { prefillFromMessage } from '../backlog/requestPrefill'
 
 defineProps<{ entry: FeedEntry }>()
 
 const roster = useRoster()
+const backlog = useBacklog()
 
 const USER_NAME = 'Você'
 const TURN_INTO_REQUEST_LABEL = '+ virar pedido'
@@ -38,6 +41,10 @@ function author(message: VokiaMessage): string {
 
 function profile(speaker: Speaker): AgentProfile | undefined {
   return roster.profileOf(speaker)
+}
+
+function turnIntoRequest(message: VokiaMessage): void {
+  backlog.startRequest(prefillFromMessage({ text: message.text, from: message.from, time: message.time, author: author(message) }))
 }
 
 // Só o destinatário do agente é destacado como menção, como antes.
@@ -71,7 +78,13 @@ function highlightedNames(message: VokiaMessage): string[] {
         <time class="text-caption text-muted">
           {{ profile(entry.from)?.role }} · {{ TIME_FORMAT.format(entry.time) }}
         </time>
-        <UiButton class="ml-auto" variant="quiet" size="sm" disabled aria-disabled="true">
+        <UiButton
+          class="ml-auto"
+          variant="quiet"
+          size="sm"
+          :disabled="entry.projectId === null"
+          @press="turnIntoRequest(entry)"
+        >
           {{ TURN_INTO_REQUEST_LABEL }}
         </UiButton>
       </header>

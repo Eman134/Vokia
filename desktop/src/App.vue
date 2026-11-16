@@ -6,6 +6,8 @@ import { PAGE_LABELS, RAIL_COLLAPSED_WIDTH } from './shell/railNav'
 import { useNavigation } from './shell/useNavigation'
 import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
+import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
+import { useBacklog } from './features/backlog/useBacklog'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
 import { useUsage } from './features/usage/useUsage'
@@ -18,6 +20,7 @@ const UNBUILT_PAGE_TEXT = 'Página ainda sem tela no app.'
 
 const connection = useConnection()
 const navigation = useNavigation()
+const backlog = useBacklog()
 const updater = useUpdater()
 const usage = useUsage()
 const limitNotices = useLimitNotices()
@@ -56,8 +59,9 @@ onUnmounted(limitNotices.stop)
       :title="PAGE_LABELS[navigation.page]"
       :text="UNBUILT_PAGE_TEXT"
     />
-    <ActionBar />
+    <ActionBar @compose="backlog.startRequest()" />
   </div>
   <SplashScreen v-else />
+  <NewRequestDialog />
   <UpdatePrompt />
 </template>

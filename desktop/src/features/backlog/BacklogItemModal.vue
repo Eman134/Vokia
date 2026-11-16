@@ -3,7 +3,7 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
-import { colorVar, DEFAULT_FEATURE_COLOR, FEATURE_COLOR, MICRO_STATUS_BADGE, STATE_BADGE } from './backlogLabels'
+import { colorVar, DEFAULT_FEATURE_COLOR, FEATURE_COLOR, MICRO_STATUS_BADGE, ORIGIN_LABEL, STATE_BADGE } from './backlogLabels'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagColor, tagLabel, tagTextColor } from './tags'
 import {
   AUTO_COLUMNS_HINT,
@@ -81,6 +81,7 @@ const details = computed(() => {
   const rows: [string, string | undefined][] = [
     ['Tipo', current.type === 'feature' ? 'Feature' : 'Tarefa'],
     ['Aberto por', current.by],
+    ['Origem', ORIGIN_LABEL[current.origin]],
     ['Feature', current.feature],
     ['Prioridade', current.priority],
     ['Estimativa', current.estimate],

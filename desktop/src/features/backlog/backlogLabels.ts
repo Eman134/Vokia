@@ -1,5 +1,5 @@
 import type UiBadge from '../../ui/UiBadge.vue'
-import type { BacklogCardAction, BacklogColumn, BacklogState, MicroTaskStatus } from './backlogTypes'
+import type { BacklogCardAction, BacklogColumn, BacklogOrigin, BacklogState, MicroTaskStatus } from './backlogTypes'
 
 type BadgeStatus = InstanceType<typeof UiBadge>['$props']['status']
 export type ActionLabel = 'Triar' | 'Revisar' | 'Iniciar'
@@ -37,6 +37,12 @@ export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status:
   'In progress': { label: 'em andamento', status: 'lote' },
   'In review': { label: 'em revisão', status: 'precisa de você' },
   Done: { label: 'feito', status: 'trabalhando' },
+}
+
+export const ORIGIN_LABEL: Record<BacklogOrigin, string> = {
+  usuario: 'Você',
+  conversa: 'Conversa',
+  agente: 'Agente',
 }
 
 export const STATE_ACTION: Partial<Record<BacklogState, ActionLabel>> = {

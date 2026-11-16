@@ -1,7 +1,9 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
 import {
+  createBacklogItem,
   fetchBacklog,
   moveBacklogItem,
   saveBacklogItem,
@@ -9,7 +11,16 @@ import {
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
-import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem, type TriageQuestion } from './backlogTypes'
+import { NEW_REQUEST_NO_PROJECT_NOTICE } from './backlogPageCopy'
+import {
+  DEFAULT_COLUMN,
+  MOVABLE_COLUMNS,
+  ORIGIN_USER,
+  type BacklogColumn,
+  type BacklogItem,
+  type NewRequestDraft,
+  type TriageQuestion,
+} from './backlogTypes'
 import { normalizeTag } from './tags'
 
 interface ItemQueue {
@@ -28,7 +39,10 @@ export const useBacklog = defineStore('backlog', () => {
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
   const loadError = ref<string | null>(null)
+  const requestDraft = ref<NewRequestDraft | null>(null)
+  const creating = ref(false)
   const feed = useFeed()
+  const projects = useProjects()
   const queues = new Map<string, ItemQueue>()
   let loadSeq = 0
 
@@ -63,7 +77,48 @@ export const useBacklog = defineStore('backlog', () => {
     openId.value = null
   }
 
+  function startRequest(prefill?: Partial<NewRequestDraft>): void {
+    if (!projects.selected) {
+      feed.notify(NEW_REQUEST_NO_PROJECT_NOTICE)
+      return
+    }
+    requestDraft.value = { title: '', description: '', origin: ORIGIN_USER, links: [], ...prefill }
+  }
+
+  function discardRequest(): void {
+    requestDraft.value = null
+  }
+
+  function cancelRequest(): void {
+    if (!creating.value) discardRequest()
+  }
+
+  async function submitRequest(): Promise<boolean> {
+    const draft = requestDraft.value
+    const projectId = projects.selected?.id
+    const title = draft?.title.trim()
+    if (!draft || projectId === undefined || !title || creating.value) return false
+    creating.value = true
+    try {
+      const created = await createBacklogItem(projectId, {
+        title,
+        description: draft.description.trim() || undefined,
+        origin: draft.origin,
+        links: draft.links,
+      })
+      if (requestDraft.value === draft) discardRequest()
+      if (loadedProjectId.value === projectId) items.value = [...items.value, created]
+      return true
+    } catch (error) {
+      reportError(error)
+      return false
+    } finally {
+      creating.value = false
+    }
+  }
+
   function clear(): void {
+    discardRequest()
     loadSeq += 1
     clearLoaded()
     loading.value = false
@@ -221,12 +276,18 @@ export const useBacklog = defineStore('backlog', () => {
     loadedProjectId,
     openId,
     openItem,
+    requestDraft,
+    creating,
     loading,
     loadError,
     open,
     close,
     clear,
     load,
+    startRequest,
+    cancelRequest,
+    discardRequest,
+    submitRequest,
     moveTo,
     addTags,
     removeTag,

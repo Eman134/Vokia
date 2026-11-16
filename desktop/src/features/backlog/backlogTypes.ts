@@ -8,6 +8,8 @@ export type BacklogCardDensity = 'normal' | 'compacta'
 
 export type BacklogCardAction = 'triar' | 'revisar' | 'vincular' | 'iniciar'
 
+export type BacklogOrigin = 'usuario' | 'conversa' | 'agente'
+
 export type BacklogColumn = 'Backlog' | 'Ready' | 'In progress' | 'In review' | 'Done'
 
 export interface TriageQuestion {
@@ -108,6 +110,7 @@ export interface BacklogItem {
   children?: { total: number; done: number }
   who: 'voce' | string
   by: string
+  origin: BacklogOrigin
   isNew?: boolean
   column?: BacklogColumn
   priority?: string
@@ -118,6 +121,17 @@ export interface BacklogItem {
   activity?: BacklogActivity[]
   links?: BacklogLink[]
   error?: BacklogItemError
+}
+
+export type RequestOrigin = Exclude<BacklogOrigin, 'agente'>
+
+export const ORIGIN_USER: RequestOrigin = 'usuario'
+
+export interface NewRequestDraft {
+  title: string
+  description: string
+  origin: RequestOrigin
+  links: BacklogLink[]
 }
 
 export interface BacklogItemError {

@@ -177,7 +177,13 @@ watch(
       </div>
       <div class="ml-auto flex items-center gap-2">
         <UiSegmented v-model="density" :options="DENSITY_OPTIONS" label="Densidade" disabled />
-        <UiButton variant="quiet" size="lg" class="border border-line bg-surface" disabled aria-disabled="true">
+        <UiButton
+          variant="quiet"
+          size="lg"
+          class="border border-line bg-surface"
+          :disabled="!projectsStore.selected"
+          @press="backlog.startRequest()"
+        >
           {{ NEW_REQUEST_LABEL }}
         </UiButton>
         <UiButton variant="primary" size="lg" disabled aria-disabled="true">{{ planAllLabel }}</UiButton>
