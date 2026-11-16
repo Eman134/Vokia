@@ -20,7 +20,6 @@ import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
-import UiSegmented from '../../ui/UiSegmented.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -32,22 +31,26 @@ import { useConsole } from '../console/useConsole'
 
 const GROUP_SEPARATOR = ' ↔ '
 const PANEL_CLASSES =
-  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-dialog border border-line bg-surface min-h-[20rem] xl:min-h-0 xl:flex-[1_1_520px]'
+  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-dialog border border-line bg-surface min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
 const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
-const FILTER_LABEL = 'Filtrar conversa'
-const FILTERS = [
-  { label: 'Tudo', value: 'all' },
-  { label: 'Mensagens', value: 'messages' },
-  { label: 'Terminal', value: 'terminal' },
-] as const
+const TABS_LABEL = 'Abas da conversa'
+const TABS_CLASSES = 'flex gap-0.5 rounded-control bg-surface-2 p-0.75'
+const TAB_CLASSES = 'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
+const TAB_ON = 'bg-surface font-medium text-ink shadow-seg'
+const TAB_OFF = 'cursor-pointer text-muted'
+const TAB_DISABLED = 'cursor-default text-muted opacity-40'
+const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
 
 const feed = useFeed()
 
 const roster = useRoster()
 const channels = useChannels()
-const filter = ref<(typeof FILTERS)[number]['value']>('all')
 const consoleStore = useConsole()
+const props = defineProps<{ filaEmAba: boolean }>()
+const aba = defineModel<'conversa' | 'fila'>('aba', { default: 'conversa' })
+// Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
+const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
 
 function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
@@ -126,7 +129,30 @@ onMounted(followEnd)
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-3">
-        <UiSegmented v-model="filter" :options="FILTERS" :label="FILTER_LABEL" disabled />
+        <div role="tablist" :aria-label="TABS_LABEL" :class="TABS_CLASSES">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="aba === 'conversa'"
+            :class="[TAB_CLASSES, aba === 'conversa' ? TAB_ON : TAB_OFF]"
+            @click="aba = 'conversa'"
+          >
+            {{ TAB_LABELS.conversa }}
+          </button>
+          <button type="button" role="tab" aria-disabled="true" :class="[TAB_CLASSES, TAB_DISABLED]">
+            {{ TAB_LABELS.terminal }}
+          </button>
+          <button
+            v-if="filaEmAba"
+            type="button"
+            role="tab"
+            :aria-selected="aba === 'fila'"
+            :class="[TAB_CLASSES, aba === 'fila' ? TAB_ON : TAB_OFF]"
+            @click="aba = 'fila'"
+          >
+            {{ TAB_LABELS.fila }}
+          </button>
+        </div>
         <UiConfirm
           v-if="clearable && feed.feed.length > 0"
           label="Limpar"
@@ -137,62 +163,65 @@ onMounted(followEnd)
       </div>
     </header>
     <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
-    <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
-    <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
-      <template #mascot>
-        <VokiaMascot look="tudo-em-dia" />
-      </template>
-    </UiEmpty>
-    <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
-      <template #mascot>
-        <VokiaMascot look="tudo-em-dia" />
-      </template>
-    </UiEmpty>
-    <UiEmpty
-      v-else-if="feed.timeline.length === 0"
-      class="m-auto"
-      :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
-      :text="EMPTY_FEED_TEXT"
-    >
-      <template #mascot>
-        <VokiaMascot look="tudo-em-dia" />
-      </template>
-    </UiEmpty>
-    <ol class="flex max-w-3xl flex-col gap-3">
-      <li v-for="item in feed.timeline" :key="item.start">
-        <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
-          <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
-            <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
-            <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
-          </summary>
-          <ol class="mt-3 flex flex-col gap-3">
-            <li v-for="(message, index) in item.messages" :key="index">
-              <MessageEntry :entry="message" />
-            </li>
-          </ol>
-        </details>
-        <MessageEntry v-else :entry="item.entry" />
-      </li>
-    </ol>
-    <ol v-if="feed.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
-      <li v-for="permission in feed.permissions" :key="permission.id">
-        <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
-      </li>
-    </ol>
-    <div
-      role="status"
-      :aria-label="feed.thinkingAgent ? `${feed.thinkingAgent.name} está pensando` : undefined"
-      class="mt-3 flex max-w-3xl items-start gap-2.5"
-    >
-      <template v-if="feed.thinkingAgent">
-        <span
-          class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-        >
-          {{ feed.thinkingAgent.name.charAt(0) }}
-        </span>
-        <ConsoleCard :agent="feed.thinkingAgent" />
-      </template>
-    </div>
+    <template v-if="!filaAberta">
+      <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
+      <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
+        <template #mascot>
+          <VokiaMascot look="tudo-em-dia" />
+        </template>
+      </UiEmpty>
+      <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+        <template #mascot>
+          <VokiaMascot look="tudo-em-dia" />
+        </template>
+      </UiEmpty>
+      <UiEmpty
+        v-else-if="feed.timeline.length === 0"
+        class="m-auto"
+        :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
+        :text="EMPTY_FEED_TEXT"
+      >
+        <template #mascot>
+          <VokiaMascot look="tudo-em-dia" />
+        </template>
+      </UiEmpty>
+      <ol class="flex max-w-3xl flex-col gap-3">
+        <li v-for="item in feed.timeline" :key="item.start">
+          <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
+            <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
+              <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
+              <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
+            </summary>
+            <ol class="mt-3 flex flex-col gap-3">
+              <li v-for="(message, index) in item.messages" :key="index">
+                <MessageEntry :entry="message" />
+              </li>
+            </ol>
+          </details>
+          <MessageEntry v-else :entry="item.entry" />
+        </li>
+      </ol>
+      <ol v-if="feed.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
+        <li v-for="permission in feed.permissions" :key="permission.id">
+          <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
+        </li>
+      </ol>
+      <div
+        role="status"
+        :aria-label="feed.thinkingAgent ? `${feed.thinkingAgent.name} está pensando` : undefined"
+        class="mt-3 flex max-w-3xl items-start gap-2.5"
+      >
+        <template v-if="feed.thinkingAgent">
+          <span
+            class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
+          >
+            {{ feed.thinkingAgent.name.charAt(0) }}
+          </span>
+          <ConsoleCard :agent="feed.thinkingAgent" />
+        </template>
+      </div>
+    </template>
+    <slot v-else name="fila" />
     </section>
   </section>
 </template>

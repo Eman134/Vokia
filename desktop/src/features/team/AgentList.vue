@@ -26,7 +26,7 @@ const NEW_CHANNEL_LABEL = 'Novo canal'
 const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
 const CLOSE_LABEL = 'Fechar'
 const PANEL_CLASSES =
-  'flex min-h-0 w-full max-h-72 shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 xl:w-59 xl:max-h-none'
+  'flex min-h-0 w-full shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 max-md:max-h-72 md:w-52'
 const SEARCH_CLASSES =
   'mb-3 h-8.5 w-full rounded-control bg-surface-2 px-3 text-label text-ink placeholder:text-muted disabled:opacity-40'
 const QUEUE_BADGE_CLASSES =
@@ -56,6 +56,8 @@ const control = useAgentControl()
 const consoleStore = useConsole()
 const channels = useChannels()
 const creating = ref(false)
+// Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
+const stripCollapsed = ref(true)
 const channelError = ref<string | null>(null)
 const dialog = ref<HTMLElement>()
 const opener = ref<HTMLElement | null>(null)
@@ -84,6 +86,10 @@ async function removeChannel(channel: Channel): Promise<void> {
   }
 }
 
+function toggleStrip(): void {
+  stripCollapsed.value = !stripCollapsed.value
+}
+
 function openChannelDialog(): void {
   opener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
   creating.value = true
@@ -98,99 +104,110 @@ function closeChannelDialog(): void {
 
 <template>
   <aside :class="PANEL_CLASSES">
-    <input type="search" :class="SEARCH_CLASSES" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" disabled />
-    <div class="mb-2 flex items-center justify-between">
-      <h2 class="text-small font-semibold text-muted">Canais</h2>
-      <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog">
-        +
-      </UiButton>
+    <button
+      type="button"
+      class="mb-2 flex w-full items-center justify-between text-small font-semibold text-muted md:hidden"
+      :aria-expanded="!stripCollapsed"
+      @click="toggleStrip"
+    >
+      Canais e agentes
+      <span aria-hidden="true">{{ stripCollapsed ? '▾' : '▴' }}</span>
+    </button>
+    <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
+      <input type="search" :class="SEARCH_CLASSES" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" disabled />
+      <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-small font-semibold text-muted">Canais</h2>
+        <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog">
+          +
+        </UiButton>
+      </div>
+      <ul class="mb-4 flex flex-col gap-2">
+        <li>
+          <button
+            type="button"
+            :class="[CHANNEL_CLASSES, channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :aria-label="`Abrir canal #${GENERAL_CHANNEL_NAME}`"
+            :aria-pressed="channelShown(GENERAL_CHANNEL_NAME)"
+            @click="feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })"
+          >
+            #{{ GENERAL_CHANNEL_NAME }}
+          </button>
+        </li>
+        <li v-for="channel in channels.channels" :key="channel.id" class="flex flex-col gap-1">
+          <button
+            type="button"
+            :class="[CHANNEL_CLASSES, channelShown(channel.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :aria-label="`Abrir canal #${channel.name}`"
+            :aria-pressed="channelShown(channel.id)"
+            @click="feed.showScreen({ kind: 'channel', channel: channel.id })"
+          >
+            #{{ channel.name }}
+          </button>
+          <UiConfirm
+            :label="`Excluir canal #${channel.name}`"
+            :message="DELETE_CHANNEL_MESSAGE"
+            :confirm-label="DELETE_CHANNEL_LABEL"
+            @confirm="removeChannel(channel)"
+          />
+        </li>
+      </ul>
+      <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
+      <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
+      <ul class="flex flex-col gap-1.5">
+        <li v-for="agent in roster.agents" :key="agent.id" class="relative">
+          <button
+            type="button"
+            :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :aria-label="OPEN_CONVERSATION_PREFIX + agent.name"
+            :aria-pressed="isShown(agent.id)"
+            @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
+          >
+            <span class="flex shrink-0" aria-hidden="true">
+              <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
+            </span>
+            <span class="flex min-w-0 flex-col">
+              <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold text-ink">
+                <span class="truncate">{{ agent.name }}</span>
+                <AgentProjectIcons :agent="agent.id" />
+              </span>
+              <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
+                <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
+                <span class="truncate">{{ presence(agent.id).label }}</span>
+              </span>
+              <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            :class="MENTION_CLASSES"
+            :aria-label="`${MENTION_LABEL} ${agent.name}`"
+            :disabled="connection.checking"
+            @click="requests.requestMention(agent.id)"
+          >
+            {{ MENTION_GLYPH }}
+          </button>
+          <span
+            v-if="requests.queuedFor(agent.id).length > 0"
+            :class="QUEUE_BADGE_CLASSES"
+            :title="`${requests.queuedFor(agent.id).length} na fila`"
+          >
+            {{ requests.queuedFor(agent.id).length }}
+          </span>
+          <button
+            v-if="consoleStore.entriesOf(agent.id).length > 0"
+            type="button"
+            :class="CONSOLE_BUTTON_CLASSES"
+            :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
+            :title="`${CONSOLE_LABEL} de ${agent.name}`"
+            @click="consoleStore.open(agent.id)"
+          >
+            <svg class="size-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="CONSOLE_GLYPH_PATH" />
+            </svg>
+          </button>
+        </li>
+      </ul>
     </div>
-    <ul class="mb-4 flex flex-col gap-2">
-      <li>
-        <button
-          type="button"
-          :class="[CHANNEL_CLASSES, channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
-          :aria-label="`Abrir canal #${GENERAL_CHANNEL_NAME}`"
-          :aria-pressed="channelShown(GENERAL_CHANNEL_NAME)"
-          @click="feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })"
-        >
-          #{{ GENERAL_CHANNEL_NAME }}
-        </button>
-      </li>
-      <li v-for="channel in channels.channels" :key="channel.id" class="flex flex-col gap-1">
-        <button
-          type="button"
-          :class="[CHANNEL_CLASSES, channelShown(channel.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
-          :aria-label="`Abrir canal #${channel.name}`"
-          :aria-pressed="channelShown(channel.id)"
-          @click="feed.showScreen({ kind: 'channel', channel: channel.id })"
-        >
-          #{{ channel.name }}
-        </button>
-        <UiConfirm
-          :label="`Excluir canal #${channel.name}`"
-          :message="DELETE_CHANNEL_MESSAGE"
-          :confirm-label="DELETE_CHANNEL_LABEL"
-          @confirm="removeChannel(channel)"
-        />
-      </li>
-    </ul>
-    <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
-    <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
-    <ul class="flex flex-col gap-1.5">
-      <li v-for="agent in roster.agents" :key="agent.id" class="relative">
-        <button
-          type="button"
-          :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
-          :aria-label="OPEN_CONVERSATION_PREFIX + agent.name"
-          :aria-pressed="isShown(agent.id)"
-          @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
-        >
-          <span class="flex shrink-0" aria-hidden="true">
-            <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
-          </span>
-          <span class="flex min-w-0 flex-col">
-            <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold text-ink">
-              <span class="truncate">{{ agent.name }}</span>
-              <AgentProjectIcons :agent="agent.id" />
-            </span>
-            <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
-              <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
-              <span class="truncate">{{ presence(agent.id).label }}</span>
-            </span>
-            <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
-          </span>
-        </button>
-        <button
-          type="button"
-          :class="MENTION_CLASSES"
-          :aria-label="`${MENTION_LABEL} ${agent.name}`"
-          :disabled="connection.checking"
-          @click="requests.requestMention(agent.id)"
-        >
-          {{ MENTION_GLYPH }}
-        </button>
-        <span
-          v-if="requests.queuedFor(agent.id).length > 0"
-          :class="QUEUE_BADGE_CLASSES"
-          :title="`${requests.queuedFor(agent.id).length} na fila`"
-        >
-          {{ requests.queuedFor(agent.id).length }}
-        </span>
-        <button
-          v-if="consoleStore.entriesOf(agent.id).length > 0"
-          type="button"
-          :class="CONSOLE_BUTTON_CLASSES"
-          :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
-          :title="`${CONSOLE_LABEL} de ${agent.name}`"
-          @click="consoleStore.open(agent.id)"
-        >
-          <svg class="size-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path :d="CONSOLE_GLYPH_PATH" />
-          </svg>
-        </button>
-      </li>
-    </ul>
   </aside>
   <div
     v-if="creating"
