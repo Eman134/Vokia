@@ -40,11 +40,7 @@ export const useConsole = defineStore('console', () => {
     return project === null ? [] : (entries.value[projectAgentKey(project.id, agent)] ?? [])
   }
 
-  async function open(agent: Agent): Promise<void> {
-    if (!openAgents.value.includes(agent)) {
-      openAgents.value.push(agent)
-    }
-    activeAgent.value = agent
+  async function load(agent: Agent): Promise<void> {
     delete loadErrors.value[agent]
     const project = projects.selected
     if (project === null) return
@@ -55,6 +51,14 @@ export const useConsole = defineStore('console', () => {
         loadErrors.value[agent] = `Não foi possível carregar o console: ${String(error)}`
       }
     }
+  }
+
+  async function open(agent: Agent): Promise<void> {
+    if (!openAgents.value.includes(agent)) {
+      openAgents.value.push(agent)
+    }
+    activeAgent.value = agent
+    await load(agent)
   }
 
   function activate(agent: Agent): void {
@@ -93,6 +97,7 @@ export const useConsole = defineStore('console', () => {
     apply,
     entriesOf,
     open,
+    load,
     activate,
     close,
     dismissError,

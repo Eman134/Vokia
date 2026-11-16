@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { Agent, ConsoleKind } from '../team/events'
+import type { Agent } from '../team/events'
 import { DOT_CLASSES } from '../team/agentStateStyle'
 import { useRoster } from '../team/useRoster'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiNotice from '../../ui/UiNotice.vue'
-import UiSegmented from '../../ui/UiSegmented.vue'
-import { useFollowEnd } from '../../ui/useFollowEnd'
-import ConsoleLines, { KIND_PREFIX } from './ConsoleLines.vue'
+import { KIND_PREFIX } from './ConsoleLines.vue'
+import ConsoleBody from './ConsoleBody.vue'
+import { visibleEntries, type ConsoleFilter } from './consoleFilters'
 import { useConsole } from './useConsole'
 import { currentTurn, elapsedLabel, turnOutcome, type TurnOutcome } from './consoleTurn'
-
-type ConsoleFilter = 'all' | 'tools' | 'errors'
 
 const PANEL_TITLE_PREFIX = 'Console de '
 const COPY_LABEL = 'Copiar tudo'
@@ -21,9 +19,6 @@ const CLOSE_LABEL = 'Fechar'
 const TABS_LABEL = 'Consoles abertos'
 const CLOSE_TAB_SYMBOL = '×'
 const CLOSE_TAB_PREFIX = 'Fechar console de '
-const FILTER_LABEL = 'Filtrar saída'
-const JUMP_LABEL = 'Ir para o fim'
-const EMPTY_TEXT = 'Nenhuma saída ainda.'
 const COPY_ERROR_PREFIX = 'Não foi possível copiar: '
 const CLOCK_TICK_MS = 1000
 const COPIED_FEEDBACK_MS = 1500
@@ -38,16 +33,6 @@ const OUTCOME_BADGE: Record<TurnOutcome, { status: 'trabalhando' | 'livre' | 'er
   done: { status: 'livre', label: 'concluído' },
   failed: { status: 'erro', label: 'falhou' },
 }
-const FILTERS = [
-  { label: 'Tudo', value: 'all' },
-  { label: 'Ferramentas', value: 'tools' },
-  { label: 'Erros', value: 'errors' },
-] as const
-const FILTER_KINDS: Record<ConsoleFilter, readonly ConsoleKind[] | null> = {
-  all: null,
-  tools: ['tool', 'output', 'permission'],
-  errors: ['error', 'failed'],
-}
 
 const consoleStore = useConsole()
 const roster = useRoster()
@@ -55,19 +40,15 @@ const filter = ref<ConsoleFilter>('all')
 const copied = ref(false)
 const copyError = ref<string | null>(null)
 const now = ref(Date.now())
-const scroller = ref<HTMLElement | null>(null)
+const body = ref<InstanceType<typeof ConsoleBody> | null>(null)
 const panel = ref<HTMLElement | null>(null)
-const { followingEnd, onScroll, followEnd, jumpToEnd } = useFollowEnd(scroller)
 let clock: ReturnType<typeof setInterval> | undefined
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
 const agent = computed<Agent | null>(() => consoleStore.activeAgent)
 const title = computed(() => PANEL_TITLE_PREFIX + (agent.value === null ? '' : nameOf(agent.value)))
 const entries = computed(() => (agent.value === null ? [] : consoleStore.entriesOf(agent.value)))
-const visible = computed(() => {
-  const kinds = FILTER_KINDS[filter.value]
-  return kinds === null ? entries.value : entries.value.filter((entry) => kinds.includes(entry.kind))
-})
+const visible = computed(() => visibleEntries(entries.value, filter.value))
 const turn = computed(() => currentTurn(entries.value))
 const outcome = computed(() => turnOutcome(turn.value))
 const elapsed = computed(() => {
@@ -121,11 +102,10 @@ function onKeydown(event: KeyboardEvent): void {
   closeActive()
 }
 
-watch(() => visible.value.length, followEnd)
 watch(agent, async () => {
   filter.value = 'all'
-  void jumpToEnd()
   await nextTick()
+  void body.value?.jumpToEnd()
   panel.value?.focus()
 })
 
@@ -186,17 +166,9 @@ onUnmounted(() => {
         <UiButton variant="quiet" size="sm" @press="closeActive">{{ CLOSE_LABEL }}</UiButton>
       </div>
     </header>
-    <div class="px-4 py-2">
-      <UiSegmented v-model="filter" :options="FILTERS" :label="FILTER_LABEL" />
-    </div>
-    <UiNotice v-if="activeLoadError" class="mx-4 mb-2" :text="activeLoadError" @close="dismissActiveLoadError" />
-    <UiNotice v-if="copyError" class="mx-4 mb-2" :text="copyError" @close="copyError = null" />
-    <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto bg-term-bg px-4 py-3" @scroll="onScroll">
-      <ConsoleLines v-if="visible.length > 0" :entries="visible" />
-      <p v-else class="font-mono text-small text-term-muted">{{ EMPTY_TEXT }}</p>
-    </div>
-    <div v-if="!followingEnd" class="px-4 py-2">
-      <UiButton variant="primary" size="sm" @press="jumpToEnd">{{ JUMP_LABEL }}</UiButton>
-    </div>
+    <ConsoleBody ref="body" v-model:filter="filter" :entries="entries">
+      <UiNotice v-if="activeLoadError" class="mx-4 mb-2" :text="activeLoadError" @close="dismissActiveLoadError" />
+      <UiNotice v-if="copyError" class="mx-4 mb-2" :text="copyError" @close="copyError = null" />
+    </ConsoleBody>
   </aside>
 </template>
