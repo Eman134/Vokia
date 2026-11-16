@@ -10,6 +10,7 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { VokiaMessage } from './events'
+import type { ConversationTab } from './conversationTabs'
 import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
@@ -26,6 +27,7 @@ import UiConfirm from '../../ui/UiConfirm.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
+import AgentTerminal from '../console/AgentTerminal.vue'
 import ConsoleCard from '../console/ConsoleCard.vue'
 import { useConsole } from '../console/useConsole'
 
@@ -39,7 +41,6 @@ const TABS_CLASSES = 'flex gap-0.5 rounded-control bg-surface-2 p-0.75'
 const TAB_CLASSES = 'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
 const TAB_ON = 'bg-surface font-medium text-ink shadow-seg'
 const TAB_OFF = 'cursor-pointer text-muted'
-const TAB_DISABLED = 'cursor-default text-muted opacity-40'
 const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
 
 const feed = useFeed()
@@ -48,7 +49,7 @@ const roster = useRoster()
 const channels = useChannels()
 const consoleStore = useConsole()
 const props = defineProps<{ filaEmAba: boolean }>()
-const aba = defineModel<'conversa' | 'fila'>('aba', { default: 'conversa' })
+const aba = defineModel<ConversationTab>('aba', { default: 'conversa' })
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
 const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
 
@@ -139,7 +140,13 @@ onMounted(followEnd)
           >
             {{ TAB_LABELS.conversa }}
           </button>
-          <button type="button" role="tab" aria-disabled="true" :class="[TAB_CLASSES, TAB_DISABLED]">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="aba === 'terminal'"
+            :class="[TAB_CLASSES, aba === 'terminal' ? TAB_ON : TAB_OFF]"
+            @click="aba = 'terminal'"
+          >
             {{ TAB_LABELS.terminal }}
           </button>
           <button
@@ -162,7 +169,7 @@ onMounted(followEnd)
         />
       </div>
     </header>
-    <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
+    <section v-show="aba !== 'terminal'" ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <template v-if="!filaAberta">
       <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
@@ -223,5 +230,6 @@ onMounted(followEnd)
     </template>
     <slot v-else name="fila" />
     </section>
+    <AgentTerminal v-if="aba === 'terminal'" @answer="aba = 'conversa'" />
   </section>
 </template>

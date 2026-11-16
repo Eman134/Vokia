@@ -5,13 +5,14 @@ import { useProjects } from '../projects/useProjects'
 import AgentList from './AgentList.vue'
 import Conversation from './Conversation.vue'
 import QueuePanel from './QueuePanel.vue'
+import type { ConversationTab } from './conversationTabs'
 
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-hidden px-4 pb-[150px] pt-7'
 const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
 const PANELS_CLASSES = 'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto md:flex-row md:overflow-hidden'
 // Abaixo de lg (1024 px) não cabe a coluna de fila: ela vira aba da conversa.
 const WIDE_MEDIA_QUERY = '(min-width: 64rem)'
-const aba = ref<'conversa' | 'fila'>('conversa')
+const aba = ref<ConversationTab>('conversa')
 const SUBTITLE = 'Cada agente tem a sua conversa: o que ele disse, o que rodou no terminal e o que vem na fila dele.'
 
 const projectsStore = useProjects()
