@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use crate::agents::Agent;
 use crate::events::DecisionKind;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +18,7 @@ pub struct SlotState {
     pub confirmations: Vec<String>,
     pub changed: bool,
     pub decision: Option<SlotDecision>,
+    pub delegation: Option<(Agent, String)>,
 }
 
 // O que a troca deixou para o orquestrador.
@@ -24,6 +26,7 @@ pub struct SlotState {
 pub struct ExchangeOutcome {
     pub confirmations: Vec<String>,
     pub decision: Option<SlotDecision>,
+    pub delegation: Option<(Agent, String)>,
 }
 
 impl ExchangeOutcome {
@@ -31,6 +34,7 @@ impl ExchangeOutcome {
     pub fn absorb(&mut self, other: ExchangeOutcome) {
         self.confirmations.extend(other.confirmations);
         self.decision = other.decision.or(self.decision.take());
+        self.delegation = other.delegation.or(self.delegation.take());
     }
 }
 
@@ -55,6 +59,7 @@ impl ExchangeSlot {
         ExchangeOutcome {
             confirmations: std::mem::take(&mut state.confirmations),
             decision: state.decision.take(),
+            delegation: state.delegation.take(),
         }
     }
 

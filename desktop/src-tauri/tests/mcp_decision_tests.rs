@@ -185,18 +185,19 @@ fn absorb_junta_confirmacoes_e_fica_com_a_decisao_mais_recente() {
     let mut collected = ExchangeOutcome {
         confirmations: vec!["a".to_string()],
         decision: Some(first.clone()),
+        ..ExchangeOutcome::default()
     };
 
     collected.absorb(ExchangeOutcome {
         confirmations: vec!["b".to_string()],
-        decision: None,
+        ..ExchangeOutcome::default()
     });
     assert_eq!(collected.confirmations, ["a", "b"]);
     assert_eq!(collected.decision, Some(first));
 
     collected.absorb(ExchangeOutcome {
-        confirmations: Vec::new(),
         decision: Some(second.clone()),
+        ..ExchangeOutcome::default()
     });
     assert_eq!(collected.decision, Some(second));
 }

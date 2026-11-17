@@ -118,3 +118,50 @@ fn sem_decisao_registrada_a_linha_de_texto_continua_aceita_e_sem_nenhuma_nada_so
     assert_eq!(from_text.title, "Posso seguir?");
     assert!(pick_decision(None, "Resposta comum.").is_none());
 }
+
+fn iara_and_davi() -> (Agent, Agent) {
+    (
+        Agent::from_stored("iara").expect("agente"),
+        Agent::from_stored("davi").expect("agente"),
+    )
+}
+
+#[test]
+fn delegacao_da_ferramenta_vale_mais_que_a_do_texto_e_tarefa_alternada_a_descarta() {
+    let (iara, davi) = iara_and_davi();
+    let registered = Some((davi.clone(), "Da ferramenta".to_string()));
+    let from_text = Some((iara.clone(), "Do texto".to_string()));
+
+    let chosen = chosen_delegation(registered.clone(), from_text.clone(), false);
+    let fallback = chosen_delegation(None, from_text.clone(), false);
+
+    assert_eq!(chosen, Some((davi, "Da ferramenta".to_string())));
+    assert_eq!(fallback, from_text);
+    assert!(chosen_delegation(registered, from_text, true).is_none());
+}
+
+#[test]
+fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
+    with_team(|team| {
+        let (iara, davi) = iara_and_davi();
+        let definition = TaskDefinition {
+            nova_tarefa: true,
+            objetivo: "teste".to_string(),
+            criterion: String::new(),
+            verify: false,
+            participants: vec![iara.clone()],
+            alternate: false,
+            variables: Vec::new(),
+            stop: None,
+        };
+        let turn = Turn::first(&definition, &iara, "Faça");
+        let delegation = (davi.clone(), "Revise".to_string());
+
+        let next = next_turn(&definition, &turn, "feed", Some(&delegation), team)
+            .expect("deveria haver próximo turno");
+
+        assert_eq!(next.speaker, davi);
+        assert_eq!(next.base, "Revise");
+        assert_eq!(next.requesters, [iara]);
+    });
+}

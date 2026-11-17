@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use crate::agents::AgentRegistry;
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
     AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
@@ -17,6 +18,7 @@ const READ_CARD: &str = "read_card";
 const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
 const REQUEST_DECISION: &str = "request_decision";
+const DELEGATE: &str = "delegate";
 
 const MAX_TITLE_CHARS: usize = 200;
 const LIST_LIMIT: usize = 50;
@@ -27,6 +29,12 @@ const TITLE_TOO_LONG: &str = "O título do card passa de 200 caracteres.";
 const SYSTEM_FAILURE: &str = "Não foi possível acessar o backlog agora. Tente de novo mais tarde.";
 const EMPTY_BACKLOG: &str = "Nenhum card.";
 const NO_DESCRIPTION: &str = "sem descrição";
+
+const DELEGATION_REGISTERED: &str = "Delegação registrada. Termine a resposta agora.";
+const DELEGATION_ALREADY_REGISTERED: &str =
+    "Já há uma delegação registrada nesta resposta. Termine a resposta agora.";
+const DELEGATION_EMPTY_REQUEST: &str = "O pedido da delegação não pode ser vazio.";
+const DELEGATION_TO_SELF: &str = "Você não pode delegar a si mesmo.";
 
 const DECISION_REGISTERED: &str = "Decisão registrada. Termine a resposta agora.";
 const DECISION_ALREADY_REGISTERED: &str =
@@ -57,6 +65,12 @@ struct CreateArgs {
 struct MoveArgs {
     id: String,
     column: String,
+}
+
+#[derive(Deserialize)]
+struct DelegateArgs {
+    agent: String,
+    request: String,
 }
 
 #[derive(Deserialize)]
@@ -116,6 +130,15 @@ pub fn definitions() -> Vec<Value> {
             }),
             &["kind", "title"],
         ),
+        tool(
+            DELEGATE,
+            "Delega um pedido a outro agente do time e não espera a resposta: depois de chamar, termine a resposta.",
+            json!({
+                "agent": { "type": "string" },
+                "request": { "type": "string" },
+            }),
+            &["agent", "request"],
+        ),
     ]
 }
 
@@ -147,6 +170,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         CREATE_CARD => parse(name, arguments).and_then(|args| create_card(app, binding, args)),
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
+        DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
         _ => return None,
     };
     Some(match outcome {
@@ -266,6 +290,39 @@ fn move_card(app: &AppHandle, binding: &Binding, args: MoveArgs) -> ToolText {
             column: args.column,
         },
     )
+}
+
+fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText {
+    let request = args.request.trim();
+    if request.is_empty() {
+        return Err(DELEGATION_EMPTY_REQUEST.to_string());
+    }
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|_| SYSTEM_FAILURE.to_string())?;
+    let name = args.agent.trim();
+    let Some(helper) = team.named(name) else {
+        let colleagues: Vec<&str> = team
+            .profiles()
+            .iter()
+            .filter(|profile| profile.id != binding.agent)
+            .map(|profile| profile.name.as_str())
+            .collect();
+        return Err(format!(
+            "Não existe agente chamado {name}. Colegas: {}.",
+            colleagues.join(", ")
+        ));
+    };
+    if helper == binding.agent {
+        return Err(DELEGATION_TO_SELF.to_string());
+    }
+    let mut slot = binding.slot.lock();
+    if slot.delegation.is_some() {
+        return Err(DELEGATION_ALREADY_REGISTERED.to_string());
+    }
+    slot.delegation = Some((helper, request.to_string()));
+    Ok(DELEGATION_REGISTERED.to_string())
 }
 
 fn request_decision(binding: &Binding, args: DecisionArgs) -> ToolText {

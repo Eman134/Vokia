@@ -81,3 +81,7 @@ mod backlog_tests;
 #[cfg(test)]
 #[path = "../../tests/mcp_decision_tests.rs"]
 mod decision_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_delegation_tests.rs"]
+mod delegation_tests;

@@ -81,6 +81,7 @@ pub(super) async fn run_turns(
         let ExchangeOutcome {
             confirmations,
             decision,
+            delegation: registered_delegation,
         } = outcome;
         if let Some(mut parsed) = pick_decision(decision, &reply) {
             let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
@@ -95,7 +96,7 @@ pub(super) async fn run_turns(
         let applied = with_cache(state, project_id, |cache| {
             Ok(cache.apply_reply(&turn.speaker, updates, team))
         })?;
-        let delegation = delegation.filter(|_| !definition.alternate);
+        let delegation = chosen_delegation(registered_delegation, delegation, definition.alternate);
         if !applied.rejected.is_empty() {
             let shown = with_confirmations(
                 (!visible.is_empty()).then(|| visible.clone()),
@@ -565,6 +566,15 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
         [only] => only.feed(),
         _ => None,
     }
+}
+
+// Em tarefa alternada o revezamento já decide quem fala; a delegação não vale.
+fn chosen_delegation(
+    registered: Option<(Agent, String)>,
+    from_text: Option<(Agent, String)>,
+    alternate: bool,
+) -> Option<(Agent, String)> {
+    registered.or(from_text).filter(|_| !alternate)
 }
 
 // A ferramenta vale mais que a linha de texto; a linha segue aceita por compatibilidade.
