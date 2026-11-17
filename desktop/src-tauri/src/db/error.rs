@@ -45,6 +45,22 @@ pub enum DbError {
     CardNotOwned(String),
 }
 
+impl DbError {
+    // Recusa que o agente pode corrigir; item corrompido (BacklogItemData) é erro de sistema.
+    pub fn is_card_refusal(&self) -> bool {
+        matches!(
+            self,
+            DbError::EmptyCardTitle
+                | DbError::DuplicateCardTitle(_)
+                | DbError::InvalidBacklogColumn(_)
+                | DbError::AgentForbiddenColumn(_)
+                | DbError::CardClosed(_)
+                | DbError::CardNotOwned(_)
+                | DbError::BacklogItemNotFound(_)
+        )
+    }
+}
+
 impl fmt::Display for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

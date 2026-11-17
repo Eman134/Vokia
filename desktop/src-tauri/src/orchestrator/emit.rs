@@ -69,6 +69,10 @@ pub(super) fn emit_message(
     )
 }
 
+pub(super) fn emit_backlog_changed(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
+    emit(app, VokiaEvent::BacklogChanged { project_id })
+}
+
 pub(super) fn emit_state(
     app: &AppHandle,
     project_id: i64,

@@ -186,4 +186,8 @@ pub enum VokiaEvent {
         reason: String,
         checks: u32,
     },
+    #[serde(rename_all = "camelCase")]
+    BacklogChanged {
+        project_id: i64,
+    },
 }
