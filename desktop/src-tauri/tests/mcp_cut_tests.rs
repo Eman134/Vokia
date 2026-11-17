@@ -90,26 +90,25 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
 }
 
 #[test]
-fn papel_nunca_ensina_a_sintaxe_de_texto_do_agente_com_ou_sem_mcp() {
+fn papel_ensina_a_sintaxe_de_texto_so_sem_mcp() {
     with_team(|team| {
         let (iara, _) = iara_and_davi();
         let profile = team.profile(&iara).expect("perfil");
 
-        for with_tools in [true, false] {
-            let text = role(profile, &team.roster_line(), "contexto", with_tools);
+        let with = role(profile, &team.roster_line(), "contexto", true);
+        let without = role(profile, &team.roster_line(), "contexto", false);
 
-            for marker in OLD_MARKERS {
-                assert!(
-                    !text.contains(marker),
-                    "with_tools={with_tools} {marker}: {text}"
-                );
-            }
+        for marker in OLD_MARKERS {
+            assert!(!with.contains(marker), "com MCP {marker}: {with}");
+        }
+        for marker in ["#card", "#decisao", "@<Nome>"] {
+            assert!(without.contains(marker), "sem MCP {marker}: {without}");
         }
     });
 }
 
 #[test]
-fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_nenhuma_sintaxe_sem_mcp() {
+fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() {
     let (iara, _) = iara_and_davi();
     let definition = empty_definition(iara.clone());
     let cache = Cache::default();
@@ -120,22 +119,14 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_nenhuma_sintaxe_sem_mcp() {
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");
         assert!(prompt.contains("get_variables"), "{prompt}");
-    }
-    for prompt in [&without.opening, &without.follow_up, &without.minimal] {
-        assert!(!prompt.contains("set_variable"), "{prompt}");
-        assert!(prompt.contains("Execute a instrução agora"), "{prompt}");
-    }
-    for prompt in [
-        &with.opening,
-        &with.follow_up,
-        &with.minimal,
-        &without.opening,
-        &without.follow_up,
-        &without.minimal,
-    ] {
         for marker in OLD_MARKERS {
             assert!(!prompt.contains(marker), "{marker}: {prompt}");
         }
+    }
+    for prompt in [&without.opening, &without.follow_up, &without.minimal] {
+        assert!(!prompt.contains("set_variable"), "{prompt}");
+        assert!(prompt.contains("`$nome = valor`"), "{prompt}");
+        assert!(prompt.contains("@time"), "{prompt}");
     }
 }
 

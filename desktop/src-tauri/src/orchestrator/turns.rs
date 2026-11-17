@@ -12,16 +12,18 @@ use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
-use super::emit::{emit, emit_message, emit_state};
+use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
 use super::error::FlowError;
 use super::flow::stop_with_error;
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
-    idle_limit_message, pass_limit_message, LoopGuard, PassCounter, LOOP_MESSAGE,
-    LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, SEM_AVANCO_LIMIT,
+    idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
+    LOOP_MESSAGE, LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, REJECTION_LIMIT, SEM_AVANCO_LIMIT,
 };
-use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REPLY_PREFIX};
+use super::markers::ParsedDecision;
+use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX, REPLY_PREFIX};
 use super::session_pool::ExchangeSessions;
+use super::text_fallback::{read_reply, TextContext, TextReply};
 
 pub(super) const NO_CONVERSATION: usize = 0;
 pub(super) const USER_LABEL: &str = "Usuário";
@@ -49,6 +51,7 @@ pub(super) async fn run_turns(
         app,
         state,
         request,
+        item_id,
         channel_id,
         key,
         definition,
@@ -59,6 +62,7 @@ pub(super) async fn run_turns(
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
     let mut counters = Counters::default();
+    let mut rejections = 0;
     let with_tools = app.state::<McpState>().server().is_some();
     loop {
         let prompts = with_cache(state, project_id, |cache| {
@@ -66,7 +70,7 @@ pub(super) async fn run_turns(
                 cache,
                 definition,
                 &turn.speaker,
-                &turn.base,
+                &turn.instruction(),
                 with_tools,
             ))
         })?;
@@ -83,15 +87,86 @@ pub(super) async fn run_turns(
             delegation: registered_delegation,
             variables,
         } = outcome;
-        let visible = reply.trim().to_string();
-        if let Some(decision) = decision {
-            let shown = Some(visible).filter(|visible| !visible.is_empty());
+        let TextReply {
+            visible,
+            decision: text_decision,
+            delegation: text_delegation,
+            applied,
+            cards,
+            rejected,
+        } = read_reply(
+            with_tools,
+            &TextContext {
+                app,
+                state,
+                project_id,
+                speaker: &turn.speaker,
+                item_id: *item_id,
+                team,
+            },
+            &reply,
+        )?;
+        let raised = decision
+            .map(|decision| (decision, visible.clone()))
+            .or_else(|| text_decision.map(ParsedDecision::split));
+        if let Some((decision, shown)) = raised {
+            let shown = Some(shown).filter(|shown| !shown.is_empty());
             let shown = with_confirmations(shown, &confirmations).unwrap_or_default();
             return raise_decision(exchange, transcript, &turn, decision, shown, activity);
         }
-        let delegation = registered_delegation.filter(|_| !definition.alternate);
-        let advanced = variables.created_variable || variables.changed_value;
-        let feed = with_confirmations(feed_text(&visible, &variables.accepted), &confirmations);
+        if !rejected.is_empty() {
+            let shown = with_confirmations(
+                (!visible.is_empty()).then(|| visible.clone()),
+                &confirmations,
+            );
+            if let Some(shown) = shown {
+                let to = next_turn(definition, &turn, &visible, None, team)
+                    .map_or(Speaker::User, |next| Speaker::from(next.speaker));
+                emit_message(
+                    app,
+                    project_id,
+                    Speaker::from(turn.speaker.clone()),
+                    to,
+                    &shown,
+                    *channel_id,
+                    activity.take(),
+                )?;
+            }
+            rejections += 1;
+            if rejections >= REJECTION_LIMIT {
+                let trigger = Trigger::Stall {
+                    state: GoalState::SemAvanco,
+                    message: rejection_message(),
+                };
+                match resolve(exchange, transcript, &mut counters, &turn.speaker, trigger).await? {
+                    Step::Continue(continuation) => {
+                        rejections = 0;
+                        turn = continuation;
+                        continue;
+                    }
+                    Step::End(outcome) => return Ok(outcome),
+                }
+            }
+            sessions.review(&turn.speaker, rejections, 0, team)?.await;
+            turn.rejection = Some(rejected.join("; "));
+            continue;
+        }
+        rejections = 0;
+        let mut confirmations = confirmations;
+        confirmations.extend(cards.confirmations);
+        let delegation = registered_delegation
+            .or(text_delegation)
+            .filter(|_| !definition.alternate);
+        let advanced = applied.created_variable
+            || applied.changed_value
+            || variables.created_variable
+            || variables.changed_value;
+        let accepted: Vec<Change> = variables
+            .accepted
+            .into_iter()
+            .chain(applied.accepted)
+            .collect();
+        let feed = with_confirmations(feed_text(&visible, &accepted), &confirmations);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition
                 .stop
@@ -111,6 +186,9 @@ pub(super) async fn run_turns(
                     *channel_id,
                     activity.take(),
                 )?;
+            }
+            if cards.changed {
+                emit_backlog_changed(app, project_id)?;
             }
             emit_goal(
                 app,
@@ -157,6 +235,9 @@ pub(super) async fn run_turns(
                 *channel_id,
                 activity.take(),
             )?;
+        }
+        if cards.changed {
+            emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
             match resolve(
@@ -442,6 +523,7 @@ pub(super) fn first_speaker(definition: &TaskDefinition, origin: &Agent) -> Agen
 struct Turn {
     speaker: Agent,
     base: String,
+    rejection: Option<String>,
     received: String,
     requesters: Vec<Agent>,
 }
@@ -451,6 +533,7 @@ impl Turn {
         Self {
             speaker,
             base: base.to_string(),
+            rejection: None,
             received: received.to_string(),
             requesters,
         }
@@ -464,6 +547,13 @@ impl Turn {
             request,
             Vec::new(),
         )
+    }
+
+    fn instruction(&self) -> String {
+        match &self.rejection {
+            Some(motive) => format!("{REJECTION_PREFIX}{motive}. {}", self.base),
+            None => self.base.clone(),
+        }
     }
 }
 

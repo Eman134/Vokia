@@ -6,10 +6,12 @@ mod error;
 mod flow;
 mod goal;
 mod loop_guard;
+mod markers;
 mod project_context;
 mod prompts;
 mod session_policy;
 mod session_pool;
+mod text_fallback;
 mod turns;
 
 pub(crate) use archive::remove_archive;

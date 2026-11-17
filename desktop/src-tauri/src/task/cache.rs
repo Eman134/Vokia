@@ -12,6 +12,11 @@ pub const CONVERSATION_ITEMS: usize = 6;
 pub const CONVERSATION_VAR: &str = "conversa";
 pub const CONVERSATION_ITEM_MAX_CHARS: usize = 300;
 pub const RECOVERY_CONVERSATION_ITEMS: usize = 3;
+const MARKER: char = '$';
+const NAME_DELIMITERS: [char; 3] = ['=', '+', '@'];
+const ASSIGN_MARK: char = '=';
+const APPEND_MARK: &str = "+=";
+const SHARE_MARK: &str = "@time";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum VarValue {
@@ -246,6 +251,34 @@ impl Cache {
         items.drain(..excess);
     }
 
+    // Linha mal formada recusa a resposta inteira, como uma regra violada: nada é gravado.
+    pub fn apply_reply(
+        &mut self,
+        author: &Agent,
+        updates: Vec<Result<Change, String>>,
+        team: &Team,
+    ) -> Applied {
+        let backup = self.variables.clone();
+        let mut changes = Vec::new();
+        let mut invalid = Vec::new();
+        for update in updates {
+            match update {
+                Ok(change) => changes.push(change),
+                Err(motive) => invalid.push(motive),
+            }
+        }
+        let mut applied = self.apply_changes(author, changes, team);
+        if !invalid.is_empty() {
+            self.variables = backup;
+            applied = Applied {
+                rejected: applied.rejected,
+                ..Applied::default()
+            };
+            applied.rejected.extend(invalid);
+        }
+        applied
+    }
+
     pub fn apply_changes(&mut self, author: &Agent, changes: Vec<Change>, team: &Team) -> Applied {
         let backup = self.variables.clone();
         let mut applied = Applied::default();
@@ -456,5 +489,60 @@ fn check_text(text: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("o valor passa de {VAR_VALUE_MAX} caracteres"))
+    }
+}
+
+pub fn parse_update_line(line: &str) -> Option<Result<Change, String>> {
+    let body = line.trim().strip_prefix(MARKER)?;
+    let name_end = body
+        .find(|c: char| c.is_whitespace() || NAME_DELIMITERS.contains(&c))
+        .unwrap_or(body.len());
+    let (name, action) = body.split_at(name_end);
+    Some(parse_action(name, action.trim()))
+}
+
+fn parse_action(name: &str, action: &str) -> Result<Change, String> {
+    if name.is_empty() {
+        return Err("marcador sem nome de variável".to_string());
+    }
+    if action == SHARE_MARK {
+        return Ok(Change::Share {
+            name: name.to_string(),
+        });
+    }
+    if let Some(item) = action.strip_prefix(APPEND_MARK) {
+        let item = item.trim();
+        if item.is_empty() {
+            return Err(format!("{name} += sem item"));
+        }
+        return Ok(Change::Append {
+            name: name.to_string(),
+            item: item.to_string(),
+        });
+    }
+    if let Some(value) = action.strip_prefix(ASSIGN_MARK) {
+        let (text, share) = split_share(value.trim())?;
+        return Ok(Change::Set {
+            name: name.to_string(),
+            value: VarValue::from_text(text),
+            share,
+        });
+    }
+    Err(format!("marcador inválido para {name}: {action}"))
+}
+
+fn split_share(value: &str) -> Result<(&str, bool), String> {
+    let (text, share) = match value.strip_suffix(SHARE_MARK) {
+        Some(rest) if rest.is_empty() || rest.ends_with(char::is_whitespace) => {
+            (rest.trim_end(), true)
+        }
+        _ => (value, false),
+    };
+    if text.is_empty() {
+        return Err("valor vazio".to_string());
+    }
+    match text.split_whitespace().last() {
+        Some(word) if word.starts_with('@') => Err(format!("marcador desconhecido: {word}")),
+        _ => Ok((text, share)),
     }
 }

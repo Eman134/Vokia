@@ -7,11 +7,15 @@ use crate::task::{
 use super::project_context::PROJECT_RULE;
 use super::turns::NO_CONVERSATION;
 
-const EXECUTE_NOW: &str = "Execute a instrução agora: não se apresente nem comente o processo.";
+const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
+const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
+const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto, escreva uma linha por operação: #card criar <título>|<descrição> ou #card mover <id>|<coluna>. As colunas são Backlog, In progress, In review e Done; nunca use Ready. Mova só cards seus ou o card do pedido atual; Done não volta. Não repita um card que já existe e não misture linhas #card com #decisao. O app confirma cada operação na conversa.";
+const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta set_variable (name, op, value) por variável alterada; use op append para listas, share para uma variável que o outro agente deve ler e get_variables para ler. Execute a instrução agora: não se apresente nem comente o processo.";
 const TOOLS_RULE: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
 const DELEGATION_TOOL_RULE: &str = "Delegue com a ferramenta delegate só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
+pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 pub(super) const REPLY_PREFIX: &str = " respondeu: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
     "É a sua vez. Atualize as variáveis conforme o objetivo.";
@@ -87,7 +91,7 @@ fn step_prompt(
         if with_tools {
             PROMPT_RULES_TOOLS
         } else {
-            EXECUTE_NOW
+            PROMPT_RULES
         }
         .to_string(),
     );
@@ -136,11 +140,11 @@ pub(super) fn role(
     project_context: &str,
     with_tools: bool,
 ) -> String {
-    // Sem o servidor MCP o agente não tem como delegar, decidir nem gravar variáveis: não há o que ensinar.
+    // Sem o servidor MCP a sessão volta a ensinar os marcadores de texto.
     let tools_rules = if with_tools {
         format!("{DELEGATION_TOOL_RULE} {TOOLS_RULE}")
     } else {
-        String::new()
+        format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}")
     };
     format!(
         "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {PROJECT_RULE} {project_context}",

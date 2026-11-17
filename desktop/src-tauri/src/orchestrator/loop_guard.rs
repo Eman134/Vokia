@@ -5,6 +5,7 @@ use crate::agents::{Agent, Team};
 pub(super) const LOOP_REPEAT_LIMIT: u32 = 3;
 pub(super) const LOOP_MESSAGE: &str = "A conversa entre os agentes parou: a mesma mensagem se repetiu em turnos seguidos sem avançar a tarefa.";
 pub(super) const PASS_REPEAT_LIMIT: u32 = 3;
+pub(super) const REJECTION_LIMIT: u32 = 3;
 pub(super) const SEM_AVANCO_LIMIT: u32 = 3;
 
 #[derive(Default)]
@@ -92,6 +93,10 @@ pub(super) fn pass_limit_message(
         team.name_of(to),
         counter.history(team),
     )
+}
+
+pub(super) fn rejection_message() -> String {
+    format!("A tarefa parou: o estado não avançou em {REJECTION_LIMIT} turnos seguidos.")
 }
 
 pub(super) fn idle_limit_message(step: usize, from: &Agent, to: &Agent, team: &Team) -> String {
