@@ -4,6 +4,7 @@ import { fileIconOf, type FileIconKind } from './fileIcon'
 type ReadDetail = Extract<ToolDetail, { kind: 'read' }>
 type FoundDetail = Extract<ToolDetail, { kind: 'found' }>
 type TaskUpdatedDetail = Extract<ToolDetail, { kind: 'updated' }>
+type StartedDetail = Extract<ToolDetail, { kind: 'started' }>
 
 const MS_PER_SECOND = 1000
 const SECONDS_PER_MINUTE = 60
@@ -17,6 +18,8 @@ const TASKS_CREATED_VERB = 'Tarefas criadas'
 // Só "completed" foi capturado; outros status caem no verbo genérico até haver captura.
 const TASK_UPDATE_VERBS: Partial<Record<string, string>> = { completed: 'Concluiu tarefa' }
 const TASK_UPDATE_FALLBACK_VERB = 'Atualizou tarefa'
+const STARTED_VERB = 'Iniciou tarefa'
+export type CardTitleOf = (cardId: string) => string | undefined
 
 type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'agent' | 'tool'
 
@@ -239,12 +242,20 @@ function taskUpdatedRow(tool: ToolActivity, detail: TaskUpdatedDetail, created: 
   }
 }
 
-export function activityRows(tools: readonly ToolActivity[]): ActivityRowModel[] {
+// Sem título do card no backlog, a linha não aparece: o id sozinho não diz qual tarefa começou.
+function startedRow(tool: ToolActivity, detail: StartedDetail, titleOf: CardTitleOf): ActivityRowModel[] {
+  const title = titleOf(detail.cardId)
+  if (tool.status !== 'ok' || title === undefined) return []
+  return [{ id: tool.callId, icon: ROW_ICON[tool.category], verb: STARTED_VERB, text: title, failed: false }]
+}
+
+export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf): ActivityRowModel[] {
   // Criação conta desde a entrada da ferramenta: a linha nasce uma vez e só cresce com o contador.
   const created = tools.filter((tool) => tool.detail?.kind === 'created')
   return tools.flatMap((tool) => {
     const icon = ROW_ICON[tool.category]
     if (tool.detail?.kind === 'created') return tool === created[0] ? [taskCreatedRow(created)] : []
+    if (tool.detail?.kind === 'started') return startedRow(tool, tool.detail, titleOf)
     if (tool.detail?.kind === 'updated') return [taskUpdatedRow(tool, tool.detail, created)]
     if (tool.detail?.kind === 'read') return [readRow(tool, tool.detail, icon)]
     if (tool.detail?.kind === 'found') return [foundRow(tool, tool.detail, icon)]

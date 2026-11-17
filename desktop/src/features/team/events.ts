@@ -15,6 +15,7 @@ export type ToolDetail =
   | { kind: 'found'; count: number; names: string[] }
   | { kind: 'created'; id?: string }
   | { kind: 'updated'; taskId: string; status: string }
+  | { kind: 'started'; cardId: string }
 
 export interface ToolChange {
   added: string

@@ -541,3 +541,42 @@ fn detalhe_de_read_sai_no_json_camel_case_com_kind() {
     let detail = ToolDetail::Read { from: 2, to: 3 };
     assert_eq!(serde_json::to_value(detail).unwrap(), json!({ "kind": "read", "from": 2, "to": 3 }));
 }
+
+fn move_card_input(column: &str) -> Value {
+    json!({ "id": "item-7", "column": column })
+}
+
+#[test]
+fn move_card_para_in_progress_com_sucesso_inicia_a_tarefa_pelo_id() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use("t1", "mcp__vokia__move_card", move_card_input("In progress"))]));
+    feed.push(user(vec![result_block("t1", false)]));
+
+    let tool = &feed.parser.snapshot().tools[0];
+    assert_eq!(tool.status, ToolStatus::Ok);
+    assert_eq!(tool.detail, Some(ToolDetail::Started { card_id: "item-7".to_string() }));
+}
+
+#[test]
+fn move_card_para_outra_coluna_nao_inicia_tarefa() {
+    let tool = run_tool("mcp__vokia__move_card", move_card_input("Done"));
+
+    assert_eq!(tool.detail, None);
+}
+
+#[test]
+fn move_card_com_erro_nao_inicia_tarefa() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use("t1", "mcp__vokia__move_card", move_card_input("In progress"))]));
+    feed.push(user(vec![result_block("t1", true)]));
+
+    let tool = &feed.parser.snapshot().tools[0];
+    assert_eq!(tool.status, ToolStatus::Failed);
+    assert_eq!(tool.detail, None);
+}
+
+#[test]
+fn detalhe_de_inicio_sai_no_json_com_card_id() {
+    let detail = ToolDetail::Started { card_id: "item-7".to_string() };
+    assert_eq!(serde_json::to_value(detail).unwrap(), json!({ "kind": "started", "cardId": "item-7" }));
+}

@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue'
 import type { TurnActivity } from './events'
-import { activityRows, activitySentence, thinkingLabel } from './activitySummary'
+import { activityRows, activitySentence, thinkingLabel, type CardTitleOf } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
+import { useBacklog } from '../backlog/useBacklog'
 
 const props = defineProps<{ activity: TurnActivity; live?: boolean }>()
 
+const backlog = useBacklog()
 const open = ref(false)
 const listId = useId()
 const sentence = computed(() => activitySentence(props.activity.tools))
-const rows = computed(() => activityRows(props.activity.tools))
+const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
+const rows = computed(() => activityRows(props.activity.tools, cardTitleOf))
 </script>
 
 <template>

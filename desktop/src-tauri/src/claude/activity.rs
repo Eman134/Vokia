@@ -9,6 +9,8 @@ use super::console::{ConsoleKind, ConsoleLine};
 const MAX_TOOLS: usize = 100;
 const TEXT_MAX_CHARS: usize = 300;
 const CHANGE_PREVIEW_MAX_CHARS: usize = 400;
+const VOKIA_MOVE_CARD: &str = "mcp__vokia__move_card";
+const STARTED_COLUMN: &str = "In progress";
 const MIN_CLOCK_THINKING_MS: u64 = 1000;
 const MAX_DIFF_LINES: usize = 2000;
 const MAX_DIFF_CHARS: usize = 96_000;
@@ -65,6 +67,10 @@ pub enum ToolDetail {
         #[serde(rename = "taskId")]
         task_id: String,
         status: String,
+    },
+    Started {
+        #[serde(rename = "cardId")]
+        card_id: String,
     },
 }
 
@@ -268,8 +274,19 @@ fn entry_detail(name: &str, input: &Value) -> Option<ToolDetail> {
             task_id: name_of(input["taskId"].as_str()?),
             status: name_of(input["status"].as_str()?),
         }),
+        VOKIA_MOVE_CARD => started_detail(input),
         _ => None,
     }
+}
+
+// Só o movimento para a coluna de andamento inicia a tarefa; o resultado com erro zera o detail.
+fn started_detail(input: &Value) -> Option<ToolDetail> {
+    if input["column"].as_str()? != STARTED_COLUMN {
+        return None;
+    }
+    Some(ToolDetail::Started {
+        card_id: name_of(input["id"].as_str()?),
+    })
 }
 
 // Sem limit não há fim do intervalo: a linha não mostra nada. Sem offset, a leitura começa na primeira linha.
