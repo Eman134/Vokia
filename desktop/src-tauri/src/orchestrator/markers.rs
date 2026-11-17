@@ -117,6 +117,15 @@ fn delegation_request<'a>(line: &'a str, from: &Agent, team: &Team) -> Option<(A
     (agent != *from && !request.is_empty()).then_some((agent, request))
 }
 
+// A última linha `@Nome: pedido` de um agente real do time vale; as demais linhas ficam como estão.
+pub(super) fn find_delegation(reply: &str, from: &Agent, team: &Team) -> Option<(Agent, String)> {
+    reply
+        .lines()
+        .filter_map(|line| delegation_request(line, from, team))
+        .last()
+        .map(|(agent, request)| (agent, request.to_string()))
+}
+
 // Mesmo contrato de parse_update_line: None não é a linha; Err é a linha, mas inválida.
 fn parse_card_line(line: &str) -> Option<Result<CardOperation, String>> {
     let rest = line.trim().strip_prefix(CARD_MARK)?;

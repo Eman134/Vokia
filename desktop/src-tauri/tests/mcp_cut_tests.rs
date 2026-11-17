@@ -83,9 +83,10 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
         let without = role(profile, &team.roster_line(), "contexto", false);
 
         assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
-        assert!(with.contains("delegate"), "{with}");
+        assert!(with.contains("@Nome:"), "{with}");
+        assert!(!with.contains("delegate"), "{with}");
         assert!(!without.contains(TOOLS_RULE_TEXT), "{without}");
-        assert!(!without.contains("delegate"), "{without}");
+        assert!(!without.contains("@Nome:"), "{without}");
     });
 }
 
@@ -119,6 +120,8 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");
         assert!(prompt.contains("get_variables"), "{prompt}");
+        assert!(prompt.contains("@Nome:"), "{prompt}");
+        assert!(!prompt.contains("delegate"), "{prompt}");
         for marker in OLD_MARKERS {
             assert!(!prompt.contains(marker), "{marker}: {prompt}");
         }
@@ -132,19 +135,17 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
 
 #[test]
 fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
-    with_team(|team| {
-        let (iara, davi) = iara_and_davi();
-        let definition = empty_definition(iara.clone());
-        let turn = Turn::first(&definition, &iara, "Faça");
-        let delegation = (davi.clone(), "Revise".to_string());
+    let (iara, davi) = iara_and_davi();
+    let definition = empty_definition(iara.clone());
+    let turn = Turn::first(&definition, &iara, "Faça");
+    let delegation = (davi.clone(), "Revise".to_string());
 
-        let next = next_turn(&definition, &turn, "feed", Some(&delegation), team)
-            .expect("deveria haver próximo turno");
+    let next = next_turn(&definition, &turn, "feed", Some(&delegation))
+        .expect("deveria haver próximo turno");
 
-        assert_eq!(next.speaker, davi);
-        assert_eq!(next.base, "Revise");
-        assert_eq!(next.requesters, [iara]);
-    });
+    assert_eq!(next.speaker, davi);
+    assert_eq!(next.base, "Revise");
+    assert_eq!(next.requesters, [iara]);
 }
 
 #[test]
@@ -156,4 +157,42 @@ fn mencao_do_usuario_na_barra_chega_intacta_ao_primeiro_turno() {
 
     assert_eq!(turn.base, "Pedido do usuário: @Davi revise o login");
     assert_eq!(turn.received, "@Davi revise o login");
+}
+
+#[test]
+fn pedido_igual_pela_ferramenta_e_pelo_texto_conta_uma_delegacao_so() {
+    let (_, davi) = iara_and_davi();
+    let same = Some((davi.clone(), "Revise".to_string()));
+
+    let merged = merged_delegation(same.clone(), same.clone(), false);
+
+    assert_eq!(merged, same);
+}
+
+#[test]
+fn se_ferramenta_e_texto_divergem_a_ferramenta_vale_e_o_texto_sozinho_tambem_delega() {
+    let (iara, davi) = iara_and_davi();
+    let tool = Some((davi.clone(), "Da ferramenta".to_string()));
+    let text = Some((iara, "Do texto".to_string()));
+
+    assert_eq!(merged_delegation(tool.clone(), text.clone(), false), tool);
+    assert_eq!(merged_delegation(None, text.clone(), false), text);
+    assert!(merged_delegation(tool, text, true).is_none());
+}
+
+#[test]
+fn resposta_de_quem_foi_chamado_volta_a_quem_pediu_so_com_a_fala_sem_prefixo() {
+    let (iara, davi) = iara_and_davi();
+    let definition = empty_definition(iara.clone());
+    let first = Turn::first(&definition, &iara, "Faça");
+    let delegation = (davi.clone(), "Revise".to_string());
+    let helper_turn = next_turn(&definition, &first, "feed", Some(&delegation))
+        .expect("deveria haver turno do colega");
+
+    let back = next_turn(&definition, &helper_turn, "Entendi", None)
+        .expect("a resposta deveria voltar a quem pediu");
+
+    assert_eq!(back.speaker, iara);
+    assert_eq!(back.base, "Entendi");
+    assert_eq!(back.received, "Entendi");
 }

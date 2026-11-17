@@ -200,17 +200,74 @@ fn sem_mcp_marcador_de_variavel_mal_formado_e_recusado_sem_gravar_o_resto() {
 }
 
 #[test]
-fn com_mcp_as_mesmas_linhas_aparecem_como_texto_e_nao_executam() {
+fn com_mcp_so_a_linha_de_mencao_age_e_as_outras_aparecem_como_texto_sem_executar() {
     let world = world();
 
     let reply = world.read(true, "iara", OLD_MARKER_LINES);
 
     assert_eq!(reply.visible, OLD_MARKER_LINES);
     assert!(reply.decision.is_none());
-    assert!(reply.delegation.is_none());
     assert!(reply.rejected.is_empty());
     assert!(reply.applied.accepted.is_empty() && !reply.applied.created_variable);
     assert!(!reply.cards.changed && reply.cards.confirmations.is_empty());
     assert!(world.cards().is_empty());
     assert_eq!(world.number("contagem"), None);
+}
+
+fn davi() -> Agent {
+    Agent::from_stored("davi").expect("agente")
+}
+
+#[test]
+fn com_mcp_mencao_de_agente_real_delega_e_a_linha_continua_visivel() {
+    let world = world();
+    let reply_text = "Preciso de revisão.\n@Davi: revise o login";
+
+    let reply = world.read(true, "iara", reply_text);
+
+    assert_eq!(
+        reply.delegation,
+        Some((davi(), "revise o login".to_string()))
+    );
+    assert_eq!(reply.visible, reply_text);
+}
+
+#[test]
+fn com_mcp_mencao_de_quem_nao_existe_ou_de_si_mesmo_ou_sem_pedido_fica_texto() {
+    let world = world();
+
+    for text in [
+        "@Fantasma: faça isso",
+        "@Iara: faça isso",
+        "@Davi:",
+        "@Davi sem dois pontos",
+    ] {
+        let reply = world.read(true, "iara", text);
+
+        assert!(reply.delegation.is_none(), "{text}");
+        assert_eq!(reply.visible, text);
+    }
+}
+
+#[test]
+fn com_mcp_a_ultima_mencao_valida_vale() {
+    let world = world();
+
+    let reply = world.read(
+        true,
+        "iara",
+        "@Fantasma: x\n@Davi: primeiro\n@Davi: segundo",
+    );
+
+    assert_eq!(reply.delegation, Some((davi(), "segundo".to_string())));
+}
+
+#[test]
+fn sem_mcp_a_mencao_segue_delegando_e_a_linha_continua_saindo_do_texto() {
+    let world = world();
+
+    let reply = world.read(false, "iara", "Preciso.\n@Davi: revise");
+
+    assert_eq!(reply.delegation, Some((davi(), "revise".to_string())));
+    assert_eq!(reply.visible, "Preciso.");
 }

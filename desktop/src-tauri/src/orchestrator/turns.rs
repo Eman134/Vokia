@@ -21,7 +21,7 @@ use super::loop_guard::{
     LOOP_MESSAGE, LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, REJECTION_LIMIT, SEM_AVANCO_LIMIT,
 };
 use super::markers::ParsedDecision;
-use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX, REPLY_PREFIX};
+use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext, TextReply};
 
@@ -120,7 +120,7 @@ pub(super) async fn run_turns(
                 &confirmations,
             );
             if let Some(shown) = shown {
-                let to = next_turn(definition, &turn, &visible, None, team)
+                let to = next_turn(definition, &turn, &visible, None)
                     .map_or(Speaker::User, |next| Speaker::from(next.speaker));
                 emit_message(
                     app,
@@ -154,9 +154,8 @@ pub(super) async fn run_turns(
         rejections = 0;
         let mut confirmations = confirmations;
         confirmations.extend(cards.confirmations);
-        let delegation = registered_delegation
-            .or(text_delegation)
-            .filter(|_| !definition.alternate);
+        let delegation =
+            merged_delegation(registered_delegation, text_delegation, definition.alternate);
         let advanced = applied.created_variable
             || applied.changed_value
             || variables.created_variable
@@ -218,7 +217,6 @@ pub(super) async fn run_turns(
             &turn,
             feed.as_deref().unwrap_or_default(),
             delegation.as_ref(),
-            team,
         );
         let to = next
             .as_ref()
@@ -562,7 +560,6 @@ fn next_turn(
     turn: &Turn,
     feed: &str,
     delegation: Option<&(Agent, String)>,
-    team: &Team,
 ) -> Option<Turn> {
     let speaker = turn.speaker.clone();
     if definition.alternate {
@@ -575,13 +572,8 @@ fn next_turn(
         return Some(Turn::new(helper.clone(), request, request, requesters));
     }
     let (requester, remaining) = turn.requesters.split_last()?;
-    let message = format!("{}{REPLY_PREFIX}{feed}", team.name_of(&speaker));
-    Some(Turn::new(
-        requester.clone(),
-        &message,
-        &message,
-        remaining.to_vec(),
-    ))
+    // Só a fala segue: quem mostra remetente e destinatário é o layout de agente para agente.
+    Some(Turn::new(requester.clone(), feed, feed, remaining.to_vec()))
 }
 
 fn next_participant(participants: &[Agent], speaker: &Agent) -> Agent {
@@ -600,6 +592,16 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
         [only] => only.feed(),
         _ => None,
     }
+}
+
+// Um turno delega no máximo uma vez: pedido igual pela ferramenta e pela linha `@Nome:` conta uma vez,
+// e a ferramenta vale se os dois divergirem. Em tarefa alternada o revezamento já decide quem fala.
+fn merged_delegation(
+    registered: Option<(Agent, String)>,
+    from_text: Option<(Agent, String)>,
+    alternate: bool,
+) -> Option<(Agent, String)> {
+    registered.or(from_text).filter(|_| !alternate)
 }
 
 fn with_confirmations(feed: Option<String>, confirmations: &[String]) -> Option<String> {

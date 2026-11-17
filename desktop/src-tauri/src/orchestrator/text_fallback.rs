@@ -6,7 +6,7 @@ use crate::state::AppState;
 use crate::task::Applied;
 
 use super::error::FlowError;
-use super::markers::{parse_decision, parse_reply, ParsedDecision, ParsedReply};
+use super::markers::{find_delegation, parse_decision, parse_reply, ParsedDecision, ParsedReply};
 use super::turns::with_cache;
 
 const MAX_CARD_OPERATIONS: usize = 10;
@@ -31,15 +31,17 @@ pub(super) struct TextReply {
     pub(super) rejected: Vec<String>,
 }
 
-// Com ferramentas a linha de marcador é só texto: nada é lido nem executado.
+// Com ferramentas só a linha `@Nome:` é lida; os outros marcadores são texto comum.
 pub(super) fn read_reply(
     with_tools: bool,
     context: &TextContext<'_>,
     reply: &str,
 ) -> Result<TextReply, FlowError> {
     if with_tools {
+        // Só a menção a um colega vira ação; o resto é texto e a linha segue visível.
         return Ok(TextReply {
             visible: reply.trim().to_string(),
+            delegation: find_delegation(reply, context.speaker, context.team),
             ..TextReply::default()
         });
     }
