@@ -23,6 +23,7 @@ import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
 import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
+import { useBacklog } from '../backlog/useBacklog'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
 
@@ -136,6 +137,9 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'goal-state':
         showGoalState(event)
+        break
+      case 'backlog-changed':
+        void useBacklog().reloadAfterAgentChange(event.projectId)
         break
       case 'plan-usage':
         break

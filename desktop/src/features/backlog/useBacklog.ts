@@ -160,6 +160,12 @@ export const useBacklog = defineStore('backlog', () => {
     await applySnapshot(projectId, (loadSeq += 1))
   }
 
+  // O agente gravou no banco por fora das filas: esperar as escritas pendentes evita que o snapshot as sobrescreva.
+  async function reloadAfterAgentChange(projectId: number): Promise<void> {
+    while (queues.size > 0) await Promise.all([...queues.values()].map((queue) => queue.tail))
+    await reloadAfterFailure(projectId)
+  }
+
   // Gravações do mesmo item rodam em ordem. Uma falha descarta as que ainda não foram enviadas (geração antiga)
   // e recarrega do banco; o conteúdo é lido no envio, então nada reaplica a mudança que falhou.
   function enqueue(itemId: string, write: (projectId: number) => Promise<void>): void {
@@ -284,6 +290,7 @@ export const useBacklog = defineStore('backlog', () => {
     close,
     clear,
     load,
+    reloadAfterAgentChange,
     startRequest,
     cancelRequest,
     discardRequest,

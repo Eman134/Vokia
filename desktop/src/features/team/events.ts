@@ -141,6 +141,11 @@ export interface VokiaGoalState {
   checks: number
 }
 
+export interface VokiaBacklogChanged {
+  type: 'backlog-changed'
+  projectId: number
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -152,6 +157,7 @@ export type VokiaEvent =
   | VokiaRequestSettled
   | VokiaConsoleLine
   | VokiaGoalState
+  | VokiaBacklogChanged
 
 export interface CliProblem {
   reason: string
