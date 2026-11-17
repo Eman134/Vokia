@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import VokiaMascot from '../../brand/VokiaMascot.vue'
 import UserNameField from '../../profile/UserNameField.vue'
 import { useProfileDraft } from '../../profile/useProfileDraft'
@@ -8,7 +7,6 @@ import StepHeading from './StepHeading.vue'
 const MASCOT_SIZE = 72
 
 const draft = useProfileDraft()
-onMounted(draft.begin)
 </script>
 
 <template>

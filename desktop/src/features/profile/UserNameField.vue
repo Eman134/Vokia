@@ -18,7 +18,7 @@ const counter = computed(() => `${[...draft.name.trim()].length}/${USER_NAME_MAX
       type="text"
       :aria-label="NAME_LABEL"
       :placeholder="NAME_LABEL"
-      :aria-invalid="draft.name !== '' && !draft.valid"
+      :aria-invalid="draft.name !== '' && !draft.nameValid"
       :class="NAME_INPUT_CLASSES"
     />
     <span class="text-small text-faint">{{ counter }}</span>

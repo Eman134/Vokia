@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 import { fetchSettings, saveSetting, USER_AVATAR_SETTING_KEY, USER_NAME_SETTING_KEY } from '../settings/settingsApi'
 import { findUserIcon, type UserAvatarChoice } from './userIcons'
 
+export type ProfileStep = 'nome' | 'foto'
+
 export const USER_NAME_MIN_CHARS = 2
 export const USER_NAME_MAX_CHARS = 20
 const DEFAULT_DISPLAY_NAME = 'Você'
@@ -39,7 +41,11 @@ export const useUserProfile = defineStore('userProfile', () => {
 
   const displayName = computed(() => name.value ?? DEFAULT_DISPLAY_NAME)
   const initial = computed(() => initialOf(name.value ?? ''))
-  const needsProfile = computed(() => loaded.value && name.value === null)
+  const pendingStep = computed<ProfileStep | null>(() => {
+    if (!loaded.value) return null
+    if (name.value === null) return 'nome'
+    return avatar.value === null ? 'foto' : null
+  })
 
   async function load(): Promise<void> {
     try {
@@ -53,9 +59,9 @@ export const useUserProfile = defineStore('userProfile', () => {
     }
   }
 
-  // O nome vai por último: sem ele o perfil continua "inexistente" (needsProfile), então uma falha no meio
+  // O nome vai por último: sem ele o perfil continua pendente (pendingStep), então uma falha no meio
   // não deixa um perfil pela metade; a foto anterior é restaurada para o caso de edição.
-  async function save(nextName: string, nextAvatar: UserAvatarChoice | null): Promise<void> {
+  async function save(nextName: string, nextAvatar: UserAvatarChoice): Promise<void> {
     const trimmed = nextName.trim()
     const previousAvatar = JSON.stringify(avatar.value)
     try {
@@ -75,5 +81,5 @@ export const useUserProfile = defineStore('userProfile', () => {
     avatar.value = nextAvatar
   }
 
-  return { name, avatar, loaded, displayName, initial, needsProfile, load, save }
+  return { name, avatar, loaded, displayName, initial, pendingStep, load, save }
 })

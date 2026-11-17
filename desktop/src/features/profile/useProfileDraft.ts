@@ -9,7 +9,8 @@ export const useProfileDraft = defineStore('profileDraft', () => {
   const avatar = ref<UserAvatarChoice | null>(null)
   const error = ref<string | null>(null)
   const saving = ref(false)
-  const valid = computed(() => isUserNameValid(name.value))
+  const nameValid = computed(() => isUserNameValid(name.value))
+  const valid = computed(() => nameValid.value && avatar.value !== null)
 
   function begin(): void {
     name.value = profile.name ?? ''
@@ -18,10 +19,11 @@ export const useProfileDraft = defineStore('profileDraft', () => {
   }
 
   async function submit(): Promise<boolean> {
-    if (!valid.value || saving.value) return false
+    const choice = avatar.value
+    if (choice === null || !nameValid.value || saving.value) return false
     saving.value = true
     try {
-      await profile.save(name.value, avatar.value)
+      await profile.save(name.value, choice)
       error.value = null
       return true
     } catch (failure) {
@@ -32,5 +34,5 @@ export const useProfileDraft = defineStore('profileDraft', () => {
     }
   }
 
-  return { name, avatar, error, saving, valid, begin, submit }
+  return { name, avatar, error, saving, valid, nameValid, begin, submit }
 })

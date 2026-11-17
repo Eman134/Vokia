@@ -5,6 +5,7 @@ import UiButton from '../../ui/UiButton.vue'
 import VokiaLogo from '../brand/VokiaLogo.vue'
 import { useFlow } from '../team/useFlow'
 import { useProfileDraft } from '../profile/useProfileDraft'
+import { useUserProfile } from '../profile/useUserProfile'
 import BoasVindasStep from './steps/BoasVindasStep.vue'
 import NomeStep from './steps/NomeStep.vue'
 import FotoStep from './steps/FotoStep.vue'
@@ -24,27 +25,32 @@ const STEPS: readonly OnboardingStep[] = [
   { id: 'foto', view: FotoStep, forwardLabel: 'Continuar' },
   { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir o mapa do time' },
 ]
-const PROFILE_STEP_IDS: readonly StepId[] = ['nome', 'foto']
+// Último passo de perfil: é onde nome e foto são salvos juntos.
+const SAVE_STEP_ID: StepId = 'foto'
 const LAST_INDEX = STEPS.length - 1
 
 const ROOT_CLASSES =
   'relative flex min-w-0 flex-1 flex-col items-center overflow-y-auto bg-bg px-6 pt-10 pb-[150px] text-ink'
 const MARK_CLASSES = 'grid size-8 place-items-center rounded-control bg-ink'
 const WORDMARK_CLASSES = 'text-[18px] font-bold tracking-[-0.02em]'
-const SKIP_CLASSES = 'absolute top-[46px] right-10'
 const MAIN_CLASSES = 'mt-14 flex w-[min(600px,100%)] flex-col items-center gap-7'
 const MARK_LOGO_SIZE = 20
 const ARROW_SIZE = 14
 const ARROW_PATH = 'M3 8h9M8.5 4.5 12 8l-3.5 3.5'
 
 const navigation = useNavigation()
-const index = ref(0)
+const profile = useUserProfile()
 const profileDraft = useProfileDraft()
+profileDraft.begin()
+const index = ref(firstStepIndex())
 const flow = useFlow()
 flow.start('onboarding', index.value + 1)
 const current = computed(() => STEPS[index.value])
 const isFirst = computed(() => index.value === 0)
-const forwardDisabled = computed(() => PROFILE_STEP_IDS.includes(current.value.id) && !profileDraft.valid)
+const forwardDisabled = computed(() => {
+  if (current.value.id === 'nome') return !profileDraft.nameValid
+  return current.value.id === SAVE_STEP_ID && !profileDraft.valid
+})
 
 watch(index, (value) => flow.goTo(value + 1))
 watch(
@@ -55,8 +61,9 @@ watch(
 )
 onBeforeUnmount(() => flow.finish())
 
-function goTo(id: StepId): void {
-  index.value = STEPS.findIndex((step) => step.id === id)
+function firstStepIndex(): number {
+  const pending = profile.pendingStep
+  return pending === null ? 0 : STEPS.findIndex((step) => step.id === pending)
 }
 
 function back(): void {
@@ -64,7 +71,7 @@ function back(): void {
 }
 
 async function forward(): Promise<void> {
-  if (PROFILE_STEP_IDS.includes(current.value.id) && !(await profileDraft.submit())) return
+  if (current.value.id === SAVE_STEP_ID && !(await profileDraft.submit())) return
   if (index.value === LAST_INDEX) {
     navigation.goTo('mapa')
     return
@@ -81,15 +88,6 @@ async function forward(): Promise<void> {
       </span>
       <b :class="WORDMARK_CLASSES">Vokia</b>
     </header>
-    <UiButton
-      v-if="current.id !== 'pronto'"
-      variant="quiet"
-      size="sm"
-      :class="SKIP_CLASSES"
-      @press="goTo('pronto')"
-    >
-      Pular e ir para o fim →
-    </UiButton>
     <main :class="MAIN_CLASSES">
       <component :is="current.view" />
       <footer class="flex w-full items-center gap-2" :class="isFirst ? 'justify-center' : 'justify-between'">

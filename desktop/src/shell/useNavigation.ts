@@ -2,10 +2,13 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Project } from '../features/projects/projectsApi'
 import { useProjects } from '../features/projects/useProjects'
+import { useUserProfile } from '../features/profile/useUserProfile'
 import { DEFAULT_PAGE, PROJECT_LIST_PAGE, isProjectPage, type AppPage } from './railNav'
 
 export const useNavigation = defineStore('navigation', () => {
-  const page = ref<AppPage>(DEFAULT_PAGE)
+  const profile = useUserProfile()
+  // Perfil incompleto abre o onboarding antes do resto do app; main.ts carrega o perfil antes de montar.
+  const page = ref<AppPage>(profile.pendingStep === null ? DEFAULT_PAGE : 'onboarding')
   const projects = useProjects()
   // Só na sessão: a lembrança não é persistida no banco.
   const lastPageByProject = new Map<number, AppPage>()
