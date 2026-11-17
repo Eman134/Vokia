@@ -918,3 +918,7 @@ impl Db {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/orchestration_db_tests.rs"]
+mod tests;
