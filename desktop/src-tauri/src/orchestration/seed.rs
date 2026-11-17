@@ -57,3 +57,7 @@ fn layer(name: &str, description: &str, kind: &str) -> LayerDraft {
         instructions: String::new(),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/orchestration_seed_tests.rs"]
+mod tests;

@@ -181,3 +181,7 @@ pub fn list_movements(state: State<'_, DbState>, project_id: i64) -> Result<Vec<
     db.list_movements(project_id, MOVEMENTS_LIMIT)
         .map_err(|error| error.to_string())
 }
+
+#[cfg(test)]
+#[path = "../../tests/orchestration_commands_tests.rs"]
+mod tests;
