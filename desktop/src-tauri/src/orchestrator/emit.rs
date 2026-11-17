@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::agents::Agent;
 use crate::claude::{LimitWindow, RateLimits, TurnActivity};
 use crate::db::DbState;
-use crate::events::{AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
+use crate::events::{AgentState, RequestProposal, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 
 use super::error::FlowError;
 
@@ -41,6 +41,7 @@ pub(super) fn emit_message(
     text: &str,
     channel_id: Option<i64>,
     activity: Option<TurnActivity>,
+    request_proposal: Option<RequestProposal>,
 ) -> Result<(), FlowError> {
     let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
     let time = now_millis()?;
@@ -53,6 +54,7 @@ pub(super) fn emit_message(
             time,
             channel_id,
             activity.as_ref(),
+            request_proposal.as_ref(),
         )?;
     }
     emit(
@@ -65,6 +67,7 @@ pub(super) fn emit_message(
             project_id: Some(project_id),
             channel_id,
             activity,
+            request_proposal,
         },
     )
 }

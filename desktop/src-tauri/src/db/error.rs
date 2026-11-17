@@ -36,6 +36,7 @@ pub enum DbError {
     BacklogItemNotFound(String),
     BacklogItemData { item_id: String, reason: String },
     MessageActivityData(String),
+    MessageProposalData(String),
     EmptyCardTitle,
     DuplicateCardTitle(String),
     InvalidBacklogOrigin(String),
@@ -158,6 +159,9 @@ impl fmt::Display for DbError {
             ),
             DbError::MessageActivityData(reason) => {
                 write!(f, "A atividade da mensagem é inválida: {reason}")
+            }
+            DbError::MessageProposalData(reason) => {
+                write!(f, "O pedido proposto na mensagem é inválido: {reason}")
             }
             DbError::EmptyCardTitle => write!(f, "O título do card não pode ser vazio."),
             DbError::DuplicateCardTitle(id) => {

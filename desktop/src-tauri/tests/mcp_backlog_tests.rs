@@ -480,7 +480,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
         .collect();
     assert_eq!(
         names,
-        ["list_backlog", "read_card", "create_card", "move_card", "update_card", "request_decision", "delegate", "get_variables", "set_variable"]
+        ["list_backlog", "read_card", "create_card", "move_card", "update_card", "request_decision", "propose_request", "delegate", "get_variables", "set_variable"]
     );
     assert!(tools
         .iter()
@@ -501,6 +501,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__move_card",
             "mcp__vokia__update_card",
             "mcp__vokia__request_decision",
+            "mcp__vokia__propose_request",
             "mcp__vokia__delegate",
             "mcp__vokia__get_variables",
             "mcp__vokia__set_variable"

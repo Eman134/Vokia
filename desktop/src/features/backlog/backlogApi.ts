@@ -1,11 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Agent } from '../team/events'
+import type { Agent, RequestProposal } from '../team/events'
 import type { BacklogColumn, BacklogItem, NewRequestDraft } from './backlogTypes'
 import type { LinkedPlan } from './useItemPlan'
 
 const LIST_BACKLOG_COMMAND = 'list_backlog'
 const SAVE_BACKLOG_ITEM_COMMAND = 'save_backlog_item'
 const CREATE_BACKLOG_ITEM_COMMAND = 'create_backlog_item'
+const CREATE_REQUEST_FROM_PROPOSAL_COMMAND = 'create_request_from_proposal'
 const MOVE_BACKLOG_ITEM_COMMAND = 'move_backlog_item'
 const SAVE_ITEM_PLAN_COMMAND = 'save_item_plan'
 
@@ -51,6 +52,19 @@ export interface NewBacklogRequest {
 
 export function createBacklogItem(projectId: number, request: NewBacklogRequest): Promise<BacklogItem> {
   return invoke<BacklogItem>(CREATE_BACKLOG_ITEM_COMMAND, { projectId, request })
+}
+
+export async function createRequestFromProposal(
+  projectId: number,
+  agent: Agent,
+  proposal: RequestProposal,
+): Promise<void> {
+  await invoke(CREATE_REQUEST_FROM_PROPOSAL_COMMAND, {
+    projectId,
+    agent,
+    title: proposal.title,
+    detail: proposal.detail || null,
+  })
 }
 
 export function moveBacklogItem(projectId: number, id: string, column: BacklogColumn): Promise<void> {

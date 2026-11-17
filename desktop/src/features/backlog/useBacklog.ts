@@ -2,8 +2,10 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
+import type { VokiaMessage } from '../team/events'
 import {
   createBacklogItem,
+  createRequestFromProposal,
   fetchBacklog,
   moveBacklogItem,
   saveBacklogItem,
@@ -41,6 +43,7 @@ export const useBacklog = defineStore('backlog', () => {
   const loadError = ref<string | null>(null)
   const requestDraft = ref<NewRequestDraft | null>(null)
   const creating = ref(false)
+  const createdProposals = ref<string[]>([])
   const feed = useFeed()
   const projects = useProjects()
   const queues = new Map<string, ItemQueue>()
@@ -115,6 +118,29 @@ export const useBacklog = defineStore('backlog', () => {
     } finally {
       creating.value = false
     }
+  }
+
+  function proposalKey(message: VokiaMessage): string {
+    return `${message.time}:${message.from}`
+  }
+
+  function proposalCreated(message: VokiaMessage): boolean {
+    return createdProposals.value.includes(proposalKey(message))
+  }
+
+  // A marca só vale nesta sessão; depois de reabrir o app, a recusa de título repetido do banco segura o duplicado.
+  async function createFromProposal(message: VokiaMessage): Promise<void> {
+    const proposal = message.requestProposal
+    const projectId = message.projectId
+    if (!proposal || projectId === null || message.from === 'user' || proposalCreated(message)) return
+    try {
+      await createRequestFromProposal(projectId, message.from, proposal)
+    } catch (error) {
+      feed.notify(String(error))
+      return
+    }
+    createdProposals.value = [...createdProposals.value, proposalKey(message)]
+    await reloadAfterAgentChange(projectId)
   }
 
   function clear(): void {
@@ -295,6 +321,8 @@ export const useBacklog = defineStore('backlog', () => {
     cancelRequest,
     discardRequest,
     submitRequest,
+    createFromProposal,
+    proposalCreated,
     moveTo,
     addTags,
     removeTag,

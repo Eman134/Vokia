@@ -7,7 +7,7 @@ use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
     AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
 };
-use crate::events::DecisionKind;
+use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
 use crate::state::AppState;
 use crate::task::{Change, VarValue};
@@ -21,6 +21,7 @@ const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
 const UPDATE_CARD: &str = "update_card";
 const REQUEST_DECISION: &str = "request_decision";
+const PROPOSE_REQUEST: &str = "propose_request";
 const DELEGATE: &str = "delegate";
 const GET_VARIABLES: &str = "get_variables";
 const SET_VARIABLE: &str = "set_variable";
@@ -58,6 +59,10 @@ const DECISION_REGISTERED: &str = "Decisão registrada. Termine a resposta agora
 const DECISION_ALREADY_REGISTERED: &str =
     "Já há uma decisão registrada nesta resposta. Termine a resposta agora.";
 const DECISION_EMPTY_TITLE: &str = "O título da decisão não pode ser vazio.";
+
+const PROPOSAL_REGISTERED: &str = "Proposta registrada. Escreva a resposta normalmente.";
+const PROPOSAL_ALREADY_REGISTERED: &str = "Já há um pedido proposto nesta resposta.";
+const PROPOSAL_EMPTY_TITLE: &str = "O título do pedido não pode ser vazio.";
 const DECISION_CHOICE_WITHOUT_OPTIONS: &str = "Uma decisão do tipo escolha precisa de opções.";
 
 // Falha de negócio volta ao agente com a frase do banco; falha de sistema não expõe detalhe.
@@ -112,6 +117,12 @@ struct DecisionArgs {
     title: String,
     detail: Option<String>,
     options: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct ProposalArgs {
+    title: String,
+    detail: Option<String>,
 }
 
 pub fn definitions() -> Vec<Value> {
@@ -174,6 +185,15 @@ pub fn definitions() -> Vec<Value> {
             &["kind", "title"],
         ),
         tool(
+            PROPOSE_REQUEST,
+            "Indica que esta resposta merece virar um pedido no backlog; o usuário decide com um botão. Não espera resposta: continue e escreva o texto normalmente.",
+            json!({
+                "title": { "type": "string", "maxLength": MAX_TITLE_CHARS },
+                "detail": { "type": "string" },
+            }),
+            &["title"],
+        ),
+        tool(
             DELEGATE,
             "Delega um pedido a outro agente do time e não espera a resposta: depois de chamar, termine a resposta.",
             json!({
@@ -231,6 +251,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
         UPDATE_CARD => parse(name, arguments).and_then(|args| update_card(app, binding, args)),
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
+        PROPOSE_REQUEST => parse(name, arguments).and_then(|args| propose_request(binding, args)),
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
         GET_VARIABLES => get_variables(app, binding),
         SET_VARIABLE => parse(name, arguments).and_then(|args| set_variable(app, binding, args)),
@@ -530,6 +551,23 @@ fn request_decision(binding: &Binding, args: DecisionArgs) -> ToolText {
         options,
     });
     Ok(DECISION_REGISTERED.to_string())
+}
+
+fn propose_request(binding: &Binding, args: ProposalArgs) -> ToolText {
+    let title = args.title.trim();
+    if title.is_empty() {
+        return Err(PROPOSAL_EMPTY_TITLE.to_string());
+    }
+    ensure_title_length(title)?;
+    let mut slot = binding.slot.lock();
+    if slot.proposal.is_some() {
+        return Err(PROPOSAL_ALREADY_REGISTERED.to_string());
+    }
+    slot.proposal = Some(RequestProposal {
+        title: title.to_string(),
+        detail: args.detail.unwrap_or_default().trim().to_string(),
+    });
+    Ok(PROPOSAL_REGISTERED.to_string())
 }
 
 fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolText {

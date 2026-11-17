@@ -49,6 +49,7 @@ pub async fn handle_request(
         request,
         context.channel_id,
         None,
+        None,
     )?;
     let key = SessionKey {
         project_id,

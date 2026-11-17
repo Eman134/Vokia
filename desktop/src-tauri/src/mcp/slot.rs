@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::agents::Agent;
-use crate::events::DecisionKind;
+use crate::events::{DecisionKind, RequestProposal};
 use crate::task::Change;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,6 +36,7 @@ pub struct SlotState {
     pub confirmations: Vec<String>,
     pub changed: bool,
     pub decision: Option<SlotDecision>,
+    pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
     pub variables: VariableEffects,
 }
@@ -45,6 +46,7 @@ pub struct SlotState {
 pub struct ExchangeOutcome {
     pub confirmations: Vec<String>,
     pub decision: Option<SlotDecision>,
+    pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
     pub variables: VariableEffects,
 }
@@ -54,6 +56,7 @@ impl ExchangeOutcome {
     pub fn absorb(&mut self, other: ExchangeOutcome) {
         self.confirmations.extend(other.confirmations);
         self.decision = other.decision.or(self.decision.take());
+        self.proposal = other.proposal.or(self.proposal.take());
         self.delegation = other.delegation.or(self.delegation.take());
         self.variables.absorb(other.variables);
     }
@@ -86,6 +89,7 @@ impl ExchangeSlot {
         ExchangeOutcome {
             confirmations: std::mem::take(&mut state.confirmations),
             decision: state.decision.take(),
+            proposal: state.proposal.take(),
             delegation: state.delegation.take(),
             variables: std::mem::take(&mut state.variables),
         }

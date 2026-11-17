@@ -58,7 +58,7 @@ fn banco_sem_a_coluna_de_canal_abre_e_devolve_o_historico_antigo_sem_marca() {
     seed_database_without_channel_column(&dir);
 
     let db = Db::open(&dir).expect("o banco antigo deveria migrar sem erro");
-    db.insert_message(1, Speaker::User, Speaker::User, "nova", 20, Some(5), None)
+    db.insert_message(1, Speaker::User, Speaker::User, "nova", 20, Some(5), None, None)
         .unwrap();
     let history = db.load_history(1).unwrap();
     drop(db);

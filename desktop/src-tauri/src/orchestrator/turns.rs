@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
-use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
+use crate::events::{AgentState, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{ExchangeOutcome, McpState, SlotDecision};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
@@ -84,6 +84,7 @@ pub(super) async fn run_turns(
         let ExchangeOutcome {
             confirmations,
             decision,
+            mut proposal,
             delegation: registered_delegation,
             variables,
         } = outcome;
@@ -112,7 +113,9 @@ pub(super) async fn run_turns(
         if let Some((decision, shown)) = raised {
             let shown = Some(shown).filter(|shown| !shown.is_empty());
             let shown = with_confirmations(shown, &confirmations).unwrap_or_default();
-            return raise_decision(exchange, transcript, &turn, decision, shown, activity);
+            return raise_decision(
+                exchange, transcript, &turn, decision, shown, activity, proposal,
+            );
         }
         if !rejected.is_empty() {
             let shown = with_confirmations(
@@ -130,6 +133,7 @@ pub(super) async fn run_turns(
                     &shown,
                     *channel_id,
                     activity.take(),
+                    None,
                 )?;
             }
             rejections += 1;
@@ -184,6 +188,7 @@ pub(super) async fn run_turns(
                     team,
                     *channel_id,
                     activity.take(),
+                    proposal.take(),
                 )?;
             }
             if cards.changed {
@@ -230,6 +235,7 @@ pub(super) async fn run_turns(
                 team,
                 *channel_id,
                 activity.take(),
+                proposal.take(),
             )?;
         }
         if cards.changed {
@@ -310,6 +316,7 @@ pub(super) async fn run_turns(
                 team,
                 *channel_id,
                 activity.take(),
+                proposal.take(),
             )?;
         }
         let speaker_state = if delegation.is_some() {
@@ -433,6 +440,7 @@ fn conclude(
         team,
         channel_id,
         None,
+        None,
     )
 }
 
@@ -444,6 +452,7 @@ fn raise_decision(
     decision: SlotDecision,
     visible: String,
     activity: Option<TurnActivity>,
+    proposal: Option<RequestProposal>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
         app,
@@ -474,6 +483,7 @@ fn raise_decision(
             team,
             *channel_id,
             activity,
+            proposal,
         )?;
     }
     let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
@@ -634,6 +644,7 @@ fn say(
     team: &Team,
     channel_id: Option<i64>,
     activity: Option<TurnActivity>,
+    request_proposal: Option<RequestProposal>,
 ) -> Result<(), FlowError> {
     emit_message(
         app,
@@ -643,6 +654,7 @@ fn say(
         text,
         channel_id,
         activity,
+        request_proposal,
     )?;
     transcript.push(format!("{}: {text}", team.name_of(from)));
     Ok(())

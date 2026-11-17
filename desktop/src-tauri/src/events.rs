@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::claude::{ConsoleKind, TurnActivity};
 use crate::orchestrator::RequestOutcome;
@@ -90,6 +90,13 @@ pub struct UsageWindow {
     pub resets_at: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestProposal {
+    pub title: String,
+    pub detail: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PermissionOutcome {
@@ -121,6 +128,8 @@ pub enum VokiaEvent {
         channel_id: Option<i64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         activity: Option<TurnActivity>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        request_proposal: Option<RequestProposal>,
     },
     #[serde(rename_all = "camelCase")]
     AgentState {

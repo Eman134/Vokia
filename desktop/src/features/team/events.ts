@@ -40,6 +40,11 @@ export interface TurnActivity {
   tools: ToolActivity[]
 }
 
+export interface RequestProposal {
+  title: string
+  detail: string
+}
+
 export interface VokiaMessage {
   type: 'message'
   from: Speaker
@@ -49,6 +54,7 @@ export interface VokiaMessage {
   projectId: number | null
   channelId?: number
   activity?: TurnActivity
+  requestProposal?: RequestProposal
 }
 
 export interface VokiaAgentState {

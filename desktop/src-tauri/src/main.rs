@@ -58,6 +58,7 @@ fn main() {
             commands::backlog::list_backlog,
             commands::backlog::save_backlog_item,
             commands::backlog::create_backlog_item,
+            commands::backlog::create_request_from_proposal,
             commands::backlog::move_backlog_item,
             commands::backlog::save_item_plan,
             commands::projects::set_permission_level,

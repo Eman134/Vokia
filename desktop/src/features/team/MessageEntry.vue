@@ -10,13 +10,17 @@ import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UserAvatar from '../profile/UserAvatar.vue'
 import { useUserProfile } from '../profile/useUserProfile'
+import { useBacklog } from '../backlog/useBacklog'
+import UiButton from '../../ui/UiButton.vue'
 
 defineProps<{ entry: FeedEntry }>()
 
 const roster = useRoster()
 const userProfile = useUserProfile()
+const backlog = useBacklog()
 
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
+const PROPOSAL_LABEL = 'Virar pedido'
 
 const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
   allowed: '✓ Aprovado:',
@@ -72,6 +76,16 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   <div v-else-if="entry.type === 'message'" class="flex min-w-0 flex-col gap-1.5">
     <ActivityRun v-if="entry.activity" :activity="entry.activity" />
     <MarkdownText :text="entry.text" />
+    <UiButton
+      v-if="entry.requestProposal"
+      class="self-start"
+      variant="quiet"
+      size="sm"
+      :disabled="entry.projectId === null || backlog.proposalCreated(entry)"
+      @press="backlog.createFromProposal(entry)"
+    >
+      {{ PROPOSAL_LABEL }}
+    </UiButton>
     <div class="flex flex-wrap items-center gap-1.5 text-caption text-muted">
       <span class="flex shrink-0" aria-hidden="true">
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
