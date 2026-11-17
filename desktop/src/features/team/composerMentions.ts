@@ -1,5 +1,6 @@
 import { normalizeName, useRoster } from './useRoster'
 import type { Agent } from './events'
+import { escapeRegExp } from './agentMentions'
 
 export const MENTION_TRIGGER = '@'
 
@@ -14,11 +15,8 @@ export interface MentionSpan {
   agent: Agent
 }
 
-const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g
-
 export function findTrigger(text: string, caret: number, trigger: string): TriggerMatch | null {
-  const escaped = trigger.replace(REGEX_SPECIAL_CHARS, '\\$&')
-  const match = new RegExp(`(?:^|\\s)${escaped}(\\p{L}*)$`, 'u').exec(text.slice(0, caret))
+  const match = new RegExp(`(?:^|\\s)${escapeRegExp(trigger)}(\\p{L}*)$`, 'u').exec(text.slice(0, caret))
   if (match === null) {
     return null
   }

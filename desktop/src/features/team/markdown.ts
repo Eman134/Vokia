@@ -1,6 +1,8 @@
 // Markdown mínimo para as mensagens do chat. Todo texto é escapado antes de virar HTML,
 // então o resultado é seguro para v-html: nada digitado pelo usuário vira tag ou atributo.
 
+import { findAgentMentions } from './agentMentions'
+
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -28,8 +30,21 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char])
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+export interface MentionAgent {
+  id: string
+  name: string
+  icon: string
+}
+
+function highlightMentions(html: string, agents: readonly MentionAgent[]): string {
+  let out = ''
+  let cursor = 0
+  for (const { start, end, agent } of findAgentMentions(html, agents)) {
+    const shown = html.slice(start, end).replace(/^@/, '')
+    out += `${html.slice(cursor, start)}<span data-mention="${agent.id}" class="inline-flex cursor-pointer items-center gap-0.5 align-bottom text-accent">${agent.icon}${shown}</span>`
+    cursor = end
+  }
+  return out + html.slice(cursor)
 }
 
 function startsBlock(line: string): boolean {
@@ -43,7 +58,7 @@ function startsBlock(line: string): boolean {
   )
 }
 
-function formatInline(raw: string, mentions: RegExp | null): string {
+function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
   // Trechos já prontos (código e links) ficam guardados e só voltam no fim,
   // para que negrito, itálico e menções não mexam dentro deles.
   const stash: string[] = []
@@ -60,13 +75,11 @@ function formatInline(raw: string, mentions: RegExp | null): string {
     .replace(STRIKE, '<del>$1</del>')
     .replace(ITALIC_STAR, '$1<em>$2</em>')
     .replace(ITALIC_UNDER, '$1<em>$2</em>')
-  if (mentions !== null) {
-    text = text.replace(mentions, '<span class="text-accent">$&</span>')
-  }
+  text = highlightMentions(text, mentions)
   return text.replace(PLACEHOLDER, (_, index: string) => stash[Number(index)])
 }
 
-function renderBlocks(lines: readonly string[], mentions: RegExp | null): string {
+function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[]): string {
   const html: string[] = []
   let i = 0
 
@@ -139,11 +152,7 @@ function renderBlocks(lines: readonly string[], mentions: RegExp | null): string
   return html.join('')
 }
 
-/** Converte o texto de uma mensagem em HTML seguro. `mentionNames` são nomes a destacar como `@Nome`. */
-export function renderMarkdown(source: string, mentionNames: readonly string[] = []): string {
-  const mentions =
-    mentionNames.length === 0
-      ? null
-      : new RegExp(`(?<=^|[\\s>])@(${mentionNames.map(escapeRegExp).join('|')})(?!\\p{L})`, 'giu')
-  return renderBlocks(source.replace(/\r\n?/g, '\n').split('\n'), mentions)
+/** Converte o texto de uma mensagem em HTML seguro. `agents` são os agentes reais, destacados com o ícone quando citados. */
+export function renderMarkdown(source: string, agents: readonly MentionAgent[] = []): string {
+  return renderBlocks(source.replace(/\r\n?/g, '\n').split('\n'), agents)
 }

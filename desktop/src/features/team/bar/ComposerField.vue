@@ -4,11 +4,14 @@ import { useConnection } from '../useConnection'
 import { useFeed } from '../useFeed'
 import { useFlow } from '../useFlow'
 import { useRequests } from '../useRequests'
+import { useMentionCard } from '../useMentionCard'
 import { agentName } from '../agents'
 import { useRoster } from '../useRoster'
 import { useTeamStatus } from '../useTeamStatus'
 import { placeholderFor, QUEUE_SUFFIX } from '../composerPlaceholder'
-import { mentionSegments, mentionSpans } from '../composerMentions'
+import { mentionSegments, mentionSpans, MENTION_TRIGGER } from '../composerMentions'
+import { findAgentMentions } from '../agentMentions'
+import AgentPortrait from '../AgentPortrait.vue'
 import { FLOW_PLACEHOLDER } from '../flowSteps'
 import { screenDestination, screenPlaceholder } from '../screenRecipient'
 import { useChannels } from '../../channels/useChannels'
@@ -31,6 +34,11 @@ const emit = defineEmits<{
   'menu-open': [open: boolean]
 }>()
 
+// O ícone não pode ocupar largura no espelho, senão o texto desalinha do campo: sobre o @ ele cabe no
+// lugar do caractere; sem @, fica acima da primeira letra.
+const AT_ICON_SIZE = 12
+const RAISED_ICON_SIZE = 9
+
 // Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
 const FIELD_PADDING_X = 14
 // Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
@@ -40,6 +48,7 @@ const connection = useConnection()
 const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
+const mentionCard = useMentionCard()
 const channelsStore = useChannels()
 const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const statusStore = useTeamStatus()
@@ -90,6 +99,13 @@ const recipient = computed<Agent | null>(
       .to,
 )
 const segments = computed(() => mentionSegments(draft.value, spans.value))
+// Só o destaque visual: o destino do pedido continua vindo das menções confirmadas (spans).
+const highlightSegments = computed(() =>
+  mentionSegments(
+    draft.value,
+    findAgentMentions(draft.value, roster.agents).map(({ start, end, agent }) => ({ start, end, agent: agent.id })),
+  ),
+)
 const queueHint = computed(() => {
   const target = recipient.value
   if (target === null || feed.stateOf(target) === 'idle') {
@@ -125,6 +141,19 @@ watch(
     }
   },
 )
+
+// O espelho não recebe o ponteiro (o campo fica por cima), então o hover é achado pela posição no eixo x.
+function hoverMention(event: MouseEvent): void {
+  const mentions = wrapperRef.value?.querySelectorAll<HTMLElement>('[data-mention]') ?? []
+  for (const element of mentions) {
+    const { left, right } = element.getBoundingClientRect()
+    if (event.clientX >= left && event.clientX <= right && element.dataset.mention) {
+      mentionCard.open(element.dataset.mention, element)
+      return
+    }
+  }
+  mentionCard.scheduleClose()
+}
 
 function anchorLeft(): number {
   const wrapper = wrapperRef.value
@@ -162,18 +191,31 @@ defineExpose({ isFocused })
     v-if="canAsk && !composerHidden"
     ref="wrapperRef"
     class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
+    @mousemove="hoverMention"
+    @mouseleave="mentionCard.scheduleClose()"
   >
     <div
       aria-hidden="true"
       class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3.5 text-label"
       :style="{ transform: `translateX(${-scrollLeft}px)` }"
     >
-      <span
-        v-for="(segment, index) in segments"
-        :key="index"
-        :class="segment.agent === null ? 'text-ink' : 'text-accent'"
-        >{{ segment.text }}</span
-      >
+      <template v-for="(segment, index) in highlightSegments" :key="index">
+        <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
+        <span v-else :data-mention="segment.agent" class="relative text-accent">
+          <span
+            v-if="segment.text.startsWith(MENTION_TRIGGER)"
+            class="absolute top-1/2 left-0 -translate-y-1/2"
+            ><AgentPortrait :who="segment.agent" :size="AT_ICON_SIZE"
+          /></span>
+          <span v-else class="absolute bottom-full left-0"
+            ><AgentPortrait :who="segment.agent" :size="RAISED_ICON_SIZE"
+          /></span>
+          <span :class="segment.text.startsWith(MENTION_TRIGGER) ? 'text-transparent' : ''">{{
+            segment.text.startsWith(MENTION_TRIGGER) ? MENTION_TRIGGER : ''
+          }}</span
+          >{{ segment.text.startsWith(MENTION_TRIGGER) ? segment.text.slice(MENTION_TRIGGER.length) : segment.text }}
+        </span>
+      </template>
       <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
       <span ref="measureRef" class="invisible absolute whitespace-pre">{{
         draft.slice(0, activeMatch?.start ?? 0)
