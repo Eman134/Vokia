@@ -39,7 +39,7 @@ pub(crate) fn build(team: &Team) -> OrchestrationSeed {
 }
 
 fn layer_of(agent: &Agent) -> &'static str {
-    if *agent == Agent::iara() {
+    if *agent == Agent::ember() {
         LEADER_LAYER_ID
     } else if agent.as_str() == TEO_ID {
         REVIEW_LAYER_ID

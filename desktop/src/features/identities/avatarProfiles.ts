@@ -1,6 +1,6 @@
 import type { IdentityPaleta } from './identityFamilies'
 
-export type AvatarShapeId = 'gota' | 'cristal-hexagono' | 'cristal-losango' | 'cristal-prisma'
+export type AvatarShapeId = 'gota' | 'gota-chama' | 'cristal-hexagono' | 'cristal-losango' | 'cristal-prisma'
 export type AvatarExpression = 'feliz' | 'curioso' | 'focado' | 'sonolento'
 
 export interface AvatarColor {
@@ -51,6 +51,15 @@ export const AVATAR_SHAPES: AvatarShape[] = [
     },
   },
   {
+    id: 'gota-chama',
+    label: 'Gota em chama',
+    body: (color) =>
+      `<ellipse cx="32" cy="60" rx="14" ry="2.5" fill="#1c1c21" opacity=".12"></ellipse><path d="M32 13 C 26 23, 14 33, 14 44 a18 17 0 0 0 36 0 C 50 33, 38 23, 32 13 Z" fill="${color.base}"></path><path d="M32 13 C 38 23, 50 33, 50 44 a18 17 0 0 1 -18 17 C 42 55, 46 45, 32 13 Z" fill="${color.shade}" opacity=".45"></path><path d="M32 1 C 37 8, 43 12, 42 20 C 41 25, 37 26, 35 22 C 34 18, 32 16, 30 13 C 28 18, 25 21, 25 25 C 25 29, 21 30, 20 25 C 19 17, 27 9, 32 1 Z" fill="#ffb13b"></path><path d="M32 9 C 34 13, 37 15, 36 20 C 35 23, 33 23, 32 21 C 31 19, 30 18, 30 16 C 29 19, 28 21, 28 23 C 27 24, 26 23, 26 22 C 26 18, 29 15, 32 9 Z" fill="#ffe27a"></path><ellipse cx="22" cy="38" rx="2.8" ry="4.6" fill="#fff" opacity=".55" transform="rotate(25 22 38)"></ellipse>`,
+    faces: {
+      feliz: `<g transform="translate(0 5)"><circle cx="25" cy="40" r="4.2" fill="#fff"></circle><circle cx="25" cy="40" r="2.1" fill="#1c1c21"></circle><circle cx="39" cy="40" r="4.2" fill="#fff"></circle><circle cx="39" cy="40" r="2.1" fill="#1c1c21"></circle><path d="M27 48 Q32 53 37 48" fill="none" stroke="#1c1c21" stroke-width="2" stroke-linecap="round"></path></g>`,
+    },
+  },
+  {
     id: 'cristal-hexagono',
     label: 'Cristal hexágono',
     body: (color) =>
@@ -93,6 +102,7 @@ export const AVATAR_PROFILES: AvatarProfile[] = [
   { id: 'vesper-agua', nome: 'Vésper água', forma: 'gota', cor: 'verde-agua', expressao: 'sonolento' },
   { id: 'onix-negro', nome: 'Ônix negro', forma: 'cristal-losango', cor: 'onix', expressao: 'feliz' },
   { id: 'selene-ouro', nome: 'Selene ouro', forma: 'cristal-prisma', cor: 'amarelo', expressao: 'feliz' },
+  { id: 'ember', nome: 'Ember', forma: 'gota-chama', cor: 'vermelho', expressao: 'feliz' },
 ]
 
 const warnedIds = new Set<string>()

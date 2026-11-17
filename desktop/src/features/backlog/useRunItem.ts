@@ -12,7 +12,7 @@ const RUN_TITLE_PREFIX = 'Execute o item'
 const DESCRIPTION_HEADING = 'Descrição'
 const CRITERIA_HEADING = 'Critérios'
 const PLAN_HEADING = 'Plano'
-const RUN_CLOSING = 'Avise a Iara ao começar e ao terminar.'
+const RUN_CLOSING = 'Avise Ember ao começar e ao terminar.'
 const SENT_PREFIX = 'Execução enviada para '
 const QUEUED_SUFFIX = ' está ocupado; o pedido espera na fila dele.'
 const SENT_NOTE = (agent: string) => `${SENT_PREFIX}${agent}.`

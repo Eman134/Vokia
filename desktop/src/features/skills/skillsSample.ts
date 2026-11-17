@@ -54,7 +54,7 @@ export interface SkillMatrixOccupation {
 }
 
 export const SKILL_MATRIX_OCCUPATIONS: readonly SkillMatrixOccupation[] = [
-  { who: 'iara', title: 'Tech Lead' },
+  { who: 'ember', title: 'Tech Lead' },
   { who: 'davi', title: 'Frontend' },
   { who: 'nina', title: 'Backend' },
   { who: 'leo', title: 'Integrações' },

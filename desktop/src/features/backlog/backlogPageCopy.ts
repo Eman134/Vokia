@@ -2,7 +2,7 @@ import type { BacklogColumn } from './backlogTypes'
 
 export const BACKLOG_TITLE = 'Backlog e planos'
 export const BACKLOG_SUBTITLE =
-  'Todo pedido entra aqui. Features viram um card pai: a Iara faz a triagem e desdobra em micro-tarefas, o time executa, você revisa e elas são entregues.'
+  'Todo pedido entra aqui. Features viram um card pai: Ember faz a triagem e desdobra em micro-tarefas, o time executa, você revisa e elas são entregues.'
 export const NEW_REQUEST_LABEL = '+ Novo pedido'
 export const NEW_REQUEST_DIALOG_TITLE = 'Novo pedido'
 export const NEW_REQUEST_TITLE_LABEL = 'Título'

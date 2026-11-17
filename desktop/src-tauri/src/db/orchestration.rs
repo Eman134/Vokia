@@ -9,7 +9,7 @@ const VOCE_NODE: &str = "voce";
 const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 const MOVEMENTS_MIN_LIMIT: i64 = 1;
 
-const DEFAULT_LEADER_AGENT: &str = "iara";
+const DEFAULT_LEADER_AGENT: &str = "ember";
 const DEFAULT_ENFORCEMENT: &str = "off";
 const DEFAULT_STEP_MODE: &str = "lotes";
 const DEFAULT_HUMAN_GATE: &str = "lote";

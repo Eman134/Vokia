@@ -60,9 +60,9 @@ export interface ArtifactSample {
 }
 
 export const ARTIFACT_SAMPLES: readonly ArtifactSample[] = [
-  { kind: 'whiteboard', title: 'Arquitetura do checkout', author: 'Iara', portrait: 'iara', time: 'agora' },
+  { kind: 'whiteboard', title: 'Arquitetura do checkout', author: 'Ember', portrait: 'ember', time: 'agora' },
   { kind: 'mermaid', title: 'Fluxo do pagamento Pix', author: 'Nina', portrait: 'nina', time: '4 min' },
-  { kind: 'plantuml', title: 'Modelo de domínio de pagamentos', author: 'Iara', portrait: 'iara', time: '1 h' },
+  { kind: 'plantuml', title: 'Modelo de domínio de pagamentos', author: 'Ember', portrait: 'ember', time: '1 h' },
   { kind: 'documento', title: 'Spec · Pagamento via Pix', author: 'Téo', portrait: 'teo', time: '20 min' },
   { kind: 'casos', title: 'Casos de uso do checkout', author: 'Rui', portrait: 'rui', time: 'ontem' },
   { kind: 'anotacoes', title: 'Anotações do checkout', author: 'Rui', portrait: 'rui', time: '2 h' },

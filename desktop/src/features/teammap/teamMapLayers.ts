@@ -10,7 +10,7 @@ const DEFAULT_LAYER: MapLayerId = 'implementacao'
 
 // Camada ainda não é dado do agente; Map evita que ids como 'constructor' resolvam para o prototype.
 const LAYER_BY_AGENT: ReadonlyMap<string, MapLayerId> = new Map<string, MapLayerId>([
-  ['iara', 'lideranca'],
+  ['ember', 'lideranca'],
   ['davi', 'implementacao'],
   ['nina', 'implementacao'],
   ['rui', 'implementacao'],

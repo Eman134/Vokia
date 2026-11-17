@@ -2,7 +2,7 @@ import type { Agent, AgentState } from './events'
 import type { AgentProfile } from './teamApi'
 import { normalizeName, useRoster } from './useRoster'
 
-export const DEFAULT_RECIPIENT: Agent = 'iara'
+export const DEFAULT_RECIPIENT: Agent = 'ember'
 
 export function agentName(id: Agent): string {
   return useRoster().nameOf(id)

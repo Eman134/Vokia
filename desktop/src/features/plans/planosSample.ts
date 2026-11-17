@@ -40,7 +40,7 @@ const CARTAO: SamplePlan = {
   id: 'cartao',
   scope: 'feature',
   name: 'Cartão parcelado',
-  meta: 'Iara · 3 lotes · 11 micro-tarefas',
+  meta: 'Ember · 3 lotes · 11 micro-tarefas',
   status: 'run',
   stage: 4,
   lots: [
@@ -116,7 +116,7 @@ const PIX: SamplePlan = {
   id: 'pix',
   scope: 'feature',
   name: 'Pagamento via Pix',
-  meta: 'Iara · 3 lotes · 12 micro-tarefas',
+  meta: 'Ember · 3 lotes · 12 micro-tarefas',
   status: 'review',
   stage: 5,
   lots: [

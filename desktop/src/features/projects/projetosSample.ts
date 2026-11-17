@@ -26,7 +26,7 @@ export const LINKED_REPO_LABEL = 'Vinculado ao GitHub'
 export const CLI_NOTE = 'Claude Code e Codex logados'
 export const START_FROM_LABEL = 'Começar de'
 export const START_FROM_VALUE = 'Branch existente'
-export const SAMPLE_TEAM_PREVIEW = ['Iara', 'Davi', 'Nina'] as const
+export const SAMPLE_TEAM_PREVIEW = ['Ember', 'Davi', 'Nina'] as const
 
 export const SAMPLE_REUSE_MODES = ['Reaproveitar um time', 'Usar um modelo', 'Começar vazio'] as const
 export const SAMPLE_TEAMS_HEADING = 'Times dos seus projetos'
@@ -43,14 +43,14 @@ export const SAMPLE_SHARE_OPTIONS = [
 export const SAMPLE_AGENTS_HEADING = 'Agentes'
 export const SAMPLE_AGENTS_COUNT = '3 de 4 incluídos'
 export const SAMPLE_AGENTS = [
-  { id: 'iara', name: 'Iara', role: 'líder · planeja e divide', cli: 'claude', layer: 'Produto', load: 'ocupada em 2 projetos' },
+  { id: 'ember', name: 'Ember', role: 'líder · planeja e divide', cli: 'claude', layer: 'Produto', load: 'ocupada em 2 projetos' },
   { id: 'davi', name: 'Davi', role: 'front-end', cli: 'claude', layer: 'Interface', load: 'em 2 projetos' },
   { id: 'nina', name: 'Nina', role: 'back-end e dados', cli: 'codex', layer: 'Serviços', load: 'livre' },
   { id: 'teo', name: 'Téo', role: 'revisão e testes', cli: 'claude', layer: 'Qualidade', load: 'em 2 projetos' },
 ] as const
 export const SAMPLE_ORCH_HEADING = 'Orquestração'
 export const SAMPLE_ORCH_OPTIONS = [
-  { label: 'Líder distribui', hint: 'Iara divide em cards e passa adiante' },
+  { label: 'Líder distribui', hint: 'Ember divide em cards e passa adiante' },
   { label: 'Fila por camada', hint: 'cada agente puxa da sua camada' },
   { label: 'Livre', hint: 'você atribui cada card' },
 ] as const
@@ -72,7 +72,7 @@ export const PICK_FOLDER_LABEL = 'Escolher pasta'
 export const CREATE_WITHOUT_REQUEST_LABEL = 'Criar sem pedido'
 
 export const REQUEST_TO_HEADING = 'O pedido vai para'
-export const REQUEST_LEAD = 'Iara'
+export const REQUEST_LEAD = 'Ember'
 export const REQUEST_LEAD_NOTE = ', que lidera o time'
 export const REQUEST_CREW_NOTE = 'Davi e Nina recebem os cards'
 export const REQUEST_FIELD_LABEL = 'O que o time deve fazer primeiro?'
@@ -100,14 +100,14 @@ export const REQUEST_CONTEXT = [
 ] as const
 export const REQUEST_START_HEADING = 'Quando começar'
 export const REQUEST_START_OPTIONS = [
-  { label: 'Planejar e esperar', hint: 'Iara propõe o plano e o 1º lote; ninguém codifica antes do seu ok' },
+  { label: 'Planejar e esperar', hint: 'Ember propõe o plano e o 1º lote; ninguém codifica antes do seu ok' },
   { label: 'Começar já', hint: 'pula o ok da proposta só neste pedido; o padrão fica em Configurações › Execução' },
 ] as const
 export const REQUEST_SEND_LABEL = 'Criar projeto e planejar'
 export const NEXT_HEADING = 'O que acontece em seguida'
 export const NEXT_STEPS = [
   { title: 'Clonar e preparar', text: 'clona o repo, cria a branch e o worktree' },
-  { title: 'Iara lê o repositório', text: 'código, issues marcadas e a memória vinculada' },
+  { title: 'Ember lê o repositório', text: 'código, issues marcadas e a memória vinculada' },
   { title: 'Plano e primeiro lote', text: 'feature com cards por camada, no Plano' },
   { title: 'Você revisa', text: 'aprova o lote na barra de ação' },
   { title: 'Time começa', text: 'Davi e Nina pegam os cards' },

@@ -20,7 +20,7 @@ const AVATAR_MAX_CHARS: usize = 32;
 const CLAUDE_CLI: &str = "claude";
 const CLAUDE_CLI_LABEL: &str = "Claude Code";
 const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
-const IARA: &str = "iara";
+const EMBER: &str = "ember";
 const DAVI: &str = "davi";
 
 const INITIAL_AGENTS: [(&str, &str, &str); 3] = [
@@ -65,8 +65,8 @@ impl Agent {
         &self.0
     }
 
-    pub fn iara() -> Agent {
-        Agent(IARA.to_string())
+    pub fn ember() -> Agent {
+        Agent(EMBER.to_string())
     }
 
     pub fn davi() -> Agent {
@@ -194,7 +194,7 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
 
 fn builtins() -> Vec<AgentProfile> {
     vec![
-        builtin(Agent::iara(), "Iara", "Tech lead", "quarzo"),
+        builtin(Agent::ember(), "Ember", "Tech lead", "ember"),
         builtin(Agent::davi(), "Davi", "Dev frontend", "lume"),
     ]
 }
