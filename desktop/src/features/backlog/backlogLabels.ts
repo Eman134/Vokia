@@ -32,6 +32,14 @@ export const MICRO_STATUS_BADGE: Record<MicroTaskStatus, BadgeStatus> = {
   'em revisão': 'precisa de você',
   feito: 'trabalhando',
 }
+export const BADGE_DOT: Record<BadgeStatus, string> = {
+  trabalhando: 'bg-ok',
+  'precisa de você': 'bg-warn',
+  livre: 'bg-faint',
+  erro: 'bg-danger',
+  backlog: 'bg-muted',
+  lote: 'bg-accent',
+}
 export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status: BadgeStatus }>> = {
   Ready: { label: 'ready', status: 'lote' },
   'In progress': { label: 'em andamento', status: 'lote' },

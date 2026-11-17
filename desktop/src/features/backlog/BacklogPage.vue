@@ -17,7 +17,6 @@ import {
   BACKLOG_SUBTITLE,
   BACKLOG_TITLE,
   COLUMN_META,
-  DENSITY_OPTIONS,
   EMPTY_BOARD_TEXT,
   EMPTY_BOARD_TITLE,
   EMPTY_COLUMN_TEXT,
@@ -33,7 +32,6 @@ import {
 import {
   DEFAULT_COLUMN,
   type BacklogCardAction,
-  type BacklogCardDensity,
   type BacklogColumn,
   type BacklogItem,
   type KanbanStage,
@@ -69,7 +67,6 @@ const itemPlan = useItemPlan()
 const runItem = useRunItem()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
-const density = ref<BacklogCardDensity>('normal')
 const typeFilter = ref<string>(TYPE_FILTER_OPTIONS[0].value)
 
 function columnOf(item: BacklogItem): BacklogColumn {
@@ -175,8 +172,7 @@ watch(
         <h1 :class="TITLE_CLASSES">{{ BACKLOG_TITLE }}</h1>
         <p :class="SUBTITLE_CLASSES">{{ BACKLOG_SUBTITLE }}</p>
       </div>
-      <div class="ml-auto flex items-center gap-2">
-        <UiSegmented v-model="density" :options="DENSITY_OPTIONS" label="Densidade" disabled />
+      <div class="ml-auto flex flex-wrap items-center gap-2">
         <UiButton
           variant="quiet"
           size="lg"
@@ -231,7 +227,7 @@ watch(
             <b>{{ column.name }}</b>
             <span class="text-caption text-muted">{{ column.cards.length }}</span>
           </div>
-          <span v-if="density === 'normal'" class="truncate text-caption text-muted">{{ column.hint }}</span>
+          <span class="truncate text-caption text-muted">{{ column.hint }}</span>
           <BacklogCard
             v-for="item in column.cards"
             :key="item.id"
@@ -239,7 +235,6 @@ watch(
             :column="column.name"
             :state="itemPlan.stateFor(item)"
             :plan-line="itemPlan.lineFor(item)"
-            :density="density"
             @open="onOpenCard(item.id)"
             @action="onCardAction(item.id, $event)"
           />

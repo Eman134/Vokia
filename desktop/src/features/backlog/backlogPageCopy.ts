@@ -20,10 +20,6 @@ export const SEARCH_PLACEHOLDER = 'Buscar item'
 export const MINE_LABEL = 'Meus pedidos'
 export const EMPTY_COLUMN_TEXT = 'Nada aqui'
 
-export const DENSITY_OPTIONS = [
-  { label: 'Normal', value: 'normal' },
-  { label: 'Compacta', value: 'compacta' },
-] as const
 export const TYPE_FILTER_OPTIONS = [
   { label: 'Tudo', value: 'tudo' },
   { label: 'Features', value: 'feature' },

@@ -2,37 +2,45 @@
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
+import AgentPortrait from '../team/AgentPortrait.vue'
+import { useRoster } from '../team/useRoster'
+import UserAvatar from '../profile/UserAvatar.vue'
+import { useUserProfile } from '../profile/useUserProfile'
 import {
   ACTION_ID,
   ACTION_TITLE,
   type ActionLabel,
+  BADGE_DOT,
   colorVar,
   COLUMN_CHIP,
-  DEFAULT_FEATURE_COLOR,
-  FEATURE_COLOR,
   STATE_ACTION,
   STATE_BADGE,
   STATE_CHIP,
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import { tagColor, tagLabel, tagTextColor } from './tags'
-import { DEFAULT_COLUMN, READY_COLUMN, type BacklogCardAction, type BacklogCardDensity, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
+import { DEFAULT_COLUMN, READY_COLUMN, type BacklogCardAction, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
 
-const props = withDefaults(defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; density?: BacklogCardDensity; planLine?: string }>(), {
-  density: 'normal',
-})
+const props = defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; planLine?: string }>()
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 
 const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
+const USER_OWNER = 'voce'
+const AVATAR_SIZE = 22
+const FEATURE_STACK_SHADOW =
+  'shadow-[0_1px_2px_rgb(0_0_0/8%),4px_4px_0_-1px_var(--color-surface),4px_4px_0_0_var(--color-line),8px_8px_0_-1px_var(--color-surface),8px_8px_0_0_var(--color-line)]'
 
-const isCompact = computed(() => props.density === 'compacta')
-const featureColor = computed(() => colorVar(FEATURE_COLOR[props.item.feature ?? ''] ?? DEFAULT_FEATURE_COLOR))
+const roster = useRoster()
+const userProfile = useUserProfile()
 
 const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
 )
+const isFeature = computed(() => props.item.type === 'feature')
+const ownerName = computed(() => (props.item.who === USER_OWNER ? userProfile.displayName : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
+const createdOn = computed(() => props.item.activity?.[0]?.at.split(',')[0])
 
 const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
   if (props.item.error) return undefined
@@ -60,7 +68,6 @@ const percent = computed(() => {
   return Math.round((progress.value.filled / progress.value.total) * 100)
 })
 
-const showPlan = computed(() => !isCompact.value && Boolean(props.planLine))
 
 function tagPillStyle(tag: BacklogTag) {
   const token = colorVar(tagColor(tag))
@@ -73,16 +80,15 @@ function tagPillStyle(tag: BacklogTag) {
 
 <template>
   <article
-    class="flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-card border border-line bg-surface p-2.5"
-    :class="[isCompact && 'border-l-4', item.error && 'border-danger']"
-    :style="isCompact ? { borderLeftColor: featureColor } : undefined"
+    class="flex min-w-0 cursor-pointer flex-col gap-2 rounded-popover border border-line bg-surface px-3.25 py-3 shadow-seg"
+    :class="[item.error && 'border-danger', isFeature && ['mb-2 mr-2', FEATURE_STACK_SHADOW]]"
     @click="emit('open')"
   >
-    <header class="flex items-center gap-2 text-caption text-muted">
-      <span>{{ item.id }}</span>
-      <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
+    <header class="flex items-center gap-2">
+      <span class="font-mono text-tiny text-muted">{{ item.id }}</span>
+      <span v-if="isFeature" class="rounded-chip bg-accent-soft px-1.5 py-0.5 text-tiny font-bold tracking-[.03em] text-accent uppercase">feature</span>
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
-      <ul v-if="!isCompact && item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
+      <ul v-if="item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
         <li
           v-for="tag in item.tags"
           :key="tag"
@@ -92,30 +98,22 @@ function tagPillStyle(tag: BacklogTag) {
           {{ tagLabel(tag) }}
         </li>
       </ul>
-      <div v-if="isCompact" class="ml-auto flex items-center gap-1.5">
-        <UiBadge :status="chip.status" :label="chip.label" />
-        <ul v-if="item.tags.length" class="flex items-center gap-1.5">
-          <li
-            v-for="tag in item.tags"
-            :key="tag"
-            class="size-2 rounded-full"
-            :style="{ backgroundColor: colorVar(tagColor(tag)) }"
-            :title="tagLabel(tag)"
-          />
-        </ul>
-      </div>
     </header>
 
-    <p v-if="item.parent && !isCompact" class="truncate text-caption text-muted">↳ {{ item.parent }}</p>
-    <h3 class="text-control font-semibold text-ink" :class="isCompact ? 'truncate' : 'wrap-break-word'">
-      {{ item.title }}
+    <p v-if="item.parent" class="truncate text-meta text-muted">↳ {{ item.parent }}</p>
+    <h3 class="flex items-start gap-2 text-body leading-[1.3] font-bold text-ink">
+      <span class="mt-1.25 size-2 shrink-0 rounded-full" :class="BADGE_DOT[chip.status]" :title="chip.label" aria-hidden="true" />
+      <span class="sr-only">{{ chip.label }}:</span>
+      <span class="min-w-0 wrap-break-word">{{ item.title }}</span>
     </h3>
+    <p v-if="item.description" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-muted">{{ item.description }}</p>
     <p v-if="item.error" role="alert" class="text-caption font-semibold text-danger">
       Erro ao ler este item: {{ item.error.reason }}
     </p>
+    <p v-if="planLine" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
 
-    <div v-if="!isCompact && action" class="flex items-center gap-1">
-      <UiButton variant="quiet" size="sm" class="gap-1.5" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
+    <div v-if="action" class="flex items-center gap-1">
+      <UiButton variant="primary" size="sm" class="h-6.5 gap-1.5 rounded-control-sm pr-2.25 pl-1.75 text-small font-semibold" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
         <svg v-if="action.id === 'triar'" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
         </svg>
@@ -125,6 +123,7 @@ function tagPillStyle(tag: BacklogTag) {
         v-if="action.id === 'triar'"
         variant="quiet"
         size="sm"
+        class="size-6.5 rounded-control-sm border border-line p-0"
         :aria-label="ACTION_TITLE.vincular"
         :title="ACTION_TITLE.vincular"
         @click.stop
@@ -142,26 +141,25 @@ function tagPillStyle(tag: BacklogTag) {
       </UiButton>
     </div>
 
-    <p v-if="!isCompact && item.description" class="line-clamp-2 wrap-break-word text-caption text-muted">{{ item.description }}</p>
-    <p v-if="showPlan" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
-
-    <div v-if="progress" class="flex flex-col gap-1.5">
-      <p v-if="progress.showText" class="flex justify-between text-caption text-muted">
+    <div v-if="progress" class="flex flex-col gap-1.25">
+      <p v-if="progress.showText" class="flex justify-between text-meta text-muted">
         <span>{{ item.children?.total }} micro-tarefas · {{ progress.filled }} feitas</span>
         <span>{{ percent }}%</span>
       </p>
-      <div class="flex gap-1">
+      <div class="flex gap-0.75">
         <span
           v-for="segment in progress.total"
           :key="segment"
-          class="h-1.5 flex-1 rounded-full"
+          class="h-1 flex-1 rounded-tail"
           :class="segment <= progress.filled ? progress.fillClass : 'bg-surface-2'"
         />
       </div>
     </div>
 
-    <footer v-if="!isCompact" class="flex items-center text-caption text-muted">
-      <UiBadge class="ml-auto" :status="chip.status" :label="chip.label" />
+    <footer class="flex items-center gap-2 pt-0.5">
+      <UserAvatar v-if="item.who === USER_OWNER" :size="AVATAR_SIZE" />
+      <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
+      <span class="text-meta text-muted">{{ ownerName }}<template v-if="createdOn"> · {{ createdOn }}</template></span>
     </footer>
   </article>
 </template>
