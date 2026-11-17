@@ -13,6 +13,7 @@ use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
     Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState, CONFIG_DIR,
 };
+use crate::orchestration::snapshot::agent_prompt;
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
 
@@ -73,12 +74,20 @@ async fn run_step(
         project_context,
         key,
         team,
+        orchestration,
         ..
     } = exchange;
     let profile = profile_of(team, agent)?;
     let mcp = McpLaunch::new(app, key.project_id, agent, &profile.name)?;
+    let prompt = agent_prompt(*orchestration, team, agent);
     let call = AgentCall {
-        role: role(profile, &team.roster_line(), project_context, mcp.is_some()),
+        role: role(
+            profile,
+            &prompt.roster,
+            prompt.layer.as_ref(),
+            project_context,
+            mcp.is_some(),
+        ),
         model: profile.model.clone(),
         item_id: exchange.item_id.map(str::to_string),
         channel_id: exchange.channel_id,

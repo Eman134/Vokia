@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
-use crate::db::DbState;
+use crate::db::{DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
@@ -204,6 +204,20 @@ async fn run_exchange(
     result
 }
 
+// Banco ausente vira None (prompt de antes); erro de leitura do banco interrompe a troca.
+fn load_orchestration(
+    app: &AppHandle,
+    project_id: i64,
+) -> Result<Option<OrchestrationSnapshot>, FlowError> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(None);
+    };
+    db.orchestration(project_id)
+        .map(Some)
+        .map_err(FlowError::Orchestration)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn exchange_turns(
     app: &AppHandle,
@@ -226,6 +240,8 @@ async fn exchange_turns(
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
     let definition = interpret_task(app, state, cli, request, key.clone(), team).await?;
+    // Snapshot único da troca: edições feitas durante ela só valem na próxima.
+    let orchestration = load_orchestration(app, key.project_id)?;
     if first_speaker(&definition, &key.agent) != key.agent {
         emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
@@ -247,6 +263,7 @@ async fn exchange_turns(
         key: key.clone(),
         definition: &definition,
         team,
+        orchestration: orchestration.as_ref(),
     };
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {

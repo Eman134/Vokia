@@ -35,6 +35,7 @@ pub enum FlowError {
     UnknownDecision,
     SessionStore(DbError),
     Settings(DbError),
+    Orchestration(DbError),
     SessionNotHeld(String),
     Team(AgentError),
 }
@@ -89,6 +90,9 @@ impl fmt::Display for FlowError {
             }
             FlowError::Settings(error) => {
                 write!(f, "Não foi possível ler as configurações: {error}")
+            }
+            FlowError::Orchestration(error) => {
+                write!(f, "Não foi possível ler a orquestração: {error}")
             }
             FlowError::SessionNotHeld(name) => {
                 write!(

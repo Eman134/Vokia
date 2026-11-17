@@ -360,17 +360,26 @@ impl Team {
     }
 
     pub fn roster_line(&self) -> String {
-        let items: Vec<String> = self
-            .0
-            .iter()
-            .map(|profile| format!("{} ({})", profile.name, profile.role))
-            .collect();
-        let list = match items.split_last() {
-            None => String::new(),
-            Some((last, [])) => last.clone(),
-            Some((last, rest)) => format!("{} e {last}", rest.join(", ")),
-        };
-        format!("Time desta sessão: {list}.")
+        roster_text(self.0.iter())
+    }
+
+    pub fn roster_line_among(&self, ids: &[Agent]) -> String {
+        roster_text(self.0.iter().filter(|profile| ids.contains(&profile.id)))
+    }
+}
+
+fn roster_text<'a>(profiles: impl Iterator<Item = &'a AgentProfile>) -> String {
+    let items: Vec<String> = profiles
+        .map(|profile| format!("{} ({})", profile.name, profile.role))
+        .collect();
+    format!("Time desta sessão: {}.", join_items(&items))
+}
+
+pub(crate) fn join_items(items: &[String]) -> String {
+    match items.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} e {last}", rest.join(", ")),
     }
 }
 

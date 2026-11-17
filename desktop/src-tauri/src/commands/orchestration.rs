@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::agents::AgentRegistry;
 use crate::db::{
@@ -7,6 +7,7 @@ use crate::db::{
 };
 use crate::events::{VokiaEvent, EVENT_NAME};
 use crate::orchestration::seed;
+use crate::state::AppState;
 
 const MOVEMENTS_LIMIT: i64 = 20;
 const NOTIFY_FAILED_MESSAGE: &str = "A alteração foi gravada, mas a tela não foi avisada: ";
@@ -36,9 +37,22 @@ fn write<T>(
     db.delete_placements_outside(project_id, &agent_ids)
         .map_err(|error| error.to_string())?;
     let value = operation(db).map_err(|error| error.to_string())?;
+    close_project_sessions(app, project_id);
     app.emit(EVENT_NAME, VokiaEvent::OrchestrationChanged { project_id })
         .map_err(|error| format!("{NOTIFY_FAILED_MESSAGE}{error}."))?;
     Ok(value)
+}
+
+// Sessões em uso terminam a troca atual e fecham no release; as ociosas fecham agora. A próxima mensagem dá --resume com o prompt novo.
+fn close_project_sessions(app: &AppHandle, project_id: i64) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        handle
+            .state::<AppState>()
+            .sessions
+            .close_project(project_id)
+            .await;
+    });
 }
 
 #[tauri::command]

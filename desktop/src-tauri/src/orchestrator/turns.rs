@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
+use crate::db::OrchestrationSnapshot;
 use crate::events::{AgentState, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{ExchangeOutcome, McpState, SlotDecision};
 use crate::session_key::SessionKey;
@@ -40,6 +41,7 @@ pub(super) struct Exchange<'a> {
     pub(super) key: SessionKey,
     pub(super) definition: &'a TaskDefinition,
     pub(super) team: &'a Team,
+    pub(super) orchestration: Option<&'a OrchestrationSnapshot>,
 }
 
 pub(super) async fn run_turns(
