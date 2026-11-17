@@ -1,6 +1,6 @@
 use serde::{Serialize, Serializer};
 
-use crate::claude::ConsoleKind;
+use crate::claude::{ConsoleKind, TurnActivity};
 use crate::orchestrator::RequestOutcome;
 
 pub use crate::agents::Agent;
@@ -119,6 +119,8 @@ pub enum VokiaEvent {
         project_id: Option<i64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         channel_id: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        activity: Option<TurnActivity>,
     },
     #[serde(rename_all = "camelCase")]
     AgentState {

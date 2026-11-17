@@ -142,6 +142,9 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE messages ADD COLUMN channel_id INTEGER;
 ",
+    "
+    ALTER TABLE messages ADD COLUMN activity TEXT;
+",
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -225,7 +228,7 @@ mod tests {
         seed_database_without_channel_column(&dir);
 
         let db = Db::open(&dir).expect("o banco antigo deveria migrar sem erro");
-        db.insert_message(1, Speaker::User, Speaker::User, "nova", 20, Some(5))
+        db.insert_message(1, Speaker::User, Speaker::User, "nova", 20, Some(5), None)
             .unwrap();
         let history = db.load_history(1).unwrap();
         drop(db);

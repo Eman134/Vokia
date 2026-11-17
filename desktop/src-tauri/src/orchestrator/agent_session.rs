@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::Agent;
-use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply};
+use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
 use crate::permissions::PermissionGate;
@@ -28,12 +28,17 @@ use super::turns::Exchange;
 const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
 const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 
+pub(super) struct StepReply {
+    pub(super) text: String,
+    pub(super) activity: Option<TurnActivity>,
+}
+
 pub(super) async fn ask_step(
     exchange: &Exchange<'_>,
     sessions: &mut ExchangeSessions,
     agent: &Agent,
     prompts: &StepPrompts,
-) -> Result<String, FlowError> {
+) -> Result<StepReply, FlowError> {
     let Exchange { app, key, .. } = exchange;
     emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
     let console = ConsoleSink::new(
@@ -55,7 +60,7 @@ async fn run_step(
     agent: &Agent,
     prompts: &StepPrompts,
     console: &ConsoleSink<'_>,
-) -> Result<String, FlowError> {
+) -> Result<StepReply, FlowError> {
     let Exchange {
         app,
         state,
@@ -136,7 +141,11 @@ async fn run_step(
         }
     };
     report_limits(app, reply.limits)?;
-    Ok(reply.text)
+    Ok(StepReply {
+        text: reply.text,
+        activity: Some(reply.activity)
+            .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
+    })
 }
 
 fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {

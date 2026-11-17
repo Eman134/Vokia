@@ -4,13 +4,13 @@ use std::sync::atomic::Ordering;
 use tauri::AppHandle;
 
 use crate::agents::{Agent, Team};
-use crate::claude::ProjectAccess;
+use crate::claude::{ProjectAccess, TurnActivity};
 use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
-use super::agent_session::ask_step;
+use super::agent_session::{ask_step, StepReply};
 use super::emit::{emit, emit_message, emit_state};
 use super::error::FlowError;
 use super::flow::stop_with_error;
@@ -70,9 +70,14 @@ pub(super) async fn run_turns(
                 &instruction,
             ))
         })?;
-        let reply = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
+        let StepReply {
+            text: reply,
+            activity,
+        } = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
+        // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
+        let mut activity = activity;
         if let Some(parsed) = parse_decision(&reply) {
-            return raise_decision(exchange, transcript, &turn, parsed);
+            return raise_decision(exchange, transcript, &turn, parsed, activity);
         }
         let ParsedReply {
             visible,
@@ -94,6 +99,7 @@ pub(super) async fn run_turns(
                     to,
                     &visible,
                     *channel_id,
+                    activity.take(),
                 )?;
             }
             rejections += 1;
@@ -136,6 +142,7 @@ pub(super) async fn run_turns(
                     text,
                     team,
                     *channel_id,
+                    activity.take(),
                 )?;
             }
             emit_goal(
@@ -181,6 +188,7 @@ pub(super) async fn run_turns(
                 text,
                 team,
                 *channel_id,
+                activity.take(),
             )?;
         }
         let Some(next) = next else {
@@ -254,6 +262,7 @@ pub(super) async fn run_turns(
                 helper_request,
                 team,
                 *channel_id,
+                activity.take(),
             )?;
         }
         let speaker_state = if delegation.is_some() {
@@ -376,6 +385,7 @@ fn conclude(
         message,
         team,
         channel_id,
+        None,
     )
 }
 
@@ -385,6 +395,7 @@ fn raise_decision(
     transcript: &mut Vec<String>,
     turn: &Turn,
     parsed: ParsedDecision,
+    activity: Option<TurnActivity>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
         app,
@@ -416,6 +427,7 @@ fn raise_decision(
             &visible,
             team,
             *channel_id,
+            activity,
         )?;
     }
     let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
@@ -552,6 +564,7 @@ fn say(
     text: &str,
     team: &Team,
     channel_id: Option<i64>,
+    activity: Option<TurnActivity>,
 ) -> Result<(), FlowError> {
     emit_message(
         app,
@@ -560,6 +573,7 @@ fn say(
         to,
         text,
         channel_id,
+        activity,
     )?;
     transcript.push(format!("{}: {text}", team.name_of(from)));
     Ok(())

@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agents::Agent;
-use crate::claude::{LimitWindow, RateLimits};
+use crate::claude::{LimitWindow, RateLimits, TurnActivity};
 use crate::db::DbState;
 use crate::events::{AgentState, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 
@@ -40,11 +40,20 @@ pub(super) fn emit_message(
     to: Speaker,
     text: &str,
     channel_id: Option<i64>,
+    activity: Option<TurnActivity>,
 ) -> Result<(), FlowError> {
     let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
-        db.insert_message(project_id, from.clone(), to.clone(), text, time, channel_id)?;
+        db.insert_message(
+            project_id,
+            from.clone(),
+            to.clone(),
+            text,
+            time,
+            channel_id,
+            activity.as_ref(),
+        )?;
     }
     emit(
         app,
@@ -55,6 +64,7 @@ pub(super) fn emit_message(
             time,
             project_id: Some(project_id),
             channel_id,
+            activity,
         },
     )
 }

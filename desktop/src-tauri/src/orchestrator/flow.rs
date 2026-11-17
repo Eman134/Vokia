@@ -48,6 +48,7 @@ pub async fn handle_request(
         Speaker::from(recipient.clone()),
         request,
         context.channel_id,
+        None,
     )?;
     let key = SessionKey {
         project_id,

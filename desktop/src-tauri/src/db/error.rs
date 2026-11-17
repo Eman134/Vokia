@@ -35,6 +35,7 @@ pub enum DbError {
     InvalidBacklogPlan(&'static str),
     BacklogItemNotFound(String),
     BacklogItemData { item_id: String, reason: String },
+    MessageActivityData(String),
     EmptyCardTitle,
     DuplicateCardTitle(String),
     InvalidBacklogOrigin(String),
@@ -137,6 +138,9 @@ impl fmt::Display for DbError {
                 f,
                 "Os dados do item {item_id} do backlog são inválidos: {reason}"
             ),
+            DbError::MessageActivityData(reason) => {
+                write!(f, "A atividade da mensagem é inválida: {reason}")
+            }
             DbError::EmptyCardTitle => write!(f, "O título do card não pode ser vazio."),
             DbError::DuplicateCardTitle(id) => {
                 write!(f, "Já existe o card {id} com esse título.")

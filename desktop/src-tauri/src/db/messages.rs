@@ -1,5 +1,6 @@
 use rusqlite::params;
 
+use crate::claude::TurnActivity;
 use crate::events::{Speaker, VokiaEvent};
 
 use super::connection::Db;
@@ -36,18 +37,24 @@ impl Db {
         text: &str,
         time: u64,
         channel_id: Option<i64>,
+        activity: Option<&TurnActivity>,
     ) -> Result<(), DbError> {
+        let activity = activity
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
         let conn = self.conn()?;
         let inserted = conn.execute(
-            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id) \
-             SELECT id, ?2, ?3, ?4, ?5, ?6 FROM projects WHERE id = ?1",
+            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, activity) \
+             SELECT id, ?2, ?3, ?4, ?5, ?6, ?7 FROM projects WHERE id = ?1",
             params![
                 project_id,
                 from.as_str(),
                 to.as_str(),
                 text,
                 time as i64,
-                channel_id
+                channel_id,
+                activity
             ],
         )?;
         if inserted == 0 {
@@ -59,8 +66,8 @@ impl Db {
     pub fn load_history(&self, project_id: i64) -> Result<Vec<VokiaEvent>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT from_agent, to_agent, text, created_at, channel_id FROM ( \
-                 SELECT id, from_agent, to_agent, text, created_at, channel_id FROM messages \
+            "SELECT from_agent, to_agent, text, created_at, channel_id, activity FROM ( \
+                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity FROM messages \
                  WHERE project_id = ?1 ORDER BY id DESC LIMIT ?2 \
              ) ORDER BY id",
         )?;
@@ -71,10 +78,11 @@ impl Db {
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
                 row.get::<_, Option<i64>>(4)?,
+                row.get::<_, Option<String>>(5)?,
             ))
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
-            let (from, to, text, time, channel_id) = row?;
+            let (from, to, text, time, channel_id, activity) = row?;
             Ok(VokiaEvent::Message {
                 from: parse_speaker(&from)?,
                 to: parse_speaker(&to)?,
@@ -82,6 +90,8 @@ impl Db {
                 time: time as u64,
                 project_id: Some(project_id),
                 channel_id,
+                // Atividade ilegível não pode esconder a mensagem: o histórico carrega sem ela.
+                activity: activity.and_then(|json| serde_json::from_str(&json).ok()),
             })
         })
         .collect()
@@ -156,11 +166,11 @@ mod tests {
         let project_id = {
             let db = dir.open();
             let project_id = project(&db, "a");
-            db.insert_message(project_id, Speaker::User, agent("davi"), "no canal", 1, Some(7))
+            db.insert_message(project_id, Speaker::User, agent("davi"), "no canal", 1, Some(7), None)
                 .unwrap();
-            db.insert_message(project_id, agent("davi"), Speaker::User, "resposta no canal", 2, Some(7))
+            db.insert_message(project_id, agent("davi"), Speaker::User, "resposta no canal", 2, Some(7), None)
                 .unwrap();
-            db.insert_message(project_id, Speaker::User, agent("iara"), "sem canal", 3, None)
+            db.insert_message(project_id, Speaker::User, agent("iara"), "sem canal", 3, None, None)
                 .unwrap();
             project_id
         };
@@ -178,9 +188,9 @@ mod tests {
         let dir = TempDir::new();
         let db = dir.open();
         let project_id = project(&db, "a");
-        db.insert_message(project_id, Speaker::User, agent("davi"), "com", 1, Some(3))
+        db.insert_message(project_id, Speaker::User, agent("davi"), "com", 1, Some(3), None)
             .unwrap();
-        db.insert_message(project_id, Speaker::User, agent("davi"), "sem", 2, None)
+        db.insert_message(project_id, Speaker::User, agent("davi"), "sem", 2, None, None)
             .unwrap();
 
         let json: Vec<serde_json::Value> = db
@@ -204,9 +214,9 @@ mod tests {
         let db = dir.open();
         let first = project(&db, "a");
         let second = project(&db, "b");
-        db.insert_message(first, Speaker::User, agent("davi"), "do a", 1, Some(1))
+        db.insert_message(first, Speaker::User, agent("davi"), "do a", 1, Some(1), None)
             .unwrap();
-        db.insert_message(second, Speaker::User, agent("davi"), "do b", 2, None)
+        db.insert_message(second, Speaker::User, agent("davi"), "do b", 2, None, None)
             .unwrap();
 
         let history = db.load_history(second).unwrap();
