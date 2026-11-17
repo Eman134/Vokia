@@ -3,9 +3,9 @@ use crate::db::{Layer, OrchestrationSnapshot, Placement, Rule};
 
 const ENFORCEMENT_ON: &str = "on";
 const LEADER_LAYER_KIND: &str = "planejar";
-const ACTION_DELEGATE: &str = "delegar";
-const ACTION_RETURN: &str = "devolver";
-const ACTION_ESCALATE: &str = "escalar";
+pub(crate) const ACTION_DELEGATE: &str = "delegar";
+pub(crate) const ACTION_RETURN: &str = "devolver";
+pub(crate) const ACTION_ESCALATE: &str = "escalar";
 const NO_DESTINATION_ROSTER: &str = "Time desta sessão: nenhum agente para passar trabalho.";
 const NO_OUTGOING_RULES: &str =
     "Você não passa trabalho a ninguém: termine a resposta quando concluir.";
@@ -104,7 +104,7 @@ fn agents_in_layer(snapshot: &OrchestrationSnapshot, team: &Team, layer_id: &str
         .collect()
 }
 
-fn delegation_targets(
+pub(crate) fn delegation_targets(
     snapshot: &OrchestrationSnapshot,
     team: &Team,
     agent: &Agent,
@@ -260,11 +260,22 @@ pub(crate) fn team_outlines(snapshot: &OrchestrationSnapshot, team: &Team) -> Te
     TeamOutlines { teams, unassigned }
 }
 
-fn placement_of<'a>(snapshot: &'a OrchestrationSnapshot, agent: &Agent) -> Option<&'a Placement> {
+pub(crate) fn placement_of<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    agent: &Agent,
+) -> Option<&'a Placement> {
     snapshot
         .placements
         .iter()
         .find(|placement| placement.agent_id == agent.as_str())
+}
+
+pub(crate) fn enforced(snapshot: Option<&OrchestrationSnapshot>) -> bool {
+    snapshot.is_some_and(|snapshot| snapshot.settings.enforcement == ENFORCEMENT_ON)
+}
+
+pub(crate) fn event_phrase(event: &str) -> Option<&'static str> {
+    phrase(EVENT_PHRASES, event)
 }
 
 // Sem banco (ou líder inválido) o interpretador usa o agente embutido padrão.

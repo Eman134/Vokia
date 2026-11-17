@@ -5,9 +5,12 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
-use crate::db::OrchestrationSnapshot;
-use crate::events::{AgentState, GoalState, RequestProposal, Speaker, VokiaEvent};
+use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot};
+use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{ExchangeOutcome, McpState, SlotDecision};
+use crate::orchestration::counters::TaskCounters;
+use crate::orchestration::policy::{self, Passage, Verdict};
+use crate::orchestration::snapshot::ACTION_RETURN;
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
@@ -28,6 +31,7 @@ use super::text_fallback::{read_reply, TextContext, TextReply};
 
 pub(super) const NO_CONVERSATION: usize = 0;
 pub(super) const USER_LABEL: &str = "Usuário";
+const MOVEMENT_ERROR_PREFIX: &str = "Não foi possível registrar o movimento: ";
 
 pub(super) struct Exchange<'a> {
     pub(super) app: &'a AppHandle,
@@ -42,6 +46,7 @@ pub(super) struct Exchange<'a> {
     pub(super) definition: &'a TaskDefinition,
     pub(super) team: &'a Team,
     pub(super) orchestration: Option<&'a OrchestrationSnapshot>,
+    pub(super) run_id: Option<u64>,
 }
 
 pub(super) async fn run_turns(
@@ -67,6 +72,23 @@ pub(super) async fn run_turns(
     let mut rejections = 0;
     let with_tools = app.state::<McpState>().server().is_some();
     loop {
+        if let Some(motive) = policy::task_limit_reached(exchange.orchestration, &counters.task) {
+            let speaker = counters
+                .task
+                .last_speaker()
+                .cloned()
+                .unwrap_or_else(|| origin.clone());
+            let escalation = Turn::new(speaker, "", "", turn.requesters.clone());
+            return escalate_limit(
+                exchange,
+                transcript,
+                &escalation,
+                motive,
+                String::new(),
+                None,
+                None,
+            );
+        }
         let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,
@@ -81,6 +103,7 @@ pub(super) async fn run_turns(
             activity,
             outcome,
         } = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
+        counters.task.register_turn(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
         let mut activity = activity;
         let ExchangeOutcome {
@@ -96,7 +119,7 @@ pub(super) async fn run_turns(
             delegation: text_delegation,
             applied,
             cards,
-            rejected,
+            mut rejected,
         } = read_reply(
             with_tools,
             &TextContext {
@@ -118,6 +141,34 @@ pub(super) async fn run_turns(
             return raise_decision(
                 exchange, transcript, &turn, decision, shown, activity, proposal,
             );
+        }
+        let delegation =
+            merged_delegation(registered_delegation, text_delegation, definition.alternate);
+        let mut passage: Option<Passage> = None;
+        if rejected.is_empty() {
+            if let Some((helper, _)) = &delegation {
+                match policy::check(
+                    exchange.orchestration,
+                    team,
+                    &turn.speaker,
+                    helper,
+                    &counters.task,
+                ) {
+                    Verdict::Deliver(found) => passage = Some(found),
+                    Verdict::Refuse(motive) => rejected.push(motive),
+                    Verdict::Escalate(motive) => {
+                        return escalate_limit(
+                            exchange,
+                            transcript,
+                            &turn,
+                            motive,
+                            visible,
+                            activity.take(),
+                            proposal.take(),
+                        );
+                    }
+                }
+            }
         }
         if !rejected.is_empty() {
             let shown = with_confirmations(
@@ -160,8 +211,6 @@ pub(super) async fn run_turns(
         rejections = 0;
         let mut confirmations = confirmations;
         confirmations.extend(cards.confirmations);
-        let delegation =
-            merged_delegation(registered_delegation, text_delegation, definition.alternate);
         let advanced = applied.created_variable
             || applied.changed_value
             || variables.created_variable
@@ -244,6 +293,23 @@ pub(super) async fn run_turns(
             emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
+            if let Some(review) = policy::chain_review(exchange.orchestration, &turn.speaker) {
+                let decision = SlotDecision {
+                    kind: DecisionKind::Revisao,
+                    title: review.title.to_string(),
+                    detail: review.detail,
+                    options: Vec::new(),
+                };
+                return raise_decision(
+                    exchange,
+                    transcript,
+                    &turn,
+                    decision,
+                    String::new(),
+                    None,
+                    None,
+                );
+            }
             for requester in &turn.requesters {
                 emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
             }
@@ -320,6 +386,21 @@ pub(super) async fn run_turns(
                 activity.take(),
                 proposal.take(),
             )?;
+            if let Some(passage) = &passage {
+                counters.task.register_passage(&turn.speaker, helper);
+                if passage.action == ACTION_RETURN {
+                    counters.task.register_return(&turn.speaker, helper);
+                }
+                record_passage(
+                    app,
+                    exchange.run_id,
+                    project_id,
+                    *item_id,
+                    &turn.speaker,
+                    helper,
+                    passage,
+                )?;
+            }
         }
         let speaker_state = if delegation.is_some() {
             AgentState::Waiting
@@ -347,6 +428,7 @@ struct Counters {
     passes: PassCounter,
     loop_guard: LoopGuard,
     goal: GoalTracker,
+    task: TaskCounters,
 }
 
 impl Counters {
@@ -521,6 +603,64 @@ fn raise_decision(
     }
     emit_state(app, project_id, agent, AgentState::Waiting)?;
     Ok(TaskOutcome::Finished)
+}
+
+// Estouro de limite do mapa: sobe ao usuário em nome de quem falou, sem parar a tarefa com erro.
+fn escalate_limit(
+    exchange: &Exchange<'_>,
+    transcript: &mut Vec<String>,
+    turn: &Turn,
+    motive: String,
+    visible: String,
+    activity: Option<TurnActivity>,
+    proposal: Option<RequestProposal>,
+) -> Result<TaskOutcome, FlowError> {
+    let decision = SlotDecision {
+        kind: DecisionKind::Pergunta,
+        title: policy::LIMIT_TITLE.to_string(),
+        detail: motive,
+        options: Vec::new(),
+    };
+    raise_decision(
+        exchange, transcript, turn, decision, visible, activity, proposal,
+    )
+}
+
+// Falha de gravação vira aviso no feed e a troca segue (mesmo padrão de SessionStore::write).
+fn record_passage(
+    app: &AppHandle,
+    run_id: Option<u64>,
+    project_id: i64,
+    item_id: Option<&str>,
+    from: &Agent,
+    to: &Agent,
+    passage: &Passage,
+) -> Result<(), FlowError> {
+    let state = app.state::<DbState>();
+    let draft = HandoffDraft {
+        run_id: run_id.and_then(|id| i64::try_from(id).ok()),
+        from_agent: from.to_string(),
+        to_agent: to.to_string(),
+        from_layer: passage.from_layer.clone(),
+        to_layer: passage.to_layer.clone(),
+        action: passage.action.clone(),
+        kind: passage.kind.clone(),
+        item_id: item_id.map(str::to_string),
+        return_count: passage.return_count,
+        message_id: None,
+    };
+    match state
+        .require()
+        .and_then(|db| db.record_handoff(project_id, &draft))
+    {
+        Ok(()) => emit(app, VokiaEvent::OrchestrationChanged { project_id }),
+        Err(error) => emit(
+            app,
+            VokiaEvent::Error {
+                message: format!("{MOVEMENT_ERROR_PREFIX}{error}."),
+            },
+        ),
+    }
 }
 
 pub(super) fn first_speaker(definition: &TaskDefinition, origin: &Agent) -> Agent {

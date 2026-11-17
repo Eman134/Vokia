@@ -8,6 +8,7 @@ use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, Speaker, VokiaEvent};
+use crate::orchestration::policy::placed_participants;
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
 use crate::task::{long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome};
@@ -143,6 +144,7 @@ async fn run_flow(
             item_id.as_deref(),
             channel_id,
             team,
+            current_run,
         )
         .await;
         let this = match exchange {
@@ -186,6 +188,7 @@ async fn run_exchange(
     item_id: Option<&str>,
     channel_id: Option<i64>,
     team: &Team,
+    run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {
     let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, team).await;
     let result = exchange_turns(
@@ -198,6 +201,7 @@ async fn run_exchange(
         channel_id,
         &mut sessions,
         team,
+        run_id,
     )
     .await;
     sessions.release().await;
@@ -229,6 +233,7 @@ async fn exchange_turns(
     channel_id: Option<i64>,
     sessions: &mut ExchangeSessions,
     team: &Team,
+    run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
     let channel = find_channel(app, key.project_id, channel_id, team);
@@ -241,7 +246,7 @@ async fn exchange_turns(
     let context = project_context(&project, tree.as_ref());
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app, key.project_id)?;
-    let definition = interpret_task(
+    let mut definition = interpret_task(
         app,
         state,
         cli,
@@ -251,6 +256,11 @@ async fn exchange_turns(
         orchestration.as_ref(),
     )
     .await?;
+    definition.participants = placed_participants(
+        orchestration.as_ref(),
+        std::mem::take(&mut definition.participants),
+        &key.agent,
+    );
     if first_speaker(&definition, &key.agent) != key.agent {
         emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
@@ -273,6 +283,7 @@ async fn exchange_turns(
         definition: &definition,
         team,
         orchestration: orchestration.as_ref(),
+        run_id,
     };
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {
