@@ -10,7 +10,7 @@ static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
 const TOOLS_RULE_TEXT: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
-const DECISION_LINE: &str = "#decisao pergunta|Posso seguir?||";
+const OLD_MARKERS: [&str; 6] = ["#card", "#decisao", "@<Nome>", "$nome", "@time", "+= item"];
 
 fn with_team(check: impl FnOnce(&Team)) {
     let dir: PathBuf = std::env::temp_dir().join(format!(
@@ -26,144 +26,11 @@ fn with_team(check: impl FnOnce(&Team)) {
     let _ = fs::remove_dir_all(&dir);
 }
 
-fn visible_of(reply: &str) -> String {
-    let mut out = String::new();
-    with_team(|team| {
-        let from = Agent::from_stored("iara").expect("agente");
-        let parsed = parse_reply(reply, &from, team);
-        assert!(parsed.delegation.is_none());
-        assert!(parsed.updates.is_empty());
-        out = parsed.visible;
-    });
-    out
-}
-
-#[test]
-fn linha_card_escrita_pelo_agente_vira_texto_comum_visivel_e_nao_e_consumida() {
-    let reply =
-        "Registrando.\n#card criar Revisar login|Checar o token\n#card mover item-1|Done\nPronto.";
-
-    assert_eq!(visible_of(reply), reply);
-}
-
-#[test]
-fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
-    with_team(|team| {
-        let iara = Agent::from_stored("iara").expect("agente");
-        let profile = team.profile(&iara).expect("perfil");
-
-        let with = role(profile, &team.roster_line(), "contexto", true);
-        let without = role(profile, &team.roster_line(), "contexto", false);
-
-        assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
-        assert!(!without.contains(TOOLS_RULE_TEXT), "{without}");
-    });
-}
-
-#[test]
-fn papel_nao_ensina_o_marcador_card_e_so_ensina_decisao_por_texto_sem_mcp() {
-    with_team(|team| {
-        let iara = Agent::from_stored("iara").expect("agente");
-        let profile = team.profile(&iara).expect("perfil");
-
-        for with_tools in [true, false] {
-            let text = role(profile, &team.roster_line(), "contexto", with_tools);
-
-            assert!(!text.contains("#card"), "with_tools={with_tools}: {text}");
-            assert_eq!(
-                text.contains("#decisao"),
-                !with_tools,
-                "with_tools={with_tools}"
-            );
-        }
-    });
-}
-
-#[test]
-fn linha_decisao_continua_sendo_aceita_e_a_linha_card_junto_fica_como_texto_visivel() {
-    let reply = format!("Vou perguntar.\n#card criar Fantasma|x\n{DECISION_LINE}");
-
-    let decision = parse_decision(&reply).expect("a linha #decisao deveria ser reconhecida");
-
-    assert_eq!(decision.title, "Posso seguir?");
-    assert_eq!(decision.visible, "Vou perguntar.\n#card criar Fantasma|x");
-    assert_eq!(visible_of(&decision.visible), decision.visible);
-}
-
-fn registered(title: &str) -> SlotDecision {
-    SlotDecision {
-        kind: crate::events::DecisionKind::Aprovacao,
-        title: title.to_string(),
-        detail: String::new(),
-        options: Vec::new(),
-    }
-}
-
-#[test]
-fn decisao_da_ferramenta_vale_mais_que_a_linha_de_texto_e_o_texto_da_resposta_segue_visivel() {
-    let reply = format!("Preciso aprovar.\n{DECISION_LINE}");
-
-    let picked = pick_decision(Some(registered("Da ferramenta")), &reply)
-        .expect("a decisão registrada deveria subir");
-
-    assert_eq!(picked.title, "Da ferramenta");
-    assert_eq!(picked.visible, reply);
-}
-
-#[test]
-fn sem_decisao_registrada_a_linha_de_texto_continua_aceita_e_sem_nenhuma_nada_sobe() {
-    let from_text = pick_decision(None, &format!("Vou perguntar.\n{DECISION_LINE}"))
-        .expect("a linha #decisao deveria ser reconhecida");
-
-    assert_eq!(from_text.title, "Posso seguir?");
-    assert!(pick_decision(None, "Resposta comum.").is_none());
-}
-
 fn iara_and_davi() -> (Agent, Agent) {
     (
         Agent::from_stored("iara").expect("agente"),
         Agent::from_stored("davi").expect("agente"),
     )
-}
-
-#[test]
-fn delegacao_da_ferramenta_vale_mais_que_a_do_texto_e_tarefa_alternada_a_descarta() {
-    let (iara, davi) = iara_and_davi();
-    let registered = Some((davi.clone(), "Da ferramenta".to_string()));
-    let from_text = Some((iara.clone(), "Do texto".to_string()));
-
-    let chosen = chosen_delegation(registered.clone(), from_text.clone(), false);
-    let fallback = chosen_delegation(None, from_text.clone(), false);
-
-    assert_eq!(chosen, Some((davi, "Da ferramenta".to_string())));
-    assert_eq!(fallback, from_text);
-    assert!(chosen_delegation(registered, from_text, true).is_none());
-}
-
-#[test]
-fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
-    with_team(|team| {
-        let (iara, davi) = iara_and_davi();
-        let definition = TaskDefinition {
-            nova_tarefa: true,
-            objetivo: "teste".to_string(),
-            criterion: String::new(),
-            verify: false,
-            participants: vec![iara.clone()],
-            alternate: false,
-            variables: Vec::new(),
-            stop: None,
-        };
-        let turn = Turn::first(&definition, &iara, "Faça");
-        let delegation = (davi.clone(), "Revise".to_string());
-
-        let next = next_turn(&definition, &turn, "feed", Some(&delegation), team)
-            .expect("deveria haver próximo turno");
-
-        assert_eq!(next.speaker, davi);
-        assert_eq!(next.base, "Revise");
-        assert_eq!(next.requesters, [iara]);
-    });
 }
 
 fn empty_definition(participant: Agent) -> TaskDefinition {
@@ -180,8 +47,70 @@ fn empty_definition(participant: Agent) -> TaskDefinition {
 }
 
 #[test]
-fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() {
-    let iara = Agent::from_stored("iara").expect("agente");
+fn linha_de_marcador_antigo_na_resposta_do_agente_vira_texto_comum_inteiro() {
+    let reply = "Registrando.\n#card criar Revisar|x\n#decisao pergunta|Posso?||\n$contagem = 3\n$lista += item\n@Davi: revise isso\nPronto.";
+
+    let feed = feed_text(reply, &[]);
+
+    assert_eq!(feed.as_deref(), Some(reply));
+}
+
+#[test]
+fn marcador_antigo_sozinho_tambem_aparece_e_nao_vira_variavel_aceita() {
+    let reply = "$contagem = 3";
+
+    assert_eq!(feed_text(reply, &[]).as_deref(), Some(reply));
+}
+
+#[test]
+fn resposta_vazia_com_uma_variavel_aceita_pela_ferramenta_mostra_o_valor() {
+    let accepted = [Change::Set {
+        name: "contagem".to_string(),
+        value: crate::task::VarValue::Number(3),
+        share: false,
+    }];
+
+    assert_eq!(feed_text("", &accepted).as_deref(), Some("3"));
+}
+
+#[test]
+fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
+    with_team(|team| {
+        let (iara, _) = iara_and_davi();
+        let profile = team.profile(&iara).expect("perfil");
+
+        let with = role(profile, &team.roster_line(), "contexto", true);
+        let without = role(profile, &team.roster_line(), "contexto", false);
+
+        assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
+        assert!(with.contains("delegate"), "{with}");
+        assert!(!without.contains(TOOLS_RULE_TEXT), "{without}");
+        assert!(!without.contains("delegate"), "{without}");
+    });
+}
+
+#[test]
+fn papel_nunca_ensina_a_sintaxe_de_texto_do_agente_com_ou_sem_mcp() {
+    with_team(|team| {
+        let (iara, _) = iara_and_davi();
+        let profile = team.profile(&iara).expect("perfil");
+
+        for with_tools in [true, false] {
+            let text = role(profile, &team.roster_line(), "contexto", with_tools);
+
+            for marker in OLD_MARKERS {
+                assert!(
+                    !text.contains(marker),
+                    "with_tools={with_tools} {marker}: {text}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_nenhuma_sintaxe_sem_mcp() {
+    let (iara, _) = iara_and_davi();
     let definition = empty_definition(iara.clone());
     let cache = Cache::default();
 
@@ -191,59 +120,49 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");
         assert!(prompt.contains("get_variables"), "{prompt}");
-        assert!(!prompt.contains("`$nome"), "{prompt}");
-        assert!(!prompt.contains("@time"), "{prompt}");
     }
     for prompt in [&without.opening, &without.follow_up, &without.minimal] {
-        assert!(prompt.contains("`$nome = valor`"), "{prompt}");
         assert!(!prompt.contains("set_variable"), "{prompt}");
+        assert!(prompt.contains("Execute a instrução agora"), "{prompt}");
+    }
+    for prompt in [
+        &with.opening,
+        &with.follow_up,
+        &with.minimal,
+        &without.opening,
+        &without.follow_up,
+        &without.minimal,
+    ] {
+        for marker in OLD_MARKERS {
+            assert!(!prompt.contains(marker), "{marker}: {prompt}");
+        }
     }
 }
 
 #[test]
-fn papel_com_mcp_nao_ensina_nenhuma_sintaxe_de_texto_e_sem_mcp_ensina_decisao_e_delegacao() {
+fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
     with_team(|team| {
-        let iara = Agent::from_stored("iara").expect("agente");
-        let profile = team.profile(&iara).expect("perfil");
+        let (iara, davi) = iara_and_davi();
+        let definition = empty_definition(iara.clone());
+        let turn = Turn::first(&definition, &iara, "Faça");
+        let delegation = (davi.clone(), "Revise".to_string());
 
-        let with = role(profile, &team.roster_line(), "contexto", true);
-        let without = role(profile, &team.roster_line(), "contexto", false);
+        let next = next_turn(&definition, &turn, "feed", Some(&delegation), team)
+            .expect("deveria haver próximo turno");
 
-        for marker in ["#decisao", "@<Nome>", "$nome", "#card"] {
-            assert!(!with.contains(marker), "{marker}: {with}");
-        }
-        assert!(with.contains("delegate"), "{with}");
-        assert!(without.contains("#decisao"), "{without}");
-        assert!(without.contains("@<Nome>"), "{without}");
+        assert_eq!(next.speaker, davi);
+        assert_eq!(next.base, "Revise");
+        assert_eq!(next.requesters, [iara]);
     });
 }
 
-fn tool_effects() -> VariableEffects {
-    VariableEffects {
-        accepted: vec![Change::Append {
-            name: "lista".to_string(),
-            item: "x".to_string(),
-        }],
-        created_variable: true,
-        changed_value: true,
-    }
-}
-
 #[test]
-fn turno_rejeitado_descarta_o_avanco_de_variavel_e_a_decisao_registrada() {
-    let rejected = vec!["a variável n é somente leitura".to_string()];
+fn mencao_do_usuario_na_barra_chega_intacta_ao_primeiro_turno() {
+    let (iara, _) = iara_and_davi();
+    let definition = empty_definition(iara.clone());
 
-    let effects = accepted_effects(&rejected, Some(registered("Descartada")), tool_effects());
+    let turn = Turn::first(&definition, &iara, "@Davi revise o login");
 
-    assert!(effects.is_none());
-}
-
-#[test]
-fn turno_aceito_leva_o_avanco_de_variavel_e_a_decisao_registrada_adiante() {
-    let effects = accepted_effects(&[], Some(registered("Sobe")), tool_effects())
-        .expect("sem recusa os efeitos valem");
-
-    assert_eq!(effects.decision, Some(registered("Sobe")));
-    assert!(effects.variables.created_variable && effects.variables.changed_value);
-    assert_eq!(effects.variables.accepted.len(), 1);
+    assert_eq!(turn.base, "Pedido do usuário: @Davi revise o login");
+    assert_eq!(turn.received, "@Davi revise o login");
 }

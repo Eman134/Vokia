@@ -354,8 +354,7 @@ fn set_variable(app: &AppHandle, binding: &Binding, args: SetVariableArgs) -> To
         .map_err(|_| VARIABLES_FAILURE.to_string())?;
     let state = app.state::<AppState>();
     let applied = with_cache(&state, binding.project_id, |cache| {
-        let updates = changes.into_iter().map(Ok).collect();
-        Ok(cache.apply_reply(&binding.agent, updates, &team))
+        Ok(cache.apply_changes(&binding.agent, changes, &team))
     })
     .map_err(|_| VARIABLES_FAILURE.to_string())?;
     if !applied.rejected.is_empty() {

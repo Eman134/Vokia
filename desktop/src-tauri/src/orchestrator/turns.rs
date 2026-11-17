@@ -6,7 +6,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
 use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
-use crate::mcp::{ExchangeOutcome, McpState, SlotDecision, VariableEffects};
+use crate::mcp::{ExchangeOutcome, McpState, SlotDecision};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
@@ -17,11 +17,10 @@ use super::error::FlowError;
 use super::flow::stop_with_error;
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
-    idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
-    LOOP_MESSAGE, LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, REJECTION_LIMIT, SEM_AVANCO_LIMIT,
+    idle_limit_message, pass_limit_message, LoopGuard, PassCounter, LOOP_MESSAGE,
+    LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, SEM_AVANCO_LIMIT,
 };
-use super::markers::{parse_decision, parse_reply, ParsedDecision, ParsedReply};
-use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX, REPLY_PREFIX};
+use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REPLY_PREFIX};
 use super::session_pool::ExchangeSessions;
 
 pub(super) const NO_CONVERSATION: usize = 0;
@@ -60,16 +59,14 @@ pub(super) async fn run_turns(
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
     let mut counters = Counters::default();
-    let mut rejections = 0;
     let with_tools = app.state::<McpState>().server().is_some();
     loop {
-        let instruction = turn.instruction();
         let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,
                 definition,
                 &turn.speaker,
-                &instruction,
+                &turn.base,
                 with_tools,
             ))
         })?;
@@ -86,70 +83,15 @@ pub(super) async fn run_turns(
             delegation: registered_delegation,
             variables,
         } = outcome;
-        let ParsedReply {
-            visible,
-            delegation,
-            updates,
-        } = parse_reply(&reply, &turn.speaker, team);
-        let applied = with_cache(state, project_id, |cache| {
-            Ok(cache.apply_reply(&turn.speaker, updates, team))
-        })?;
-        let delegation = chosen_delegation(registered_delegation, delegation, definition.alternate);
-        let Some(effects) = accepted_effects(&applied.rejected, decision, variables) else {
-            let shown = with_confirmations(
-                (!visible.is_empty()).then(|| visible.clone()),
-                &confirmations,
-            );
-            if let Some(shown) = shown {
-                let to = next_turn(definition, &turn, &visible, None, team)
-                    .map_or(Speaker::User, |next| Speaker::from(next.speaker));
-                emit_message(
-                    app,
-                    project_id,
-                    Speaker::from(turn.speaker.clone()),
-                    to,
-                    &shown,
-                    *channel_id,
-                    activity.take(),
-                )?;
-            }
-            rejections += 1;
-            if rejections >= REJECTION_LIMIT {
-                let trigger = Trigger::Stall {
-                    state: GoalState::SemAvanco,
-                    message: rejection_message(),
-                };
-                match resolve(exchange, transcript, &mut counters, &turn.speaker, trigger).await? {
-                    Step::Continue(continuation) => {
-                        rejections = 0;
-                        turn = continuation;
-                        continue;
-                    }
-                    Step::End(outcome) => return Ok(outcome),
-                }
-            }
-            sessions.review(&turn.speaker, rejections, 0, team)?.await;
-            turn.rejection = Some(applied.rejected.join("; "));
-            continue;
-        };
-        rejections = 0;
-        if let Some(mut parsed) = pick_decision(effects.decision, &reply) {
-            let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
-            parsed.visible = with_confirmations(shown, &confirmations).unwrap_or_default();
-            return raise_decision(exchange, transcript, &turn, parsed, activity);
+        let visible = reply.trim().to_string();
+        if let Some(decision) = decision {
+            let shown = Some(visible).filter(|visible| !visible.is_empty());
+            let shown = with_confirmations(shown, &confirmations).unwrap_or_default();
+            return raise_decision(exchange, transcript, &turn, decision, shown, activity);
         }
-
-        let advanced = applied.created_variable
-            || applied.changed_value
-            || effects.variables.created_variable
-            || effects.variables.changed_value;
-        let accepted: Vec<Change> = effects
-            .variables
-            .accepted
-            .into_iter()
-            .chain(applied.accepted)
-            .collect();
-        let feed = with_confirmations(feed_text(&visible, &accepted), &confirmations);
+        let delegation = registered_delegation.filter(|_| !definition.alternate);
+        let advanced = variables.created_variable || variables.changed_value;
+        let feed = with_confirmations(feed_text(&visible, &variables.accepted), &confirmations);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition
                 .stop
@@ -419,7 +361,8 @@ fn raise_decision(
     exchange: &Exchange<'_>,
     transcript: &mut Vec<String>,
     turn: &Turn,
-    parsed: ParsedDecision,
+    decision: SlotDecision,
+    visible: String,
     activity: Option<TurnActivity>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
@@ -433,15 +376,13 @@ fn raise_decision(
         ..
     } = exchange;
     let project_id = key.project_id;
-    let ParsedDecision {
+    let SlotDecision {
         kind,
         title,
         detail,
         options,
-        visible,
-    } = parsed;
+    } = decision;
     let agent = turn.speaker.clone();
-    let visible = parse_reply(&visible, &agent, team).visible;
     if !visible.is_empty() {
         say(
             app,
@@ -501,7 +442,6 @@ pub(super) fn first_speaker(definition: &TaskDefinition, origin: &Agent) -> Agen
 struct Turn {
     speaker: Agent,
     base: String,
-    rejection: Option<String>,
     received: String,
     requesters: Vec<Agent>,
 }
@@ -511,7 +451,6 @@ impl Turn {
         Self {
             speaker,
             base: base.to_string(),
-            rejection: None,
             received: received.to_string(),
             requesters,
         }
@@ -525,13 +464,6 @@ impl Turn {
             request,
             Vec::new(),
         )
-    }
-
-    fn instruction(&self) -> String {
-        match &self.rejection {
-            Some(motive) => format!("{REJECTION_PREFIX}{motive}. {}", self.base),
-            None => self.base.clone(),
-        }
     }
 }
 
@@ -577,47 +509,6 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
     match accepted {
         [only] => only.feed(),
         _ => None,
-    }
-}
-
-// Resposta recusada não deixa efeito de ferramenta: nem avanço de variável para a meta
-// nem decisão para subir. O slot já foi esvaziado no fim do envio; aqui o que veio dele é descartado.
-struct AcceptedEffects {
-    decision: Option<SlotDecision>,
-    variables: VariableEffects,
-}
-
-fn accepted_effects(
-    rejected: &[String],
-    decision: Option<SlotDecision>,
-    variables: VariableEffects,
-) -> Option<AcceptedEffects> {
-    rejected.is_empty().then_some(AcceptedEffects {
-        decision,
-        variables,
-    })
-}
-
-// Em tarefa alternada o revezamento já decide quem fala; a delegação não vale.
-fn chosen_delegation(
-    registered: Option<(Agent, String)>,
-    from_text: Option<(Agent, String)>,
-    alternate: bool,
-) -> Option<(Agent, String)> {
-    registered.or(from_text).filter(|_| !alternate)
-}
-
-// A ferramenta vale mais que a linha de texto; a linha segue aceita por compatibilidade.
-fn pick_decision(registered: Option<SlotDecision>, reply: &str) -> Option<ParsedDecision> {
-    match registered {
-        Some(decision) => Some(ParsedDecision {
-            kind: decision.kind,
-            title: decision.title,
-            detail: decision.detail,
-            options: decision.options,
-            visible: reply.to_string(),
-        }),
-        None => parse_decision(reply),
     }
 }
 
