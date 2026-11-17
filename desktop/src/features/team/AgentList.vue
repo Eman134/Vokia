@@ -14,7 +14,7 @@ import type { Channel } from '../channels/channelsApi'
 import ChannelForm from '../channels/ChannelForm.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
-import { useConsole } from '../console/useConsole'
+import { useConversationTab } from './conversationTabs'
 import { trapFocus } from '../backlog/dialogFocus'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -53,7 +53,7 @@ const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
-const consoleStore = useConsole()
+const conversationTab = useConversationTab()
 const channels = useChannels()
 const creating = ref(false)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
@@ -194,12 +194,11 @@ function closeChannelDialog(): void {
             {{ requests.queuedFor(agent.id).length }}
           </span>
           <button
-            v-if="consoleStore.entriesOf(agent.id).length > 0"
             type="button"
             :class="CONSOLE_BUTTON_CLASSES"
             :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
             :title="`${CONSOLE_LABEL} de ${agent.name}`"
-            @click="consoleStore.open(agent.id)"
+            @click="conversationTab.showTerminal(agent.id)"
           >
             <svg class="size-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path :d="CONSOLE_GLYPH_PATH" />

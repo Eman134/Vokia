@@ -7,7 +7,7 @@ export const STATE_LABELS: Record<AgentState, string> = {
   idle: 'livre',
 }
 
-export const DOT_CLASSES: Record<AgentState, string> = {
+const DOT_CLASSES: Record<AgentState, string> = {
   sending: 'animate-pulse bg-muted',
   thinking: 'animate-pulse bg-ok',
   waiting: 'bg-warn',

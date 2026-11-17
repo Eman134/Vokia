@@ -9,18 +9,14 @@ export const CONSOLE_BUFFER_LINES = 500
 
 export const useConsole = defineStore('console', () => {
   const entries = ref<Record<string, ConsoleEntry[]>>({})
-  const openAgents = ref<Agent[]>([])
-  const activeAgent = ref<Agent | null>(null)
   const loadErrors = ref<Record<Agent, string>>({})
   const projects = useProjects()
 
-  function resetPanel(): void {
-    openAgents.value = []
-    activeAgent.value = null
+  function resetLoadErrors(): void {
     loadErrors.value = {}
   }
 
-  watch(() => projects.selected?.id, resetPanel)
+  watch(() => projects.selected?.id, resetLoadErrors)
 
   function merge(key: string, incoming: readonly ConsoleEntry[]): void {
     const current = entries.value[key] ?? []
@@ -53,28 +49,6 @@ export const useConsole = defineStore('console', () => {
     }
   }
 
-  async function open(agent: Agent): Promise<void> {
-    if (!openAgents.value.includes(agent)) {
-      openAgents.value.push(agent)
-    }
-    activeAgent.value = agent
-    await load(agent)
-  }
-
-  function activate(agent: Agent): void {
-    activeAgent.value = agent
-  }
-
-  function close(agent: Agent): void {
-    const index = openAgents.value.indexOf(agent)
-    if (index === -1) return
-    openAgents.value.splice(index, 1)
-    delete loadErrors.value[agent]
-    if (activeAgent.value === agent) {
-      activeAgent.value = openAgents.value[index] ?? openAgents.value[index - 1] ?? null
-    }
-  }
-
   function dismissError(agent: Agent): void {
     delete loadErrors.value[agent]
   }
@@ -86,20 +60,15 @@ export const useConsole = defineStore('console', () => {
 
   function forgetAll(): void {
     entries.value = {}
-    resetPanel()
+    resetLoadErrors()
   }
 
   return {
     entries,
-    openAgents,
-    activeAgent,
     loadErrors,
     apply,
     entriesOf,
-    open,
     load,
-    activate,
-    close,
     dismissError,
     forgetProject,
     forgetAll,

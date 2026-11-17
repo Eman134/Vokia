@@ -4,6 +4,7 @@ import type { AgentProfile } from '../team/teamApi'
 import { STATE_LABELS } from '../team/agentStateStyle'
 import ConsoleLines from './ConsoleLines.vue'
 import { useConsole } from './useConsole'
+import { useConversationTab } from '../team/conversationTabs'
 import { CONSOLE_PREVIEW_LINES, currentTurn, elapsedLabel } from './consoleTurn'
 
 const props = defineProps<{ agent: AgentProfile }>()
@@ -13,6 +14,7 @@ const WAITING_OUTPUT_TEXT = 'aguardando a primeira saída…'
 const CLOCK_TICK_MS = 1000
 
 const consoleStore = useConsole()
+const conversationTab = useConversationTab()
 const now = ref(Date.now())
 let clock: ReturnType<typeof setInterval> | undefined
 
@@ -37,7 +39,7 @@ onUnmounted(() => clearInterval(clock))
       type="button"
       class="flex w-full cursor-pointer items-center gap-2 border-b border-term-line px-3 py-2 text-left focus:outline-2 focus:outline-solid focus:outline-accent"
       :aria-label="`Abrir console de ${agent.name}`"
-      @click="consoleStore.open(agent.id)"
+      @click="conversationTab.showTerminal(agent.id)"
     >
       <span class="text-caption font-semibold text-term-ink">{{ agent.name }}</span>
       <span class="text-caption text-term-muted">{{ STATE_LABELS.thinking }}</span>

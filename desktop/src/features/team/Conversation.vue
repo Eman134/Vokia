@@ -9,8 +9,9 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
-import type { ConversationTab } from './conversationTabs'
+import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
@@ -49,7 +50,7 @@ const roster = useRoster()
 const channels = useChannels()
 const consoleStore = useConsole()
 const props = defineProps<{ filaEmAba: boolean }>()
-const aba = defineModel<ConversationTab>('aba', { default: 'conversa' })
+const { tab: aba } = storeToRefs(useConversationTab())
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
 const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
 

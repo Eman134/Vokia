@@ -1,12 +1,10 @@
-<script lang="ts">
+<script setup lang="ts">
 import type { ConsoleEntry, ConsoleKind } from '../team/events'
 
-export const KIND_PREFIX: Record<ConsoleKind, string> = {
+const KIND_PREFIX: Record<ConsoleKind, string> = {
   start: '▶', text: '', tool: '$', output: '', error: '✕', permission: '?', done: '✓', failed: '✕',
 }
-</script>
 
-<script setup lang="ts">
 defineProps<{ entries: readonly ConsoleEntry[] }>()
 
 const KIND_CLASSES: Record<ConsoleKind, string> = {
