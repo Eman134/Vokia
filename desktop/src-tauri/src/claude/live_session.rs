@@ -2,13 +2,14 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::path::Path;
 use std::process::Stdio;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
+use super::activity::{ActivityParser, TurnActivity};
 use super::command::{agent_command, timeout_for, Access};
 use super::console::{tool_summary, ConsoleKind, ConsoleLine, ConsoleParser};
 use super::control::{parse_control_request, ControlRequest, PermissionRequest};
@@ -105,11 +106,13 @@ impl LiveSession {
         F: Future<Output = bool>,
         O: FnMut(ConsoleLine),
     {
-        let (response, limits) = self.exchange(message, decide, &mut observe).await?;
+        let (response, limits, activity) = self.exchange(message, decide, &mut observe).await?;
         if !response.session_id.is_empty() {
             self.session_id = Some(response.session_id.clone());
         }
-        into_reply(response, limits)
+        let mut reply = into_reply(response, limits)?;
+        reply.activity = activity;
+        Ok(reply)
     }
 
     async fn exchange<D, F, O>(
@@ -117,7 +120,7 @@ impl LiveSession {
         message: &str,
         decide: D,
         observe: &mut O,
-    ) -> Result<(CliResponse, Option<RateLimits>), ClaudeError>
+    ) -> Result<(CliResponse, Option<RateLimits>, TurnActivity), ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
         F: Future<Output = bool>,
@@ -137,6 +140,7 @@ impl LiveSession {
             .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
         let mut accumulator = StreamAccumulator::default();
         let mut console = ConsoleParser::default();
+        let mut activity = ActivityParser::new(Instant::now());
         loop {
             // O limite vale entre linhas: a espera pela decisão do usuário não conta, e um agente que segue produzindo não estoura.
             let line = timeout(self.timeout, self.lines.next_line())
@@ -168,8 +172,10 @@ impl LiveSession {
                     for console_line in console.lines(line.as_bytes()) {
                         observe(console_line);
                     }
+                    activity.push_line(line.as_bytes(), Instant::now());
                     if accumulator.push_line(line.as_bytes())? {
-                        return accumulator.finish();
+                        let (response, limits) = accumulator.finish()?;
+                        return Ok((response, limits, activity.finish()));
                     }
                 }
             }

@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use super::activity::TurnActivity;
 use super::error::ClaudeError;
 
 const RESULT_KIND: &str = "result";
@@ -8,6 +9,7 @@ const RATE_LIMIT_KIND: &str = "rate_limit_event";
 pub struct Reply {
     pub text: String,
     pub limits: Option<RateLimits>,
+    pub activity: TurnActivity,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -96,6 +98,7 @@ pub(super) fn into_reply(
     Ok(Reply {
         text: response.result,
         limits,
+        activity: TurnActivity::default(),
     })
 }
 

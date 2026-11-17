@@ -1,3 +1,4 @@
+mod activity;
 mod ask;
 mod command;
 mod connectivity;
@@ -8,6 +9,7 @@ mod live_session;
 mod locate;
 mod stream;
 
+pub use activity::{ToolActivity, ToolCategory, ToolStatus, TurnActivity};
 pub use ask::ask;
 pub(crate) use command::base_command;
 pub use command::{kill_process_tree, Access, ProjectAccess, DEFAULT_MODEL};
