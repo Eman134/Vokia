@@ -40,7 +40,7 @@ const LOT_MARK_STATE: Record<ItemState, string> = {
   now: 'border-2 border-accent text-accent',
   next: 'border-[1.5px] border-line',
 }
-const STEP_CLASSES = 'ml-3 flex items-center gap-3 rounded-control-lg px-3.5 py-2.5 text-control'
+const STEP_CLASSES = 'ml-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-control-lg px-3.5 py-2.5 text-control'
 const STEP_STATE: Record<ItemState, string> = { done: '', now: 'bg-accent-soft', next: 'text-muted' }
 const STEP_ICON: Record<ItemState, string> = { done: '✓', now: '●', next: '○' }
 const SUB_PLAN_CLASSES =
@@ -110,7 +110,7 @@ const stages = computed(() =>
           <span :class="['w-4 font-bold', step.state === 'next' ? 'text-faint' : 'text-accent']">
             {{ STEP_ICON[step.state] }}
           </span>
-          <span class="min-w-0 flex-1">{{ step.name }}</span>
+          <span class="min-w-0 flex-1 basis-40">{{ step.name }}</span>
           <span class="font-mono text-tiny text-muted">{{ step.tag }}</span>
           <span
             title="Modelo da micro-tarefa"

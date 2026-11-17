@@ -11,7 +11,7 @@ import {
 } from './planosSample'
 
 const LIST_CLASSES =
-  'flex w-[280px] shrink-0 flex-col gap-0.5 rounded-dialog border border-line bg-surface p-2'
+  'flex w-[280px] max-w-full shrink-0 flex-col gap-0.5 rounded-dialog border border-line bg-surface p-2'
 const LIST_HEADER_CLASSES = 'flex items-center px-2.5 py-1.5'
 const GROUP_LABEL_CLASSES = 'px-2.5 pt-2.5 pb-1 text-tiny font-semibold tracking-[0.03em] text-faint'
 const ROW_CLASSES =

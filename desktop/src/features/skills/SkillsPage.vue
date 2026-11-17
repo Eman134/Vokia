@@ -18,7 +18,7 @@ const TITLE_BLOCK_CLASSES = 'flex min-w-0 flex-col gap-1'
 const TITLE_CLASSES = 'text-[32px] font-bold tracking-[-0.03em] text-ink'
 const SUBTITLE_CLASSES = 'max-w-[64ch] text-body text-muted'
 const ACTIONS_CLASSES = 'ml-auto flex gap-2'
-const CARD_GRID_CLASSES = 'grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4'
+const CARD_GRID_CLASSES = 'grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-4'
 </script>
 
 <template>

@@ -71,7 +71,12 @@ fn initialize_result(params: Option<&Value>) -> Value {
     })
 }
 
-fn call_tool(id: Value, params: Option<&Value>, binding: &Binding, app: Option<&AppHandle>) -> Reply {
+fn call_tool(
+    id: Value,
+    params: Option<&Value>,
+    binding: &Binding,
+    app: Option<&AppHandle>,
+) -> Reply {
     let name = params
         .and_then(|params| params.get("name"))
         .and_then(Value::as_str);

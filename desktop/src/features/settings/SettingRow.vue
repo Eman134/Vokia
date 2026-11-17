@@ -100,8 +100,8 @@ onMounted(() => {
   }
 })
 
-const ROW_CLASSES = 'flex items-center gap-3.5 border-t border-line py-3'
-const CONTROL_CLASSES = 'flex flex-none flex-wrap items-center justify-end gap-2'
+const ROW_CLASSES = 'flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-line py-3'
+const CONTROL_CLASSES = 'flex max-w-full flex-none flex-wrap items-center justify-end gap-2'
 const INPUT_CLASSES =
   'h-9 w-18 rounded-control border border-line bg-surface px-2.5 text-control text-ink disabled:opacity-40'
 const CLI_ROW_CLASSES = 'grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3.5 border-t border-line py-3'
@@ -169,7 +169,7 @@ function toOptions(labels: readonly string[]) {
   </div>
 
   <div v-else :class="ROW_CLASSES">
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+    <div class="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
       <span class="text-control">{{ item.label }}</span>
       <span v-if="item.hint" class="text-small text-muted">{{ item.hint }}</span>
     </div>
