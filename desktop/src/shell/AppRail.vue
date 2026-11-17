@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   PAGE_LABELS,
   PROJECT_LIST_PAGE,
@@ -11,6 +12,7 @@ import {
   type AppPage,
 } from './railNav'
 import { useNavigation } from './useNavigation'
+import { useRail } from './useRail'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
 import { projectIconOf } from '../features/projects/projectIcons'
@@ -39,7 +41,8 @@ const navigation = useNavigation()
 const railPage = computed<AppPage>(() =>
   navigation.page === 'novo-projeto' ? PROJECT_LIST_PAGE : navigation.page,
 )
-const expanded = ref(false)
+const rail = useRail()
+const { expanded } = storeToRefs(rail)
 const projectsStore = useProjects()
 const feed = useFeed()
 const openProject = ref<string | null>(projectsStore.selected?.name ?? null)
@@ -89,211 +92,203 @@ function toggleProject(project: Project) {
     void enterProject(project)
   }
 }
-
-function toggle() {
-  expanded.value = !expanded.value
-}
 </script>
 
 <template>
-  <div class="relative shrink-0" :style="{ width: `${RAIL_COLLAPSED_WIDTH}px` }">
-    <div
-      :class="[
-        `absolute top-0 left-0 z-30 flex max-h-full flex-col items-start gap-3 bg-bg px-4.75 py-5 font-sans transition-[width] ${RAIL_MOTION}`,
-        expanded && 'shadow-float',
-      ]"
-      :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
-    >
-      <div class="flex shrink-0 items-center gap-2.5 pl-1.25">
-        <button
-          type="button"
-          class="grid size-10 flex-none place-items-center rounded-control-lg bg-ink text-bg [--logo-cut:var(--color-ink)]"
-          aria-label="Vokia, início"
-          title="Vokia"
-          @click="navigation.goTo(PROJECT_LIST_PAGE)"
-        >
-          <VokiaLogo variant="cheio" :size="24" />
-        </button>
-        <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
-      </div>
+  <div
+    :class="`flex h-full shrink-0 flex-col items-start gap-3 border-r border-line bg-bg px-4.75 py-5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
+    :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
+  >
+    <div class="flex shrink-0 items-center gap-2.5 pl-1.25">
+      <button
+        type="button"
+        class="grid size-10 flex-none place-items-center rounded-control-lg bg-ink text-bg [--logo-cut:var(--color-ink)]"
+        aria-label="Vokia, início"
+        title="Vokia"
+        @click="navigation.goTo(PROJECT_LIST_PAGE)"
+      >
+        <VokiaLogo variant="cheio" :size="24" />
+      </button>
+      <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
+    </div>
 
-      <nav aria-label="Workspace" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+    <nav aria-label="Workspace" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+      <button
+        v-for="item in WORKSPACE_ITEMS"
+        :key="item.page"
+        type="button"
+        :class="[itemSize, isActive(item.page) ? ITEM_ON : ITEM_OFF]"
+        :aria-current="isActive(item.page) ? 'page' : undefined"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="navigation.goTo(item.page)"
+      >
+        <span :class="ICON_BOX">
+          <svg
+            class="size-4.25 flex-none"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path :d="item.path" />
+          </svg>
+        </span>
+        <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
+      </button>
+    </nav>
+
+    <nav
+      v-if="projectsStore.projects.length > 0"
+      aria-label="Projetos"
+      :class="[CARD, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
+    >
+      <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
         <button
-          v-for="item in WORKSPACE_ITEMS"
-          :key="item.page"
           type="button"
-          :class="[itemSize, isActive(item.page) ? ITEM_ON : ITEM_OFF]"
-          :aria-current="isActive(item.page) ? 'page' : undefined"
-          :aria-label="item.label"
-          :title="item.label"
-          @click="navigation.goTo(item.page)"
+          :class="[itemSize, ITEM_OFF, isOpen(project.name) && 'bg-surface-2']"
+          :aria-label="project.name"
+          :aria-expanded="isOpen(project.name)"
+          :aria-controls="groupId(project.name)"
+          :title="project.name"
+          @click="toggleProject(project)"
         >
           <span :class="ICON_BOX">
             <svg
-              class="size-4.25 flex-none"
+              class="size-4"
               viewBox="0 0 16 16"
               fill="none"
               stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
+              stroke-width="1.5"
               stroke-linejoin="round"
               aria-hidden="true"
             >
-              <path :d="item.path" />
+              <path :d="projectIconOf(project.symbol).path" />
             </svg>
           </span>
-          <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
+          <span v-if="expanded" :class="LABEL">{{ project.name }}</span>
         </button>
-      </nav>
-
-      <nav
-        v-if="projectsStore.projects.length > 0"
-        aria-label="Projetos"
-        :class="[CARD, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
-      >
-        <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
-          <button
-            type="button"
-            :class="[itemSize, ITEM_OFF, isOpen(project.name) && 'bg-surface-2']"
-            :aria-label="project.name"
-            :aria-expanded="isOpen(project.name)"
-            :aria-controls="groupId(project.name)"
-            :title="project.name"
-            @click="toggleProject(project)"
-          >
-            <span :class="ICON_BOX">
-              <svg
-                class="size-4"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path :d="projectIconOf(project.symbol).path" />
-              </svg>
-            </span>
-            <span v-if="expanded" :class="LABEL">{{ project.name }}</span>
-          </button>
-          <div
-            :id="groupId(project.name)"
-            :class="[SUBLIST, isOpen(project.name) ? SUBLIST_OPEN : SUBLIST_CLOSED]"
-            :inert="!isOpen(project.name)"
-          >
-            <div class="flex min-h-0 flex-col gap-0.5 overflow-hidden">
-              <span class="mx-1.5 my-0.75 h-px bg-line" />
-              <button
-                v-for="item in PROJECT_TOOLS"
-                :key="item.page"
-                type="button"
-                :class="[itemSize, isActiveSubpage(project.name, item.page) ? ITEM_ON : ITEM_OFF]"
-                :aria-current="isActiveSubpage(project.name, item.page) ? 'page' : undefined"
-                :aria-label="item.label"
-                :title="item.label"
-                @click="navigation.goTo(item.page)"
-              >
-                <span :class="ICON_BOX">
-                  <svg
-                    class="size-4.25 flex-none"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.4"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path :d="item.path" />
-                  </svg>
-                </span>
-                <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
-              </button>
-            </div>
+        <div
+          :id="groupId(project.name)"
+          :class="[SUBLIST, isOpen(project.name) ? SUBLIST_OPEN : SUBLIST_CLOSED]"
+          :inert="!isOpen(project.name)"
+        >
+          <div class="flex min-h-0 flex-col gap-0.5 overflow-hidden">
+            <span class="mx-1.5 my-0.75 h-px bg-line" />
+            <button
+              v-for="item in PROJECT_TOOLS"
+              :key="item.page"
+              type="button"
+              :class="[itemSize, isActiveSubpage(project.name, item.page) ? ITEM_ON : ITEM_OFF]"
+              :aria-current="isActiveSubpage(project.name, item.page) ? 'page' : undefined"
+              :aria-label="item.label"
+              :title="item.label"
+              @click="navigation.goTo(item.page)"
+            >
+              <span :class="ICON_BOX">
+                <svg
+                  class="size-4.25 flex-none"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path :d="item.path" />
+                </svg>
+              </span>
+              <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
+            </button>
           </div>
         </div>
+      </div>
+    </nav>
+    <div v-else class="min-h-0 flex-1">
+      <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+        <button
+          type="button"
+          :class="[itemSize, ITEM_OFF]"
+          :aria-label="PAGE_LABELS[NEW_PROJECT_PAGE]"
+          :title="PAGE_LABELS[NEW_PROJECT_PAGE]"
+          @click="navigation.goTo(NEW_PROJECT_PAGE)"
+        >
+          <span :class="ICON_BOX">
+            <svg
+              class="size-4.25 flex-none"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          </span>
+          <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS[NEW_PROJECT_PAGE] }}</span>
+        </button>
       </nav>
-      <div v-else class="min-h-0 flex-1">
-        <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[CARD, 'shrink-0', expanded && 'w-full']">
-          <button
-            type="button"
-            :class="[itemSize, ITEM_OFF]"
-            :aria-label="PAGE_LABELS[NEW_PROJECT_PAGE]"
-            :title="PAGE_LABELS[NEW_PROJECT_PAGE]"
-            @click="navigation.goTo(NEW_PROJECT_PAGE)"
-          >
-            <span :class="ICON_BOX">
-              <svg
-                class="size-4.25 flex-none"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.4"
-                stroke-linecap="round"
-                aria-hidden="true"
-              >
-                <path d="M8 3v10M3 8h10" />
-              </svg>
-            </span>
-            <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS[NEW_PROJECT_PAGE] }}</span>
-          </button>
-        </nav>
-      </div>
+    </div>
 
-      <div class="mt-2 flex shrink-0 flex-col items-start gap-1 pl-1.5">
-        <button
-          type="button"
-          :class="[itemSize, isActive('config') ? ITEM_ON : ITEM_OFF]"
-          :aria-current="isActive('config') ? 'page' : undefined"
-          :aria-label="PAGE_LABELS.config"
-          :title="PAGE_LABELS.config"
-          @click="navigation.goTo('config')"
-        >
-          <span :class="ICON_BOX">
-            <svg
-              class="size-4.25 flex-none"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="2.2" />
-              <path
-                d="M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z"
-              />
-            </svg>
-          </span>
-          <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS.config }}</span>
-        </button>
-        <button
-          type="button"
-          :class="[itemSize, TOGGLE]"
-          :aria-label="toggleLabel"
-          :aria-expanded="expanded"
-          :title="toggleLabel"
-          @click="toggle"
-        >
-          <span :class="ICON_BOX">
-            <svg
-              class="size-4.25 flex-none"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M2 2.5h12v11H2zM6 2.5v11" />
-              <path :d="expanded ? 'M11 6L9 8l2 2' : 'M9 6l2 2-2 2'" />
-            </svg>
-          </span>
-          <span v-if="expanded" :class="LABEL">Recolher</span>
-        </button>
-        <UsageAvatar class="-ml-0.75" :expanded="expanded" />
-      </div>
+    <div class="mt-auto flex shrink-0 flex-col items-start gap-1 pl-1.5">
+      <button
+        type="button"
+        :class="[itemSize, isActive('config') ? ITEM_ON : ITEM_OFF]"
+        :aria-current="isActive('config') ? 'page' : undefined"
+        :aria-label="PAGE_LABELS.config"
+        :title="PAGE_LABELS.config"
+        @click="navigation.goTo('config')"
+      >
+        <span :class="ICON_BOX">
+          <svg
+            class="size-4.25 flex-none"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="8" cy="8" r="2.2" />
+            <path
+              d="M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z"
+            />
+          </svg>
+        </span>
+        <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS.config }}</span>
+      </button>
+      <button
+        v-if="rail.canExpand"
+        type="button"
+        :class="[itemSize, TOGGLE]"
+        :aria-label="toggleLabel"
+        :aria-expanded="expanded"
+        :title="toggleLabel"
+        @click="rail.toggle"
+      >
+        <span :class="ICON_BOX">
+          <svg
+            class="size-4.25 flex-none"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2 2.5h12v11H2zM6 2.5v11" />
+            <path :d="expanded ? 'M11 6L9 8l2 2' : 'M9 6l2 2-2 2'" />
+          </svg>
+        </span>
+        <span v-if="expanded" :class="LABEL">Recolher</span>
+      </button>
+      <UsageAvatar class="-ml-0.75" :expanded="expanded" />
     </div>
   </div>
 </template>

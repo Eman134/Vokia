@@ -2,8 +2,9 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useConnection } from './features/team/useConnection'
 import AppRail from './shell/AppRail.vue'
-import { PAGE_LABELS, RAIL_COLLAPSED_WIDTH } from './shell/railNav'
+import { PAGE_LABELS, RAIL_COLLAPSED_WIDTH, RAIL_EXPANDED_WIDTH } from './shell/railNav'
 import { useNavigation } from './shell/useNavigation'
+import { useRail } from './shell/useRail'
 import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
@@ -20,12 +21,17 @@ const UNBUILT_PAGE_TEXT = 'Página ainda sem tela no app.'
 
 const connection = useConnection()
 const navigation = useNavigation()
+const rail = useRail()
 const backlog = useBacklog()
 const updater = useUpdater()
 const usage = useUsage()
 const limitNotices = useLimitNotices()
 const pageViews = computed(() => PAGE_VIEWS[navigation.page] ?? null)
 const showRail = computed(() => navigation.page !== 'onboarding')
+const railWidth = computed(() => {
+  if (!showRail.value) return 0
+  return rail.expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH
+})
 
 onMounted(connection.start)
 onMounted(updater.check)
@@ -48,7 +54,7 @@ onUnmounted(limitNotices.stop)
     :problem="connection.cliProblem"
     @recheck="connection.recheckCli"
   />
-  <div v-else-if="connection.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${showRail ? RAIL_COLLAPSED_WIDTH : 0}px` }">
+  <div v-else-if="connection.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${railWidth}px` }">
     <AppRail v-if="showRail" />
     <template v-if="pageViews">
       <component :is="view" v-for="(view, index) in pageViews" :key="index" />
