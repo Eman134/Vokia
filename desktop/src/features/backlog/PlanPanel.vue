@@ -9,6 +9,7 @@ import { useConnection } from '../team/useConnection'
 import { useFeed } from '../team/useFeed'
 import { useDecisions } from '../decisions/useDecisions'
 import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogTypes'
+import { useBacklog } from './useBacklog'
 import { parseProposal } from './planProposal'
 import { tagLabel } from './tags'
 import {
@@ -21,7 +22,8 @@ import {
   type PlanTab,
 } from './useItemPlan'
 
-const props = defineProps<{ item: BacklogItem }>()
+// simplified: modo do modal de item, sem pedido de plano; o Triar leva ao fluxo completo do PlanDialog.
+const props = defineProps<{ item: BacklogItem; simplified?: boolean }>()
 
 const DEPTH_OPTIONS: { id: PlanDepth; label: string }[] = [
   { id: 'rapido', label: 'Rápido · 1 lote' },
@@ -37,6 +39,7 @@ const lotsLabel = (count: number, estimate: string): string => {
   return estimate ? `${base} · ${estimate}` : base
 }
 
+const backlog = useBacklog()
 const itemPlan = useItemPlan()
 const connection = useConnection()
 
@@ -78,6 +81,12 @@ function sendAdjust(): void {
   adjustText.value = ''
   adjusting.value = false
 }
+
+// Mesma ação do card: o card não abre com o modal aberto, então o modal fecha antes.
+function triage(): void {
+  backlog.close()
+  itemPlan.openDialog(props.item.id, 'pedir')
+}
 </script>
 
 <template>
@@ -85,7 +94,11 @@ function sendAdjust(): void {
     <template v-if="current.state === 'vazio'">
       <p class="text-control text-ink">{{ NO_PLAN_TEXT }}</p>
       <p v-if="current.error" class="text-small text-danger">{{ current.error }}</p>
-      <div class="flex gap-1.5">
+      <div v-if="simplified" class="flex flex-wrap gap-1.5">
+        <UiButton variant="primary" size="lg" @press="triage">Triar</UiButton>
+        <UiButton variant="quiet" size="lg" @press="tab = 'vincular'">Vincular existente</UiButton>
+      </div>
+      <div v-else class="flex flex-wrap gap-1.5">
         <UiChip label="Vincular existente" :selected="tab === 'vincular'" @press="tab = 'vincular'" />
         <UiChip label="Pedir a um agente" :selected="tab === 'pedir'" @press="tab = 'pedir'" />
       </div>
@@ -112,10 +125,10 @@ function sendAdjust(): void {
         </button>
       </template>
 
-      <template v-else>
+      <template v-else-if="!simplified">
         <div class="flex flex-col gap-1.5">
           <p class="text-label font-semibold text-ink">Quem planeja</p>
-          <div class="flex gap-1.5">
+          <div class="flex flex-wrap gap-1.5">
             <UiChip
               v-for="profile in roster.agents"
               :key="profile.id"
@@ -127,7 +140,7 @@ function sendAdjust(): void {
         </div>
         <div class="flex flex-col gap-1.5">
           <p class="text-label font-semibold text-ink">Profundidade</p>
-          <div class="flex gap-1.5">
+          <div class="flex flex-wrap gap-1.5">
             <UiChip
               v-for="option in DEPTH_OPTIONS"
               :key="option.id"

@@ -203,7 +203,7 @@ watch(
     >
       <div class="flex flex-col gap-2 border-b border-line px-6 pt-6 pb-4">
         <header class="flex flex-col gap-2">
-          <div class="flex items-center gap-2 text-caption text-muted">
+          <div class="flex flex-wrap items-center gap-2 text-caption text-muted">
             <span>{{ item.id }}</span>
             <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
             <span v-if="item.feature" class="inline-flex items-center gap-1.5">
@@ -247,8 +247,8 @@ watch(
         </div>
       </div>
 
-      <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] overflow-y-auto max-md:grid-cols-1">
-        <div class="flex flex-col gap-5 border-r border-line px-6 py-5 max-md:border-r-0">
+      <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] overflow-y-auto max-md:grid-cols-[minmax(0,1fr)]">
+        <div class="flex min-w-0 flex-col gap-5 border-r border-line px-6 py-5 max-md:border-r-0">
           <section v-if="item.description">
             <h3 class="mb-1 text-label font-semibold text-ink">Descrição</h3>
             <p class="whitespace-pre-wrap text-control text-ink">{{ item.description }}</p>
@@ -333,13 +333,13 @@ watch(
           </section>
         </div>
 
-        <aside class="flex flex-col gap-4 bg-bg px-5.5 py-5">
+        <aside class="flex min-w-0 flex-col gap-4 bg-bg px-5.5 py-5">
           <section>
             <h3 class="mb-1 text-label font-semibold text-ink">Detalhes</h3>
             <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-caption">
               <template v-for="[label, value] in details" :key="label">
                 <dt class="text-muted">{{ label }}</dt>
-                <dd class="text-ink">{{ value }}</dd>
+                <dd class="wrap-break-word text-ink">{{ value }}</dd>
               </template>
             </dl>
           </section>
@@ -348,7 +348,7 @@ watch(
             <h3 class="text-label font-semibold text-ink">Plano</h3>
             <p v-if="planText" class="whitespace-pre-wrap text-control text-ink">{{ planText }}</p>
             <p class="text-caption text-muted">{{ PLAN_HINT[planState] }}</p>
-            <PlanPanel :item="item" />
+            <PlanPanel :item="item" simplified />
           </section>
 
           <section v-if="item.links?.length">
@@ -374,7 +374,7 @@ watch(
           <span v-if="showAutoHint" class="text-caption text-muted">{{ AUTO_COLUMNS_HINT }}</span>
           <span v-if="readyBlocked && moveTargets.includes(READY_COLUMN)" class="text-caption text-muted">{{ READY_BLOCKED_HINT }}</span>
         </div>
-        <div class="ml-auto flex gap-2">
+        <div class="ml-auto flex min-w-0 flex-wrap justify-end gap-2">
           <template v-if="planState === 'vinculado' && column === READY_COLUMN">
             <span class="self-center text-label text-muted">{{ DELEGATE_LABEL }}</span>
             <UiChip
