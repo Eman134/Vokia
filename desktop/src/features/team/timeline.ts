@@ -60,9 +60,10 @@ export function screenEntries(
   }
 }
 
-// #geral recebe o que não tem canal específico e os pedidos de permissão (E7); canal específico recebe só as suas mensagens.
+// #geral recebe o que não tem canal específico, os pedidos de permissão (E7) e os avisos e erros, que não pertencem a canal nenhum;
+// canal específico recebe só as suas mensagens.
 function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNEL_NAME, channels: readonly Channel[]): boolean {
-  if (entry.type === 'permission-result') {
+  if (entry.type === 'permission-result' || entry.type === 'notice' || entry.type === 'error') {
     return target === GENERAL_CHANNEL_NAME
   }
   if (entry.type !== 'message') {
