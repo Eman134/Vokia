@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { agentName, DEFAULT_RECIPIENT } from './agents'
-import { isBetweenAgents, type FeedEntry } from './timeline'
+import { isBetweenAgents, isLongMessage, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
@@ -22,9 +22,6 @@ const userProfile = useUserProfile()
 
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const TURN_INTO_REQUEST_LABEL = '+ virar pedido'
-// Troca entre agentes só recolhe quando o texto ou a atividade passam destes limites.
-const COLLAPSE_TEXT_CHARS = 600
-const COLLAPSE_TOOL_COUNT = 5
 
 const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
   allowed: '✓ Aprovado:',
@@ -48,18 +45,8 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   return roster.profileOf(speaker)
 }
 
-function isLong(message: VokiaMessage): boolean {
-  return message.text.length > COLLAPSE_TEXT_CHARS || (message.activity?.tools.length ?? 0) > COLLAPSE_TOOL_COUNT
-}
-
 function turnIntoRequest(message: VokiaMessage): void {
   backlog.startRequest(prefillFromMessage({ text: message.text, from: message.from, time: message.time, author: author(message) }))
-}
-
-// Só o destinatário do agente é destacado como menção, como antes.
-function highlightedNames(message: VokiaMessage): string[] {
-  const recipient = message.to === 'user' ? undefined : profile(message.to)
-  return recipient ? [recipient.name] : []
 }
 </script>
 
@@ -69,7 +56,7 @@ function highlightedNames(message: VokiaMessage): string[] {
       Para {{ speakerName(entry.to) }}
     </span>
     <div class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
-      <MarkdownText :text="entry.text" :mentions="highlightedNames(entry)" />
+      <MarkdownText :text="entry.text" />
     </div>
     <div class="flex flex-wrap items-center justify-end gap-1.5 text-caption text-muted">
       <UserAvatar :size="META_AVATAR_SIZE" :title="userProfile.displayName" />
@@ -80,7 +67,7 @@ function highlightedNames(message: VokiaMessage): string[] {
   <details
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
     class="flex min-w-0 flex-col gap-1.5"
-    :open="!isLong(entry)"
+    :open="!isLongMessage(entry)"
     data-testid="agent-exchange"
   >
     <summary class="flex min-w-0 cursor-pointer list-none flex-wrap items-center gap-x-1.5 gap-y-1 text-caption text-muted">

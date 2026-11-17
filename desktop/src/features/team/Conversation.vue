@@ -13,7 +13,7 @@ import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
-import { ALL_SCREEN_LABEL, groupParticipants } from './timeline'
+import { ALL_SCREEN_LABEL, groupParticipants, isLongMessage } from './timeline'
 import { useFeed } from './useFeed'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
@@ -29,8 +29,10 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
 import AgentTerminal from '../console/AgentTerminal.vue'
-import ConsoleCard from '../console/ConsoleCard.vue'
+import ActivityRun from './ActivityRun.vue'
+import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
+import { STATE_LABELS } from './agentStateStyle'
 
 const GROUP_SEPARATOR = ' ↔ '
 const PANEL_CLASSES =
@@ -38,10 +40,10 @@ const PANEL_CLASSES =
 const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
 const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
 const TABS_LABEL = 'Abas da conversa'
-const TABS_CLASSES = 'flex gap-0.5 rounded-control bg-surface-2 p-0.75'
-const TAB_CLASSES = 'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
-const TAB_ON = 'bg-surface font-medium text-ink shadow-seg'
-const TAB_OFF = 'cursor-pointer text-muted'
+const TABS_CLASSES = 'flex gap-5'
+const TAB_CLASSES = 'whitespace-nowrap border-b-2 pb-1 text-label font-medium focus:outline-2 focus:outline-solid focus:outline-accent'
+const TAB_ON = 'border-ink text-ink'
+const TAB_OFF = 'cursor-pointer border-transparent text-muted hover:text-ink'
 const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
 
 const feed = useFeed()
@@ -90,6 +92,12 @@ const clearable = computed(
 const screenRole = computed(() => (feed.screen.kind === 'agent' ? (roster.profileOf(feed.screen.agent)?.role ?? '') : ''))
 
 const projectsStore = useProjects()
+const liveRun = computed(() =>
+  feed.pendingAgent ? feed.liveActivityOf(feed.pendingAgent.id) : undefined,
+)
+const pendingLabel = computed(() =>
+  feed.pendingAgent ? `${feed.pendingAgent.name} está ${STATE_LABELS[feed.stateOf(feed.pendingAgent.id)]}` : undefined,
+)
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
@@ -111,7 +119,8 @@ watch(
   [
     () => feed.feed.length,
     () => feed.permissions.length,
-    () => feed.thinkingAgent,
+    () => feed.pendingAgent,
+    () => liveRun.value?.tools.length,
     () => feed.screen,
     () => (feed.thinkingAgent ? consoleStore.entriesOf(feed.thinkingAgent.id).length : 0),
   ],
@@ -195,7 +204,11 @@ onMounted(followEnd)
       </UiEmpty>
       <ol class="flex max-w-3xl flex-col gap-3">
         <li v-for="item in feed.timeline" :key="item.start">
-          <details v-if="item.type === 'group'" class="rounded-card border border-line bg-surface px-4 py-3">
+          <details
+            v-if="item.type === 'group'"
+            class="rounded-card border border-line bg-surface px-4 py-3"
+            :open="!item.messages.some(isLongMessage)"
+          >
             <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
               <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
               <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
@@ -214,23 +227,30 @@ onMounted(followEnd)
           <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
         </li>
       </ol>
+      <div v-if="liveRun" class="mt-3 flex max-w-3xl items-start gap-2.5" data-testid="activity-live-block">
+        <span class="size-7 shrink-0" aria-hidden="true" />
+        <ActivityRun :activity="liveRun" live class="min-w-0 flex-1" />
+      </div>
       <div
         role="status"
-        :aria-label="feed.thinkingAgent ? `${feed.thinkingAgent.name} está pensando` : undefined"
+        :aria-label="pendingLabel"
         class="mt-3 flex max-w-3xl items-start gap-2.5"
       >
-        <template v-if="feed.thinkingAgent">
-          <span
-            class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-          >
-            {{ feed.thinkingAgent.name.charAt(0) }}
+        <template v-if="feed.pendingAgent">
+          <span class="relative flex shrink-0" aria-hidden="true">
+            <AgentPortrait :who="feed.pendingAgent.id" :size="PORTRAIT_SIZES.chat" />
+            <span class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse" />
           </span>
-          <ConsoleCard :agent="feed.thinkingAgent" />
+          <AgentThinking
+            :agent="feed.pendingAgent"
+            :state="feed.stateOf(feed.pendingAgent.id)"
+            :since="feed.pendingSince"
+          />
         </template>
       </div>
     </template>
     <slot v-else name="fila" />
     </section>
-    <AgentTerminal v-if="aba === 'terminal'" @answer="aba = 'conversa'" />
+    <AgentTerminal v-if="aba === 'terminal'" @answer="aba = 'conversa'" @exit="aba = 'conversa'" />
   </section>
 </template>
