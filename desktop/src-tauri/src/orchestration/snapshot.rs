@@ -1,7 +1,8 @@
 use crate::agents::{join_items, Agent, Team};
-use crate::db::{Layer, OrchestrationSnapshot, Rule};
+use crate::db::{Layer, OrchestrationSnapshot, Placement, Rule};
 
 const ENFORCEMENT_ON: &str = "on";
+const LEADER_LAYER_KIND: &str = "planejar";
 const ACTION_DELEGATE: &str = "delegar";
 const ACTION_RETURN: &str = "devolver";
 const ACTION_ESCALATE: &str = "escalar";
@@ -193,6 +194,77 @@ fn destination_names(
         .filter(|target| *target != agent)
         .map(|target| team.name_of(target).to_string())
         .collect()
+}
+
+pub(crate) struct MemberOutline {
+    pub(crate) name: String,
+    pub(crate) layer: String,
+}
+
+pub(crate) struct TeamOutline {
+    pub(crate) name: String,
+    pub(crate) leader: Option<String>,
+    pub(crate) members: Vec<MemberOutline>,
+}
+
+pub(crate) struct TeamOutlines {
+    pub(crate) teams: Vec<TeamOutline>,
+    pub(crate) unassigned: Vec<String>,
+}
+
+// A tabela de times não tem campo de líder: o líder do time é o primeiro membro posicionado numa camada de tipo planejar.
+pub(crate) fn team_outlines(snapshot: &OrchestrationSnapshot, team: &Team) -> TeamOutlines {
+    let teams = snapshot
+        .teams
+        .iter()
+        .map(|orch_team| {
+            let members: Vec<(bool, MemberOutline)> = team
+                .ids()
+                .filter_map(|agent| {
+                    let placement = placement_of(snapshot, agent)?;
+                    if placement.team_id != orch_team.id {
+                        return None;
+                    }
+                    let layer = snapshot
+                        .layers
+                        .iter()
+                        .find(|layer| layer.id == placement.layer_id);
+                    let is_leader = layer.is_some_and(|layer| layer.kind == LEADER_LAYER_KIND);
+                    let layer_name = layer
+                        .map_or_else(|| placement.layer_id.clone(), |layer| layer.name.clone());
+                    Some((
+                        is_leader,
+                        MemberOutline {
+                            name: team.name_of(agent).to_string(),
+                            layer: layer_name,
+                        },
+                    ))
+                })
+                .collect();
+            let leader = members
+                .iter()
+                .find(|(is_leader, _)| *is_leader)
+                .map(|(_, member)| member.name.clone());
+            TeamOutline {
+                name: orch_team.name.clone(),
+                leader,
+                members: members.into_iter().map(|(_, member)| member).collect(),
+            }
+        })
+        .collect();
+    let unassigned = team
+        .ids()
+        .filter(|agent| placement_of(snapshot, agent).is_none())
+        .map(|agent| team.name_of(agent).to_string())
+        .collect();
+    TeamOutlines { teams, unassigned }
+}
+
+fn placement_of<'a>(snapshot: &'a OrchestrationSnapshot, agent: &Agent) -> Option<&'a Placement> {
+    snapshot
+        .placements
+        .iter()
+        .find(|placement| placement.agent_id == agent.as_str())
 }
 
 // Sem banco (ou líder inválido) o interpretador usa o agente embutido padrão.

@@ -7,7 +7,6 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{DbState, OrchestrationSnapshot};
-use crate::orchestration::snapshot::leader_of;
 use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
@@ -242,8 +241,16 @@ async fn exchange_turns(
     let context = project_context(&project, tree.as_ref());
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app, key.project_id)?;
-    let leader = leader_of(orchestration.as_ref());
-    let definition = interpret_task(app, state, cli, request, key.clone(), team, &leader).await?;
+    let definition = interpret_task(
+        app,
+        state,
+        cli,
+        request,
+        key.clone(),
+        team,
+        orchestration.as_ref(),
+    )
+    .await?;
     if first_speaker(&definition, &key.agent) != key.agent {
         emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
@@ -324,7 +331,7 @@ async fn interpret_task(
     request: &str,
     key: SessionKey,
     team: &Team,
-    leader: &Agent,
+    orchestration: Option<&OrchestrationSnapshot>,
 ) -> Result<TaskDefinition, FlowError> {
     let origin = key.agent;
     let profile = profile_of(team, &origin)?;
@@ -339,7 +346,13 @@ async fn interpret_task(
         team.roster_line(),
         team.name_of(&origin)
     );
-    let reply = claude::ask(cli, &message, &interpreter_role(team, leader), &profile.model).await?;
+    let reply = claude::ask(
+        cli,
+        &message,
+        &interpreter_role(team, orchestration),
+        &profile.model,
+    )
+    .await?;
     report_limits(app, reply.limits)?;
     Ok(parse_definition(&reply.text, &origin, request, team))
 }
