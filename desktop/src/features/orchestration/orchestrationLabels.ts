@@ -1,12 +1,17 @@
 import type { Agent } from '../team/events'
 import {
   VOCE_NODE,
+  type ExecMode,
+  type HumanGate,
   type LayerKind,
   type OrchAction,
   type OrchMovement,
   type OrchRule,
   type RequestKind,
+  type StepMode,
+  type ThenChoice,
   type WhenEvent,
+  type WorktreePolicy,
 } from './orchestrationTypes'
 
 export const LAYER_KIND_LABELS: Record<LayerKind, string> = {
@@ -79,3 +84,90 @@ export function movementVerb(
 export function formatMovementTime(createdAt: number): string {
   return new Date(createdAt).toLocaleTimeString(LOCALE, MOVEMENT_TIME_OPTIONS)
 }
+
+export const WHEN_EVENT_LABELS: Record<WhenEvent, string> = {
+  plano_aprovado: 'Plano aprovado',
+  tarefa_concluida: 'Tarefa concluída',
+  revisao_reprovou: 'Revisão reprovou',
+  testes_falharam: 'Testes falharam',
+  revisao_aprovou: 'Revisão aprovou',
+  pedido_de_ajuda: 'Agente pede ajuda',
+}
+
+export const THEN_CHOICE_LABELS: Record<ThenChoice, string> = {
+  delegar: 'Delegar',
+  pedir_revisao: 'Pedir revisão',
+  pesquisar_antes: 'Pesquisar antes',
+  devolver: 'Devolver',
+  chamar_voce: 'Chamar você',
+}
+
+export const EXEC_MODE_LABELS: Record<ExecMode, string> = {
+  sequencia: 'Uma por vez',
+  paralelo: 'Em paralelo',
+}
+
+export const STEP_MODE_LABELS: Record<StepMode, string> = {
+  lotes: 'Por lotes',
+  livre: 'Livre',
+}
+
+export const HUMAN_GATE_LABELS: Record<HumanGate, string> = {
+  lote: 'A cada lote',
+  fim: 'Só no fim',
+  nunca: 'Nunca',
+}
+
+export const WORKTREE_LABELS: Record<WorktreePolicy, string> = {
+  sempre: 'Sempre',
+  paralelo: 'Com paralelo',
+  nunca: 'Nunca',
+}
+
+export const VIEW_COPY = {
+  flowTitle: 'Fluxo entre camadas',
+  addArrow: '+ Seta',
+  ruleTitle: 'Regra da seta',
+  newArrowTitle: 'Nova seta',
+  from: 'De',
+  to: 'Para',
+  when: 'Quando',
+  then: 'Então',
+  exec: 'Execução',
+  returns: 'Devoluções antes de chamar você',
+  createArrow: 'Criar seta',
+  cancel: 'Cancelar',
+  removeArrow: 'Remover seta',
+  removeArrowConfirm: 'Remover esta seta?',
+  removeArrowAction: 'Remover',
+  close: 'Fechar',
+  leaderTitle: 'conduz',
+  leaderPick: 'Quem conduz',
+  steps: 'Etapas',
+  humanGate: 'Parar para você',
+  parallel: 'Agentes ao mesmo tempo',
+  stepsOrder: 'Ordem das etapas',
+  you: 'Você',
+  youApprove: 'Você aprova',
+  approvesMerge: 'aprova o merge',
+  autoMerge: 'Merge automático',
+  project: 'Projeto',
+  pairTurns: 'Turnos por par',
+  taskTurns: 'Turnos por tarefa',
+  worktree: 'Worktree',
+  enforcement: 'Aplicar as regras do mapa',
+  enforcementWarning: 'Sem setas, toda delegação é recusada.',
+  layerTitle: 'Camada de orquestração',
+  saveLayer: 'Salvar camada',
+  deleteLayer: 'Excluir camada',
+  deleteLayerConfirm: 'Excluir esta camada? As setas ligadas a ela também saem.',
+  moveLeft: '← Mover',
+  moveRight: 'Mover →',
+  instructions: 'Instruções',
+  instances: 'Instâncias',
+  saveAgent: 'Salvar agente',
+  noPlacementPossible: 'Crie uma camada e um time antes de posicionar agentes.',
+  noLayersTitle: 'Nenhuma camada ainda.',
+  createLayer: 'Criar camada',
+  unplaced: 'Sem posição',
+} as const

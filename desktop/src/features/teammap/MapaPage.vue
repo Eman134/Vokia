@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import NewAgentDialog from '../agents/NewAgentDialog.vue'
+import OrchestrationView from '../orchestration/OrchestrationView.vue'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useProjects } from '../projects/useProjects'
 import type { AgentProfile } from '../team/teamApi'
@@ -48,6 +49,10 @@ const unplaced = computed<AgentProfile[]>(() => {
   return roster.agents.filter((agent) => !placed.has(agent.id))
 })
 
+type MapTab = 'teams' | 'orchestration'
+
+// Aba ativa só vale enquanto a página está aberta: volta a "Times e camadas" ao reabrir o mapa.
+const activeTab = ref<MapTab>('teams')
 const agentDialog = ref<{ teamId: string | null; layerId: string | null } | null>(null)
 const teamDialogOpen = ref(false)
 const layerDialogOpen = ref(false)
@@ -72,16 +77,21 @@ function onAgentCreated(agent: AgentProfile): void {
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-2">
         <div role="tablist" :class="TAB_LIST_CLASSES">
-          <button type="button" role="tab" aria-selected="true" :class="[TAB_BASE_CLASSES, TAB_ACTIVE_CLASSES]">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === 'teams'"
+            :class="[TAB_BASE_CLASSES, activeTab === 'teams' ? TAB_ACTIVE_CLASSES : TAB_INACTIVE_CLASSES]"
+            @click="activeTab = 'teams'"
+          >
             {{ TAB_TEAMS }}
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected="false"
-            aria-disabled="true"
-            disabled
-            :class="[TAB_BASE_CLASSES, TAB_INACTIVE_CLASSES]"
+            :aria-selected="activeTab === 'orchestration'"
+            :class="[TAB_BASE_CLASSES, activeTab === 'orchestration' ? TAB_ACTIVE_CLASSES : TAB_INACTIVE_CLASSES]"
+            @click="activeTab = 'orchestration'"
           >
             {{ TAB_ORCHESTRATION }}
           </button>
@@ -98,7 +108,7 @@ function onAgentCreated(agent: AgentProfile): void {
 
     <UiEmpty v-if="!projects.selected" :title="NO_PROJECT_TITLE" />
     <UiEmpty v-else-if="orchestration.loadError" :title="LOAD_ERROR_TITLE" :text="orchestration.loadError" />
-    <template v-else-if="snapshot">
+    <template v-else-if="snapshot && activeTab === 'teams'">
       <div v-if="snapshot.layers.length === 0" :class="EMPTY_ACTION_CLASSES">
         <UiEmpty :title="NO_LAYERS_TITLE" />
         <UiButton variant="primary" size="lg" @press="layerDialogOpen = true">{{ CREATE_LAYER_LABEL }}</UiButton>
@@ -111,9 +121,15 @@ function onAgentCreated(agent: AgentProfile): void {
       <UnplacedAgents v-if="unplaced.length > 0" :agents="unplaced" @place="placing = $event" />
       <div class="grid gap-5 lg:grid-cols-2">
         <MovementList :movements="orchestration.movements" :rules="snapshot.rules" />
-        <FlowRules :rules="snapshot.rules" :layers="snapshot.layers" :enforcement="snapshot.settings.enforcement" />
+        <FlowRules
+          :rules="snapshot.rules"
+          :layers="snapshot.layers"
+          :enforcement="snapshot.settings.enforcement"
+          @edit="activeTab = 'orchestration'"
+        />
       </div>
     </template>
+    <OrchestrationView v-else-if="snapshot" />
 
     <template v-if="projectId !== null">
       <NewTeamDialog v-if="teamDialogOpen" :project-id="projectId" @close="teamDialogOpen = false" />

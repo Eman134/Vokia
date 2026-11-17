@@ -34,6 +34,16 @@ export type OrchAction = (typeof ORCH_ACTION_VALUES)[number]
 export const EXEC_MODE_VALUES = ['sequencia', 'paralelo'] as const
 export type ExecMode = (typeof EXEC_MODE_VALUES)[number]
 
+// "Então" do formulário: junta ação e tipo de pedido (ver ruleText.ts).
+export const THEN_CHOICE_VALUES = [
+  'delegar',
+  'pedir_revisao',
+  'pesquisar_antes',
+  'devolver',
+  'chamar_voce',
+] as const
+export type ThenChoice = (typeof THEN_CHOICE_VALUES)[number]
+
 // Destino virtual "Você" da regra escalar; não é camada.
 export const VOCE_NODE = 'voce'
 
