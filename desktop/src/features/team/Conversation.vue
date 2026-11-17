@@ -55,6 +55,8 @@ const props = defineProps<{ filaEmAba: boolean }>()
 const { tab: aba } = storeToRefs(useConversationTab())
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
 const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
+// Canal e "Todos" não têm terminal: só a conversa com um agente tem.
+const temTerminal = computed(() => feed.screen.kind === 'agent')
 
 function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
@@ -127,6 +129,9 @@ watch(
   followEnd,
 )
 onMounted(followEnd)
+watch(temTerminal, (disponivel) => {
+  if (!disponivel && aba.value === 'terminal') aba.value = 'conversa'
+}, { flush: 'sync' })
 </script>
 
 <template>
@@ -151,6 +156,7 @@ onMounted(followEnd)
             {{ TAB_LABELS.conversa }}
           </button>
           <button
+            v-if="temTerminal"
             type="button"
             role="tab"
             :aria-selected="aba === 'terminal'"
