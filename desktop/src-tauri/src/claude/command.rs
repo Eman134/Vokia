@@ -187,3 +187,7 @@ pub(crate) fn base_command(cli: &Path) -> Command {
     command.creation_flags(CREATE_NO_WINDOW);
     command
 }
+
+#[cfg(test)]
+#[path = "../../tests/command_tests.rs"]
+mod tests;
