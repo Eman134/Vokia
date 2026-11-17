@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, useId } from 'vue'
+import { nextTick, ref, useId } from 'vue'
 import type { ActivityRowModel, RowIconKind } from './activitySummary'
 
 defineProps<{ row: ActivityRowModel }>()
@@ -19,13 +19,53 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
 
 const SVG_CLASSES = 'size-3.5 shrink-0 fill-none stroke-current stroke-2'
 const CHIP_CLASSES = 'inline-flex min-w-0 max-w-full items-center gap-1 rounded-chip bg-surface-2 px-1.5 py-0.5 text-ink'
+const OPEN_HINT = 'Clique para abrir o arquivo'
+const PREVIEW_CLASSES =
+  'absolute left-0 z-10 flex w-96 max-w-full flex-col gap-1.5 rounded-card border border-line bg-surface p-3 text-caption shadow-float'
+const PREVIEW_OFFSET_PX = 4
+const PREVIEW_BELOW_CLASSES = 'top-full mt-1'
+const PREVIEW_ABOVE_CLASSES = 'bottom-full mb-1'
 
 const open = ref(false)
 const listId = useId()
+const itemEl = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
+const hovering = ref(false)
+const openUp = ref(false)
+
+// O painel é cortado pela área de rolagem da conversa, então o espaço útil é o dela, não a janela.
+function scrollAreaOf(element: HTMLElement): HTMLElement | null {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const { overflowY } = getComputedStyle(parent)
+    if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'hidden') return parent
+  }
+  return null
+}
+
+function fitsBelow(item: HTMLElement, panel: HTMLElement): boolean {
+  const limit = scrollAreaOf(item)?.getBoundingClientRect().bottom ?? window.innerHeight
+  return item.getBoundingClientRect().bottom + PREVIEW_OFFSET_PX + panel.offsetHeight <= limit
+}
+
+// O painel só existe com o mouse em cima: medido já aberto, a direção vem do espaço real antes de pintar.
+async function showPreview(): Promise<void> {
+  hovering.value = true
+  await nextTick()
+  if (itemEl.value && panelEl.value) {
+    openUp.value = !fitsBelow(itemEl.value, panelEl.value)
+  }
+}
 </script>
 
 <template>
-  <li class="flex min-w-0 flex-col gap-0.5" :data-icon="row.icon" data-testid="activity-row">
+  <li
+    ref="itemEl"
+    class="relative flex min-w-0 flex-col gap-0.5"
+    :data-icon="row.icon"
+    data-testid="activity-row"
+    @pointerenter="showPreview"
+    @pointerleave="hovering = false"
+  >
     <div class="flex min-w-0 flex-wrap items-center gap-1.5" :class="row.failed ? 'text-danger' : ''">
       <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true">
         <path :d="ICON_PATHS[row.icon]" />
@@ -53,5 +93,15 @@ const listId = useId()
     <ul v-if="row.items && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">
       <li v-for="item in row.items" :key="item" class="truncate" :title="item">{{ item }}</li>
     </ul>
+    <div
+      v-if="row.preview && hovering"
+      ref="panelEl"
+      :class="[PREVIEW_CLASSES, openUp ? PREVIEW_ABOVE_CLASSES : PREVIEW_BELOW_CLASSES]"
+      data-testid="activity-preview"
+    >
+      <p v-if="row.preview.removed" class="line-clamp-4 wrap-break-word whitespace-pre-wrap text-muted line-through">{{ row.preview.removed }}</p>
+      <p v-if="row.preview.added" class="line-clamp-4 wrap-break-word whitespace-pre-wrap text-ink">{{ row.preview.added }}</p>
+      <span class="text-muted">{{ OPEN_HINT }}</span>
+    </div>
   </li>
 </template>

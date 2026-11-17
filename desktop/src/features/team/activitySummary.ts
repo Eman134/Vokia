@@ -1,4 +1,4 @@
-import type { ToolActivity, ToolCategory, ToolDetail, ToolStatus } from './events'
+import type { ToolActivity, ToolCategory, ToolChange, ToolDetail, ToolStatus } from './events'
 import { fileIconOf, type FileIconKind } from './fileIcon'
 
 type ReadDetail = Extract<ToolDetail, { kind: 'read' }>
@@ -99,6 +99,7 @@ export interface ActivityRowModel {
   text?: string
   meta?: string
   items?: string[]
+  preview?: ToolChange
   failed: boolean
 }
 
@@ -199,7 +200,7 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): Act
   const meta = showChanges ? `+${tool.added} ${MINUS}${tool.removed}` : undefined
   const verb = verbFor(tool.category, tool.status)
   if (FILE_CATEGORIES.includes(tool.category) && target !== '') {
-    return { id: tool.callId, icon, verb, chip: chipOf(target), meta, failed }
+    return { id: tool.callId, icon, verb, chip: chipOf(target), meta, preview: tool.change, failed }
   }
   if (PATTERN_CATEGORIES.includes(tool.category) && target !== '') {
     return { id: tool.callId, icon, verb, chip: patternChip(target), meta, failed }

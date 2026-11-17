@@ -16,6 +16,11 @@ export type ToolDetail =
   | { kind: 'created'; id?: string }
   | { kind: 'updated'; taskId: string; status: string }
 
+export interface ToolChange {
+  added: string
+  removed?: string
+}
+
 export interface ToolActivity {
   callId: string
   name: string
@@ -24,6 +29,7 @@ export interface ToolActivity {
   status: ToolStatus
   added?: number
   removed?: number
+  change?: ToolChange
   durationMs?: number
   detail?: ToolDetail
 }

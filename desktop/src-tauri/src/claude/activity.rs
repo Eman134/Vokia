@@ -8,6 +8,7 @@ use super::console::{ConsoleKind, ConsoleLine};
 
 const MAX_TOOLS: usize = 100;
 const TEXT_MAX_CHARS: usize = 300;
+const CHANGE_PREVIEW_MAX_CHARS: usize = 400;
 const MIN_CLOCK_THINKING_MS: u64 = 1000;
 const MAX_DIFF_LINES: usize = 2000;
 const MAX_DIFF_CHARS: usize = 96_000;
@@ -69,6 +70,14 @@ pub enum ToolDetail {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ToolChange {
+    pub added: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolActivity {
     pub call_id: String,
     pub name: String,
@@ -79,6 +88,8 @@ pub struct ToolActivity {
     pub added: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<ToolChange>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -177,6 +188,7 @@ impl ActivityParser {
         let input = &block["input"];
         let category = category_of(name);
         let (added, removed) = written_lines(name, input);
+        let change = change_of(name, input);
         self.open.insert(
             call_id.to_string(),
             OpenTool {
@@ -193,6 +205,7 @@ impl ActivityParser {
             status: ToolStatus::Running,
             added,
             removed,
+            change,
             duration_ms: None,
             detail: entry_detail(name, input),
         });
@@ -229,6 +242,7 @@ impl ActivityParser {
                 tool.status = ToolStatus::Failed;
                 tool.added = None;
                 tool.removed = None;
+                tool.change = None;
                 tool.detail = None;
                 continue;
             }
@@ -373,6 +387,28 @@ fn written_lines(name: &str, input: &Value) -> (Option<u32>, Option<u32>) {
         }
         _ => (None, None),
     }
+}
+
+// Trecho que o usuário vê no hover: o início do que foi gravado, e o trecho trocado quando o Edit traz old_string.
+fn change_of(name: &str, input: &Value) -> Option<ToolChange> {
+    match name.to_ascii_lowercase().as_str() {
+        "write" => input["content"].as_str().map(|content| ToolChange {
+            added: preview_of(content),
+            removed: None,
+        }),
+        "edit" => {
+            let added = input["new_string"].as_str()?;
+            Some(ToolChange {
+                added: preview_of(added),
+                removed: input["old_string"].as_str().map(preview_of),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn preview_of(text: &str) -> String {
+    text.chars().take(CHANGE_PREVIEW_MAX_CHARS).collect()
 }
 
 fn edit_counts(input: &Value) -> Option<(u32, u32)> {
