@@ -13,7 +13,7 @@ use tauri::AppHandle;
 
 pub use registry::{Binding, RandomnessUnavailable, Token};
 pub use server::{McpConfigFile, McpServer, McpSession};
-pub use slot::ExchangeSlot;
+pub use slot::{ExchangeOutcome, ExchangeSlot, SlotDecision};
 
 pub const SERVER_NAME: &str = "vokia";
 pub const CONFIG_DIR: &str = "mcp";
@@ -77,3 +77,7 @@ pub(crate) mod support;
 #[cfg(test)]
 #[path = "../../tests/mcp_backlog_tests.rs"]
 mod backlog_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_decision_tests.rs"]
+mod decision_tests;

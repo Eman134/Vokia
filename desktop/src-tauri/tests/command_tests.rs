@@ -222,11 +222,12 @@ fn comando_base_e_de_agente_definem_no_proxy_para_o_loopback() {
     assert_eq!(no_proxy(&agent).as_deref(), Some("127.0.0.1,localhost"));
 }
 
-const BACKLOG_TOOLS: [&str; 4] = [
+const VOKIA_TOOLS: [&str; 5] = [
     "mcp__vokia__list_backlog",
     "mcp__vokia__read_card",
     "mcp__vokia__create_card",
     "mcp__vokia__move_card",
+    "mcp__vokia__request_decision",
 ];
 
 #[test]
@@ -241,14 +242,14 @@ fn cada_ferramenta_do_vokia_aparece_em_allowed_tools_nos_tres_niveis() {
 
         let allowed = &args[position(&args, ALLOWED_FLAG) + 1];
         let tools: Vec<&str> = allowed.split(',').collect();
-        for name in BACKLOG_TOOLS {
+        for name in VOKIA_TOOLS {
             assert!(
                 tools.contains(&name),
                 "{level:?}: faltou {name} em {allowed}"
             );
         }
     }
-    assert_eq!(fixture.session.config().allowed_tools(), BACKLOG_TOOLS);
+    assert_eq!(fixture.session.config().allowed_tools(), VOKIA_TOOLS);
 }
 
 #[test]
@@ -263,7 +264,7 @@ fn as_ferramentas_do_mcp_entram_depois_das_do_nivel_sem_remover_nenhuma() {
         );
 
         let base = without[position(&without, ALLOWED_FLAG) + 1].clone();
-        let expected = format!("{base},{}", BACKLOG_TOOLS.join(","));
+        let expected = format!("{base},{}", VOKIA_TOOLS.join(","));
         assert_eq!(
             with[position(&with, ALLOWED_FLAG) + 1],
             expected,

@@ -10,7 +10,7 @@ use super::turns::NO_CONVERSATION;
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const TOOLS_RULE: &str =
-    "Use as ferramentas do Vokia para ler e mexer no backlog; nunca invente ids.";
+    "Use as ferramentas do Vokia para ler e mexer no backlog e para pedir uma decisão ao usuário; nunca invente ids.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 pub(super) const REPLY_PREFIX: &str = " respondeu: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
@@ -127,9 +127,14 @@ pub(super) fn role(
     project_context: &str,
     with_tools: bool,
 ) -> String {
-    let tools_rule = if with_tools { TOOLS_RULE } else { "" };
+    // Com ferramentas a decisão sai pela ferramenta; a linha de texto só é ensinada com o servidor fora do ar.
+    let (tools_rule, decision_rule) = if with_tools {
+        (TOOLS_RULE, "")
+    } else {
+        ("", DECISION_RULE)
+    };
     format!(
-        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {DECISION_RULE} {tools_rule} {PROJECT_RULE} {project_context}",
+        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {DELEGATION_RULE} {decision_rule} {tools_rule} {PROJECT_RULE} {project_context}",
         profile.name, profile.role
     )
 }

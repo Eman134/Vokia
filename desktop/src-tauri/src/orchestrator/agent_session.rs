@@ -10,7 +10,9 @@ use crate::agents::Agent;
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
-use crate::mcp::{Binding, ExchangeSlot, McpServer, McpSession, McpState, CONFIG_DIR};
+use crate::mcp::{
+    Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState, CONFIG_DIR,
+};
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
 
@@ -31,7 +33,7 @@ const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS
 
 pub(super) struct StepReply {
     pub(super) text: String,
-    pub(super) confirmations: Vec<String>,
+    pub(super) outcome: ExchangeOutcome,
     pub(super) activity: Option<TurnActivity>,
 }
 
@@ -81,7 +83,7 @@ async fn run_step(
         item_id: exchange.item_id.map(str::to_string),
         channel_id: exchange.channel_id,
         mcp,
-        confirmations: StdMutex::default(),
+        collected: StdMutex::default(),
     };
     let first = sessions.opened.insert(agent.clone());
     let held = sessions.held(agent, team)?;
@@ -148,14 +150,14 @@ async fn run_step(
         }
     };
     report_limits(app, reply.limits)?;
-    let confirmations = call
-        .confirmations
+    let outcome = call
+        .collected
         .lock()
         .map(|mut collected| std::mem::take(&mut *collected))
         .unwrap_or_default();
     Ok(StepReply {
         text: reply.text,
-        confirmations,
+        outcome,
         activity: Some(reply.activity)
             .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
     })
@@ -450,7 +452,7 @@ pub(super) struct AgentCall {
     item_id: Option<String>,
     channel_id: Option<i64>,
     mcp: Option<McpLaunch>,
-    confirmations: StdMutex<Vec<String>>,
+    collected: StdMutex<ExchangeOutcome>,
 }
 
 // Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.
@@ -521,9 +523,9 @@ async fn send_in_slot(
         .await;
     if let Some(slot) = &slot {
         // Também na falha: o card já gravado numa tentativa que caiu continua precisando de confirmação.
-        let confirmations = slot.end();
-        if let Ok(mut collected) = call.confirmations.lock() {
-            collected.extend(confirmations);
+        let outcome = slot.end();
+        if let Ok(mut collected) = call.collected.lock() {
+            collected.absorb(outcome);
         }
     }
     reply

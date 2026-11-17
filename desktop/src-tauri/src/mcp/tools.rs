@@ -6,14 +6,17 @@ use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
     AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
 };
+use crate::events::DecisionKind;
 use crate::orchestrator::emit_backlog_changed;
 
 use super::registry::Binding;
+use super::slot::SlotDecision;
 
 const LIST_BACKLOG: &str = "list_backlog";
 const READ_CARD: &str = "read_card";
 const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
+const REQUEST_DECISION: &str = "request_decision";
 
 const MAX_TITLE_CHARS: usize = 200;
 const LIST_LIMIT: usize = 50;
@@ -24,6 +27,12 @@ const TITLE_TOO_LONG: &str = "O título do card passa de 200 caracteres.";
 const SYSTEM_FAILURE: &str = "Não foi possível acessar o backlog agora. Tente de novo mais tarde.";
 const EMPTY_BACKLOG: &str = "Nenhum card.";
 const NO_DESCRIPTION: &str = "sem descrição";
+
+const DECISION_REGISTERED: &str = "Decisão registrada. Termine a resposta agora.";
+const DECISION_ALREADY_REGISTERED: &str =
+    "Já há uma decisão registrada nesta resposta. Termine a resposta agora.";
+const DECISION_EMPTY_TITLE: &str = "O título da decisão não pode ser vazio.";
+const DECISION_CHOICE_WITHOUT_OPTIONS: &str = "Uma decisão do tipo escolha precisa de opções.";
 
 // Falha de negócio volta ao agente com a frase do banco; falha de sistema não expõe detalhe.
 type ToolText = Result<String, String>;
@@ -50,12 +59,21 @@ struct MoveArgs {
     column: String,
 }
 
+#[derive(Deserialize)]
+struct DecisionArgs {
+    kind: String,
+    title: String,
+    detail: Option<String>,
+    options: Option<Vec<String>>,
+}
+
 pub fn definitions() -> Vec<Value> {
     let movable: Vec<&str> = BOARD_COLUMNS
         .iter()
         .copied()
         .filter(|column| *column != AGENT_FORBIDDEN_COLUMN)
         .collect();
+    let decision_kinds = decision_kind_names();
     vec![
         tool(
             LIST_BACKLOG,
@@ -87,7 +105,25 @@ pub fn definitions() -> Vec<Value> {
             }),
             &["id", "column"],
         ),
+        tool(
+            REQUEST_DECISION,
+            "Pede uma decisão ao usuário e não espera a resposta: depois de chamar, termine a resposta.",
+            json!({
+                "kind": { "type": "string", "enum": decision_kinds },
+                "title": { "type": "string" },
+                "detail": { "type": "string" },
+                "options": { "type": "array", "items": { "type": "string" } },
+            }),
+            &["kind", "title"],
+        ),
     ]
+}
+
+fn decision_kind_names() -> Vec<&'static str> {
+    DecisionKind::ALL
+        .into_iter()
+        .map(DecisionKind::as_str)
+        .collect()
 }
 
 fn tool(name: &str, description: &str, properties: Value, required: &[&str]) -> Value {
@@ -110,6 +146,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         READ_CARD => parse(name, arguments).and_then(|args| read_card(app, binding, args)),
         CREATE_CARD => parse(name, arguments).and_then(|args| create_card(app, binding, args)),
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
+        REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
         _ => return None,
     };
     Some(match outcome {
@@ -229,6 +266,41 @@ fn move_card(app: &AppHandle, binding: &Binding, args: MoveArgs) -> ToolText {
             column: args.column,
         },
     )
+}
+
+fn request_decision(binding: &Binding, args: DecisionArgs) -> ToolText {
+    let kind = DecisionKind::parse(args.kind.trim()).ok_or_else(|| {
+        format!(
+            "Tipo de decisão inválido. Use um destes: {}.",
+            decision_kind_names().join(", ")
+        )
+    })?;
+    let title = args.title.trim();
+    if title.is_empty() {
+        return Err(DECISION_EMPTY_TITLE.to_string());
+    }
+    let options: Vec<String> = args
+        .options
+        .unwrap_or_default()
+        .iter()
+        .map(|option| option.trim())
+        .filter(|option| !option.is_empty())
+        .map(str::to_string)
+        .collect();
+    if kind == DecisionKind::Escolha && options.is_empty() {
+        return Err(DECISION_CHOICE_WITHOUT_OPTIONS.to_string());
+    }
+    let mut slot = binding.slot.lock();
+    if slot.decision.is_some() {
+        return Err(DECISION_ALREADY_REGISTERED.to_string());
+    }
+    slot.decision = Some(SlotDecision {
+        kind,
+        title: title.to_string(),
+        detail: args.detail.unwrap_or_default().trim().to_string(),
+        options,
+    });
+    Ok(DECISION_REGISTERED.to_string())
 }
 
 fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolText {

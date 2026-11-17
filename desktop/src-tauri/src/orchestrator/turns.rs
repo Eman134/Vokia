@@ -6,6 +6,7 @@ use tauri::AppHandle;
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
 use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
+use crate::mcp::{ExchangeOutcome, SlotDecision};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
@@ -73,11 +74,15 @@ pub(super) async fn run_turns(
         let StepReply {
             text: reply,
             activity,
-            confirmations,
+            outcome,
         } = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
         let mut activity = activity;
-        if let Some(mut parsed) = parse_decision(&reply) {
+        let ExchangeOutcome {
+            confirmations,
+            decision,
+        } = outcome;
+        if let Some(mut parsed) = pick_decision(decision, &reply) {
             let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
             parsed.visible = with_confirmations(shown, &confirmations).unwrap_or_default();
             return raise_decision(exchange, transcript, &turn, parsed, activity);
@@ -559,6 +564,20 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
     match accepted {
         [only] => only.feed(),
         _ => None,
+    }
+}
+
+// A ferramenta vale mais que a linha de texto; a linha segue aceita por compatibilidade.
+fn pick_decision(registered: Option<SlotDecision>, reply: &str) -> Option<ParsedDecision> {
+    match registered {
+        Some(decision) => Some(ParsedDecision {
+            kind: decision.kind,
+            title: decision.title,
+            detail: decision.detail,
+            options: decision.options,
+            visible: reply.to_string(),
+        }),
+        None => parse_decision(reply),
     }
 }
 

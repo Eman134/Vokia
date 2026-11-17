@@ -60,14 +60,14 @@ pub enum DecisionKind {
 }
 
 impl DecisionKind {
-    const ALL: [DecisionKind; 4] = [
+    pub const ALL: [DecisionKind; 4] = [
         DecisionKind::Aprovacao,
         DecisionKind::Escolha,
         DecisionKind::Pergunta,
         DecisionKind::Revisao,
     ];
 
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             DecisionKind::Aprovacao => "aprovacao",
             DecisionKind::Escolha => "escolha",

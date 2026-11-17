@@ -17,11 +17,11 @@ const MAX_TITLE: usize = 200;
 const TOO_LONG: &str = "O título do card passa de 200 caracteres.";
 const NO_CARDS: &str = "Nenhum card.";
 
-struct World {
+pub(super) struct World {
     app: tauri::App,
     dir: PathBuf,
-    server: McpServer,
-    port: u16,
+    pub(super) server: McpServer,
+    pub(super) port: u16,
 }
 
 impl Drop for World {
@@ -30,18 +30,18 @@ impl Drop for World {
     }
 }
 
-struct Caller {
-    token: Token,
-    slot: ExchangeSlot,
-    project_id: i64,
+pub(super) struct Caller {
+    pub(super) token: Token,
+    pub(super) slot: ExchangeSlot,
+    pub(super) project_id: i64,
 }
 
-struct Outcome {
-    is_error: bool,
-    text: String,
+pub(super) struct Outcome {
+    pub(super) is_error: bool,
+    pub(super) text: String,
 }
 
-fn world() -> World {
+pub(super) fn world() -> World {
     let dir = std::env::temp_dir().join(format!(
         "vokia-mcp-backlog-{}-{}",
         std::process::id(),
@@ -60,7 +60,7 @@ fn world() -> World {
 }
 
 impl World {
-    fn db(&self) -> &crate::db::Db {
+    pub(super) fn db(&self) -> &crate::db::Db {
         self.app
             .state::<DbState>()
             .inner()
@@ -68,7 +68,7 @@ impl World {
             .expect("banco de teste aberto")
     }
 
-    fn project(&self, name: &str) -> i64 {
+    pub(super) fn project(&self, name: &str) -> i64 {
         self.db()
             .insert_project(&NewProject {
                 name,
@@ -82,7 +82,7 @@ impl World {
             .id
     }
 
-    fn agent(&self, id: &str, name: &str, project_id: i64) -> Caller {
+    pub(super) fn agent(&self, id: &str, name: &str, project_id: i64) -> Caller {
         let slot = ExchangeSlot::default();
         let token = self
             .server
@@ -100,7 +100,7 @@ impl World {
         }
     }
 
-    fn call(&self, who: &Caller, tool: &str, arguments: Value) -> Outcome {
+    pub(super) fn call(&self, who: &Caller, tool: &str, arguments: Value) -> Outcome {
         let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": tool, "arguments": arguments } });
         let reply = run(send(self.port, &Request::post(self.port, &who.token, body)));
         let json = reply.json();
@@ -459,7 +459,7 @@ fn argumentos_fora_do_schema_voltam_como_is_error() {
 }
 
 #[test]
-fn tools_list_traz_as_quatro_ferramentas_e_move_card_nao_oferece_ready() {
+fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
     let world = world();
     let project = world.project("a");
     let iara = world.agent("iara", "Iara", project);
@@ -480,7 +480,7 @@ fn tools_list_traz_as_quatro_ferramentas_e_move_card_nao_oferece_ready() {
         .collect();
     assert_eq!(
         names,
-        ["list_backlog", "read_card", "create_card", "move_card"]
+        ["list_backlog", "read_card", "create_card", "move_card", "request_decision"]
     );
     assert!(tools
         .iter()
@@ -498,7 +498,8 @@ fn tools_list_traz_as_quatro_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__list_backlog",
             "mcp__vokia__read_card",
             "mcp__vokia__create_card",
-            "mcp__vokia__move_card"
+            "mcp__vokia__move_card",
+            "mcp__vokia__request_decision"
         ]
     );
 }
@@ -560,8 +561,8 @@ fn confirmacao_da_troca_sai_no_end_e_o_slot_fica_vazio_depois_do_envio() {
 
     iara.slot.begin(None, None);
     world.call(&iara, "create_card", json!({ "title": "Um" }));
-    let collected = iara.slot.end();
-    let again = iara.slot.end();
+    let collected = iara.slot.end().confirmations;
+    let again = iara.slot.end().confirmations;
 
     assert_eq!(collected, ["Card item-1 criado: Um."]);
     assert!(again.is_empty());
@@ -579,7 +580,7 @@ fn confirmacao_nao_coletada_de_uma_troca_nao_vaza_para_a_proxima() {
     world.call(&iara, "create_card", json!({ "title": "Um" }));
     // A troca caiu antes do end(): a seguinte começa do zero.
     iara.slot.begin(None, None);
-    let collected = iara.slot.end();
+    let collected = iara.slot.end().confirmations;
 
     assert!(collected.is_empty(), "{collected:?}");
     assert!(!iara.slot.lock().changed);
