@@ -1,6 +1,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useNavigation } from '../../shell/useNavigation'
+import { DEFAULT_PROJECT_COLOR } from './projectColors'
 import { DEFAULT_PROJECT_ICON } from './projectIcons'
 import {
   createProject,
@@ -64,6 +65,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
   const linkedRepo = ref<string | null>(null)
   const name = ref('')
   const symbol = ref<string>(DEFAULT_PROJECT_ICON)
+  const color = ref<string>(DEFAULT_PROJECT_COLOR)
   const description = ref('')
   const nameEdited = ref(false)
   const busy = ref(false)
@@ -148,6 +150,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
     linkedRepo.value = null
     name.value = ''
     symbol.value = DEFAULT_PROJECT_ICON
+    color.value = DEFAULT_PROJECT_COLOR
     description.value = ''
     nameEdited.value = false
     busy.value = false
@@ -168,7 +171,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
   }
 
   function buildInput(): NewProjectInput {
-    const base = { name: name.value, symbol: symbol.value, description: description.value }
+    const base = { name: name.value, symbol: symbol.value, description: description.value, color: color.value }
     if (originKind.value === 'folder') {
       return { ...base, origin: { kind: 'folder', path: path.value } }
     }
@@ -201,7 +204,7 @@ export const useNovoProjeto = defineStore('newProject', () => {
   }
 
   return {
-    step, originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, description, busy, error,
+    step, originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, color, description, busy, error,
     choosePath, chooseParent, inspect, setName, setSymbol, next, back, goBackTo, create, reset,
   }
 })

@@ -9,7 +9,7 @@ use super::folder::inspect_folder;
 use super::github::{create_from_github, GithubOrigin};
 
 // Espelha as chaves de desktop/src/features/projects/projectIcons.ts.
-const PROJECT_ICONS: [&str; 8] = [
+const PROJECT_ICONS: [&str; 23] = [
     "folder",
     "target",
     "triangle",
@@ -18,6 +18,21 @@ const PROJECT_ICONS: [&str; 8] = [
     "document",
     "diagram",
     "whiteboard",
+    "star",
+    "heart",
+    "bolt",
+    "flag",
+    "bookmark",
+    "hexagon",
+    "cross",
+    "moon",
+    "cloud",
+    "leaf",
+    "bars",
+    "lock",
+    "bell",
+    "mountain",
+    "sun",
 ];
 // Espelha as chaves de desktop/src/features/projects/projectColors.ts.
 const PROJECT_COLORS: [&str; 8] = [
@@ -38,6 +53,7 @@ pub struct NewProjectInput {
     pub(super) name: String,
     pub(super) symbol: String,
     pub(super) description: String,
+    color: Option<String>,
     origin: Origin,
 }
 
@@ -106,7 +122,10 @@ pub fn pin_project(db: &Db, id: Option<i64>) -> Result<(), ProjectError> {
 pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, ProjectError> {
     let _guard = CreateGuard::acquire()?;
     ensure_known_icon(input.symbol.trim())?;
-    match &input.origin {
+    if let Some(color) = input.color.as_deref() {
+        ensure_known_color(color)?;
+    }
+    let project = match &input.origin {
         Origin::Folder { path } => {
             let info = inspect_folder(path).await?;
             let project = NewProject {
@@ -121,9 +140,20 @@ pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, 
                 },
                 origin_repo: info.github_repo.as_deref(),
             };
-            Ok(db.insert_project(&project)?)
+            db.insert_project(&project)?
         }
-        Origin::Github(origin) => create_from_github(db, &input, origin).await,
+        Origin::Github(origin) => create_from_github(db, &input, origin).await?,
+    };
+    // insert_project grava o projeto sem cor, por isso a cor entra num segundo passo.
+    match input.color.as_deref() {
+        Some(color) => Ok(db.update_project(
+            project.id,
+            &project.name,
+            &project.symbol,
+            &project.description,
+            color,
+        )?),
+        None => Ok(project),
     }
 }
 

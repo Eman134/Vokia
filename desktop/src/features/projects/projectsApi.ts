@@ -88,6 +88,7 @@ export interface NewProjectInput {
   name: string
   symbol: string
   description: string
+  color: string
   origin: NewProjectOrigin
 }
 

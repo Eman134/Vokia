@@ -13,6 +13,7 @@ export const PROJECT_COLORS = {
 export type ProjectColorKey = keyof typeof PROJECT_COLORS
 
 export const PROJECT_COLOR_KEYS = Object.keys(PROJECT_COLORS) as ProjectColorKey[]
+export const DEFAULT_PROJECT_COLOR: ProjectColorKey = PROJECT_COLOR_KEYS[0]
 
 function isProjectColorKey(key: string): key is ProjectColorKey {
   return key in PROJECT_COLORS

@@ -10,6 +10,7 @@ import {
   START_FROM_LABEL,
   START_FROM_VALUE,
 } from './projetosSample'
+import ProjectColorPicker from './ProjectColorPicker.vue'
 import ProjectIconPicker from './ProjectIconPicker.vue'
 import type { CloneMode, OriginKind } from './projectsApi'
 import { useNovoProjeto } from './useNovoProjeto'
@@ -38,7 +39,7 @@ const DISABLED_FIELD_CLASSES =
 const FOOTER_CLASSES ='flex items-center justify-end gap-2'
 
 const wizard = useNovoProjeto()
-const { originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, description, busy, error } =
+const { originKind, path, repo, mode, parentDir, branch, linkedRepo, name, symbol, color, description, busy, error } =
   storeToRefs(wizard)
 
 function errorFor(field: string): string | undefined {
@@ -107,6 +108,7 @@ function errorFor(field: string): string | undefined {
       <ProjectIconPicker :model-value="symbol" @update:model-value="wizard.setSymbol" />
       <p v-if="errorFor('symbol')" role="alert" class="text-small text-danger">{{ errorFor('symbol') }}</p>
     </div>
+    <ProjectColorPicker v-model="color" />
     <UiField v-model="description" label="Descrição · opcional" data-testid="field-description" />
 
     <p v-if="errorFor('general')" role="alert" class="text-small text-danger">{{ errorFor('general') }}</p>
