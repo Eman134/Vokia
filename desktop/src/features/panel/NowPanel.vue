@@ -42,6 +42,7 @@ function activityOf(agent: Agent): AgentActivity {
 }
 
 const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: activityOf(agent.id) })))
+const workingRows = computed(() => rows.value.filter((row) => feed.activeAgents.some((active) => active.id === row.agent.id)))
 </script>
 
 <template>
@@ -63,8 +64,9 @@ const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: act
       />
     </div>
     <ul v-if="tab === 'todos'" class="flex max-h-96 flex-col gap-2 overflow-y-auto">
+      <li v-if="workingRows.length === 0" class="text-caption text-muted" data-testid="now-empty">{{ NO_TASK_TEXT }}</li>
       <li
-        v-for="row in rows"
+        v-for="row in workingRows"
         :key="row.agent.id"
         class="flex items-center gap-2 rounded-card border border-line bg-surface px-3 py-2"
         :data-testid="`now-row-${row.agent.id}`"
