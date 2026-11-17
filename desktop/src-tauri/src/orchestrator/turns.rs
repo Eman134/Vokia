@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
 use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
-use crate::mcp::{ExchangeOutcome, SlotDecision};
+use crate::mcp::{ExchangeOutcome, McpState, SlotDecision, VariableEffects};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
@@ -61,6 +61,7 @@ pub(super) async fn run_turns(
     let mut turn = Turn::first(definition, &origin, request);
     let mut counters = Counters::default();
     let mut rejections = 0;
+    let with_tools = app.state::<McpState>().server().is_some();
     loop {
         let instruction = turn.instruction();
         let prompts = with_cache(state, project_id, |cache| {
@@ -69,6 +70,7 @@ pub(super) async fn run_turns(
                 definition,
                 &turn.speaker,
                 &instruction,
+                with_tools,
             ))
         })?;
         let StepReply {
@@ -84,11 +86,6 @@ pub(super) async fn run_turns(
             delegation: registered_delegation,
             variables,
         } = outcome;
-        if let Some(mut parsed) = pick_decision(decision, &reply) {
-            let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
-            parsed.visible = with_confirmations(shown, &confirmations).unwrap_or_default();
-            return raise_decision(exchange, transcript, &turn, parsed, activity);
-        }
         let ParsedReply {
             visible,
             delegation,
@@ -98,7 +95,7 @@ pub(super) async fn run_turns(
             Ok(cache.apply_reply(&turn.speaker, updates, team))
         })?;
         let delegation = chosen_delegation(registered_delegation, delegation, definition.alternate);
-        if !applied.rejected.is_empty() {
+        let Some(effects) = accepted_effects(&applied.rejected, decision, variables) else {
             let shown = with_confirmations(
                 (!visible.is_empty()).then(|| visible.clone()),
                 &confirmations,
@@ -134,14 +131,20 @@ pub(super) async fn run_turns(
             sessions.review(&turn.speaker, rejections, 0, team)?.await;
             turn.rejection = Some(applied.rejected.join("; "));
             continue;
-        }
+        };
         rejections = 0;
+        if let Some(mut parsed) = pick_decision(effects.decision, &reply) {
+            let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
+            parsed.visible = with_confirmations(shown, &confirmations).unwrap_or_default();
+            return raise_decision(exchange, transcript, &turn, parsed, activity);
+        }
 
         let advanced = applied.created_variable
             || applied.changed_value
-            || variables.created_variable
-            || variables.changed_value;
-        let accepted: Vec<Change> = variables
+            || effects.variables.created_variable
+            || effects.variables.changed_value;
+        let accepted: Vec<Change> = effects
+            .variables
             .accepted
             .into_iter()
             .chain(applied.accepted)
@@ -575,6 +578,24 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
         [only] => only.feed(),
         _ => None,
     }
+}
+
+// Resposta recusada não deixa efeito de ferramenta: nem avanço de variável para a meta
+// nem decisão para subir. O slot já foi esvaziado no fim do envio; aqui o que veio dele é descartado.
+struct AcceptedEffects {
+    decision: Option<SlotDecision>,
+    variables: VariableEffects,
+}
+
+fn accepted_effects(
+    rejected: &[String],
+    decision: Option<SlotDecision>,
+    variables: VariableEffects,
+) -> Option<AcceptedEffects> {
+    rejected.is_empty().then_some(AcceptedEffects {
+        decision,
+        variables,
+    })
 }
 
 // Em tarefa alternada o revezamento já decide quem fala; a delegação não vale.

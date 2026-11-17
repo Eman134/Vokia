@@ -9,7 +9,7 @@ use crate::agents::{Agent, AgentRegistry};
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
 const TOOLS_RULE_TEXT: &str =
-    "Use as ferramentas do Vokia para ler e mexer no backlog e para pedir uma decisão ao usuário; nunca invente ids.";
+    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
 const DECISION_LINE: &str = "#decisao pergunta|Posso seguir?||";
 
 fn with_team(check: impl FnOnce(&Team)) {
@@ -164,4 +164,86 @@ fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
         assert_eq!(next.base, "Revise");
         assert_eq!(next.requesters, [iara]);
     });
+}
+
+fn empty_definition(participant: Agent) -> TaskDefinition {
+    TaskDefinition {
+        nova_tarefa: true,
+        objetivo: "teste".to_string(),
+        criterion: String::new(),
+        verify: false,
+        participants: vec![participant],
+        alternate: false,
+        variables: Vec::new(),
+        stop: None,
+    }
+}
+
+#[test]
+fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() {
+    let iara = Agent::from_stored("iara").expect("agente");
+    let definition = empty_definition(iara.clone());
+    let cache = Cache::default();
+
+    let with = StepPrompts::build(&cache, &definition, &iara, "Faça", true);
+    let without = StepPrompts::build(&cache, &definition, &iara, "Faça", false);
+
+    for prompt in [&with.opening, &with.follow_up, &with.minimal] {
+        assert!(prompt.contains("set_variable"), "{prompt}");
+        assert!(prompt.contains("get_variables"), "{prompt}");
+        assert!(!prompt.contains("`$nome"), "{prompt}");
+        assert!(!prompt.contains("@time"), "{prompt}");
+    }
+    for prompt in [&without.opening, &without.follow_up, &without.minimal] {
+        assert!(prompt.contains("`$nome = valor`"), "{prompt}");
+        assert!(!prompt.contains("set_variable"), "{prompt}");
+    }
+}
+
+#[test]
+fn papel_com_mcp_nao_ensina_nenhuma_sintaxe_de_texto_e_sem_mcp_ensina_decisao_e_delegacao() {
+    with_team(|team| {
+        let iara = Agent::from_stored("iara").expect("agente");
+        let profile = team.profile(&iara).expect("perfil");
+
+        let with = role(profile, &team.roster_line(), "contexto", true);
+        let without = role(profile, &team.roster_line(), "contexto", false);
+
+        for marker in ["#decisao", "@<Nome>", "$nome", "#card"] {
+            assert!(!with.contains(marker), "{marker}: {with}");
+        }
+        assert!(with.contains("delegate"), "{with}");
+        assert!(without.contains("#decisao"), "{without}");
+        assert!(without.contains("@<Nome>"), "{without}");
+    });
+}
+
+fn tool_effects() -> VariableEffects {
+    VariableEffects {
+        accepted: vec![Change::Append {
+            name: "lista".to_string(),
+            item: "x".to_string(),
+        }],
+        created_variable: true,
+        changed_value: true,
+    }
+}
+
+#[test]
+fn turno_rejeitado_descarta_o_avanco_de_variavel_e_a_decisao_registrada() {
+    let rejected = vec!["a variável n é somente leitura".to_string()];
+
+    let effects = accepted_effects(&rejected, Some(registered("Descartada")), tool_effects());
+
+    assert!(effects.is_none());
+}
+
+#[test]
+fn turno_aceito_leva_o_avanco_de_variavel_e_a_decisao_registrada_adiante() {
+    let effects = accepted_effects(&[], Some(registered("Sobe")), tool_effects())
+        .expect("sem recusa os efeitos valem");
+
+    assert_eq!(effects.decision, Some(registered("Sobe")));
+    assert!(effects.variables.created_variable && effects.variables.changed_value);
+    assert_eq!(effects.variables.accepted.len(), 1);
 }

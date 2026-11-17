@@ -8,9 +8,10 @@ use super::project_context::PROJECT_RULE;
 use super::turns::NO_CONVERSATION;
 
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Use `@time` ao criar uma variável que o outro agente deve ler e `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
+const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta set_variable (name, op, value) por variável alterada; use op append para listas, share para uma variável que o outro agente deve ler e get_variables para ler. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const TOOLS_RULE: &str =
-    "Use as ferramentas do Vokia para ler e mexer no backlog e para pedir uma decisão ao usuário; nunca invente ids.";
+    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
 const DELEGATION_TOOL_RULE: &str = "Delegue com a ferramenta delegate só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 pub(super) const REPLY_PREFIX: &str = " respondeu: ";
@@ -35,6 +36,7 @@ impl StepPrompts {
         definition: &TaskDefinition,
         agent: &Agent,
         instruction: &str,
+        with_tools: bool,
     ) -> Self {
         let prompt = |conversation_items, with_request| {
             step_prompt(
@@ -44,6 +46,7 @@ impl StepPrompts {
                 instruction,
                 conversation_items,
                 with_request,
+                with_tools,
             )
         };
         Self {
@@ -61,6 +64,7 @@ fn step_prompt(
     instruction: &str,
     conversation_items: usize,
     with_request: bool,
+    with_tools: bool,
 ) -> String {
     let mut sections = vec![format!("Objetivo: {}", definition.objetivo)];
     if let Some(request) = cache.long_request().filter(|_| with_request) {
@@ -82,7 +86,14 @@ fn step_prompt(
         sections.push(format!("Conversa recente:\n{}", entries.join("\n")));
     }
     sections.push(format!("Instrução: {instruction}"));
-    sections.push(PROMPT_RULES.to_string());
+    sections.push(
+        if with_tools {
+            PROMPT_RULES_TOOLS
+        } else {
+            PROMPT_RULES
+        }
+        .to_string(),
+    );
     sections.join("\n")
 }
 
