@@ -57,12 +57,15 @@ fn set_cria_a_variavel_e_o_slot_leva_o_que_foi_aceito_para_o_orquestrador() {
         [Change::Set {
             name: "contagem".to_string(),
             value: VarValue::Number(3),
-            share: false,
+            share: true,
         }]
     );
     assert!(effects.created_variable);
     assert!(!effects.changed_value);
-    assert_eq!(listing(&world, &iara), "- contagem (número, privada) = 3");
+    assert_eq!(
+        listing(&world, &iara),
+        "- contagem (número, compartilhada) = 3"
+    );
 }
 
 #[test]
@@ -81,7 +84,7 @@ fn texto_numerico_vira_numero_e_a_mudanca_de_valor_marca_changed_value() {
     assert!(!outcome.is_error, "{}", outcome.text);
     assert!(!effects.created_variable);
     assert!(effects.changed_value);
-    assert_eq!(listing(&world, &iara), "- n (número, privada) = 2");
+    assert_eq!(listing(&world, &iara), "- n (número, compartilhada) = 2");
 }
 
 #[test]
@@ -104,7 +107,7 @@ fn recusa_volta_como_is_error_nao_grava_e_nao_entra_nos_efeitos() {
     );
     assert!(effects.accepted.is_empty());
     assert!(!effects.created_variable && !effects.changed_value);
-    assert_eq!(listing(&world, &iara), "- n (número, privada) = 1");
+    assert_eq!(listing(&world, &iara), "- n (número, compartilhada) = 1");
 }
 
 #[test]
@@ -121,61 +124,134 @@ fn cada_chamada_grava_sozinha_e_uma_recusa_depois_nao_desfaz_a_anterior() {
     assert!(!first.is_error);
     assert!(second.is_error);
     assert_eq!(effects.accepted.len(), 1);
-    assert_eq!(listing(&world, &iara), "- a (texto, privada) = um");
+    assert_eq!(listing(&world, &iara), "- a (texto, compartilhada) = um");
 }
 
 #[test]
-fn variavel_privada_nao_aparece_nem_aceita_escrita_de_outro_agente_ate_ser_compartilhada() {
+fn variavel_nasce_compartilhada_e_outro_agente_le_e_altera() {
     let world = world();
     let project = world.project("a");
     let iara = world.agent("iara", "Iara", project);
     let davi = world.agent("davi", "Davi", project);
     open_exchange(&iara);
     open_exchange(&davi);
-    set(&world, &iara, "segredo", json!("x"));
+    set(&world, &iara, "tema", json!("x"));
 
-    let hidden = listing(&world, &davi);
-    let write = set(&world, &davi, "segredo", json!("y"));
-    let shared = world.call(
-        &iara,
-        "set_variable",
-        json!({ "name": "segredo", "op": "set", "value": "z", "share": true }),
-    );
+    let seen = listing(&world, &davi);
+    let write = set(&world, &davi, "tema", json!("y"));
 
-    assert_eq!(hidden, EMPTY_LISTING);
-    assert!(write.is_error);
-    assert!(write.text.contains("é privada de Iara"), "{}", write.text);
-    assert!(!shared.is_error, "{}", shared.text);
-    assert_eq!(
-        listing(&world, &davi),
-        "- segredo (texto, compartilhada) = z"
-    );
+    assert_eq!(seen, "- tema (texto, compartilhada) = x");
+    assert!(!write.is_error, "{}", write.text);
+    assert_eq!(listing(&world, &iara), "- tema (texto, compartilhada) = y");
 }
 
 #[test]
-fn append_cria_a_lista_acrescenta_itens_e_aceita_compartilhar() {
+fn variavel_privada_so_quando_pedida_e_continua_isolada_de_outro_agente() {
     let world = world();
     let project = world.project("a");
     let iara = world.agent("iara", "Iara", project);
     let davi = world.agent("davi", "Davi", project);
     open_exchange(&iara);
+    open_exchange(&davi);
+    let created = world.call(
+        &iara,
+        "set_variable",
+        json!({ "name": "rascunho", "op": "set", "value": "x", "share": false }),
+    );
+
+    let hidden = listing(&world, &davi);
+    let write = set(&world, &davi, "rascunho", json!("y"));
+    let append = world.call(
+        &davi,
+        "set_variable",
+        json!({ "name": "rascunho", "op": "append", "value": "z" }),
+    );
+
+    assert!(!created.is_error, "{}", created.text);
+    assert_eq!(listing(&world, &iara), "- rascunho (texto, privada) = x");
+    assert_eq!(hidden, EMPTY_LISTING);
+    assert!(write.is_error);
+    assert!(
+        write.text.to_lowercase().contains("é privada de iara"),
+        "{}",
+        write.text
+    );
+    assert!(append.is_error);
+    assert!(
+        append.text.to_lowercase().contains("é privada de iara"),
+        "{}",
+        append.text
+    );
+}
+
+#[test]
+fn share_so_vale_ao_criar_e_nao_publica_variavel_privada_existente() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+    let davi = world.agent("davi", "Davi", project);
+    open_exchange(&iara);
+    open_exchange(&davi);
+    world.call(
+        &iara,
+        "set_variable",
+        json!({ "name": "rascunho", "op": "set", "value": "x", "share": false }),
+    );
+
+    let again = world.call(
+        &iara,
+        "set_variable",
+        json!({ "name": "rascunho", "op": "set", "value": "z", "share": true }),
+    );
+
+    assert!(!again.is_error, "{}", again.text);
+    assert_eq!(listing(&world, &davi), EMPTY_LISTING);
+    assert_eq!(listing(&world, &iara), "- rascunho (texto, privada) = z");
+}
+
+#[test]
+fn append_nasce_compartilhada_e_outro_agente_acrescenta_na_mesma_lista() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+    let davi = world.agent("davi", "Davi", project);
+    open_exchange(&iara);
+    open_exchange(&davi);
+    let append = |who: &Caller, item: &str| {
+        world.call(
+            who,
+            "set_variable",
+            json!({ "name": "animais", "op": "append", "value": item }),
+        )
+    };
+
+    append(&iara, "gato");
+    let second = append(&davi, "cão");
+
+    assert!(!second.is_error, "{}", second.text);
+    assert_eq!(
+        listing(&world, &iara),
+        "- animais (lista, compartilhada) = gato, cão"
+    );
+}
+
+#[test]
+fn append_privado_so_quando_pedido_nao_aparece_para_outro_agente() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+    let davi = world.agent("davi", "Davi", project);
+    open_exchange(&iara);
+    open_exchange(&davi);
 
     world.call(
         &iara,
         "set_variable",
-        json!({ "name": "animais", "op": "append", "value": "gato" }),
-    );
-    let second = world.call(
-        &iara,
-        "set_variable",
-        json!({ "name": "animais", "op": "append", "value": "cão", "share": true }),
+        json!({ "name": "notas", "op": "append", "value": "a", "share": false }),
     );
 
-    assert!(!second.is_error, "{}", second.text);
-    assert_eq!(
-        listing(&world, &davi),
-        "- animais (lista, compartilhada) = gato, cão"
-    );
+    assert_eq!(listing(&world, &iara), "- notas (lista, privada) = a");
+    assert_eq!(listing(&world, &davi), EMPTY_LISTING);
 }
 
 #[test]
@@ -227,7 +303,7 @@ fn variaveis_de_um_projeto_nao_aparecem_no_outro() {
 
     set(&world, &in_first, "v", json!("x"));
 
-    assert_eq!(listing(&world, &in_first), "- v (texto, privada) = x");
+    assert_eq!(listing(&world, &in_first), "- v (texto, compartilhada) = x");
     assert_eq!(listing(&world, &in_second), EMPTY_LISTING);
 }
 
@@ -246,7 +322,7 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
         json!({ "name": "v", "op": "set", "value": "x", "project_id": second, "agent": "davi" }),
     );
 
-    assert_eq!(listing(&world, &iara), "- v (texto, privada) = x");
+    assert_eq!(listing(&world, &iara), "- v (texto, compartilhada) = x");
     assert_eq!(listing(&world, &other), EMPTY_LISTING);
 }
 
@@ -255,7 +331,7 @@ fn absorb_soma_os_efeitos_de_variavel_de_varias_tentativas() {
     let accepted = |name: &str| Change::Set {
         name: name.to_string(),
         value: VarValue::Number(1),
-        share: false,
+        share: true,
     };
     let mut collected = ExchangeOutcome::default();
     collected.variables.accepted.push(accepted("a"));
