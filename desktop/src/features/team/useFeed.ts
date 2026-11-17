@@ -25,6 +25,7 @@ import { projectAgentKey } from './projectAgentKey'
 import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
 import { useBacklog } from '../backlog/useBacklog'
+import { useOrchestration } from '../orchestration/useOrchestration'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
 
@@ -154,6 +155,9 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'backlog-changed':
         void useBacklog().reloadAfterAgentChange(event.projectId)
+        break
+      case 'orchestration-changed':
+        void useOrchestration().reload(event.projectId)
         break
       case 'plan-usage':
         break

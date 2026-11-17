@@ -166,6 +166,11 @@ export interface VokiaBacklogChanged {
   projectId: number
 }
 
+export interface VokiaOrchestrationChanged {
+  type: 'orchestration-changed'
+  projectId: number
+}
+
 export interface VokiaAgentActivity {
   type: 'agent-activity'
   agent: Agent
@@ -186,6 +191,7 @@ export type VokiaEvent =
   | VokiaConsoleLine
   | VokiaGoalState
   | VokiaBacklogChanged
+  | VokiaOrchestrationChanged
 
 export interface CliProblem {
   reason: string
