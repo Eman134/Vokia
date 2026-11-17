@@ -2,6 +2,8 @@
 name = "vokia"
 version = "0.3.0"
 edition = "2021"
+# tests/ guarda módulos de teste incluídos por #[path] nos fontes, não crates de integração.
+autotests = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
