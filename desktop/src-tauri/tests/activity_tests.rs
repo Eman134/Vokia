@@ -4,7 +4,7 @@ use serde_json::json;
 
 use super::*;
 
-const REAL_SAMPLE: &str = include_str!("../../e2e/fixtures/claude-stream-real.jsonl");
+const REAL_SAMPLE: &str = include_str!("fixtures/claude-stream-real.jsonl");
 const REAL_FIRST_THINKING_MS: u64 = 355;
 const REAL_SECOND_THINKING_MS: u64 = 189;
 
@@ -420,7 +420,7 @@ fn amostra_real_da_cli_vira_quatro_ferramentas_e_o_pensamento_medido() {
     assert!(activity.tools.iter().all(|tool| tool.duration_ms.is_some()));
 }
 
-const CAPTURED_AAT0: &str = include_str!("../../e2e/fake/atividade-aat0.jsonl");
+const CAPTURED_AAT0: &str = include_str!("fixtures/atividade-aat0.jsonl");
 
 fn captured_feed() -> (Vec<Value>, ActivityParser) {
     let lines = CAPTURED_AAT0
