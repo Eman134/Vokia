@@ -234,7 +234,14 @@ export const useFeed = defineStore('feed', () => {
     screen.value = next
   }
 
-  watch(() => projects.selected?.id, () => showScreen(GENERAL_SCREEN))
+  // Trocar de projeto troca a conversa inteira: o feed em memória é do projeto anterior até recarregar do banco.
+  watch(
+    () => projects.selected?.id,
+    (projectId, previous) => {
+      showScreen(GENERAL_SCREEN)
+      if (previous !== undefined && projectId !== undefined) void restoreHistory()
+    },
+  )
 
   return {
     feed,

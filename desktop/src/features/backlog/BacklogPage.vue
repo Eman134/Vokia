@@ -151,16 +151,10 @@ function tagStyle(tag: string, active: boolean) {
 
 watch(
   () => projectsStore.selected?.id,
-  (projectId) => {
+  () => {
     activeTag.value = null
-    if (projectId === undefined) {
-      backlog.clear()
-      return
-    }
     dismissedError.value = false
-    void backlog.load(projectId)
   },
-  { immediate: true },
 )
 </script>
 

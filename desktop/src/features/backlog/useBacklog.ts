@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
@@ -301,6 +301,19 @@ export const useBacklog = defineStore('backlog', () => {
     criterion.done = !criterion.done
     saveItem(itemId)
   }
+
+  // Carrega no próprio store: a linha "Iniciou tarefa" do chat precisa dos títulos sem abrir a página Backlog.
+  watch(
+    () => projects.selected?.id,
+    (projectId) => {
+      if (projectId === undefined) {
+        clear()
+        return
+      }
+      void load(projectId)
+    },
+    { immediate: true },
+  )
 
   return {
     items,
