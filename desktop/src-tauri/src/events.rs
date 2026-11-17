@@ -206,4 +206,8 @@ pub enum VokiaEvent {
     BacklogChanged {
         project_id: i64,
     },
+    #[serde(rename_all = "camelCase")]
+    OrchestrationChanged {
+        project_id: i64,
+    },
 }

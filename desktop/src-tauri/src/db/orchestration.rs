@@ -228,6 +228,14 @@ pub struct HandoffDraft {
     pub message_id: Option<i64>,
 }
 
+#[derive(Clone, Debug)]
+pub struct OrchestrationSeed {
+    pub settings: OrchestrationSettings,
+    pub layers: Vec<LayerDraft>,
+    pub team: TeamDraft,
+    pub placements: Vec<PlacementDraft>,
+}
+
 const SETTINGS_COLUMNS: &str = "enforcement, leader_agent, step_mode, human_gate, max_parallel, \
     pair_turn_limit, task_turn_limit, worktree_policy";
 const LAYER_COLUMNS: &str = "id, name, description, position, kind, instructions";
@@ -514,6 +522,103 @@ fn ensure_return_rules_backward(conn: &Connection, project_id: i64) -> Result<()
     }
 }
 
+fn upsert_settings(
+    conn: &Connection,
+    project_id: i64,
+    settings: &OrchestrationSettings,
+) -> Result<(), DbError> {
+    conn.execute(
+        "INSERT INTO orch_settings (project_id, enforcement, leader_agent, step_mode, human_gate, \
+            max_parallel, pair_turn_limit, task_turn_limit, worktree_policy) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+         ON CONFLICT (project_id) DO UPDATE SET \
+            enforcement = excluded.enforcement, leader_agent = excluded.leader_agent, \
+            step_mode = excluded.step_mode, human_gate = excluded.human_gate, \
+            max_parallel = excluded.max_parallel, pair_turn_limit = excluded.pair_turn_limit, \
+            task_turn_limit = excluded.task_turn_limit, worktree_policy = excluded.worktree_policy",
+        params![
+            project_id,
+            settings.enforcement,
+            settings.leader_agent,
+            settings.step_mode,
+            settings.human_gate,
+            settings.max_parallel,
+            settings.pair_turn_limit,
+            settings.task_turn_limit,
+            settings.worktree_policy,
+        ],
+    )?;
+    Ok(())
+}
+
+fn insert_layer(conn: &Connection, project_id: i64, draft: &LayerDraft) -> Result<String, DbError> {
+    let id = slug_of(&draft.name)?;
+    if id == VOCE_NODE {
+        return Err(DbError::ReservedLayerName(draft.name.clone()));
+    }
+    if layer_exists(conn, project_id, &id)? {
+        return Err(DbError::LayerNameTaken(id));
+    }
+    conn.execute(
+        "INSERT INTO orch_layers (project_id, id, name, description, position, kind, instructions) \
+         VALUES (?1, ?2, ?3, ?4, \
+            (SELECT COALESCE(MAX(position) + 1, 0) FROM orch_layers WHERE project_id = ?1), \
+            ?5, ?6)",
+        params![
+            project_id,
+            id,
+            draft.name,
+            draft.description,
+            draft.kind,
+            draft.instructions
+        ],
+    )?;
+    Ok(id)
+}
+
+fn insert_team(conn: &Connection, project_id: i64, draft: &TeamDraft) -> Result<String, DbError> {
+    let id = slug_of(&draft.name)?;
+    if team_exists(conn, project_id, &id)? {
+        return Err(DbError::TeamNameTaken(id));
+    }
+    conn.execute(
+        "INSERT INTO orch_teams (project_id, id, name, position) \
+         VALUES (?1, ?2, ?3, \
+            (SELECT COALESCE(MAX(position) + 1, 0) FROM orch_teams WHERE project_id = ?1))",
+        params![project_id, id, draft.name],
+    )?;
+    Ok(id)
+}
+
+fn upsert_placement(
+    conn: &Connection,
+    project_id: i64,
+    draft: &PlacementDraft,
+) -> Result<(), DbError> {
+    if !team_exists(conn, project_id, &draft.team_id)? {
+        return Err(DbError::TeamNotFound(draft.team_id.clone()));
+    }
+    if !layer_exists(conn, project_id, &draft.layer_id)? {
+        return Err(DbError::LayerNotFound(draft.layer_id.clone()));
+    }
+    conn.execute(
+        "INSERT INTO orch_placements (project_id, agent_id, team_id, layer_id, instructions, max_instances) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+         ON CONFLICT (project_id, agent_id) DO UPDATE SET \
+            team_id = excluded.team_id, layer_id = excluded.layer_id, \
+            instructions = excluded.instructions, max_instances = excluded.max_instances",
+        params![
+            project_id,
+            draft.agent_id,
+            draft.team_id,
+            draft.layer_id,
+            draft.instructions,
+            draft.max_instances
+        ],
+    )?;
+    Ok(())
+}
+
 impl Db {
     pub fn orchestration(&self, project_id: i64) -> Result<OrchestrationSnapshot, DbError> {
         let conn = self.conn()?;
@@ -545,28 +650,7 @@ impl Db {
         check_bounds(&TASK_TURN_LIMIT, settings.task_turn_limit)?;
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;
-        conn.execute(
-            "INSERT INTO orch_settings (project_id, enforcement, leader_agent, step_mode, human_gate, \
-                max_parallel, pair_turn_limit, task_turn_limit, worktree_policy) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
-             ON CONFLICT (project_id) DO UPDATE SET \
-                enforcement = excluded.enforcement, leader_agent = excluded.leader_agent, \
-                step_mode = excluded.step_mode, human_gate = excluded.human_gate, \
-                max_parallel = excluded.max_parallel, pair_turn_limit = excluded.pair_turn_limit, \
-                task_turn_limit = excluded.task_turn_limit, worktree_policy = excluded.worktree_policy",
-            params![
-                project_id,
-                settings.enforcement,
-                settings.leader_agent,
-                settings.step_mode,
-                settings.human_gate,
-                settings.max_parallel,
-                settings.pair_turn_limit,
-                settings.task_turn_limit,
-                settings.worktree_policy,
-            ],
-        )?;
-        Ok(())
+        upsert_settings(&conn, project_id, settings)
     }
 
     pub fn save_layer(&self, project_id: i64, draft: &LayerDraft) -> Result<Layer, DbError> {
@@ -595,30 +679,7 @@ impl Db {
                 }
                 id.clone()
             }
-            None => {
-                let id = slug_of(&draft.name)?;
-                if id == VOCE_NODE {
-                    return Err(DbError::ReservedLayerName(draft.name.clone()));
-                }
-                if layer_exists(&tx, project_id, &id)? {
-                    return Err(DbError::LayerNameTaken(id));
-                }
-                tx.execute(
-                    "INSERT INTO orch_layers (project_id, id, name, description, position, kind, instructions) \
-                     VALUES (?1, ?2, ?3, ?4, \
-                        (SELECT COALESCE(MAX(position) + 1, 0) FROM orch_layers WHERE project_id = ?1), \
-                        ?5, ?6)",
-                    params![
-                        project_id,
-                        id,
-                        draft.name,
-                        draft.description,
-                        draft.kind,
-                        draft.instructions
-                    ],
-                )?;
-                id
-            }
+            None => insert_layer(&tx, project_id, draft)?,
         };
         let layer = fetch_layer(&tx, project_id, &id)?;
         tx.commit()?;
@@ -689,19 +750,7 @@ impl Db {
                 }
                 id.clone()
             }
-            None => {
-                let id = slug_of(&draft.name)?;
-                if team_exists(&tx, project_id, &id)? {
-                    return Err(DbError::TeamNameTaken(id));
-                }
-                tx.execute(
-                    "INSERT INTO orch_teams (project_id, id, name, position) \
-                     VALUES (?1, ?2, ?3, \
-                        (SELECT COALESCE(MAX(position) + 1, 0) FROM orch_teams WHERE project_id = ?1))",
-                    params![project_id, id, draft.name],
-                )?;
-                id
-            }
+            None => insert_team(&tx, project_id, draft)?,
         };
         let team = fetch_team(&tx, project_id, &id)?;
         tx.commit()?;
@@ -741,27 +790,7 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
-        if !team_exists(&tx, project_id, &draft.team_id)? {
-            return Err(DbError::TeamNotFound(draft.team_id.clone()));
-        }
-        if !layer_exists(&tx, project_id, &draft.layer_id)? {
-            return Err(DbError::LayerNotFound(draft.layer_id.clone()));
-        }
-        tx.execute(
-            "INSERT INTO orch_placements (project_id, agent_id, team_id, layer_id, instructions, max_instances) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
-             ON CONFLICT (project_id, agent_id) DO UPDATE SET \
-                team_id = excluded.team_id, layer_id = excluded.layer_id, \
-                instructions = excluded.instructions, max_instances = excluded.max_instances",
-            params![
-                project_id,
-                draft.agent_id,
-                draft.team_id,
-                draft.layer_id,
-                draft.instructions,
-                draft.max_instances
-            ],
-        )?;
+        upsert_placement(&tx, project_id, draft)?;
         let placement = fetch_placement(&tx, project_id, &draft.agent_id)?;
         tx.commit()?;
         Ok(placement)
@@ -898,6 +927,47 @@ impl Db {
                 draft.return_count,
                 draft.message_id
             ],
+        )?;
+        Ok(())
+    }
+
+    // Checagem da semente e inserções na mesma transação, com o lock da conexão do início ao fim.
+    pub fn seed_orchestration(
+        &self,
+        project_id: i64,
+        seed: &OrchestrationSeed,
+    ) -> Result<bool, DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        if fetch_settings(&tx, project_id)?.is_some() {
+            return Ok(false);
+        }
+        upsert_settings(&tx, project_id, &seed.settings)?;
+        for layer in &seed.layers {
+            insert_layer(&tx, project_id, layer)?;
+        }
+        insert_team(&tx, project_id, &seed.team)?;
+        for placement in &seed.placements {
+            upsert_placement(&tx, project_id, placement)?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    pub fn delete_placements_outside(
+        &self,
+        project_id: i64,
+        agent_ids: &[String],
+    ) -> Result<(), DbError> {
+        let ids_json = serde_json::to_string(agent_ids)
+            .expect("uma lista de textos sempre serializa para JSON");
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        conn.execute(
+            "DELETE FROM orch_placements WHERE project_id = ?1 \
+             AND agent_id NOT IN (SELECT value FROM json_each(?2))",
+            params![project_id, ids_json],
         )?;
         Ok(())
     }

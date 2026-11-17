@@ -8,6 +8,7 @@ mod console_log;
 mod db;
 mod events;
 mod mcp;
+mod orchestration;
 mod orchestrator;
 mod permissions;
 mod projects;
@@ -64,7 +65,18 @@ fn main() {
             commands::projects::set_permission_level,
             commands::agents::list_agents,
             commands::agents::create_agent,
-            commands::agents::update_agent
+            commands::agents::update_agent,
+            commands::orchestration::get_orchestration,
+            commands::orchestration::save_layer,
+            commands::orchestration::delete_layer,
+            commands::orchestration::reorder_layers,
+            commands::orchestration::save_team,
+            commands::orchestration::delete_team,
+            commands::orchestration::place_agent,
+            commands::orchestration::save_rule,
+            commands::orchestration::delete_rule,
+            commands::orchestration::save_orchestration_settings,
+            commands::orchestration::list_movements
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
