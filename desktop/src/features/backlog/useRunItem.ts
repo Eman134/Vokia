@@ -13,8 +13,10 @@ const DESCRIPTION_HEADING = 'Descrição'
 const CRITERIA_HEADING = 'Critérios'
 const PLAN_HEADING = 'Plano'
 const RUN_CLOSING = 'Avise a Iara ao começar e ao terminar.'
-const SENT_NOTE = (agent: string) => `Execução enviada para ${agent}.`
-const QUEUED_NOTE = (agent: string) => `${agent} está ocupado; o pedido espera na fila dele.`
+const SENT_PREFIX = 'Execução enviada para '
+const QUEUED_SUFFIX = ' está ocupado; o pedido espera na fila dele.'
+const SENT_NOTE = (agent: string) => `${SENT_PREFIX}${agent}.`
+const QUEUED_NOTE = (agent: string) => `${agent}${QUEUED_SUFFIX}`
 const DONE_NOTE = (agent: string) => `Execução concluída por ${agent}.`
 const NOT_SENT_NOTE = 'A execução não foi enviada.'
 const FAILED_NOTE = 'A execução falhou; veja o erro no feed.'
@@ -46,6 +48,12 @@ export function buildRunPrompt(item: BacklogItem, planText: string): string {
   if (planText) sections.push(`${PLAN_HEADING}:\n${planText}`)
   sections.push(RUN_CLOSING)
   return sections.join('\n\n')
+}
+
+// Só o app escreve estas notas ao rodar um card; o que o agente move com #card tem outra atividade por último.
+function isOwnRun(item: BacklogItem): boolean {
+  const last = item.activity?.at(-1)?.text
+  return last !== undefined && (last.startsWith(SENT_PREFIX) || last.endsWith(QUEUED_SUFFIX))
 }
 
 // Ids de item se repetem entre projetos: a chave de execução inclui o projeto.
@@ -132,7 +140,8 @@ export const useRunItem = defineStore('runItem', () => {
     if (isLoaded(projectId)) backlog.addActivity(itemId, QUEUED_NOTE(agentName(agent)))
   }
 
-  // Execução que ficou In progress sem resultado em memória (app fechado ou projeto trocado) volta a Ready.
+  // Execução do app que ficou In progress sem resultado em memória (app fechado ou projeto trocado) volta a Ready;
+  // card que o agente moveu continua onde está.
   function reconcile(projectId: number): void {
     for (const [key, away] of awayRuns) {
       if (away.projectId !== projectId) continue
@@ -140,7 +149,7 @@ export const useRunItem = defineStore('runItem', () => {
       applySettlement(away.itemId, away.settlement)
     }
     for (const item of backlog.items) {
-      if (item.column === 'In progress' && running.value[runKey(projectId, item.id)] !== true) {
+      if (item.column === 'In progress' && running.value[runKey(projectId, item.id)] !== true && isOwnRun(item)) {
         backlog.setRunColumn(item.id, 'Ready', INTERRUPTED_NOTE)
       }
     }
