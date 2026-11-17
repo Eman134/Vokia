@@ -30,10 +30,14 @@ fn collected(title: &str, detail: &str) -> RequestProposal {
 fn propose_request_grava_a_proposta_no_slot_sem_criar_card() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
-    let outcome = world.call(&iara, "propose_request", proposal(" Revisar login ", json!(" Detalhe ")));
+    let outcome = world.call(
+        &iara,
+        "propose_request",
+        proposal(" Revisar login ", json!(" Detalhe ")),
+    );
     let slot = iara.slot.end();
 
     assert!(!outcome.is_error, "{}", outcome.text);
@@ -46,7 +50,7 @@ fn propose_request_grava_a_proposta_no_slot_sem_criar_card() {
 fn detail_e_opcional() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     let outcome = world.call(&iara, "propose_request", json!({ "title": "Sem detalhe" }));
@@ -59,7 +63,7 @@ fn detail_e_opcional() {
 fn segunda_chamada_na_mesma_resposta_e_erro_e_a_primeira_fica() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     world.call(&iara, "propose_request", proposal("Primeira", json!("")));
@@ -75,7 +79,7 @@ fn segunda_chamada_na_mesma_resposta_e_erro_e_a_primeira_fica() {
 fn titulo_vazio_ou_acima_de_200_e_recusado_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
     let too_long = "x".repeat(MAX_TITLE + 1);
 
     iara.slot.begin(None, None);
@@ -95,10 +99,14 @@ fn titulo_vazio_ou_acima_de_200_e_recusado_e_nada_e_gravado() {
 fn titulo_com_exatamente_200_e_aceito() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
-    let outcome = world.call(&iara, "propose_request", proposal(&"x".repeat(MAX_TITLE), json!("")));
+    let outcome = world.call(
+        &iara,
+        "propose_request",
+        proposal(&"x".repeat(MAX_TITLE), json!("")),
+    );
 
     assert!(!outcome.is_error, "{}", outcome.text);
 }
@@ -107,7 +115,7 @@ fn titulo_com_exatamente_200_e_aceito() {
 fn proposta_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
     let davi = world.agent("davi", "Davi", project);
 
     iara.slot.begin(None, None);
@@ -122,10 +130,13 @@ fn proposta_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
 fn tools_list_traz_propose_request_com_titulo_obrigatorio() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
     let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
 
-    let reply = run(send(world.port, &Request::post(world.port, &iara.token, body)));
+    let reply = run(send(
+        world.port,
+        &Request::post(world.port, &iara.token, body),
+    ));
     let tools = reply.json()["result"]["tools"].clone();
     let tool = tools
         .as_array()
@@ -133,7 +144,10 @@ fn tools_list_traz_propose_request_com_titulo_obrigatorio() {
         .unwrap_or_else(|| panic!("sem propose_request: {tools}"));
 
     assert_eq!(tool["inputSchema"]["required"], json!(["title"]));
-    assert_eq!(tool["inputSchema"]["properties"]["title"]["maxLength"], json!(MAX_TITLE));
+    assert_eq!(
+        tool["inputSchema"]["properties"]["title"]["maxLength"],
+        json!(MAX_TITLE)
+    );
 }
 
 #[test]
@@ -153,7 +167,13 @@ fn absorb_mantem_a_proposta_de_uma_tentativa_anterior_e_prefere_a_mais_recente()
     assert_eq!(outcome.proposal, Some(collected("Nova", "")));
 }
 
-fn create_from(world: &World, project: i64, agent: &str, title: &str, detail: Option<&str>) -> Result<crate::db::CardResult, String> {
+fn create_from(
+    world: &World,
+    project: i64,
+    agent: &str,
+    title: &str,
+    detail: Option<&str>,
+) -> Result<crate::db::CardResult, String> {
     create_request_from_proposal(
         world.app.handle().clone(),
         world.app.state::<DbState>(),
@@ -169,11 +189,22 @@ fn comando_cria_card_de_origem_agente_no_backlog_com_a_descricao() {
     let world = world();
     let project = world.project("a");
 
-    let card = create_from(&world, project, "iara", "Revisar login", Some("Detalhe")).expect("criação");
+    let card = create_from(
+        &world,
+        project,
+        Agent::ember().as_str(),
+        "Revisar login",
+        Some("Detalhe"),
+    )
+    .expect("criação");
 
     assert_eq!(card.outcome, CardOutcome::Created);
     assert_eq!(card.column, "Backlog");
-    let stored = world.cards(project).into_iter().find(|item| item.id == card.id).expect("card gravado");
+    let stored = world
+        .cards(project)
+        .into_iter()
+        .find(|item| item.id == card.id)
+        .expect("card gravado");
     assert_eq!(stored.title, "Revisar login");
     assert_eq!(stored.origin, "agente");
 }
@@ -183,8 +214,21 @@ fn segundo_clique_com_o_mesmo_titulo_e_recusado_e_fica_um_card_so() {
     let world = world();
     let project = world.project("a");
 
-    create_from(&world, project, "iara", "Revisar login", None).expect("primeiro");
-    let second = create_from(&world, project, "iara", "Revisar login", None);
+    create_from(
+        &world,
+        project,
+        Agent::ember().as_str(),
+        "Revisar login",
+        None,
+    )
+    .expect("primeiro");
+    let second = create_from(
+        &world,
+        project,
+        Agent::ember().as_str(),
+        "Revisar login",
+        None,
+    );
 
     assert!(second.is_err());
     assert_eq!(world.cards(project).len(), 1);

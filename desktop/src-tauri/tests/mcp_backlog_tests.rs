@@ -82,6 +82,23 @@ impl World {
             .id
     }
 
+    pub(super) fn leader_name(&self) -> String {
+        let team = self
+            .app
+            .state::<crate::agents::AgentRegistry>()
+            .team()
+            .expect("o elenco do teste deveria carregar");
+        team.name_of(&crate::agents::Agent::ember()).to_string()
+    }
+
+    pub(super) fn leader(&self, project_id: i64) -> Caller {
+        self.agent(
+            crate::agents::Agent::ember().as_str(),
+            &self.leader_name(),
+            project_id,
+        )
+    }
+
     pub(super) fn agent(&self, id: &str, name: &str, project_id: i64) -> Caller {
         let slot = ExchangeSlot::default();
         let token = self
@@ -480,7 +497,18 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
         .collect();
     assert_eq!(
         names,
-        ["list_backlog", "read_card", "create_card", "move_card", "update_card", "request_decision", "propose_request", "delegate", "get_variables", "set_variable"]
+        [
+            "list_backlog",
+            "read_card",
+            "create_card",
+            "move_card",
+            "update_card",
+            "request_decision",
+            "propose_request",
+            "delegate",
+            "get_variables",
+            "set_variable"
+        ]
     );
     assert!(tools
         .iter()

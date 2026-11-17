@@ -126,7 +126,7 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     for prompt in [&without.opening, &without.follow_up, &without.minimal] {
         assert!(!prompt.contains("set_variable"), "{prompt}");
         assert!(prompt.contains("`$nome = valor`"), "{prompt}");
-        assert!(prompt.contains("@time"), "{prompt}");
+        assert!(prompt.contains("compartilhadas por padrão"), "{prompt}");
     }
 }
 

@@ -83,6 +83,11 @@ fn placement_layers(db: &Db, project: i64) -> Vec<(String, String)> {
         .collect()
 }
 
+fn sorted_pairs(mut list: Vec<(String, String)>) -> Vec<(String, String)> {
+    list.sort();
+    list
+}
+
 fn pair(agent: &str, layer: &str) -> (String, String) {
     (agent.to_string(), layer.to_string())
 }
@@ -100,6 +105,7 @@ fn table_rows(db: &Db, table: &str) -> i64 {
 fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente() {
     let dir = TempDir::new();
 
+    let leader = Agent::ember();
     let seed = build(&full_team(&dir));
 
     let layers: Vec<(&str, &str, &str, &str)> = seed
@@ -139,7 +145,7 @@ fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente()
     assert_eq!(
         placed,
         vec![
-            ("iara", "time", "lideranca", 1),
+            (leader.as_str(), "time", "lideranca", 1),
             ("davi", "time", "implementacao", 1),
             ("nina", "time", "implementacao", 1),
             ("teo", "time", "revisao", 1),
@@ -151,6 +157,7 @@ fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente()
 #[test]
 fn semente_sem_teo_no_elenco_nao_posiciona_teo_e_deixa_revisao_sem_agente() {
     let dir = TempDir::new();
+    let leader = Agent::ember();
     let db = Db::open(&dir.0).unwrap();
     let project = project(&db, "alfa");
 
@@ -159,12 +166,12 @@ fn semente_sem_teo_no_elenco_nao_posiciona_teo_e_deixa_revisao_sem_agente() {
 
     assert_eq!(
         placement_layers(&db, project),
-        vec![
+        sorted_pairs(vec![
             pair("davi", "implementacao"),
-            pair("iara", "lideranca"),
+            pair(leader.as_str(), "lideranca"),
             pair("nina", "implementacao"),
             pair("rui", "implementacao"),
-        ]
+        ])
     );
     assert_eq!(db.orchestration(project).unwrap().layers.len(), 3);
 }

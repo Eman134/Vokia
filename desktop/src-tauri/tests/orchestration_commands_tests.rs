@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use tauri::{Listener, Manager};
 
 use super::*;
+use crate::agents::Agent;
 use crate::db::{HandoffDraft, NewProject};
 use crate::mcp::support::build_app;
 
@@ -130,6 +131,11 @@ fn placed(snapshot: &OrchestrationSnapshot) -> Vec<(&str, &str)> {
     list
 }
 
+fn sorted<'a>(mut list: Vec<(&'a str, &'a str)>) -> Vec<(&'a str, &'a str)> {
+    list.sort();
+    list
+}
+
 fn orphan() -> PlacementDraft {
     PlacementDraft {
         agent_id: "fantasma".to_string(),
@@ -145,6 +151,7 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
     let world = world();
     let project = world.project("alfa");
 
+    let leader = Agent::ember();
     let first = world.get(project).unwrap();
     let second = world.get(project).unwrap();
 
@@ -155,13 +162,13 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
     assert_eq!(first.teams.len(), 1);
     assert_eq!(
         placed(&first),
-        vec![
+        sorted(vec![
             ("davi", "implementacao"),
-            ("iara", "lideranca"),
+            (leader.as_str(), "lideranca"),
             ("nina", "implementacao"),
             ("rui", "implementacao"),
             ("teo", "revisao"),
-        ]
+        ])
     );
     assert!(first.rules.is_empty());
     assert_eq!(first.settings, OrchestrationSettings::default());

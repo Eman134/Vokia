@@ -21,7 +21,7 @@ fn request_of(delegation: &Option<(Agent, String)>) -> Option<&str> {
 fn delegate_registra_agente_e_pedido_no_slot_sem_bloquear() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     let outcome = world.call(
@@ -43,13 +43,13 @@ fn delegate_registra_agente_e_pedido_no_slot_sem_bloquear() {
 fn delegar_a_si_mesmo_e_recusado_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     let outcome = world.call(
         &iara,
         "delegate",
-        json!({ "agent": "Iara", "request": "Faça isso" }),
+        json!({ "agent": world.leader_name(), "request": "Faça isso" }),
     );
 
     assert!(outcome.is_error);
@@ -61,7 +61,7 @@ fn delegar_a_si_mesmo_e_recusado_e_nada_e_gravado() {
 fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     let outcome = world.call(
@@ -79,7 +79,11 @@ fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente
         outcome.text
     );
     assert!(outcome.text.contains("Davi"), "{}", outcome.text);
-    assert!(!outcome.text.contains("Iara"), "{}", outcome.text);
+    assert!(
+        !outcome.text.contains(&world.leader_name()),
+        "{}",
+        outcome.text
+    );
     assert!(iara.slot.end().delegation.is_none());
 }
 
@@ -87,7 +91,7 @@ fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente
 fn pedido_vazio_ou_em_branco_e_recusado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     for request in ["", "   "] {
@@ -107,7 +111,7 @@ fn pedido_vazio_ou_em_branco_e_recusado() {
 fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     iara.slot.begin(None, None);
     world.call(
@@ -131,7 +135,7 @@ fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
 fn delegacao_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
     let davi = world.agent("davi", "Davi", project);
 
     iara.slot.begin(None, None);
@@ -150,7 +154,7 @@ fn delegacao_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
 fn argumentos_fora_do_schema_voltam_como_is_error() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let iara = world.leader(project);
 
     let outcome = world.call(&iara, "delegate", json!({ "agent": "Davi" }));
 

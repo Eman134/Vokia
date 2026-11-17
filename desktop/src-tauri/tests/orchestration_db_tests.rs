@@ -153,7 +153,7 @@ fn projeto_novo_le_o_snapshot_com_os_valores_iniciais_e_sem_nada_cadastrado() {
         snapshot.settings,
         OrchestrationSettings {
             enforcement: "off".to_string(),
-            leader_agent: "iara".to_string(),
+            leader_agent: crate::agents::Agent::ember().as_str().to_string(),
             step_mode: "lotes".to_string(),
             human_gate: "lote".to_string(),
             max_parallel: 4,
