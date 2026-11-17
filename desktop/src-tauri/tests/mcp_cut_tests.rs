@@ -27,10 +27,7 @@ fn with_team(check: impl FnOnce(&Team)) {
 }
 
 fn iara_and_davi() -> (Agent, Agent) {
-    (
-        Agent::from_stored("iara").expect("agente"),
-        Agent::from_stored("davi").expect("agente"),
-    )
+    (Agent::ember(), Agent::from_stored("davi").expect("agente"))
 }
 
 fn empty_definition(participant: Agent) -> TaskDefinition {
@@ -79,8 +76,8 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
         let (iara, _) = iara_and_davi();
         let profile = team.profile(&iara).expect("perfil");
 
-        let with = role(profile, &team.roster_line(), "contexto", true);
-        let without = role(profile, &team.roster_line(), "contexto", false);
+        let with = role(profile, &team.roster_line(), None, "contexto", true);
+        let without = role(profile, &team.roster_line(), None, "contexto", false);
 
         assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
         assert!(with.contains("@Nome:"), "{with}");
@@ -96,8 +93,8 @@ fn papel_ensina_a_sintaxe_de_texto_so_sem_mcp() {
         let (iara, _) = iara_and_davi();
         let profile = team.profile(&iara).expect("perfil");
 
-        let with = role(profile, &team.roster_line(), "contexto", true);
-        let without = role(profile, &team.roster_line(), "contexto", false);
+        let with = role(profile, &team.roster_line(), None, "contexto", true);
+        let without = role(profile, &team.roster_line(), None, "contexto", false);
 
         for marker in OLD_MARKERS {
             assert!(!with.contains(marker), "com MCP {marker}: {with}");
