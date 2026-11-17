@@ -14,6 +14,7 @@ mod session_pool;
 mod turns;
 
 pub(crate) use archive::remove_archive;
+pub(crate) use emit::emit_backlog_changed;
 pub use emit::now_millis;
 pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};

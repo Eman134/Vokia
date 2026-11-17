@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde_json::Value;
 
 use crate::events::Agent;
+
+use super::slot::ExchangeSlot;
 
 const TOKEN_BYTES: usize = 32;
 
@@ -22,6 +24,7 @@ pub struct Binding {
     pub project_id: i64,
     pub agent: Agent,
     pub agent_name: String,
+    pub slot: ExchangeSlot,
 }
 
 #[derive(Debug)]
@@ -33,14 +36,18 @@ impl fmt::Display for RandomnessUnavailable {
     }
 }
 
+pub fn random_hex(byte_count: usize) -> Result<String, RandomnessUnavailable> {
+    let mut bytes = vec![0u8; byte_count];
+    getrandom::fill(&mut bytes).map_err(RandomnessUnavailable)?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 #[derive(Default)]
 pub struct Sessions(Mutex<HashMap<String, Binding>>);
 
 impl Sessions {
     pub fn register(&self, binding: Binding) -> Result<Token, RandomnessUnavailable> {
-        let mut bytes = [0u8; TOKEN_BYTES];
-        getrandom::fill(&mut bytes).map_err(RandomnessUnavailable)?;
-        let token = Token(bytes.iter().map(|byte| format!("{byte:02x}")).collect());
+        let token = Token(random_hex(TOKEN_BYTES)?);
         self.lock().insert(token.0.clone(), binding);
         Ok(token)
     }
@@ -79,11 +86,22 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 
 #[derive(Default)]
 pub struct ToolRegistry {
-    definitions: Vec<Value>,
+    definitions: OnceLock<Vec<Value>>,
 }
 
 impl ToolRegistry {
     pub fn definitions(&self) -> &[Value] {
-        &self.definitions
+        self.definitions.get().map_or(&[], Vec::as_slice)
+    }
+
+    // Só a primeira instalação vale: as ferramentas não mudam com o servidor no ar.
+    pub fn install(&self, definitions: Vec<Value>) {
+        let _ = self.definitions.set(definitions);
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.definitions()
+            .iter()
+            .filter_map(|definition| definition.get("name").and_then(Value::as_str))
     }
 }

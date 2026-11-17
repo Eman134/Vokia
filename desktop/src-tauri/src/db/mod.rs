@@ -11,8 +11,8 @@ mod settings;
 
 pub use agent_sessions::AgentPause;
 pub use backlog::{
-    AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResult,
-    ItemPlanInput, NewCard,
+    board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResult,
+    ItemPlanInput, NewCard, AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
 };
 pub use channels::Channel;
 pub use connection::{Db, DbState};

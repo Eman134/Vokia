@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -10,6 +10,7 @@ use crate::agents::Agent;
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
+use crate::mcp::{Binding, ExchangeSlot, McpServer, McpSession, McpState, CONFIG_DIR};
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
 
@@ -75,6 +76,9 @@ async fn run_step(
     let call = AgentCall {
         role: role(profile, &team.roster_line(), project_context),
         model: profile.model.clone(),
+        item_id: exchange.item_id.map(str::to_string),
+        channel_id: exchange.channel_id,
+        mcp: McpLaunch::new(app, key.project_id, agent, &profile.name)?,
     };
     let first = sessions.opened.insert(agent.clone());
     let held = sessions.held(agent, team)?;
@@ -174,15 +178,10 @@ async fn fresh_reply(
         &call.model,
         Access::Project(exchange.project),
         None,
+        open_mcp(call)?,
     )?;
     pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
-    let reply = live
-        .send(
-            message,
-            |request| gate.clone().decide(request),
-            |line| console.record(line),
-        )
-        .await;
+    let reply = send_in_slot(&mut live, call, message, &gate, console).await;
     live.close(SESSION_CLOSE_GRACE).await;
     pid.store(NO_PID, Ordering::SeqCst);
     reply
@@ -379,19 +378,13 @@ impl AgentSession {
                     &call.model,
                     Access::Project(project),
                     resume,
+                    open_mcp(call)?,
                 )?
             }
         };
         self.pid
             .store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
-        match live
-            .send(
-                message,
-                |request| gate.clone().decide(request),
-                |line| console.record(line),
-            )
-            .await
-        {
+        match send_in_slot(&mut live, call, message, &gate, console).await {
             Ok(reply) => {
                 self.session_id = live.session_id().map(str::to_string);
                 self.live = Some(live);
@@ -445,4 +438,79 @@ impl AgentSession {
 pub(super) struct AgentCall {
     role: String,
     model: String,
+    item_id: Option<String>,
+    channel_id: Option<i64>,
+    mcp: Option<McpLaunch>,
+}
+
+// Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.
+struct McpLaunch {
+    server: McpServer,
+    dir: PathBuf,
+    project_id: i64,
+    agent: Agent,
+    agent_name: String,
+}
+
+impl McpLaunch {
+    // Servidor fora do ar: o agente sobe sem MCP e sem regra de ferramentas.
+    fn new(
+        app: &AppHandle,
+        project_id: i64,
+        agent: &Agent,
+        agent_name: &str,
+    ) -> Result<Option<McpLaunch>, FlowError> {
+        let state = app.state::<McpState>();
+        let Some(server) = state.server() else {
+            return Ok(None);
+        };
+        let data_dir = app.path().app_data_dir().map_err(FlowError::ArchivePath)?;
+        Ok(Some(McpLaunch {
+            server: server.clone(),
+            dir: data_dir.join(CONFIG_DIR),
+            project_id,
+            agent: agent.clone(),
+            agent_name: agent_name.to_string(),
+        }))
+    }
+
+    fn open(&self) -> Result<McpSession, ClaudeError> {
+        let binding = Binding {
+            project_id: self.project_id,
+            agent: self.agent.clone(),
+            agent_name: self.agent_name.clone(),
+            slot: ExchangeSlot::default(),
+        };
+        self.server
+            .open_session(&self.dir, binding)
+            .map_err(|error| ClaudeError::Mcp(error.to_string()))
+    }
+}
+
+fn open_mcp(call: &AgentCall) -> Result<Option<McpSession>, ClaudeError> {
+    call.mcp.as_ref().map(McpLaunch::open).transpose()
+}
+
+async fn send_in_slot(
+    live: &mut LiveSession,
+    call: &AgentCall,
+    message: &str,
+    gate: &PermissionGate<'_>,
+    console: &ConsoleSink<'_>,
+) -> Result<Reply, ClaudeError> {
+    let slot = live.exchange_slot().cloned();
+    if let Some(slot) = &slot {
+        slot.begin(call.item_id.as_deref(), call.channel_id);
+    }
+    let reply = live
+        .send(
+            message,
+            |request| gate.clone().decide(request),
+            |line| console.record(line),
+        )
+        .await;
+    if let Some(slot) = &slot {
+        slot.end();
+    }
+    reply
 }

@@ -8,7 +8,7 @@ use super::locate::cli_message;
 use super::stream::{into_reply, parse_stream, Reply};
 
 pub async fn ask(cli: &Path, message: &str, role: &str, model: &str) -> Result<Reply, ClaudeError> {
-    let mut command = agent_command(cli, &["-p", message], role, model, Access::TextOnly);
+    let mut command = agent_command(cli, &["-p", message], role, model, Access::TextOnly, None);
     let limit = timeout_for(Access::TextOnly);
     let output = timeout(limit, command.output())
         .await

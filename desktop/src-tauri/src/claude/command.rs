@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::process::Command;
 
+use crate::mcp::McpConfigFile;
 use crate::permissions::PermissionLevel;
 
 pub const DEFAULT_MODEL: &str = "haiku";
@@ -18,6 +19,8 @@ const STRIPPED_AUTH_ENV: [&str; 3] = [
     "ANTHROPIC_AUTH_TOKEN",
     "AWS_BEARER_TOKEN_BEDROCK",
 ];
+// Proxy corporativo não pode interceptar o loopback do servidor MCP do app.
+const NO_PROXY_HOSTS: &str = "127.0.0.1,localhost";
 const PERMISSION_MODE: &str = "manual";
 // Ignora hooks e regras do usuário (um hook que reescreve o comando faz a regra não casar).
 const NO_SETTING_SOURCES: &str = "";
@@ -122,6 +125,7 @@ pub(super) fn agent_command(
     role: &str,
     model: &str,
     access: Access<'_>,
+    mcp: Option<&McpConfigFile>,
 ) -> Command {
     let mut command = base_command(cli);
     command.kill_on_drop(true);
@@ -150,8 +154,14 @@ pub(super) fn agent_command(
                 command.args(["--tools", tools]);
             }
             command
-                .args(["--allowedTools", &allowed_tools(project.level)])
+                .args(["--allowedTools", &allowed_with_mcp(project.level, mcp)])
                 .args(["--max-turns", PROJECT_MAX_TURNS]);
+            if let Some(mcp) = mcp {
+                command
+                    .arg("--mcp-config")
+                    .arg(mcp.path())
+                    .arg("--strict-mcp-config");
+            }
         }
     }
     command.args(["--append-system-prompt", role]);
@@ -176,8 +186,18 @@ fn allowed_tools(level: PermissionLevel) -> String {
         .join(",")
 }
 
+// Os nomes completos saem do registro do servidor; o curinga `mcp__vokia` não é usado.
+fn allowed_with_mcp(level: PermissionLevel, mcp: Option<&McpConfigFile>) -> String {
+    let mcp_tools = mcp.map(McpConfigFile::allowed_tools).unwrap_or_default();
+    std::iter::once(allowed_tools(level))
+        .chain(mcp_tools.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 pub(crate) fn base_command(cli: &Path) -> Command {
     let mut command = Command::new(cli);
+    command.env("NO_PROXY", NO_PROXY_HOSTS);
     // Com stdin aberto a CLI espera 3 s por dados antes de responder.
     command.stdin(Stdio::null());
     for name in STRIPPED_AUTH_ENV {

@@ -15,6 +15,7 @@ use super::console::{tool_summary, ConsoleKind, ConsoleLine, ConsoleParser};
 use super::control::{parse_control_request, ControlRequest, PermissionRequest};
 use super::error::ClaudeError;
 use super::stream::{into_reply, CliResponse, RateLimits, Reply, StreamAccumulator};
+use crate::mcp::{ExchangeSlot, McpSession};
 
 const USER_MESSAGE_KIND: &str = "user";
 const USER_ROLE: &str = "user";
@@ -34,6 +35,7 @@ pub struct LiveSession {
     session_id: Option<String>,
     timeout: Duration,
     stderr_tail: Option<JoinHandle<String>>,
+    mcp: Option<McpSession>,
 }
 
 impl LiveSession {
@@ -43,6 +45,7 @@ impl LiveSession {
         model: &str,
         access: Access<'_>,
         resume: Option<&str>,
+        mcp: Option<McpSession>,
     ) -> Result<Self, ClaudeError> {
         let mut command = agent_command(
             cli,
@@ -50,6 +53,7 @@ impl LiveSession {
             role,
             model,
             access,
+            mcp.as_ref().map(McpSession::config),
         );
         command.args([
             "--permission-prompts",
@@ -84,7 +88,12 @@ impl LiveSession {
             session_id: resume.map(str::to_string),
             timeout: timeout_for(access),
             stderr_tail: Some(tokio::spawn(read_stderr_tail(stderr))),
+            mcp,
         })
+    }
+
+    pub fn exchange_slot(&self) -> Option<&ExchangeSlot> {
+        self.mcp.as_ref().map(McpSession::slot)
     }
 
     pub fn session_id(&self) -> Option<&str> {

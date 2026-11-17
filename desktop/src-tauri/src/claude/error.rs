@@ -10,6 +10,7 @@ pub enum ClaudeError {
     Reported(String),
     Timeout(Duration),
     SessionClosed(String),
+    Mcp(String),
 }
 
 impl ClaudeError {
@@ -56,6 +57,9 @@ impl fmt::Display for ClaudeError {
             ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
             ClaudeError::SessionClosed(reason) => {
                 write!(f, "A sessão da CLI claude foi encerrada: {reason}")
+            }
+            ClaudeError::Mcp(reason) => {
+                write!(f, "Não foi possível preparar o MCP do Vokia: {reason}")
             }
         }
     }

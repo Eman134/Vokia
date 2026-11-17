@@ -1,5 +1,7 @@
+use std::fs;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use axum::body::{to_bytes, Body};
@@ -9,13 +11,19 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use serde_json::json;
+use tauri::AppHandle;
 use tokio::net::TcpListener;
 
 use super::protocol::{handle, Reply};
-use super::registry::{Binding, RandomnessUnavailable, Sessions, Token, ToolRegistry};
-use super::McpError;
+use super::registry::{random_hex, Binding, RandomnessUnavailable, Sessions, Token, ToolRegistry};
+use super::slot::ExchangeSlot;
+use super::tools;
+use super::{McpError, SERVER_NAME};
 
 const MCP_PATH: &str = "/mcp";
+const TOOL_NAMESPACE: &str = "mcp";
+const CONFIG_NAME_BYTES: usize = 16;
 const BEARER_PREFIX: &str = "Bearer ";
 const MAX_BODY_BYTES: usize = 64 * 1024;
 const BIND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -24,10 +32,53 @@ struct Shared {
     port: u16,
     sessions: Sessions,
     tools: ToolRegistry,
+    app: OnceLock<AppHandle>,
 }
 
+#[derive(Clone)]
 pub struct McpServer {
     shared: Arc<Shared>,
+}
+
+pub struct McpConfigFile {
+    path: PathBuf,
+    allowed_tools: Vec<String>,
+}
+
+impl McpConfigFile {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn allowed_tools(&self) -> &[String] {
+        &self.allowed_tools
+    }
+}
+
+// Vive tanto quanto a sessão da CLI: ao cair, revoga o token e apaga o arquivo que o contém.
+pub struct McpSession {
+    shared: Arc<Shared>,
+    token: Token,
+    config: McpConfigFile,
+    slot: ExchangeSlot,
+}
+
+impl McpSession {
+    pub fn config(&self) -> &McpConfigFile {
+        &self.config
+    }
+
+    pub fn slot(&self) -> &ExchangeSlot {
+        &self.slot
+    }
+}
+
+impl Drop for McpSession {
+    fn drop(&mut self) {
+        self.shared.sessions.revoke(&self.token);
+        // O arquivo pode nunca ter sido gravado (falha no meio da abertura); ausente é o resultado desejado.
+        let _ = fs::remove_file(&self.config.path);
+    }
 }
 
 impl McpServer {
@@ -42,6 +93,7 @@ impl McpServer {
             port,
             sessions: Sessions::default(),
             tools: ToolRegistry::default(),
+            app: OnceLock::new(),
         });
         let router = Router::new()
             .route(MCP_PATH, post(post_mcp))
@@ -50,6 +102,13 @@ impl McpServer {
             let _ = axum::serve(listener, router).await;
         });
         Ok(McpServer { shared })
+    }
+
+    // As ferramentas precisam do app (banco e eventos); sem isto o servidor responde com a lista vazia.
+    pub fn attach(&self, app: AppHandle) {
+        if self.shared.app.set(app).is_ok() {
+            self.shared.tools.install(tools::definitions());
+        }
     }
 
     pub fn register(&self, binding: Binding) -> Result<Token, RandomnessUnavailable> {
@@ -63,6 +122,53 @@ impl McpServer {
     pub fn url(&self) -> String {
         format!("http://{}{MCP_PATH}", self.shared.host())
     }
+
+    pub fn tool_names(&self) -> Vec<String> {
+        self.shared
+            .tools
+            .names()
+            .map(|name| format!("{TOOL_NAMESPACE}__{SERVER_NAME}__{name}"))
+            .collect()
+    }
+
+    pub fn open_session(&self, dir: &Path, binding: Binding) -> Result<McpSession, McpError> {
+        let file_name = random_hex(CONFIG_NAME_BYTES).map_err(McpError::Randomness)?;
+        let slot = binding.slot.clone();
+        let token = self
+            .shared
+            .sessions
+            .register(binding)
+            .map_err(McpError::Randomness)?;
+        let session = McpSession {
+            shared: self.shared.clone(),
+            config: McpConfigFile {
+                path: dir.join(format!("{file_name}.json")),
+                allowed_tools: self.tool_names(),
+            },
+            token,
+            slot,
+        };
+        session.write_config(&self.url())?;
+        Ok(session)
+    }
+}
+
+impl McpSession {
+    fn write_config(&self, url: &str) -> Result<(), McpError> {
+        let config = json!({
+            "mcpServers": {
+                SERVER_NAME: {
+                    "type": "http",
+                    "url": url,
+                    "headers": { "Authorization": format!("{BEARER_PREFIX}{}", self.token.as_str()) },
+                }
+            }
+        });
+        if let Some(dir) = self.config.path.parent() {
+            fs::create_dir_all(dir).map_err(McpError::ConfigFile)?;
+        }
+        fs::write(&self.config.path, config.to_string()).map_err(McpError::ConfigFile)
+    }
 }
 
 impl Shared {
@@ -71,7 +177,7 @@ impl Shared {
     }
 
     // Host fixo protege de DNS rebinding; Origin só existe em requisição de navegador.
-    fn authorize(&self, headers: &HeaderMap) -> Result<(), StatusCode> {
+    fn authorize(&self, headers: &HeaderMap) -> Result<Binding, StatusCode> {
         let host_matches = headers
             .get(HOST)
             .and_then(|value| value.to_str().ok())
@@ -83,21 +189,21 @@ impl Shared {
             .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix(BEARER_PREFIX));
-        match token.and_then(|token| self.sessions.find(token)) {
-            Some(_) => Ok(()),
-            None => Err(StatusCode::UNAUTHORIZED),
-        }
+        token
+            .and_then(|token| self.sessions.find(token))
+            .ok_or(StatusCode::UNAUTHORIZED)
     }
 }
 
 async fn post_mcp(State(shared): State<Arc<Shared>>, headers: HeaderMap, body: Body) -> Response {
-    if let Err(status) = shared.authorize(&headers) {
-        return status.into_response();
-    }
+    let binding = match shared.authorize(&headers) {
+        Ok(binding) => binding,
+        Err(status) => return status.into_response(),
+    };
     let Ok(bytes) = to_bytes(body, MAX_BODY_BYTES).await else {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     };
-    match handle(&bytes, &shared.tools) {
+    match handle(&bytes, &shared.tools, &binding, shared.app.get()) {
         Reply::Json(value) => Json(value).into_response(),
         Reply::NoContent => StatusCode::NO_CONTENT.into_response(),
     }

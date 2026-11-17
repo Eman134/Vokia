@@ -8,7 +8,7 @@ use super::connection::Db;
 use super::error::DbError;
 
 const DEFAULT_COLUMN: &str = "Backlog";
-const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", "In progress", "In review", "Done"];
+pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", "In progress", "In review", "Done"];
 const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
 const ITEM_TYPES: &[&str] = &["task", "feature"];
 const ITEM_STATES: &[&str] = &["vazio", "triagem", "gerando", "proposto", "vinculado"];
@@ -29,7 +29,7 @@ const ORIGIN_CONVERSATION: &str = "conversa";
 const ORIGIN_AGENT: &str = "agente";
 const ORIGINS: &[&str] = &[ORIGIN_USER, ORIGIN_CONVERSATION, ORIGIN_AGENT];
 const DONE_COLUMN: &str = "Done";
-const AGENT_FORBIDDEN_COLUMN: &str = "Ready";
+pub const AGENT_FORBIDDEN_COLUMN: &str = "Ready";
 const USER_OWNER: &str = "voce";
 const USER_CARD_TYPE: &str = "feature";
 const AGENT_CARD_TYPE: &str = "task";
@@ -295,6 +295,12 @@ impl Db {
         Ok(BacklogSnapshot { items, plans })
     }
 
+    pub fn read_card(&self, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        find_card(&conn, project_id, id)
+    }
+
     pub fn save_backlog_item(&self, project_id: i64, item: &BacklogItem) -> Result<(), DbError> {
         validate_item(item)?;
         let conn = self.conn()?;
@@ -529,7 +535,7 @@ fn user_origin(origin: &str) -> Result<&'static str, DbError> {
     }
 }
 
-fn board_column(requested: &str) -> Result<&'static str, DbError> {
+pub fn board_column(requested: &str) -> Result<&'static str, DbError> {
     BOARD_COLUMNS
         .iter()
         .copied()
