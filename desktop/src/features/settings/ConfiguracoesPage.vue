@@ -20,7 +20,7 @@ const CONNECTION_DETAIL = 'Claude Code, Codex, GitHub CLI e Git'
 const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col overflow-y-auto pt-7 pr-8 pb-37.5 pl-2'
 const SEARCH_CLASSES =
   'ml-auto h-10 w-65 rounded-card border border-line bg-surface px-3.5 text-control text-ink placeholder:text-faint disabled:opacity-40'
-const NAV_CLASSES = 'flex w-[210px] shrink-0 flex-col gap-0.5'
+const NAV_CLASSES = 'flex w-full shrink-0 flex-col gap-0.5 lg:w-[210px]'
 const NAV_ITEM_CLASSES =
   'block w-full cursor-default rounded-control px-3 py-2 text-left text-control disabled:opacity-40'
 const NAV_ITEM_ACTIVE_CLASSES = 'bg-accent-soft font-semibold text-accent'
@@ -28,7 +28,7 @@ const NAV_ITEM_IDLE_CLASSES = 'text-muted'
 const PROFILE_TITLE = 'Seu perfil'
 const PROFILE_AVATAR_SIZE = 40
 const PROFILE_CLASSES = 'mt-5 flex max-w-[860px] flex-col gap-4 rounded-card border border-line bg-surface p-4'
-const COLUMN_CLASSES = 'flex min-w-0 max-w-[860px] flex-1 flex-col gap-4'
+const COLUMN_CLASSES = 'flex w-full min-w-0 max-w-[860px] flex-1 flex-col gap-4'
 
 const profile = useUserProfile()
 const draft = useProfileDraft()
@@ -73,7 +73,7 @@ async function save(): Promise<void> {
       </template>
     </section>
 
-    <div class="mt-5 flex items-start gap-6">
+    <div class="mt-5 flex flex-col items-start gap-6 lg:flex-row">
       <nav aria-label="Seções" :class="NAV_CLASSES">
         <button
           v-for="section in SETTINGS_SECTIONS"
