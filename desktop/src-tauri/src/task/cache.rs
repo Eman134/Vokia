@@ -118,6 +118,7 @@ pub enum Change {
     Append {
         name: String,
         item: String,
+        share: bool,
     },
     Share {
         name: String,
@@ -310,7 +311,9 @@ impl Cache {
     fn apply(&mut self, author: &Agent, change: &Change, team: &Team) -> Result<(), String> {
         match change {
             Change::Set { name, value, share } => self.set(author, name, value, *share, team),
-            Change::Append { name, item } => self.append(author, name, item, team),
+            Change::Append { name, item, share } => {
+                self.append(author, name, item, *share, team)
+            }
             Change::Share { name } => self.share(author, name, team),
         }
     }
@@ -359,13 +362,7 @@ impl Cache {
                 ));
             }
         }
-        if share && variable.creator != Creator::Agent(author.clone()) {
-            return Err(format!("só quem criou {name} pode compartilhá-la"));
-        }
         variable.value = value.clone();
-        if share {
-            variable.scope = Scope::Team;
-        }
         Ok(())
     }
 
@@ -374,6 +371,7 @@ impl Cache {
         author: &Agent,
         name: &str,
         item: &str,
+        share: bool,
         team: &Team,
     ) -> Result<(), String> {
         check_text(item)?;
@@ -383,7 +381,7 @@ impl Cache {
             self.variables.push(Variable {
                 name: name.to_string(),
                 value: VarValue::List(vec![item.to_string()]),
-                scope: Scope::Private,
+                scope: if share { Scope::Team } else { Scope::Private },
                 rule: Rule::Append,
                 creator: Creator::Agent(author.clone()),
             });
@@ -414,9 +412,6 @@ impl Cache {
             return Err(format!("a variável {name} não existe"));
         };
         ensure_visible(variable, author, team)?;
-        if variable.creator != Creator::Agent(author.clone()) {
-            return Err(format!("só quem criou {name} pode compartilhá-la"));
-        }
         variable.scope = Scope::Team;
         Ok(())
     }
@@ -518,31 +513,31 @@ fn parse_action(name: &str, action: &str) -> Result<Change, String> {
         return Ok(Change::Append {
             name: name.to_string(),
             item: item.to_string(),
+            share: true,
         });
     }
     if let Some(value) = action.strip_prefix(ASSIGN_MARK) {
-        let (text, share) = split_share(value.trim())?;
+        // Variável da tarefa nasce compartilhada; a marca @time é só aceita, não muda o escopo.
+        let text = strip_share_mark(value.trim())?;
         return Ok(Change::Set {
             name: name.to_string(),
             value: VarValue::from_text(text),
-            share,
+            share: true,
         });
     }
     Err(format!("marcador inválido para {name}: {action}"))
 }
 
-fn split_share(value: &str) -> Result<(&str, bool), String> {
-    let (text, share) = match value.strip_suffix(SHARE_MARK) {
-        Some(rest) if rest.is_empty() || rest.ends_with(char::is_whitespace) => {
-            (rest.trim_end(), true)
-        }
-        _ => (value, false),
+fn strip_share_mark(value: &str) -> Result<&str, String> {
+    let text = match value.strip_suffix(SHARE_MARK) {
+        Some(rest) if rest.is_empty() || rest.ends_with(char::is_whitespace) => rest.trim_end(),
+        _ => value,
     };
     if text.is_empty() {
         return Err("valor vazio".to_string());
     }
     match text.split_whitespace().last() {
         Some(word) if word.starts_with('@') => Err(format!("marcador desconhecido: {word}")),
-        _ => Ok((text, share)),
+        _ => Ok(text),
     }
 }

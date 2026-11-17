@@ -210,7 +210,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             SET_VARIABLE,
-            "Grava uma variável da tarefa: op set troca o valor; op append acrescenta um item a uma lista; share compartilha com o time.",
+            "Grava uma variável da tarefa. Variáveis da tarefa são compartilhadas por padrão: todos os agentes leem e alteram. Use share false só para rascunho pessoal, visível apenas a você; share só vale ao criar a variável. op set troca o valor; op append acrescenta um item a uma lista.",
             json!({
                 "name": { "type": "string" },
                 "op": { "type": "string", "enum": [OP_SET, OP_APPEND] },
@@ -440,25 +440,18 @@ fn set_variable(app: &AppHandle, binding: &Binding, args: SetVariableArgs) -> To
 }
 
 fn variable_changes(name: &str, args: &SetVariableArgs) -> Result<Vec<Change>, String> {
-    let share = args.share.unwrap_or(false);
+    let share = args.share.unwrap_or(true);
     match args.op.as_str() {
         OP_SET => Ok(vec![Change::Set {
             name: name.to_string(),
             value: variable_value(&args.value)?,
             share,
         }]),
-        OP_APPEND => {
-            let mut changes = vec![Change::Append {
-                name: name.to_string(),
-                item: item_text(&args.value)?,
-            }];
-            if share {
-                changes.push(Change::Share {
-                    name: name.to_string(),
-                });
-            }
-            Ok(changes)
-        }
+        OP_APPEND => Ok(vec![Change::Append {
+            name: name.to_string(),
+            item: item_text(&args.value)?,
+            share,
+        }]),
         _ => Err(INVALID_OP.to_string()),
     }
 }
