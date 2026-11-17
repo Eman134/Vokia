@@ -3,13 +3,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::*;
-use crate::agents::AgentRegistry;
-use crate::db::{Db, DbError, NewProject};
+use crate::agents::Agent;
+use crate::db::{AgentActor, CardOperation, CardOutcome, Db, DbError, NewProject};
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
-
-const INCOMPLETE: &str = "a linha #card está incompleta (use \"#card criar <título>|<descrição>\" ou \"#card mover <id>|<coluna>\")";
-const EMPTY_TITLE: &str = "o título do card não pode ser vazio";
 
 struct TempDir(PathBuf);
 
@@ -109,123 +106,8 @@ fn activity_count(db: &Db, project_id: i64, id: &str) -> usize {
         .expect("o card deveria existir")
 }
 
-fn with_team(check: impl FnOnce(&Team)) {
-    let dir: PathBuf = std::env::temp_dir().join(format!(
-        "vokia-backlog-cards-team-{}-{}",
-        std::process::id(),
-        NEXT_DIR.fetch_add(1, Ordering::SeqCst)
-    ));
-    fs::create_dir_all(&dir).expect("diretório temporário do time");
-    let team = AgentRegistry::load(&dir)
-        .team()
-        .expect("o time padrão deveria carregar");
-    check(&team);
-    let _ = fs::remove_dir_all(&dir);
-}
-
-fn parsed_cards(reply: &str) -> (Vec<Result<CardOperation, String>>, String) {
-    let mut out = None;
-    with_team(|team| {
-        let parsed = parse_reply(reply, &agent("davi"), team);
-        out = Some((parsed.cards, parsed.visible));
-    });
-    out.unwrap()
-}
-
 fn refused(result: Result<Vec<crate::db::CardResult>, DbError>) -> DbError {
     result.expect_err("a operação deveria ser recusada")
-}
-
-#[test]
-fn card_criar_vira_operacao_com_titulo_e_descricao_e_some_do_texto() {
-    let (cards, visible) =
-        parsed_cards("Registrando.\n#card criar Revisar login|Checar o token\nPronto.");
-
-    assert_eq!(visible, "Registrando.\nPronto.");
-    match cards.as_slice() {
-        [Ok(CardOperation::Create { title, description })] => {
-            assert_eq!(title, "Revisar login");
-            assert_eq!(description.as_deref(), Some("Checar o token"));
-        }
-        other => panic!("esperava um criar válido, veio {} operações", other.len()),
-    }
-}
-
-#[test]
-fn card_criar_sem_descricao_fica_none_e_descricao_com_barra_vertical_e_preservada() {
-    let (cards, _) = parsed_cards("#card criar Só título\n  #card criar Com barras | a|b ");
-
-    match cards.as_slice() {
-        [Ok(CardOperation::Create {
-            title: first,
-            description: none,
-        }), Ok(CardOperation::Create {
-            title: second,
-            description: rest,
-        })] => {
-            assert_eq!(first, "Só título");
-            assert_eq!(*none, None);
-            assert_eq!(second, "Com barras");
-            assert_eq!(rest.as_deref(), Some("a|b"));
-        }
-        _ => panic!("esperava dois criar válidos"),
-    }
-}
-
-#[test]
-fn card_mover_vira_operacao_com_id_e_coluna_sem_espacos_nas_pontas() {
-    let (cards, visible) = parsed_cards("#card mover item-3 | In progress ");
-
-    assert_eq!(visible, "");
-    match cards.as_slice() {
-        [Ok(CardOperation::Move { id, column })] => {
-            assert_eq!(id, "item-3");
-            assert_eq!(column, "In progress");
-        }
-        _ => panic!("esperava um mover válido"),
-    }
-}
-
-#[test]
-fn linha_card_malformada_vira_erro_com_o_motivo_e_nunca_texto_visivel() {
-    let cases = [
-        ("#card", INCOMPLETE),
-        ("#card criar", EMPTY_TITLE),
-        ("#card criar |x", EMPTY_TITLE),
-        ("#card mover item-1", INCOMPLETE),
-        ("#card mover |Done", INCOMPLETE),
-        ("#card mover item-1|", INCOMPLETE),
-        ("#card mover item-1|Done|extra", INCOMPLETE),
-        ("#card apagar item-1|Done", INCOMPLETE),
-    ];
-    for (line, reason) in cases {
-        let (cards, visible) = parsed_cards(line);
-
-        assert_eq!(visible, "", "a linha {line:?} não pode aparecer no texto");
-        match cards.as_slice() {
-            [Err(found)] => assert_eq!(found, reason, "motivo da linha {line:?}"),
-            _ => panic!("a linha {line:?} deveria virar um único erro"),
-        }
-    }
-}
-
-#[test]
-fn cards_com_s_no_fim_nao_e_marcador_e_fica_como_texto_comum() {
-    let (cards, visible) = parsed_cards("#cards criar x");
-
-    assert!(cards.is_empty());
-    assert_eq!(visible, "#cards criar x");
-}
-
-#[test]
-fn resposta_com_decisao_e_card_sobe_a_decisao_e_as_linhas_card_somem_do_texto() {
-    let reply = "Preciso de uma escolha.\n#card criar Não pode gravar|x\n#decisao escolha|Qual caminho?|Sem detalhe|A;B";
-
-    let decision = parse_decision(reply).expect("a linha #decisao deveria ser reconhecida");
-    let (_, visible) = parsed_cards(&decision.visible);
-
-    assert_eq!(decision.title, "Qual caminho?");
-    assert_eq!(visible, "Preciso de uma escolha.");
 }
 
 #[test]

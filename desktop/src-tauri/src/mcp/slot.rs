@@ -21,11 +21,13 @@ impl ExchangeSlot {
         };
     }
 
-    // Confirmações e `changed` ficam: o orquestrador as lê depois do envio.
-    pub fn end(&self) {
+    // Devolve as confirmações da troca; o orquestrador as anexa à mensagem do agente.
+    pub fn end(&self) -> Vec<String> {
         let mut state = self.lock();
         state.item_id = None;
         state.channel_id = None;
+        state.changed = false;
+        std::mem::take(&mut state.confirmations)
     }
 
     pub fn lock(&self) -> MutexGuard<'_, SlotState> {

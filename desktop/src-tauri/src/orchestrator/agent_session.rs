@@ -31,6 +31,7 @@ const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS
 
 pub(super) struct StepReply {
     pub(super) text: String,
+    pub(super) confirmations: Vec<String>,
     pub(super) activity: Option<TurnActivity>,
 }
 
@@ -73,12 +74,14 @@ async fn run_step(
         ..
     } = exchange;
     let profile = profile_of(team, agent)?;
+    let mcp = McpLaunch::new(app, key.project_id, agent, &profile.name)?;
     let call = AgentCall {
-        role: role(profile, &team.roster_line(), project_context),
+        role: role(profile, &team.roster_line(), project_context, mcp.is_some()),
         model: profile.model.clone(),
         item_id: exchange.item_id.map(str::to_string),
         channel_id: exchange.channel_id,
-        mcp: McpLaunch::new(app, key.project_id, agent, &profile.name)?,
+        mcp,
+        confirmations: StdMutex::default(),
     };
     let first = sessions.opened.insert(agent.clone());
     let held = sessions.held(agent, team)?;
@@ -145,8 +148,14 @@ async fn run_step(
         }
     };
     report_limits(app, reply.limits)?;
+    let confirmations = call
+        .confirmations
+        .lock()
+        .map(|mut collected| std::mem::take(&mut *collected))
+        .unwrap_or_default();
     Ok(StepReply {
         text: reply.text,
+        confirmations,
         activity: Some(reply.activity)
             .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
     })
@@ -441,6 +450,7 @@ pub(super) struct AgentCall {
     item_id: Option<String>,
     channel_id: Option<i64>,
     mcp: Option<McpLaunch>,
+    confirmations: StdMutex<Vec<String>>,
 }
 
 // Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.
@@ -510,7 +520,11 @@ async fn send_in_slot(
         )
         .await;
     if let Some(slot) = &slot {
-        slot.end();
+        // Também na falha: o card já gravado numa tentativa que caiu continua precisando de confirmação.
+        let confirmations = slot.end();
+        if let Ok(mut collected) = call.confirmations.lock() {
+            collected.extend(confirmations);
+        }
     }
     reply
 }

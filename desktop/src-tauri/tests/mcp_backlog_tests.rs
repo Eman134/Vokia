@@ -551,3 +551,59 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
         .iter()
         .all(|event| event["projectId"] == json!(project)));
 }
+
+#[test]
+fn confirmacao_da_troca_sai_no_end_e_o_slot_fica_vazio_depois_do_envio() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+
+    iara.slot.begin(None, None);
+    world.call(&iara, "create_card", json!({ "title": "Um" }));
+    let collected = iara.slot.end();
+    let again = iara.slot.end();
+
+    assert_eq!(collected, ["Card item-1 criado: Um."]);
+    assert!(again.is_empty());
+    assert!(!iara.slot.lock().changed);
+    assert!(iara.slot.lock().confirmations.is_empty());
+}
+
+#[test]
+fn confirmacao_nao_coletada_de_uma_troca_nao_vaza_para_a_proxima() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+
+    iara.slot.begin(None, None);
+    world.call(&iara, "create_card", json!({ "title": "Um" }));
+    // A troca caiu antes do end(): a seguinte começa do zero.
+    iara.slot.begin(None, None);
+    let collected = iara.slot.end();
+
+    assert!(collected.is_empty(), "{collected:?}");
+    assert!(!iara.slot.lock().changed);
+}
+
+#[test]
+fn card_do_pedido_so_vale_dentro_da_troca_e_deixa_de_valer_depois_do_end() {
+    let world = world();
+    let project = world.project("a");
+    let iara = world.agent("iara", "Iara", project);
+    let davi = world.agent("davi", "Davi", project);
+    let foreign = world.create(&davi, "Do Davi");
+
+    iara.slot.begin(Some(&foreign), None);
+    iara.slot.end();
+    let outcome = world.call(
+        &iara,
+        "move_card",
+        json!({ "id": foreign, "column": "In progress" }),
+    );
+
+    assert!(outcome.is_error);
+    assert_eq!(
+        outcome.text,
+        format!("O card {foreign} não é seu nem do pedido atual.")
+    );
+}

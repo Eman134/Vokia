@@ -1,18 +1,17 @@
 use std::path::Path;
 use std::sync::atomic::Ordering;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
-use crate::db::{AgentActor, CardOperation, CardOutcome, DbState};
 use crate::events::{AgentState, GoalState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, PendingDecision};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
-use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
+use super::emit::{emit, emit_message, emit_state};
 use super::error::FlowError;
 use super::flow::stop_with_error;
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
@@ -26,7 +25,6 @@ use super::session_pool::ExchangeSessions;
 
 pub(super) const NO_CONVERSATION: usize = 0;
 pub(super) const USER_LABEL: &str = "Usuário";
-const MAX_CARD_OPERATIONS: usize = 10;
 
 pub(super) struct Exchange<'a> {
     pub(super) app: &'a AppHandle,
@@ -51,7 +49,6 @@ pub(super) async fn run_turns(
         app,
         state,
         request,
-        item_id,
         channel_id,
         key,
         definition,
@@ -76,34 +73,30 @@ pub(super) async fn run_turns(
         let StepReply {
             text: reply,
             activity,
+            confirmations,
         } = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
         let mut activity = activity;
-        if let Some(parsed) = parse_decision(&reply) {
+        if let Some(mut parsed) = parse_decision(&reply) {
+            let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
+            parsed.visible = with_confirmations(shown, &confirmations).unwrap_or_default();
             return raise_decision(exchange, transcript, &turn, parsed, activity);
         }
         let ParsedReply {
             visible,
             delegation,
             updates,
-            cards,
         } = parse_reply(&reply, &turn.speaker, team);
         let applied = with_cache(state, project_id, |cache| {
             Ok(cache.apply_reply(&turn.speaker, updates, team))
         })?;
         let delegation = delegation.filter(|_| !definition.alternate);
-        let mut rejected = applied.rejected.clone();
-        let cards = apply_cards(
-            app,
-            project_id,
-            &turn.speaker,
-            *item_id,
-            team,
-            cards,
-            &mut rejected,
-        )?;
-        if !rejected.is_empty() {
-            if !visible.is_empty() {
+        if !applied.rejected.is_empty() {
+            let shown = with_confirmations(
+                (!visible.is_empty()).then(|| visible.clone()),
+                &confirmations,
+            );
+            if let Some(shown) = shown {
                 let to = next_turn(definition, &turn, &visible, None, team)
                     .map_or(Speaker::User, |next| Speaker::from(next.speaker));
                 emit_message(
@@ -111,7 +104,7 @@ pub(super) async fn run_turns(
                     project_id,
                     Speaker::from(turn.speaker.clone()),
                     to,
-                    &visible,
+                    &shown,
                     *channel_id,
                     activity.take(),
                 )?;
@@ -132,13 +125,13 @@ pub(super) async fn run_turns(
                 }
             }
             sessions.review(&turn.speaker, rejections, 0, team)?.await;
-            turn.rejection = Some(rejected.join("; "));
+            turn.rejection = Some(applied.rejected.join("; "));
             continue;
         }
         rejections = 0;
 
         let advanced = applied.created_variable || applied.changed_value;
-        let feed = with_confirmations(feed_text(&visible, &applied.accepted), &cards.confirmations);
+        let feed = with_confirmations(feed_text(&visible, &applied.accepted), &confirmations);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition
                 .stop
@@ -158,9 +151,6 @@ pub(super) async fn run_turns(
                     *channel_id,
                     activity.take(),
                 )?;
-            }
-            if cards.changed {
-                emit_backlog_changed(app, project_id)?;
             }
             emit_goal(
                 app,
@@ -207,9 +197,6 @@ pub(super) async fn run_turns(
                 *channel_id,
                 activity.take(),
             )?;
-        }
-        if cards.changed {
-            emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
             match resolve(
@@ -575,75 +562,6 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
     }
 }
 
-#[derive(Default)]
-struct AppliedCards {
-    confirmations: Vec<String>,
-    changed: bool,
-}
-
-// Tudo ou nada: linha malformada, recusa de variável ou excesso de linhas impedem qualquer gravação
-// (a repetição do turno não pode duplicar card); os motivos vão juntos ao agente.
-fn apply_cards(
-    app: &AppHandle,
-    project_id: i64,
-    speaker: &Agent,
-    item_id: Option<&str>,
-    team: &Team,
-    cards: Vec<Result<CardOperation, String>>,
-    rejected: &mut Vec<String>,
-) -> Result<AppliedCards, FlowError> {
-    let mut operations = Vec::new();
-    for card in cards {
-        match card {
-            Ok(operation) => operations.push(operation),
-            Err(reason) => rejected.push(reason),
-        }
-    }
-    if operations.len() > MAX_CARD_OPERATIONS {
-        rejected.push(format!(
-            "a resposta tem {} linhas #card; o máximo é {MAX_CARD_OPERATIONS} por resposta",
-            operations.len()
-        ));
-    }
-    if !rejected.is_empty() || operations.is_empty() {
-        return Ok(AppliedCards::default());
-    }
-    let db_state = app.state::<DbState>();
-    let Some(db) = db_state.db() else {
-        return Ok(AppliedCards::default());
-    };
-    let actor = AgentActor {
-        id: speaker.clone(),
-        name: team.name_of(speaker).to_string(),
-        current_card: item_id.map(str::to_string),
-    };
-    match db.apply_card_operations(project_id, &actor, &operations) {
-        Ok(results) => {
-            let confirmations: Vec<String> = results
-                .iter()
-                .filter_map(|result| match result.outcome {
-                    CardOutcome::Created => {
-                        Some(format!("Card {} criado: {}.", result.id, result.title))
-                    }
-                    CardOutcome::Moved => {
-                        Some(format!("Card {} movido para {}.", result.id, result.column))
-                    }
-                    CardOutcome::Unchanged => None,
-                })
-                .collect();
-            Ok(AppliedCards {
-                changed: !confirmations.is_empty(),
-                confirmations,
-            })
-        }
-        Err(error) if error.is_card_refusal() => {
-            rejected.push(error.to_string());
-            Ok(AppliedCards::default())
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
 fn with_confirmations(feed: Option<String>, confirmations: &[String]) -> Option<String> {
     if confirmations.is_empty() {
         return feed;
@@ -691,3 +609,7 @@ pub(super) fn with_cache<T>(
 #[cfg(test)]
 #[path = "../../tests/backlog_cards_tests.rs"]
 mod backlog_cards_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_cut_tests.rs"]
+mod mcp_cut_tests;
