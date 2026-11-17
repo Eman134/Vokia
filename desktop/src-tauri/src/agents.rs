@@ -21,6 +21,8 @@ const CLAUDE_CLI: &str = "claude";
 const CLAUDE_CLI_LABEL: &str = "Claude Code";
 const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
 const EMBER: &str = "ember";
+const EMBER_RENAMED_NAME: &str = "Ember2";
+const EMBER_RENAMED_ID: &str = "ember2";
 const DAVI: &str = "davi";
 
 const INITIAL_AGENTS: [(&str, &str, &str); 3] = [
@@ -460,6 +462,19 @@ fn load_failed(file: &Path, detail: impl Display) -> AgentError {
     ))
 }
 
+// O builtin Ember já ocupa o nome e o id; um agente personalizado com eles vira Ember2 antes da validação.
+fn rename_clashing_ember(profile: AgentProfile) -> AgentProfile {
+    if profile.id.as_str() == EMBER || name_key(&profile.name) == EMBER {
+        AgentProfile {
+            id: Agent(EMBER_RENAMED_ID.to_string()),
+            name: EMBER_RENAMED_NAME.to_string(),
+            ..profile
+        }
+    } else {
+        profile
+    }
+}
+
 fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError> {
     if !file.exists() {
         let seeds = initial_agents();
@@ -478,6 +493,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
     }
     let mut loaded: Vec<AgentProfile> = Vec::new();
     for profile in parsed.agents {
+        let profile = rename_clashing_ember(profile);
         let draft = AgentDraft {
             name: profile.name.clone(),
             role: profile.role.clone(),
