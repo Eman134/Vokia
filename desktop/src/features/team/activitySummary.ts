@@ -80,6 +80,8 @@ const ROW_ICON: Record<ToolCategory, RowIconKind> = {
 }
 
 const FILE_CATEGORIES: readonly ToolCategory[] = ['read', 'edit']
+// Padrão de busca ou caminho de listagem: o alvo inteiro vira o chip, sem cortar pelo separador.
+const PATTERN_CATEGORIES: readonly ToolCategory[] = ['search', 'list']
 // Sem alvo, só o nome diz qual ferramenta rodou; as demais categorias já têm um verbo próprio.
 const NAMED_CATEGORIES: readonly ToolCategory[] = ['mcp', 'other']
 
@@ -152,6 +154,10 @@ function chipOf(target: string): ActivityChip {
   return { label, title: target, icon: fileIconOf(label) }
 }
 
+function patternChip(target: string): ActivityChip {
+  return { label: target, title: target, icon: fileIconOf(target) }
+}
+
 function shownName(tool: ToolActivity): string {
   return tool.name.startsWith(VOKIA_TOOL_PREFIX) ? tool.name.slice(VOKIA_TOOL_PREFIX.length) : tool.name
 }
@@ -180,7 +186,7 @@ function foundRow(tool: ToolActivity, detail: FoundDetail, icon: RowIconKind): A
     id: tool.callId,
     icon,
     verb: tool.status === 'ok' ? FOUND_VERB : verbFor(tool.category, tool.status),
-    chip: { label: tool.target, title: tool.target, icon: fileIconOf(tool.target) },
+    chip: patternChip(tool.target),
     meta: `· ${countLabel(detail.count)}`,
     items: detail.names.length > 0 ? detail.names : undefined,
     failed: tool.status === 'failed',
@@ -194,6 +200,9 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): Act
   const verb = verbFor(tool.category, tool.status)
   if (FILE_CATEGORIES.includes(tool.category) && target !== '') {
     return { id: tool.callId, icon, verb, chip: chipOf(target), meta, failed }
+  }
+  if (PATTERN_CATEGORIES.includes(tool.category) && target !== '') {
+    return { id: tool.callId, icon, verb, chip: patternChip(target), meta, failed }
   }
   return { id: tool.callId, icon, verb, text: target === '' ? undefined : target, meta, failed }
 }

@@ -42,7 +42,7 @@ const listId = useId()
       <button
         v-if="row.items"
         type="button"
-        class="ml-auto cursor-pointer text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="cursor-pointer text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
         :aria-expanded="open"
         :aria-controls="listId"
         @click="open = !open"

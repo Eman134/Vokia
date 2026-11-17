@@ -14,7 +14,7 @@ const rows = computed(() => activityRows(props.activity.tools))
 
 <template>
   <div class="mt-0.5 flex flex-col gap-1 text-caption text-muted" data-testid="activity-run">
-    <span v-if="activity.thinkingMs !== undefined" data-testid="activity-thinking">{{ thinkingLabel(activity.thinkingMs) }}</span>
+    <span v-if="!live && activity.thinkingMs !== undefined" data-testid="activity-thinking">{{ thinkingLabel(activity.thinkingMs) }}</span>
     <ul v-if="live && rows.length > 0" class="flex flex-col gap-1" data-testid="activity-live">
       <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
     </ul>
@@ -27,8 +27,8 @@ const rows = computed(() => activityRows(props.activity.tools))
         data-testid="activity-toggle"
         @click="open = !open"
       >
-        <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
         <span class="wrap-break-word min-w-0" data-testid="activity-sentence">{{ sentence }}</span>
+        <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
       </button>
       <ul v-show="open" :id="listId" class="flex flex-col gap-1 pl-4">
         <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
