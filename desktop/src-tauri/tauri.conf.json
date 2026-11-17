@@ -16,8 +16,8 @@
         "title": "Vokia",
         "width": 1200,
         "height": 891,
-        "minWidth": 900,
-        "minHeight": 891
+        "minWidth": 768,
+        "minHeight": 600
       }
     ],
     "security": {
