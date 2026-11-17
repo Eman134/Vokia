@@ -524,6 +524,7 @@ async fn send_in_slot(
             message,
             |request| gate.clone().decide(request),
             |line| console.record(line),
+            |activity| console.live_activity(activity),
         )
         .await;
     if let Some(slot) = &slot {

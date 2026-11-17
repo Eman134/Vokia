@@ -10,6 +10,12 @@ export type ToolCategory = 'read' | 'edit' | 'command' | 'search' | 'list' | 'we
 
 export type ToolStatus = 'running' | 'ok' | 'failed'
 
+export type ToolDetail =
+  | { kind: 'read'; from: number; to: number }
+  | { kind: 'found'; count: number; names: string[] }
+  | { kind: 'created'; id?: string }
+  | { kind: 'updated'; taskId: string; status: string }
+
 export interface ToolActivity {
   callId: string
   name: string
@@ -19,6 +25,7 @@ export interface ToolActivity {
   added?: number
   removed?: number
   durationMs?: number
+  detail?: ToolDetail
 }
 
 export interface TurnActivity {
@@ -146,9 +153,17 @@ export interface VokiaBacklogChanged {
   projectId: number
 }
 
+export interface VokiaAgentActivity {
+  type: 'agent-activity'
+  agent: Agent
+  projectId: number
+  activity: TurnActivity
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
+  | VokiaAgentActivity
   | VokiaError
   | VokiaPermission
   | VokiaPermissionClosed

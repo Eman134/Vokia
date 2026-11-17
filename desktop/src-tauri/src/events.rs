@@ -178,6 +178,13 @@ pub enum VokiaEvent {
         text: String,
         time: u64,
     },
+    // Visual e não gravado: a atividade final segue na mensagem.
+    #[serde(rename_all = "camelCase")]
+    AgentActivity {
+        agent: Agent,
+        project_id: i64,
+        activity: TurnActivity,
+    },
     #[serde(rename_all = "camelCase")]
     GoalState {
         project_id: i64,

@@ -104,18 +104,22 @@ impl LiveSession {
         self.child.id()
     }
 
-    pub async fn send<D, F, O>(
+    pub async fn send<D, F, O, A>(
         &mut self,
         message: &str,
         decide: D,
         mut observe: O,
+        mut on_activity: A,
     ) -> Result<Reply, ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
         F: Future<Output = bool>,
         O: FnMut(ConsoleLine),
+        A: FnMut(TurnActivity),
     {
-        let (response, limits, activity) = self.exchange(message, decide, &mut observe).await?;
+        let (response, limits, activity) = self
+            .exchange(message, decide, &mut observe, &mut on_activity)
+            .await?;
         if !response.session_id.is_empty() {
             self.session_id = Some(response.session_id.clone());
         }
@@ -124,16 +128,18 @@ impl LiveSession {
         Ok(reply)
     }
 
-    async fn exchange<D, F, O>(
+    async fn exchange<D, F, O, A>(
         &mut self,
         message: &str,
         decide: D,
         observe: &mut O,
+        on_activity: &mut A,
     ) -> Result<(CliResponse, Option<RateLimits>, TurnActivity), ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
         F: Future<Output = bool>,
         O: FnMut(ConsoleLine),
+        A: FnMut(TurnActivity),
     {
         let payload = serde_json::json!({
             "type": USER_MESSAGE_KIND,
@@ -181,7 +187,9 @@ impl LiveSession {
                     for console_line in console.lines(line.as_bytes()) {
                         observe(console_line);
                     }
-                    activity.push_line(line.as_bytes(), Instant::now());
+                    if activity.push_line(line.as_bytes(), Instant::now()) {
+                        on_activity(activity.snapshot());
+                    }
                     if accumulator.push_line(line.as_bytes())? {
                         let (response, limits) = accumulator.finish()?;
                         return Ok((response, limits, activity.finish()));

@@ -1,0 +1,57 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import type { AgentProfile } from '../team/teamApi'
+import type { AgentState } from '../team/events'
+import { formatClock } from '../team/activitySummary'
+import { currentTurn } from './consoleTurn'
+import { useConsole } from './useConsole'
+
+const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number }>()
+
+const SENDING_LABEL = 'Enviando…'
+const THINKING_LABEL = 'Pensando…'
+const TICK_MS = 1000
+
+const consoleStore = useConsole()
+const now = ref(Date.now())
+let timer: number | undefined
+
+onMounted(() => {
+  timer = window.setInterval(() => {
+    now.value = Date.now()
+  }, TICK_MS)
+})
+onUnmounted(() => clearInterval(timer))
+
+// Só o que o agente já escreveu neste turno: o stream não traz o texto do raciocínio.
+const written = computed(() =>
+  currentTurn(consoleStore.entriesOf(props.agent.id))
+    .filter((entry) => entry.kind === 'text')
+    .at(-1)?.text,
+)
+
+// Calculado pela diferença com o relógio atual: a aba oculta pausa o timer, não o tempo.
+const label = computed(() => {
+  if (props.state !== 'thinking') {
+    return SENDING_LABEL
+  }
+  if (props.since === undefined) {
+    return THINKING_LABEL
+  }
+  return `${THINKING_LABEL} ${formatClock(Math.max(0, now.value - props.since))}`
+})
+</script>
+
+<template>
+  <div class="flex min-w-0 max-w-xl flex-col gap-1">
+    <span class="flex items-center gap-2 text-caption text-muted">
+      {{ agent.name }} · {{ label }}
+      <span class="flex items-center gap-1" aria-hidden="true">
+        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-1" />
+        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-2" />
+        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-3" />
+      </span>
+    </span>
+    <p v-if="written" class="line-clamp-4 wrap-break-word whitespace-pre-wrap text-body text-ink">{{ written }}</p>
+  </div>
+</template>

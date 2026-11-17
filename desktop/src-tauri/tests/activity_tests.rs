@@ -419,3 +419,125 @@ fn amostra_real_da_cli_vira_quatro_ferramentas_e_o_pensamento_medido() {
     assert_eq!(activity.thinking_ms, Some(REAL_FIRST_THINKING_MS + REAL_SECOND_THINKING_MS));
     assert!(activity.tools.iter().all(|tool| tool.duration_ms.is_some()));
 }
+
+const CAPTURED_AAT0: &str = include_str!("../../e2e/fake/atividade-aat0.jsonl");
+
+fn captured_feed() -> (Vec<Value>, ActivityParser) {
+    let lines = CAPTURED_AAT0
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("linha capturada é JSON"))
+        .collect();
+    (lines, ActivityParser::new(Instant::now()))
+}
+
+#[test]
+fn captura_real_traz_detalhe_de_read_e_glob_e_nenhum_nas_demais() {
+    let (lines, mut parser) = captured_feed();
+    for line in &lines {
+        parser.push_line(line.to_string().as_bytes(), Instant::now());
+    }
+    let tools = parser.finish().tools;
+
+    let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_str()).collect();
+    assert_eq!(names, ["Read", "Read", "Glob", "Grep", "TaskCreate", "TaskCreate", "TaskUpdate"]);
+    let details: Vec<Option<ToolDetail>> = tools.iter().map(|tool| tool.detail.clone()).collect();
+    assert_eq!(
+        details,
+        vec![
+            Some(ToolDetail::Read { from: 2, to: 3 }),
+            None,
+            Some(ToolDetail::Found {
+                count: 1,
+                names: vec!["notas\\b.md".to_string()],
+            }),
+            None,
+            Some(ToolDetail::Created { id: Some("1".to_string()) }),
+            Some(ToolDetail::Created { id: Some("2".to_string()) }),
+            Some(ToolDetail::Updated {
+                task_id: "2".to_string(),
+                status: "completed".to_string(),
+            }),
+        ]
+    );
+}
+
+#[test]
+fn read_com_limit_sem_offset_comeca_na_primeira_linha_e_respeita_o_total() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use("t1", "Read", json!({ "file_path": "a.txt", "limit": 111 }))]));
+    assert_eq!(feed.parser.snapshot().tools[0].detail, Some(ToolDetail::Read { from: 1, to: 111 }));
+
+    feed.push(json!({
+        "type": "user",
+        "message": { "content": [result_block("t1", false)] },
+        "tool_use_result": { "file": { "totalLines": 5 } }
+    }));
+    assert_eq!(feed.finish().tools[0].detail, Some(ToolDetail::Read { from: 1, to: 5 }));
+}
+
+#[test]
+fn tarefa_criada_aparece_com_detalhe_antes_do_resultado() {
+    let (lines, mut parser) = captured_feed();
+    let create = &lines[8];
+    assert_eq!(create["message"]["content"][0]["name"], "TaskCreate");
+    parser.push_line(create.to_string().as_bytes(), Instant::now());
+
+    let tool = &parser.snapshot().tools[0];
+    assert_eq!(tool.detail, Some(ToolDetail::Created { id: None }));
+    assert_eq!(tool.target, "Tarefa pendente de exemplo");
+}
+
+#[test]
+fn task_update_corta_status_e_id_em_120_caracteres() {
+    let mut feed = Feed::new();
+    let longo = "x".repeat(500);
+    feed.push(assistant(vec![tool_use("t1", "TaskUpdate", json!({ "taskId": longo, "status": longo }))]));
+
+    let tool = &feed.parser.snapshot().tools[0];
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::Updated {
+            task_id: "x".repeat(120),
+            status: "x".repeat(120),
+        })
+    );
+}
+
+#[test]
+fn read_sem_limit_nao_tem_intervalo() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use("t1", "Read", json!({ "file_path": "a.txt", "offset": 2 }))]));
+    feed.push(user(vec![result_block("t1", false)]));
+
+    assert_eq!(feed.finish().tools[0].detail, None);
+}
+
+#[test]
+fn captura_real_avisa_abertura_e_fechamento_de_cada_ferramenta() {
+    let (lines, mut parser) = captured_feed();
+    let mut snapshots = Vec::new();
+    for line in &lines {
+        if parser.push_line(line.to_string().as_bytes(), Instant::now()) {
+            snapshots.push(parser.snapshot());
+        }
+    }
+
+    assert_eq!(snapshots.len(), 2 * 7);
+    assert_eq!(snapshots[0].tools[0].status, ToolStatus::Running);
+    assert_eq!(snapshots.last().map(|activity| activity.tools.clone()), Some(parser.finish().tools));
+}
+
+#[test]
+fn detalhe_ausente_nas_linhas_antigas_desserializa_como_none() {
+    let antiga = json!({
+        "callId": "t1", "name": "Read", "category": "read", "target": "a.txt", "status": "ok"
+    });
+    let tool: ToolActivity = serde_json::from_value(antiga).expect("atividade antiga desserializa");
+    assert_eq!(tool.detail, None);
+}
+
+#[test]
+fn detalhe_de_read_sai_no_json_camel_case_com_kind() {
+    let detail = ToolDetail::Read { from: 2, to: 3 };
+    assert_eq!(serde_json::to_value(detail).unwrap(), json!({ "kind": "read", "from": 2, "to": 3 }));
+}

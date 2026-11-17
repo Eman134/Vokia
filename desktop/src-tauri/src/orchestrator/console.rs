@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Manager};
 
-use crate::claude::{ConsoleKind, ConsoleLine};
+use crate::claude::{ConsoleKind, ConsoleLine, TurnActivity};
 use crate::events::VokiaEvent;
 use crate::session_key::SessionKey;
 use crate::state::AppState;
@@ -25,6 +25,18 @@ impl<'a> ConsoleSink<'a> {
     // O console é auxiliar: falha ao registrar ou emitir não pode derrubar o turno do agente.
     pub(super) fn record(&self, line: ConsoleLine) {
         let _ = self.try_record(line);
+    }
+
+    // Só visual: não grava no banco, e a atividade final segue na mensagem do agente.
+    pub(super) fn live_activity(&self, activity: TurnActivity) {
+        let _ = emit(
+            self.app,
+            VokiaEvent::AgentActivity {
+                agent: self.key.agent.clone(),
+                project_id: self.key.project_id,
+                activity,
+            },
+        );
     }
 
     pub(super) fn started(&self) {

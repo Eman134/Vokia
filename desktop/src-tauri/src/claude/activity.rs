@@ -22,6 +22,9 @@ const TOOL_RESULT_BLOCK: &str = "tool_result";
 const MCP_PREFIX: &str = "mcp__";
 const PATCH_ADDED: char = '+';
 const PATCH_REMOVED: char = '-';
+const FOUND_NAMES_MAX: usize = 20;
+const FIRST_LINE: u32 = 1;
+const NAME_MAX_CHARS: usize = 120;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -46,6 +49,24 @@ pub enum ToolStatus {
     Failed,
 }
 
+// Só o que a captura real confirmou: Read (offset/limit, file.totalLines), Glob (numFiles/filenames),
+// TaskCreate (task.id) e TaskUpdate (taskId/status).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ToolDetail {
+    Read { from: u32, to: u32 },
+    Found { count: u32, names: Vec<String> },
+    Created {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+    },
+    Updated {
+        #[serde(rename = "taskId")]
+        task_id: String,
+        status: String,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolActivity {
@@ -60,6 +81,8 @@ pub struct ToolActivity {
     pub removed: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<ToolDetail>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,16 +116,24 @@ impl ActivityParser {
         }
     }
 
-    pub(super) fn push_line(&mut self, line: &[u8], now: Instant) {
+    // Devolve true quando a linha abriu ou fechou uma ferramenta: só aí a atividade ao vivo muda.
+    pub(super) fn push_line(&mut self, line: &[u8], now: Instant) -> bool {
         let since_last_line = now.saturating_duration_since(self.last_line_at);
         self.last_line_at = now;
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
-            return;
+            return false;
         };
         match value["type"].as_str() {
             Some(ASSISTANT_KIND) => self.assistant(&value, since_last_line.as_millis() as u64, now),
             Some(USER_KIND) => self.user(&value, now),
-            _ => {}
+            _ => false,
+        }
+    }
+
+    pub(super) fn snapshot(&self) -> TurnActivity {
+        TurnActivity {
+            thinking_ms: self.thinking_ms,
+            tools: self.tools.clone(),
         }
     }
 
@@ -113,15 +144,16 @@ impl ActivityParser {
         }
     }
 
-    fn assistant(&mut self, line: &Value, since_last_line_ms: u64, now: Instant) {
+    fn assistant(&mut self, line: &Value, since_last_line_ms: u64, now: Instant) -> bool {
         let Some(blocks) = line["message"]["content"].as_array() else {
-            return;
+            return false;
         };
         let mut thought = false;
+        let mut opened = false;
         for block in blocks {
             match block["type"].as_str() {
                 Some(kind) if THINKING_BLOCKS.contains(&kind) => thought = true,
-                Some(TOOL_USE_BLOCK) => self.start_tool(block, now),
+                Some(TOOL_USE_BLOCK) => opened |= self.start_tool(block, now),
                 _ => {}
             }
         }
@@ -131,14 +163,15 @@ impl ActivityParser {
                 .unwrap_or_else(|| since_last_line_ms.max(MIN_CLOCK_THINKING_MS));
             self.thinking_ms = Some(self.thinking_ms.unwrap_or(0).saturating_add(spent));
         }
+        opened
     }
 
-    fn start_tool(&mut self, block: &Value, now: Instant) {
+    fn start_tool(&mut self, block: &Value, now: Instant) -> bool {
         let Some(call_id) = block["id"].as_str() else {
-            return;
+            return false;
         };
         if self.tools.len() >= MAX_TOOLS || self.tools.iter().any(|tool| tool.call_id == call_id) {
-            return;
+            return false;
         }
         let name = block["name"].as_str().unwrap_or_default();
         let input = &block["input"];
@@ -161,22 +194,26 @@ impl ActivityParser {
             added,
             removed,
             duration_ms: None,
+            detail: entry_detail(name, input),
         });
+        true
     }
 
-    fn user(&mut self, line: &Value, now: Instant) {
+    fn user(&mut self, line: &Value, now: Instant) -> bool {
         let Some(blocks) = line["message"]["content"].as_array() else {
-            return;
+            return false;
         };
         let results: Vec<&Value> = blocks
             .iter()
             .filter(|block| block["type"].as_str() == Some(TOOL_RESULT_BLOCK))
             .collect();
-        // O structuredPatch fica na linha, não no bloco: só vale quando a linha tem um único resultado.
-        let patch = match results.as_slice() {
-            [_] => patch_counts(&line["tool_use_result"]["structuredPatch"]),
+        // O structuredPatch e o tool_use_result ficam na linha, não no bloco: só valem com um único resultado.
+        let outcome = match results.as_slice() {
+            [_] => Some(&line["tool_use_result"]),
             _ => None,
         };
+        let patch = outcome.and_then(|outcome| patch_counts(&outcome["structuredPatch"]));
+        let mut closed = false;
         for result in results {
             let Some(open) = result["tool_use_id"]
                 .as_str()
@@ -184,6 +221,7 @@ impl ActivityParser {
             else {
                 continue;
             };
+            closed = true;
             let tool = &mut self.tools[open.index];
             tool.duration_ms =
                 Some(now.saturating_duration_since(open.started_at).as_millis() as u64);
@@ -191,6 +229,7 @@ impl ActivityParser {
                 tool.status = ToolStatus::Failed;
                 tool.added = None;
                 tool.removed = None;
+                tool.detail = None;
                 continue;
             }
             tool.status = ToolStatus::Ok;
@@ -198,8 +237,78 @@ impl ActivityParser {
                 tool.added = Some(added);
                 tool.removed = Some(removed);
             }
+            tool.detail = capped_read(tool.detail.take(), outcome.and_then(total_lines));
+            if let Some(detail) = outcome.and_then(|outcome| result_detail(&tool.name, outcome)) {
+                tool.detail = Some(detail);
+            }
         }
+        closed
     }
+}
+
+fn entry_detail(name: &str, input: &Value) -> Option<ToolDetail> {
+    match name.to_ascii_lowercase().as_str() {
+        "read" => read_range(input),
+        "taskcreate" => Some(ToolDetail::Created { id: None }),
+        "taskupdate" => Some(ToolDetail::Updated {
+            task_id: name_of(input["taskId"].as_str()?),
+            status: name_of(input["status"].as_str()?),
+        }),
+        _ => None,
+    }
+}
+
+// Sem limit não há fim do intervalo: a linha não mostra nada. Sem offset, a leitura começa na primeira linha.
+fn read_range(input: &Value) -> Option<ToolDetail> {
+    let limit = u32::try_from(input["limit"].as_u64().filter(|limit| *limit > 0)?).ok()?;
+    let from = match input["offset"].as_u64() {
+        Some(offset) => u32::try_from(offset).ok()?,
+        None => FIRST_LINE,
+    };
+    Some(ToolDetail::Read {
+        from,
+        to: from.saturating_add(limit - 1),
+    })
+}
+
+// O fim do intervalo não passa do total do arquivo; um offset além do fim não lê linha nenhuma.
+fn capped_read(detail: Option<ToolDetail>, total: Option<u32>) -> Option<ToolDetail> {
+    match (detail, total) {
+        (Some(ToolDetail::Read { from, to }), Some(total)) => {
+            (from <= total).then_some(ToolDetail::Read { from, to: to.min(total) })
+        }
+        (detail, _) => detail,
+    }
+}
+
+fn total_lines(outcome: &Value) -> Option<u32> {
+    u32::try_from(outcome["file"]["totalLines"].as_u64()?).ok()
+}
+
+fn result_detail(name: &str, outcome: &Value) -> Option<ToolDetail> {
+    match name.to_ascii_lowercase().as_str() {
+        "glob" => found(outcome),
+        "taskcreate" => Some(ToolDetail::Created {
+            id: outcome["task"]["id"].as_str().map(str::to_string),
+        }),
+        _ => None,
+    }
+}
+
+fn found(outcome: &Value) -> Option<ToolDetail> {
+    let count = u32::try_from(outcome["numFiles"].as_u64()?).ok()?;
+    let names = outcome["filenames"]
+        .as_array()?
+        .iter()
+        .take(FOUND_NAMES_MAX)
+        .filter_map(Value::as_str)
+        .map(name_of)
+        .collect();
+    Some(ToolDetail::Found { count, names })
+}
+
+fn name_of(text: &str) -> String {
+    clean(text).chars().take(NAME_MAX_CHARS).collect()
 }
 
 fn category_of(name: &str) -> ToolCategory {
@@ -215,7 +324,7 @@ fn category_of(name: &str) -> ToolCategory {
         "ls" => ToolCategory::List,
         "webfetch" | "websearch" => ToolCategory::Web,
         "task" | "agent" => ToolCategory::Agent,
-        "todowrite" => ToolCategory::Plan,
+        "todowrite" | "taskcreate" | "taskupdate" => ToolCategory::Plan,
         _ => ToolCategory::Other,
     }
 }
@@ -230,6 +339,7 @@ fn target_of<'a>(name: &str, input: &'a Value) -> &'a str {
         "webfetch" => "url",
         "websearch" => "query",
         "task" | "agent" => "description",
+        "taskcreate" => "subject",
         _ => return "",
     };
     input[field].as_str().unwrap_or_default()

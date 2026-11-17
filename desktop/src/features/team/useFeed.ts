@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import {
   type Agent,
   type AgentState,
+  type TurnActivity,
   type VokiaAgentState,
   type VokiaEvent,
   type VokiaGoalState,
@@ -31,6 +32,8 @@ export const useFeed = defineStore('feed', () => {
   const feed = ref<FeedEntry[]>([])
   const roster = useRoster()
   const states = ref<Record<Agent, AgentState>>({})
+  const stateSince = ref<Partial<Record<Agent, number>>>({})
+  const liveActivity = ref<Record<string, TurnActivity>>({})
   const permissions = ref<VokiaPermission[]>([])
   const control = useAgentControl()
   const projects = useProjects()
@@ -46,6 +49,12 @@ export const useFeed = defineStore('feed', () => {
 
   const thinkingAgent = computed<AgentProfile | undefined>(() =>
     roster.agents.find((agent) => stateOf(agent.id) === 'thinking'),
+  )
+  const pendingAgent = computed<AgentProfile | undefined>(
+    () => thinkingAgent.value ?? roster.agents.find((agent) => stateOf(agent.id) === 'sending'),
+  )
+  const pendingSince = computed<number | undefined>(() =>
+    pendingAgent.value ? stateSince.value[pendingAgent.value.id] : undefined,
   )
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
   const channels = useChannels()
@@ -102,11 +111,16 @@ export const useFeed = defineStore('feed', () => {
   function apply(event: VokiaEvent): void {
     switch (event.type) {
       case 'message':
+        feed.value.push(event)
+        break
       case 'error':
         feed.value.push(event)
         break
+      case 'agent-activity':
+        liveActivity.value[projectAgentKey(event.projectId, event.agent)] = event.activity
+        break
       case 'agent-state':
-        states.value[event.agent] = event.state
+        recordState(event)
         recordActivity(event)
         break
       case 'permission':
@@ -157,12 +171,34 @@ export const useFeed = defineStore('feed', () => {
     }
   }
 
+  function recordState({ agent, state }: VokiaAgentState): void {
+    if (stateOf(agent) !== state) {
+      stateSince.value[agent] = Date.now()
+    }
+    states.value[agent] = state
+  }
+
   function recordActivity({ agent, state, projectId }: VokiaAgentState): void {
     if (projectId === null) {
       return
     }
     lastProject.value[agent] = projectId
     activity.value[projectAgentKey(projectId, agent)] = state
+    if (state === 'idle') {
+      dropLiveActivity(projectId, agent)
+    }
+  }
+
+  function dropLiveActivity(projectId: number | null, agent: Agent): void {
+    if (projectId === null) {
+      return
+    }
+    delete liveActivity.value[projectAgentKey(projectId, agent)]
+  }
+
+  function liveActivityOf(agent: Agent): TurnActivity | undefined {
+    const project = projects.selected
+    return project === null ? undefined : liveActivity.value[projectAgentKey(project.id, agent)]
   }
 
   function projectsOf(agent: Agent): number[] {
@@ -205,6 +241,9 @@ export const useFeed = defineStore('feed', () => {
     states,
     stateOf,
     thinkingAgent,
+    pendingAgent,
+    pendingSince,
+    liveActivityOf,
     activeAgents,
     timeline,
     screen,
