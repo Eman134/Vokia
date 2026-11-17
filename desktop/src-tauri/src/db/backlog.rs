@@ -2,11 +2,13 @@ use chrono::Local;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
+use crate::agents::Team;
 use crate::events::Agent;
 
 use super::connection::Db;
 use super::error::DbError;
 
+pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
 const DEFAULT_COLUMN: &str = "Backlog";
 pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", "In progress", "In review", "Done"];
 const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
@@ -339,6 +341,61 @@ impl Db {
         Ok(())
     }
 
+    pub fn add_backlog_label(&self, project_id: i64, item_id: &str, label: &str) -> Result<(), DbError> {
+        let label = normalized_label(label)?;
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let item = find_card(&conn, project_id, item_id)?;
+        validate_item(&item)?;
+        if item.tags.iter().any(|tag| label_key(tag) == label) {
+            return Err(DbError::DuplicateBacklogLabel(label));
+        }
+        let mut tags = item.tags;
+        tags.push(label);
+        write_tags(&conn, project_id, item_id, &tags)
+    }
+
+    pub fn remove_backlog_label(&self, project_id: i64, item_id: &str, label: &str) -> Result<(), DbError> {
+        let label = label_key(label);
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let item = find_card(&conn, project_id, item_id)?;
+        validate_item(&item)?;
+        if !item.tags.iter().any(|tag| label_key(tag) == label) {
+            return Err(DbError::BacklogLabelNotFound(label));
+        }
+        let tags: Vec<String> = item
+            .tags
+            .into_iter()
+            .filter(|tag| label_key(tag) != label)
+            .collect();
+        write_tags(&conn, project_id, item_id, &tags)
+    }
+
+    pub fn set_backlog_responsible(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        agent: &Agent,
+        team: &Team,
+    ) -> Result<(), DbError> {
+        if team.profile(agent).is_none() {
+            return Err(DbError::ResponsibleOutsideTeam(agent.to_string()));
+        }
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let item = find_card(&conn, project_id, item_id)?;
+        validate_item(&item)?;
+        if item.who != USER_OWNER && item.who != agent.as_str() {
+            return Err(DbError::ResponsibleAlreadySet(item.who));
+        }
+        conn.execute(
+            "UPDATE backlog_items SET who = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id, agent.as_str()],
+        )?;
+        Ok(())
+    }
+
     pub fn create_card(&self, project_id: i64, card: &NewCard) -> Result<BacklogItem, DbError> {
         let title = normalized_title(&card.title)?;
         let origin = user_origin(&card.origin)?;
@@ -515,6 +572,32 @@ fn ensure_item(conn: &Connection, project_id: i64, item_id: &str) -> Result<(), 
     )
     .optional()?
     .ok_or_else(|| DbError::BacklogItemNotFound(item_id.to_string()))
+}
+
+// Mesma regra do normalizeTag do front: espaços colapsados e minúsculas, para comparar etiquetas.
+fn label_key(raw: &str) -> String {
+    raw.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn normalized_label(raw: &str) -> Result<String, DbError> {
+    let label = label_key(raw);
+    if (1..=BACKLOG_LABEL_MAX_CHARS).contains(&label.chars().count()) {
+        Ok(label)
+    } else {
+        Err(DbError::BacklogLabelLength)
+    }
+}
+
+fn write_tags(conn: &Connection, project_id: i64, item_id: &str, tags: &[String]) -> Result<(), DbError> {
+    let json = to_json(item_id, "tags", &tags)?;
+    conn.execute(
+        "UPDATE backlog_items SET tags = ?3 WHERE project_id = ?1 AND id = ?2",
+        params![project_id, item_id, json],
+    )?;
+    Ok(())
 }
 
 fn default_origin() -> String {

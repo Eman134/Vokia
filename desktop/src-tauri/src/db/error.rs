@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use rusqlite::ErrorCode;
 use serde::Serialize;
 
+use super::backlog::BACKLOG_LABEL_MAX_CHARS;
+
 #[derive(Debug)]
 pub enum DbError {
     Io(PathBuf, std::io::Error),
@@ -34,6 +36,11 @@ pub enum DbError {
     InvalidPlanAgent(String),
     InvalidBacklogPlan(&'static str),
     BacklogItemNotFound(String),
+    BacklogLabelLength,
+    DuplicateBacklogLabel(String),
+    BacklogLabelNotFound(String),
+    ResponsibleAlreadySet(String),
+    ResponsibleOutsideTeam(String),
     BacklogItemData { item_id: String, reason: String },
     MessageActivityData(String),
     MessageProposalData(String),
@@ -90,6 +97,11 @@ impl DbError {
                 | DbError::CardNotOwned(_)
                 | DbError::CardInReady(_)
                 | DbError::BacklogItemNotFound(_)
+                | DbError::BacklogLabelLength
+                | DbError::DuplicateBacklogLabel(_)
+                | DbError::BacklogLabelNotFound(_)
+                | DbError::ResponsibleAlreadySet(_)
+                | DbError::ResponsibleOutsideTeam(_)
         )
     }
 }
@@ -182,6 +194,22 @@ impl fmt::Display for DbError {
             DbError::InvalidBacklogPlan(reason) => write!(f, "{reason}"),
             DbError::BacklogItemNotFound(id) => {
                 write!(f, "O item {id} não existe no backlog deste projeto.")
+            }
+            DbError::BacklogLabelLength => write!(
+                f,
+                "A etiqueta precisa ter de 1 a {BACKLOG_LABEL_MAX_CHARS} caracteres."
+            ),
+            DbError::DuplicateBacklogLabel(label) => {
+                write!(f, "A etiqueta {label} já existe neste item.")
+            }
+            DbError::BacklogLabelNotFound(label) => {
+                write!(f, "O item não tem a etiqueta {label}.")
+            }
+            DbError::ResponsibleAlreadySet(who) => {
+                write!(f, "O item já tem o responsável {who}.")
+            }
+            DbError::ResponsibleOutsideTeam(agent) => {
+                write!(f, "O agente {agent} não faz parte do elenco.")
             }
             DbError::BacklogItemData { item_id, reason } => write!(
                 f,

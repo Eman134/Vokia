@@ -1,10 +1,11 @@
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::agents::{Agent, AgentError, AgentRegistry};
 use crate::db::{
     AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardResult, DbState, ItemPlanInput,
     NewCard,
 };
+use crate::orchestrator::emit_backlog_changed;
 
 const MISSING_RESULT: &str = "O banco não devolveu o card criado.";
 
@@ -80,6 +81,60 @@ pub fn move_backlog_item(
     let db = state.require().map_err(|error| error.to_string())?;
     db.move_backlog_item(project_id, &id, &column)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn add_backlog_label(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+    label: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.add_backlog_label(project_id, &item_id, &label)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_backlog_label(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+    label: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.remove_backlog_label(project_id, &item_id, &label)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_backlog_responsible(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+    agent: Agent,
+) -> Result<(), String> {
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|error| error.to_string())?;
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.set_backlog_responsible(project_id, &item_id, &agent, &team)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
+// A gravação já está no banco; falha ao avisar o front não vira erro para quem chamou.
+fn notify_backlog_changed(app: &AppHandle, project_id: i64) {
+    let _ = emit_backlog_changed(app, project_id);
 }
 
 #[tauri::command]

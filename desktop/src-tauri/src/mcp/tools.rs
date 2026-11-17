@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::AgentRegistry;
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
-    AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
+    AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
 };
 use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
@@ -20,6 +20,9 @@ const READ_CARD: &str = "read_card";
 const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
 const UPDATE_CARD: &str = "update_card";
+const BACKLOG_ADD_LABEL: &str = "backlog_add_label";
+const BACKLOG_REMOVE_LABEL: &str = "backlog_remove_label";
+const BACKLOG_SET_RESPONSIBLE: &str = "backlog_set_responsible";
 const REQUEST_DECISION: &str = "request_decision";
 const PROPOSE_REQUEST: &str = "propose_request";
 const DELEGATE: &str = "delegate";
@@ -71,6 +74,18 @@ type ToolText = Result<String, String>;
 #[derive(Deserialize)]
 struct ListArgs {
     column: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LabelArgs {
+    item_id: String,
+    label: String,
+}
+
+#[derive(Deserialize)]
+struct ResponsibleArgs {
+    item_id: String,
+    agent: String,
 }
 
 #[derive(Deserialize)]
@@ -174,6 +189,33 @@ pub fn definitions() -> Vec<Value> {
             &["id"],
         ),
         tool(
+            BACKLOG_ADD_LABEL,
+            "Adiciona uma etiqueta a um card do backlog; a etiqueta não pode repetir uma que o card já tem, sem diferença de maiúsculas.",
+            json!({
+                "item_id": { "type": "string" },
+                "label": { "type": "string", "maxLength": BACKLOG_LABEL_MAX_CHARS },
+            }),
+            &["item_id", "label"],
+        ),
+        tool(
+            BACKLOG_REMOVE_LABEL,
+            "Remove uma etiqueta de um card do backlog.",
+            json!({
+                "item_id": { "type": "string" },
+                "label": { "type": "string" },
+            }),
+            &["item_id", "label"],
+        ),
+        tool(
+            BACKLOG_SET_RESPONSIBLE,
+            "Define o agente responsável por um card do backlog; o card só aceita um novo responsável se ainda não tiver um, ou se o responsável atual for o próprio agente indicado.",
+            json!({
+                "item_id": { "type": "string" },
+                "agent": { "type": "string" },
+            }),
+            &["item_id", "agent"],
+        ),
+        tool(
             REQUEST_DECISION,
             "Pede uma decisão ao usuário e não espera a resposta: depois de chamar, termine a resposta.",
             json!({
@@ -250,6 +292,13 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         CREATE_CARD => parse(name, arguments).and_then(|args| create_card(app, binding, args)),
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
         UPDATE_CARD => parse(name, arguments).and_then(|args| update_card(app, binding, args)),
+        BACKLOG_ADD_LABEL => parse(name, arguments).and_then(|args| add_backlog_label(app, binding, args)),
+        BACKLOG_REMOVE_LABEL => {
+            parse(name, arguments).and_then(|args| remove_backlog_label(app, binding, args))
+        }
+        BACKLOG_SET_RESPONSIBLE => {
+            parse(name, arguments).and_then(|args| set_backlog_responsible(app, binding, args))
+        }
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
         PROPOSE_REQUEST => parse(name, arguments).and_then(|args| propose_request(binding, args)),
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
@@ -599,16 +648,63 @@ fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolTe
             }
         }
     }
+    let text = messages.join("\n");
     if changed {
-        {
-            let mut slot = binding.slot.lock();
-            slot.confirmations.extend(messages.iter().cloned());
-            slot.changed = true;
-        }
-        // O card já está gravado; falha ao avisar o front não pode virar erro para o agente, que repetiria a criação.
-        let _ = emit_backlog_changed(app, binding.project_id);
+        record_backlog_change(app, binding, messages);
     }
-    Ok(messages.join("\n"))
+    Ok(text)
+}
+
+fn add_backlog_label(app: &AppHandle, binding: &Binding, args: LabelArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.add_backlog_label(binding.project_id, &args.item_id, &args.label)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!("Etiqueta {} adicionada ao card {}.", args.label.trim(), args.item_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn remove_backlog_label(app: &AppHandle, binding: &Binding, args: LabelArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.remove_backlog_label(binding.project_id, &args.item_id, &args.label)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!("Etiqueta {} removida do card {}.", args.label.trim(), args.item_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn set_backlog_responsible(app: &AppHandle, binding: &Binding, args: ResponsibleArgs) -> ToolText {
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|_| SYSTEM_FAILURE.to_string())?;
+    let name = args.agent.trim();
+    let agent = team
+        .named(name)
+        .ok_or_else(|| DbError::ResponsibleOutsideTeam(name.to_string()).to_string())?;
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.set_backlog_responsible(binding.project_id, &args.item_id, &agent, &team)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!(
+        "Responsável do card {} definido: {}.",
+        args.item_id,
+        team.name_of(&agent)
+    );
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn record_backlog_change(app: &AppHandle, binding: &Binding, messages: Vec<String>) {
+    {
+        let mut slot = binding.slot.lock();
+        slot.confirmations.extend(messages);
+        slot.changed = true;
+    }
+    // O banco já gravou; falha ao avisar o front não pode virar erro para o agente, que repetiria a escrita.
+    let _ = emit_backlog_changed(app, binding.project_id);
 }
 
 fn column_of(item: &BacklogItem) -> &str {
