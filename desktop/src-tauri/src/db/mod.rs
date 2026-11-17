@@ -6,6 +6,7 @@ mod connection;
 mod error;
 mod messages;
 mod migrations;
+mod orchestration;
 mod projects;
 mod settings;
 
@@ -17,5 +18,9 @@ pub use backlog::{
 pub use channels::Channel;
 pub use connection::{Db, DbState};
 pub use error::{DbError, DbProblem};
+pub use orchestration::{
+    Handoff, HandoffDraft, Layer, LayerDraft, OrchestrationSettings, OrchestrationSnapshot,
+    Placement, PlacementDraft, Rule, RuleDraft, Team, TeamDraft,
+};
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use settings::{GRANT_SESSION, SETTING_PERMISSION_GRANT};

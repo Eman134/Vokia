@@ -45,6 +45,36 @@ pub enum DbError {
     CardClosed(String),
     CardNotOwned(String),
     CardInReady(String),
+    InvalidOrchestrationField {
+        field: &'static str,
+        value: String,
+    },
+    OrchestrationOutOfRange {
+        field: &'static str,
+        min: i64,
+        max: i64,
+    },
+    OrchestrationInstructionsTooLong {
+        max: usize,
+    },
+    OrchestrationNameEmpty,
+    ReservedLayerName(String),
+    LayerNameTaken(String),
+    LayerNotFound(String),
+    LayerHasAgents(String),
+    LayerOrderInvalid,
+    TeamNameTaken(String),
+    TeamNotFound(String),
+    TeamHasAgents(String),
+    RuleNotFound(i64),
+    RuleDuplicated {
+        from: String,
+        to: String,
+    },
+    RuleSelfLoop,
+    RuleEscalateTarget,
+    RuleVoceNeedsEscalate,
+    RuleReturnNotBackward,
 }
 
 impl DbError {
@@ -180,6 +210,66 @@ impl fmt::Display for DbError {
             }
             DbError::CardInReady(id) => {
                 write!(f, "O card {id} está em Ready: só o usuário altera.")
+            }
+            DbError::InvalidOrchestrationField { field, value } => write!(
+                f,
+                "O campo {field} da orquestração não aceita o valor {value:?}."
+            ),
+            DbError::OrchestrationOutOfRange { field, min, max } => write!(
+                f,
+                "O campo {field} da orquestração deve ficar entre {min} e {max}."
+            ),
+            DbError::OrchestrationInstructionsTooLong { max } => {
+                write!(f, "As instruções aceitam até {max} caracteres.")
+            }
+            DbError::OrchestrationNameEmpty => {
+                write!(f, "O nome precisa ter letras ou números.")
+            }
+            DbError::ReservedLayerName(name) => write!(
+                f,
+                "{name:?} é o nó Você e não pode ser o nome de uma camada."
+            ),
+            DbError::LayerNameTaken(id) => {
+                write!(
+                    f,
+                    "Já existe uma camada com o identificador {id} neste projeto."
+                )
+            }
+            DbError::LayerNotFound(id) => write!(f, "A camada {id} não existe neste projeto."),
+            DbError::LayerHasAgents(id) => write!(
+                f,
+                "A camada {id} tem agentes posicionados: mova os agentes antes de excluí-la."
+            ),
+            DbError::LayerOrderInvalid => write!(
+                f,
+                "A nova ordem precisa listar cada camada do projeto uma única vez."
+            ),
+            DbError::TeamNameTaken(id) => {
+                write!(
+                    f,
+                    "Já existe um time com o identificador {id} neste projeto."
+                )
+            }
+            DbError::TeamNotFound(id) => write!(f, "O time {id} não existe neste projeto."),
+            DbError::TeamHasAgents(id) => write!(
+                f,
+                "O time {id} tem agentes posicionados: mova os agentes antes de excluí-lo."
+            ),
+            DbError::RuleNotFound(id) => write!(f, "A seta {id} não existe neste projeto."),
+            DbError::RuleDuplicated { from, to } => {
+                write!(f, "Já existe uma seta de {from} para {to}.")
+            }
+            DbError::RuleSelfLoop => {
+                write!(f, "Uma camada não pode enviar trabalho para ela mesma.")
+            }
+            DbError::RuleEscalateTarget => {
+                write!(f, "A regra escalar só pode apontar para Você.")
+            }
+            DbError::RuleVoceNeedsEscalate => {
+                write!(f, "Você só recebe trabalho pela regra escalar.")
+            }
+            DbError::RuleReturnNotBackward => {
+                write!(f, "Devolver só vai para uma camada anterior.")
             }
         }
     }

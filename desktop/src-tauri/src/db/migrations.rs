@@ -151,6 +151,79 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE messages ADD COLUMN request_proposal TEXT;
 ",
+    "
+    CREATE TABLE orch_settings (
+        project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        enforcement TEXT NOT NULL CHECK (enforcement IN ('off','on')),
+        leader_agent TEXT NOT NULL,
+        step_mode TEXT NOT NULL CHECK (step_mode IN ('lotes','livre')),
+        human_gate TEXT NOT NULL CHECK (human_gate IN ('lote','fim','nunca')),
+        max_parallel INTEGER NOT NULL CHECK (max_parallel BETWEEN 1 AND 8),
+        pair_turn_limit INTEGER NOT NULL CHECK (pair_turn_limit BETWEEN 1 AND 50),
+        task_turn_limit INTEGER NOT NULL CHECK (task_turn_limit BETWEEN 5 AND 200),
+        worktree_policy TEXT NOT NULL CHECK (worktree_policy IN ('sempre','paralelo','nunca'))
+    );
+    CREATE TABLE orch_layers (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        id TEXT NOT NULL CHECK (id <> 'voce'),
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('planejar','implementar','revisar','pesquisar','livre')),
+        instructions TEXT NOT NULL CHECK (length(instructions) <= 4000),
+        PRIMARY KEY (project_id, id)
+    );
+    CREATE TABLE orch_teams (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        PRIMARY KEY (project_id, id)
+    );
+    CREATE TABLE orch_placements (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent_id TEXT NOT NULL,
+        team_id TEXT NOT NULL,
+        layer_id TEXT NOT NULL,
+        instructions TEXT NOT NULL CHECK (length(instructions) <= 4000),
+        max_instances INTEGER NOT NULL CHECK (max_instances BETWEEN 1 AND 4),
+        PRIMARY KEY (project_id, agent_id),
+        FOREIGN KEY (project_id, team_id) REFERENCES orch_teams(project_id, id),
+        FOREIGN KEY (project_id, layer_id) REFERENCES orch_layers(project_id, id)
+    );
+    CREATE TABLE orch_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        from_layer TEXT NOT NULL,
+        to_layer TEXT NOT NULL,
+        when_event TEXT NOT NULL CHECK (when_event IN ('plano_aprovado','tarefa_concluida','revisao_reprovou','testes_falharam','revisao_aprovou','pedido_de_ajuda')),
+        action TEXT NOT NULL CHECK (action IN ('delegar','devolver','escalar')),
+        kind TEXT NOT NULL CHECK (kind IN ('planejar','implementar','testar','revisar','pesquisar')),
+        exec_mode TEXT NOT NULL CHECK (exec_mode IN ('sequencia','paralelo')),
+        return_limit INTEGER NOT NULL CHECK (return_limit BETWEEN 1 AND 5),
+        position INTEGER NOT NULL,
+        CHECK (from_layer <> to_layer),
+        CHECK ((action = 'escalar') = (to_layer = 'voce')),
+        UNIQUE (project_id, from_layer, to_layer),
+        FOREIGN KEY (project_id, from_layer) REFERENCES orch_layers(project_id, id) ON DELETE CASCADE
+    );
+    CREATE TABLE orch_handoffs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        run_id INTEGER,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        from_layer TEXT,
+        to_layer TEXT,
+        action TEXT NOT NULL CHECK (action IN ('delegar','devolver','escalar')),
+        kind TEXT NOT NULL CHECK (kind IN ('planejar','implementar','testar','revisar','pesquisar')),
+        item_id TEXT,
+        return_count INTEGER NOT NULL CHECK (return_count >= 0),
+        message_id INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+    );
+    CREATE INDEX orch_handoffs_by_project ON orch_handoffs(project_id, id);
+",
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
