@@ -119,15 +119,13 @@ function tagPillStyle(tag: BacklogTag) {
         </svg>
         {{ action.label }}
       </UiButton>
-      <UiButton
+      <button
         v-if="action.id === 'triar'"
-        variant="quiet"
-        size="sm"
-        class="size-6.5 rounded-control-sm border border-line p-0"
+        type="button"
+        class="inline-flex size-6.5 shrink-0 items-center justify-center rounded-control-sm border border-line text-muted focus:outline-2 focus:outline-solid focus:outline-accent"
         :aria-label="ACTION_TITLE.vincular"
         :title="ACTION_TITLE.vincular"
-        @click.stop
-        @press="emit('action', 'vincular')"
+        @click.stop="emit('action', 'vincular')"
       >
         <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
           <path
@@ -138,7 +136,7 @@ function tagPillStyle(tag: BacklogTag) {
             stroke-linecap="round"
           />
         </svg>
-      </UiButton>
+      </button>
     </div>
 
     <div v-if="progress" class="flex flex-col gap-1.25">
