@@ -224,7 +224,10 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX orch_handoffs_by_project ON orch_handoffs(project_id, id);
 ",
-    "
+];
+
+// Roda a cada abertura: só mexe em linhas que ainda guardam o id antigo, então repetir não muda nada.
+const RENAME_LEGACY_AGENT_IDS: &str = "
     UPDATE messages SET from_agent = 'ember' WHERE from_agent = 'iara';
     UPDATE messages SET to_agent = 'ember' WHERE to_agent = 'iara';
     UPDATE agent_pauses SET agent = 'ember' WHERE agent = 'iara';
@@ -242,8 +245,7 @@ const MIGRATIONS: &[&str] = &[
     UPDATE orch_placements SET agent_id = 'ember' WHERE agent_id = 'iara';
     UPDATE orch_handoffs SET from_agent = 'ember' WHERE from_agent = 'iara';
     UPDATE orch_handoffs SET to_agent = 'ember' WHERE to_agent = 'iara';
-",
-];
+";
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")?;
@@ -261,7 +263,9 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         )?;
         tx.commit()?;
     }
-    Ok(())
+    let tx = conn.transaction()?;
+    tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
+    tx.commit()
 }
 
 #[cfg(test)]
