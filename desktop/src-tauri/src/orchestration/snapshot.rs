@@ -195,6 +195,13 @@ fn destination_names(
         .collect()
 }
 
+// Sem banco (ou líder inválido) o interpretador usa o agente embutido padrão.
+pub(crate) fn leader_of(snapshot: Option<&OrchestrationSnapshot>) -> Agent {
+    snapshot
+        .and_then(|snapshot| Agent::from_stored(&snapshot.settings.leader_agent))
+        .unwrap_or_else(Agent::ember)
+}
+
 fn phrase(table: &[(&'static str, &'static str)], key: &str) -> Option<&'static str> {
     table
         .iter()

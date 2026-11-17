@@ -7,6 +7,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{DbState, OrchestrationSnapshot};
+use crate::orchestration::snapshot::leader_of;
 use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
@@ -17,7 +18,7 @@ use super::emit::{emit, emit_message, emit_state, report_limits};
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{load_project, project_context, project_dir, scan_structure};
 use super::prompts::NO_NAMES;
-use super::prompts::{channel_note, INTERPRETER_ROLE};
+use super::prompts::{channel_note, interpreter_role};
 use super::session_pool::ExchangeSessions;
 use super::turns::{first_speaker, run_turns, with_cache, Exchange, USER_LABEL};
 
@@ -239,9 +240,10 @@ async fn exchange_turns(
     // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
-    let definition = interpret_task(app, state, cli, request, key.clone(), team).await?;
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app, key.project_id)?;
+    let leader = leader_of(orchestration.as_ref());
+    let definition = interpret_task(app, state, cli, request, key.clone(), team, &leader).await?;
     if first_speaker(&definition, &key.agent) != key.agent {
         emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
@@ -322,6 +324,7 @@ async fn interpret_task(
     request: &str,
     key: SessionKey,
     team: &Team,
+    leader: &Agent,
 ) -> Result<TaskDefinition, FlowError> {
     let origin = key.agent;
     let profile = profile_of(team, &origin)?;
@@ -336,7 +339,7 @@ async fn interpret_task(
         team.roster_line(),
         team.name_of(&origin)
     );
-    let reply = claude::ask(cli, &message, INTERPRETER_ROLE, &profile.model).await?;
+    let reply = claude::ask(cli, &message, &interpreter_role(team, leader), &profile.model).await?;
     report_limits(app, reply.limits)?;
     Ok(parse_definition(&reply.text, &origin, request, team))
 }
