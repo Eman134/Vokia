@@ -132,6 +132,9 @@ fn apply_cards(
                     CardOutcome::Moved => {
                         Some(format!("Card {} movido para {}.", result.id, result.column))
                     }
+                    CardOutcome::Updated => {
+                        Some(format!("Card {} atualizado: {}.", result.id, result.title))
+                    }
                     CardOutcome::Unchanged => None,
                 })
                 .collect();

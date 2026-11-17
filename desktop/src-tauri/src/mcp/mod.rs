@@ -89,3 +89,7 @@ mod delegation_tests;
 #[cfg(test)]
 #[path = "../../tests/mcp_variables_tests.rs"]
 mod variables_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_update_card_tests.rs"]
+mod update_card_tests;

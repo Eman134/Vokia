@@ -43,6 +43,7 @@ pub enum DbError {
     AgentForbiddenColumn(String),
     CardClosed(String),
     CardNotOwned(String),
+    CardInReady(String),
 }
 
 impl DbError {
@@ -56,6 +57,7 @@ impl DbError {
                 | DbError::AgentForbiddenColumn(_)
                 | DbError::CardClosed(_)
                 | DbError::CardNotOwned(_)
+                | DbError::CardInReady(_)
                 | DbError::BacklogItemNotFound(_)
         )
     }
@@ -171,6 +173,9 @@ impl fmt::Display for DbError {
             DbError::CardClosed(id) => write!(f, "O card {id} já está em Done."),
             DbError::CardNotOwned(id) => {
                 write!(f, "O card {id} não é seu nem do pedido atual.")
+            }
+            DbError::CardInReady(id) => {
+                write!(f, "O card {id} está em Ready: só o usuário altera.")
             }
         }
     }

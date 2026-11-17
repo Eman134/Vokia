@@ -255,6 +255,11 @@ pub enum CardOperation {
         id: String,
         column: String,
     },
+    Update {
+        id: String,
+        title: Option<String>,
+        description: Option<String>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -263,6 +268,8 @@ pub enum CardOutcome {
     Created,
     #[serde(rename = "movido")]
     Moved,
+    #[serde(rename = "atualizado")]
+    Updated,
     #[serde(rename = "sem mudança")]
     Unchanged,
 }
@@ -377,6 +384,18 @@ impl Db {
                 CardOperation::Move { id, column } => {
                     move_agent_card(&tx, project_id, actor, id, column)?
                 }
+                CardOperation::Update {
+                    id,
+                    title,
+                    description,
+                } => update_agent_card(
+                    &tx,
+                    project_id,
+                    actor,
+                    id,
+                    title.as_deref(),
+                    description.as_deref(),
+                )?,
             };
             results.push(result);
         }
@@ -694,14 +713,7 @@ fn move_agent_card(
         .column
         .clone()
         .unwrap_or_else(|| DEFAULT_COLUMN.to_string());
-    if current == DONE_COLUMN {
-        return Err(DbError::CardClosed(card.id));
-    }
-    let owned =
-        card.who == actor.id.as_str() || actor.current_card.as_deref() == Some(card.id.as_str());
-    if !owned {
-        return Err(DbError::CardNotOwned(card.id));
-    }
+    ensure_agent_can_change(&card, &current, actor)?;
     if current == column {
         return Ok(CardResult {
             id: card.id,
@@ -727,6 +739,91 @@ fn move_agent_card(
         title: card.title,
         column: column.to_string(),
         outcome: CardOutcome::Moved,
+    })
+}
+
+// Card fechado ou de outro agente não muda por ferramenta; vale para mover e para editar.
+fn ensure_agent_can_change(
+    card: &BacklogItem,
+    current_column: &str,
+    actor: &AgentActor,
+) -> Result<(), DbError> {
+    if current_column == DONE_COLUMN {
+        return Err(DbError::CardClosed(card.id.clone()));
+    }
+    let owned =
+        card.who == actor.id.as_str() || actor.current_card.as_deref() == Some(card.id.as_str());
+    if !owned {
+        return Err(DbError::CardNotOwned(card.id.clone()));
+    }
+    Ok(())
+}
+
+// Descrição vazia não apaga a atual; título só muda para um que nenhum card aberto use.
+fn update_agent_card(
+    conn: &Connection,
+    project_id: i64,
+    actor: &AgentActor,
+    id: &str,
+    title: Option<&str>,
+    description: Option<&str>,
+) -> Result<CardResult, DbError> {
+    let mut card = find_card(conn, project_id, id)?;
+    validate_item(&card)?;
+    let current = card
+        .column
+        .clone()
+        .unwrap_or_else(|| DEFAULT_COLUMN.to_string());
+    if current == AGENT_FORBIDDEN_COLUMN {
+        return Err(DbError::CardInReady(card.id));
+    }
+    ensure_agent_can_change(&card, &current, actor)?;
+    let new_title = title.map(normalized_title).transpose()?;
+    let new_description = normalized_description(description);
+    let title_changes = new_title.as_ref().is_some_and(|new| *new != card.title);
+    let description_changes =
+        new_description.is_some() && new_description.as_deref() != card.description.as_deref();
+    if title_changes {
+        let new = new_title.as_deref().unwrap_or_default();
+        if new.to_lowercase() != card.title.trim().to_lowercase() {
+            ensure_title_free(conn, project_id, new)?;
+        }
+    }
+    if !title_changes && !description_changes {
+        return Ok(CardResult {
+            id: card.id,
+            title: card.title,
+            column: current,
+            outcome: CardOutcome::Unchanged,
+        });
+    }
+    let mut edited = Vec::new();
+    if title_changes {
+        card.title = new_title.unwrap_or_default();
+        edited.push("o título");
+    }
+    if description_changes {
+        card.description = new_description;
+        edited.push("a descrição");
+    }
+    let text = format!("{} editou {}.", actor.name, edited.join(" e "));
+    card.activity
+        .push(activity_entry(&card.id, card.activity.len() + 1, text));
+    conn.execute(
+        "UPDATE backlog_items SET title = ?3, description = ?4, activity = ?5 WHERE project_id = ?1 AND id = ?2",
+        params![
+            project_id,
+            card.id,
+            card.title,
+            card.description,
+            to_json(&card.id, "activity", &card.activity)?,
+        ],
+    )?;
+    Ok(CardResult {
+        id: card.id,
+        title: card.title,
+        column: current,
+        outcome: CardOutcome::Updated,
     })
 }
 

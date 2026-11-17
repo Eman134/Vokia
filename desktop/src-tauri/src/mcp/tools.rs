@@ -19,6 +19,7 @@ const LIST_BACKLOG: &str = "list_backlog";
 const READ_CARD: &str = "read_card";
 const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
+const UPDATE_CARD: &str = "update_card";
 const REQUEST_DECISION: &str = "request_decision";
 const DELEGATE: &str = "delegate";
 const GET_VARIABLES: &str = "get_variables";
@@ -35,6 +36,8 @@ const TITLE_TOO_LONG: &str = "O título do card passa de 200 caracteres.";
 const SYSTEM_FAILURE: &str = "Não foi possível acessar o backlog agora. Tente de novo mais tarde.";
 const EMPTY_BACKLOG: &str = "Nenhum card.";
 const NO_DESCRIPTION: &str = "sem descrição";
+const UPDATE_WITHOUT_FIELDS: &str =
+    "Informe o novo título ou a nova descrição: sem nenhum dos dois não há o que atualizar.";
 
 const VARIABLES_FAILURE: &str =
     "Não foi possível acessar as variáveis agora. Tente de novo mais tarde.";
@@ -73,6 +76,13 @@ struct ReadArgs {
 #[derive(Deserialize)]
 struct CreateArgs {
     title: String,
+    description: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UpdateArgs {
+    id: String,
+    title: Option<String>,
     description: Option<String>,
 }
 
@@ -143,6 +153,16 @@ pub fn definitions() -> Vec<Value> {
             &["id", "column"],
         ),
         tool(
+            UPDATE_CARD,
+            "Edita o título ou a descrição de um card seu, ou do da conversa atual; descrição vazia não apaga a atual.",
+            json!({
+                "id": { "type": "string" },
+                "title": { "type": "string", "maxLength": MAX_TITLE_CHARS },
+                "description": { "type": "string" },
+            }),
+            &["id"],
+        ),
+        tool(
             REQUEST_DECISION,
             "Pede uma decisão ao usuário e não espera a resposta: depois de chamar, termine a resposta.",
             json!({
@@ -209,6 +229,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         READ_CARD => parse(name, arguments).and_then(|args| read_card(app, binding, args)),
         CREATE_CARD => parse(name, arguments).and_then(|args| create_card(app, binding, args)),
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
+        UPDATE_CARD => parse(name, arguments).and_then(|args| update_card(app, binding, args)),
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
         GET_VARIABLES => get_variables(app, binding),
@@ -309,14 +330,41 @@ fn read_card(app: &AppHandle, binding: &Binding, args: ReadArgs) -> ToolText {
     Ok(lines.join("\n"))
 }
 
-fn create_card(app: &AppHandle, binding: &Binding, args: CreateArgs) -> ToolText {
-    if args.title.trim().chars().count() > MAX_TITLE_CHARS {
+fn ensure_title_length(title: &str) -> Result<(), String> {
+    if title.trim().chars().count() > MAX_TITLE_CHARS {
         return Err(TITLE_TOO_LONG.to_string());
     }
+    Ok(())
+}
+
+fn create_card(app: &AppHandle, binding: &Binding, args: CreateArgs) -> ToolText {
+    ensure_title_length(&args.title)?;
     apply(
         app,
         binding,
         CardOperation::Create {
+            title: args.title,
+            description: args.description,
+        },
+    )
+}
+
+fn update_card(app: &AppHandle, binding: &Binding, args: UpdateArgs) -> ToolText {
+    let has_description = args
+        .description
+        .as_deref()
+        .is_some_and(|description| !description.trim().is_empty());
+    if args.title.is_none() && !has_description {
+        return Err(UPDATE_WITHOUT_FIELDS.to_string());
+    }
+    if let Some(title) = &args.title {
+        ensure_title_length(title)?;
+    }
+    apply(
+        app,
+        binding,
+        CardOperation::Update {
+            id: args.id,
             title: args.title,
             description: args.description,
         },
@@ -490,6 +538,7 @@ fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolTe
         name: binding.agent_name.clone(),
         current_card: binding.slot.lock().item_id.clone(),
     };
+    let is_update = matches!(operation, CardOperation::Update { .. });
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
     let results = db
@@ -503,9 +552,16 @@ fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolTe
                 changed = true;
                 messages.push(format!("Card {} criado: {}.", card.id, card.title));
             }
+            CardOutcome::Updated => {
+                changed = true;
+                messages.push(format!("Card {} atualizado: {}.", card.id, card.title));
+            }
             CardOutcome::Moved => {
                 changed = true;
                 messages.push(format!("Card {} movido para {}.", card.id, card.column));
+            }
+            CardOutcome::Unchanged if is_update => {
+                messages.push(format!("Card {} já está assim: nada mudou.", card.id));
             }
             CardOutcome::Unchanged => {
                 messages.push(format!("Card {} já está em {}.", card.id, card.column));
