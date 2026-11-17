@@ -6,6 +6,26 @@ export type Speaker = 'user' | Agent
 
 export type AgentState = 'sending' | 'thinking' | 'waiting' | 'idle'
 
+export type ToolCategory = 'read' | 'edit' | 'command' | 'search' | 'list' | 'web' | 'mcp' | 'agent' | 'plan' | 'other'
+
+export type ToolStatus = 'running' | 'ok' | 'failed'
+
+export interface ToolActivity {
+  callId: string
+  name: string
+  category: ToolCategory
+  target: string
+  status: ToolStatus
+  added?: number
+  removed?: number
+  durationMs?: number
+}
+
+export interface TurnActivity {
+  thinkingMs?: number
+  tools: ToolActivity[]
+}
+
 export interface VokiaMessage {
   type: 'message'
   from: Speaker
@@ -14,6 +34,7 @@ export interface VokiaMessage {
   time: number
   projectId: number | null
   channelId?: number
+  activity?: TurnActivity
 }
 
 export interface VokiaAgentState {

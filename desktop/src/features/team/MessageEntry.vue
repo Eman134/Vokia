@@ -4,6 +4,7 @@ import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import type { PermissionOutcome, Speaker, VokiaMessage } from './events'
+import ActivityRun from './ActivityRun.vue'
 import MarkdownText from './MarkdownText.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -88,6 +89,7 @@ function highlightedNames(message: VokiaMessage): string[] {
           {{ TURN_INTO_REQUEST_LABEL }}
         </UiButton>
       </header>
+      <ActivityRun v-if="entry.activity" :activity="entry.activity" />
       <div class="mt-0.5">
         <MarkdownText :text="entry.text" />
       </div>
