@@ -13,11 +13,18 @@ pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
 const SETTING_AVATAR_PROFILES: &str = "avatar_profiles";
+const SETTING_USER_NAME: &str = "user_name";
+const SETTING_USER_AVATAR: &str = "user_avatar";
+// Mesmos limites de NAME_MIN_CHARS/NAME_MAX_CHARS dos agentes (src/agents.rs, onde são privados).
+const USER_NAME_MIN_CHARS: usize = 2;
+const USER_NAME_MAX_CHARS: usize = 20;
 
 enum SettingRule {
     OneOf(&'static [&'static str]),
     // O formato do JSON é validado no front (useAvatarProfiles); aqui só se recusa texto que não é JSON.
     Json,
+    // Conta caracteres (não bytes) do texto sem as pontas e recusa quebra de linha.
+    Text { min: usize, max: usize },
 }
 
 const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
@@ -27,6 +34,14 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
         SettingRule::OneOf(PERMISSION_GRANT_VALUES),
     ),
     (SETTING_AVATAR_PROFILES, SettingRule::Json),
+    (
+        SETTING_USER_NAME,
+        SettingRule::Text {
+            min: USER_NAME_MIN_CHARS,
+            max: USER_NAME_MAX_CHARS,
+        },
+    ),
+    (SETTING_USER_AVATAR, SettingRule::Json),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
@@ -73,6 +88,10 @@ impl SettingRule {
         match self {
             SettingRule::OneOf(allowed) => allowed.contains(&value),
             SettingRule::Json => serde_json::from_str::<serde_json::Value>(value).is_ok(),
+            SettingRule::Text { min, max } => {
+                !value.contains(['\n', '\r'])
+                    && (*min..=*max).contains(&value.trim().chars().count())
+            }
         }
     }
 }

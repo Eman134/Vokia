@@ -1,36 +1,30 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, type Component } from 'vue'
-import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
 import VokiaLogo from '../brand/VokiaLogo.vue'
 import { useFlow } from '../team/useFlow'
+import { useProfileDraft } from '../profile/useProfileDraft'
 import BoasVindasStep from './steps/BoasVindasStep.vue'
-import ConexoesStep from './steps/ConexoesStep.vue'
-import ProjetoStep from './steps/ProjetoStep.vue'
-import TimeStep from './steps/TimeStep.vue'
-import PedidoStep from './steps/PedidoStep.vue'
+import NomeStep from './steps/NomeStep.vue'
+import FotoStep from './steps/FotoStep.vue'
 import ProntoStep from './steps/ProntoStep.vue'
 
-type StepId = 'boas-vindas' | 'conexoes' | 'projeto' | 'time' | 'pedido' | 'pronto'
+type StepId = 'boas-vindas' | 'nome' | 'foto' | 'pronto'
 
 interface OnboardingStep {
   id: StepId
   view: Component
   forwardLabel: string
-  forwardDisabled?: boolean
-  sample: boolean
 }
 
-const CONNECT_CLAUDE_ONLY_LABEL = 'Continuar só com Claude'
 const STEPS: readonly OnboardingStep[] = [
-  { id: 'boas-vindas', view: BoasVindasStep, forwardLabel: 'Começar', sample: false },
-  { id: 'conexoes', view: ConexoesStep, forwardLabel: CONNECT_CLAUDE_ONLY_LABEL, sample: true },
-  { id: 'projeto', view: ProjetoStep, forwardLabel: 'Continuar', sample: true },
-  { id: 'time', view: TimeStep, forwardLabel: 'Continuar', sample: true },
-  { id: 'pedido', view: PedidoStep, forwardLabel: 'Enviar para a Iara', forwardDisabled: true, sample: true },
-  { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir o mapa do time', sample: true },
+  { id: 'boas-vindas', view: BoasVindasStep, forwardLabel: 'Começar' },
+  { id: 'nome', view: NomeStep, forwardLabel: 'Continuar' },
+  { id: 'foto', view: FotoStep, forwardLabel: 'Continuar' },
+  { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir o mapa do time' },
 ]
+const PROFILE_STEP_IDS: readonly StepId[] = ['nome', 'foto']
 const LAST_INDEX = STEPS.length - 1
 
 const ROOT_CLASSES =
@@ -45,10 +39,12 @@ const ARROW_PATH = 'M3 8h9M8.5 4.5 12 8l-3.5 3.5'
 
 const navigation = useNavigation()
 const index = ref(0)
+const profileDraft = useProfileDraft()
 const flow = useFlow()
 flow.start('onboarding', index.value + 1)
 const current = computed(() => STEPS[index.value])
 const isFirst = computed(() => index.value === 0)
+const forwardDisabled = computed(() => PROFILE_STEP_IDS.includes(current.value.id) && !profileDraft.valid)
 
 watch(index, (value) => flow.goTo(value + 1))
 watch(
@@ -67,7 +63,8 @@ function back(): void {
   index.value -= 1
 }
 
-function forward(): void {
+async function forward(): Promise<void> {
+  if (PROFILE_STEP_IDS.includes(current.value.id) && !(await profileDraft.submit())) return
   if (index.value === LAST_INDEX) {
     navigation.goTo('mapa')
     return
@@ -94,11 +91,10 @@ function forward(): void {
       Pular e ir para o fim →
     </UiButton>
     <main :class="MAIN_CLASSES">
-      <p v-if="current.sample" class="w-full text-caption text-muted">{{ SAMPLE_DATA_LABEL }}</p>
-      <component :is="current.view" @skip-team="goTo('pedido')" />
+      <component :is="current.view" />
       <footer class="flex w-full items-center gap-2" :class="isFirst ? 'justify-center' : 'justify-between'">
         <UiButton v-if="!isFirst" variant="quiet" size="lg" @press="back">Voltar</UiButton>
-        <UiButton variant="primary" size="lg" :disabled="current.forwardDisabled" @press="forward">
+        <UiButton variant="primary" size="lg" :disabled="forwardDisabled" @press="forward">
           {{ current.forwardLabel }}
           <svg
             :width="ARROW_SIZE"

@@ -6,6 +6,8 @@ const ERASE_ALL_DATA_COMMAND = 'erase_all_data'
 
 export const THEME_SETTING_KEY = 'theme'
 export const AVATAR_PROFILES_SETTING_KEY = 'avatar_profiles'
+export const USER_NAME_SETTING_KEY = 'user_name'
+export const USER_AVATAR_SETTING_KEY = 'user_avatar'
 
 export function fetchSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>(GET_SETTINGS_COMMAND)

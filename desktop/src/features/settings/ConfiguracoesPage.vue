@@ -1,5 +1,11 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { PAGE_LABELS, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import UiButton from '../../ui/UiButton.vue'
+import UserAvatar from '../profile/UserAvatar.vue'
+import UserProfileForm from '../profile/UserProfileForm.vue'
+import { useProfileDraft } from '../profile/useProfileDraft'
+import { useUserProfile } from '../profile/useUserProfile'
 import SettingRow from './SettingRow.vue'
 import SettingsSection from './SettingsSection.vue'
 import { SETTINGS_SECTIONS } from './configuracoesSample'
@@ -19,7 +25,23 @@ const NAV_ITEM_CLASSES =
   'block w-full cursor-default rounded-control px-3 py-2 text-left text-control disabled:opacity-40'
 const NAV_ITEM_ACTIVE_CLASSES = 'bg-accent-soft font-semibold text-accent'
 const NAV_ITEM_IDLE_CLASSES = 'text-muted'
+const PROFILE_TITLE = 'Seu perfil'
+const PROFILE_AVATAR_SIZE = 40
+const PROFILE_CLASSES = 'mt-5 flex max-w-[860px] flex-col gap-4 rounded-card border border-line bg-surface p-4'
 const COLUMN_CLASSES = 'flex min-w-0 max-w-[860px] flex-1 flex-col gap-4'
+
+const profile = useUserProfile()
+const draft = useProfileDraft()
+const editing = ref(false)
+
+function edit(): void {
+  draft.begin()
+  editing.value = true
+}
+
+async function save(): Promise<void> {
+  if (await draft.submit()) editing.value = false
+}
 </script>
 
 <template>
@@ -32,6 +54,24 @@ const COLUMN_CLASSES = 'flex min-w-0 max-w-[860px] flex-1 flex-col gap-4'
       </div>
       <input type="search" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" :class="SEARCH_CLASSES" disabled aria-disabled="true" />
     </header>
+
+    <section :class="PROFILE_CLASSES" data-testid="profile-row" :aria-label="PROFILE_TITLE">
+      <div class="flex items-center gap-3">
+        <UserAvatar :size="PROFILE_AVATAR_SIZE" />
+        <div class="flex min-w-0 flex-1 flex-col">
+          <span class="text-label text-muted">{{ PROFILE_TITLE }}</span>
+          <b class="truncate text-control text-ink" :title="profile.displayName">{{ profile.displayName }}</b>
+        </div>
+        <UiButton v-if="!editing" variant="quiet" size="lg" @press="edit">Editar</UiButton>
+      </div>
+      <template v-if="editing">
+        <UserProfileForm />
+        <div class="flex justify-end gap-2">
+          <UiButton variant="quiet" size="lg" @press="editing = false">Cancelar</UiButton>
+          <UiButton variant="primary" size="lg" :disabled="!draft.valid || draft.saving" @press="save">Salvar</UiButton>
+        </div>
+      </template>
+    </section>
 
     <div class="mt-5 flex items-start gap-6">
       <nav aria-label="Seções" :class="NAV_CLASSES">

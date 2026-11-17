@@ -9,6 +9,7 @@ import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
 import { useBacklog } from './features/backlog/useBacklog'
+import UserProfileDialog from './features/profile/UserProfileDialog.vue'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
 import { useUsage } from './features/usage/useUsage'
@@ -69,5 +70,6 @@ onUnmounted(limitNotices.stop)
   </div>
   <SplashScreen v-else />
   <NewRequestDialog />
+  <UserProfileDialog v-if="connection.cliChecked" />
   <UpdatePrompt />
 </template>

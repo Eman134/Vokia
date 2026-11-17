@@ -2,6 +2,8 @@
 import { ref, useId, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUsage } from './useUsage'
+import UserAvatar from '../profile/UserAvatar.vue'
+import { useUserProfile } from '../profile/useUserProfile'
 import UsagePanel from './UsagePanel.vue'
 import {
   OUTER_RING_RADIUS,
@@ -24,10 +26,10 @@ const RING_STROKE = 2.4
 const PANEL_GAP = 10
 const PANEL_LEFT = RING_BOX + PANEL_GAP
 const RINGS: readonly { plan: PlanId; radius: number }[] = [{ plan: 'cc', radius: OUTER_RING_RADIUS }]
-const USER_INITIAL = 'K'
-const USER_NAME = 'Kay'
+const USER_AVATAR_SIZE = 28
 
 const store = useUsage()
+const profile = useUserProfile()
 const { claude, visible, alert, ariaLabel, openable } = storeToRefs(store)
 const open = ref(false)
 const panelId = useId()
@@ -92,11 +94,7 @@ function emphasisClass(percent: number) {
             />
           </template>
         </svg>
-        <span
-          title="Você"
-          class="relative grid size-7 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-          >{{ USER_INITIAL }}</span
-        >
+        <UserAvatar :size="USER_AVATAR_SIZE" :title="profile.displayName" class="relative" />
         <span
           v-if="claude && alert"
           class="absolute top-px right-px size-2.25 rounded-full shadow-[0_0_0_2px_var(--color-surface)]"
@@ -104,7 +102,7 @@ function emphasisClass(percent: number) {
         />
       </span>
       <span v-if="expanded" class="flex min-w-0 flex-1 flex-col gap-1">
-        <b class="text-caption font-medium text-ink">{{ USER_NAME }}</b>
+        <b class="truncate text-caption font-medium text-ink" :title="profile.displayName">{{ profile.displayName }}</b>
         <template v-if="claude && visible">
           <span v-for="plan in PLANS" :key="plan.id" class="flex items-center gap-1.5 text-tiny text-muted">
             <span class="w-10 flex-none">{{ plan.short }} 5h</span>
