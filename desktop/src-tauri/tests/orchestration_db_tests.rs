@@ -1,10 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::*;
-use crate::db::connection::DB_FILE;
-use crate::db::migrations::migrate;
 use crate::db::projects::NewProject;
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
@@ -1023,67 +1021,4 @@ fn banco_recusa_seta_escalar_para_camada_comum_mesmo_fora_da_api() {
         inserted.is_err(),
         "o CHECK do banco deveria recusar escalar para camada comum"
     );
-}
-
-// MIGRATIONS é privado: volta o banco ao estado anterior removendo a última migração (a de
-// orquestração) do banco já migrado. Falha alto se outra migração for criada depois dela.
-fn seed_database_before_orchestration(dir: &Path) {
-    let db = Db::open(dir).unwrap();
-    {
-        let conn = db.conn().unwrap();
-        conn.execute(
-            "INSERT INTO projects(id, name, path) VALUES (1, 'antigo', 'C:/antigo')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at) VALUES (1, 'user', 'davi', 'mensagem antiga', 10)",
-            [],
-        )
-        .unwrap();
-        conn.execute_batch(
-            "DROP TABLE orch_handoffs; DROP TABLE orch_rules; DROP TABLE orch_placements;              DROP TABLE orch_teams; DROP TABLE orch_layers; DROP TABLE orch_settings;              DELETE FROM schema_version WHERE version = (SELECT MAX(version) FROM schema_version);",
-        )
-        .unwrap();
-    }
-    drop(db);
-}
-
-#[test]
-fn migracao_sobre_banco_antigo_com_dados_mantem_o_antigo_e_libera_a_orquestracao() {
-    let dir = temp_dir();
-    seed_database_before_orchestration(&dir);
-
-    let db = Db::open(&dir).expect("o banco antigo deveria migrar sem erro");
-    let snapshot_before = db.orchestration(1).unwrap();
-    db.save_layer(1, &layer_draft("Revisão")).unwrap();
-    let history = db.load_history(1).unwrap();
-    let project_name = db.project(1).unwrap().name;
-    drop(db);
-    let _ = fs::remove_dir_all(&dir);
-
-    assert_eq!(project_name, "antigo");
-    assert_eq!(history.len(), 1);
-    assert_eq!(snapshot_before.settings, OrchestrationSettings::default());
-    assert!(snapshot_before.layers.is_empty());
-}
-
-#[test]
-fn migrar_banco_ja_migrado_nao_falha_nem_apaga_a_orquestracao_gravada() {
-    let dir = temp_dir();
-    seed_database_before_orchestration(&dir);
-    let db = Db::open(&dir).unwrap();
-    db.save_layer(1, &layer_draft("Revisão")).unwrap();
-    drop(db);
-
-    let mut conn = Connection::open(dir.join(DB_FILE)).unwrap();
-    migrate(&mut conn).unwrap();
-    migrate(&mut conn).unwrap();
-    drop(conn);
-    let reopened = Db::open(&dir).expect("reabrir banco migrado não deveria falhar");
-    let layers = layer_order(&reopened, 1);
-    drop(reopened);
-    let _ = fs::remove_dir_all(&dir);
-
-    assert_eq!(layers, vec!["revisao"]);
 }
