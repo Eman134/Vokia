@@ -7,6 +7,7 @@ import UiSelect from '../../ui/UiSelect.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import { AVATAR_PROFILES } from '../identities/avatarProfiles'
 import AvatarPicker from '../identities/AvatarPicker.vue'
+import { useOrchestration } from '../orchestration/useOrchestration'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import {
@@ -15,15 +16,18 @@ import {
   CLI_LABEL,
   CREATE_LABEL,
   DIALOG_TITLE,
+  LAYER_LABEL,
   MODEL_LABEL,
   NAME_LABEL,
   ROLE_LABEL,
+  TEAM_LABEL,
 } from './agentFormCopy'
 
-
+const props = defineProps<{ initialTeamId?: string | null; initialLayerId?: string | null }>()
 const emit = defineEmits<{ created: [agent: AgentProfile]; close: [] }>()
 
 const roster = useRoster()
+const orchestration = useOrchestration()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -39,11 +43,27 @@ const model = ref(firstPreset?.defaultModel ?? '')
 const submitting = ref(false)
 const failure = ref<string | null>(null)
 
+const teamOptions = computed(() =>
+  (orchestration.snapshot?.teams ?? []).map((team) => ({ label: team.name, value: team.id })),
+)
+const layerOptions = computed(() =>
+  (orchestration.snapshot?.layers ?? []).map((layer) => ({ label: layer.name, value: layer.id })),
+)
+const placementRequired = computed(() => teamOptions.value.length > 0 && layerOptions.value.length > 0)
+const teamId = ref(props.initialTeamId ?? teamOptions.value[0]?.value ?? '')
+const layerId = ref(props.initialLayerId ?? layerOptions.value[0]?.value ?? '')
+
 const cliOptions = computed(() => roster.presets.map((preset) => ({ label: preset.label, value: preset.id })))
 const preset = computed(() => roster.presets.find((candidate) => candidate.id === cli.value))
 const modelOptions = computed(() => (preset.value?.models ?? []).map((candidate) => ({ label: candidate, value: candidate })))
 const canCreate = computed(
-  () => name.value.trim() !== '' && role.value.trim() !== '' && cli.value !== '' && model.value !== '' && !submitting.value,
+  () =>
+    name.value.trim() !== '' &&
+    role.value.trim() !== '' &&
+    cli.value !== '' &&
+    model.value !== '' &&
+    (!placementRequired.value || (teamId.value !== '' && layerId.value !== '')) &&
+    !submitting.value,
 )
 
 watch(cli, () => {
@@ -78,6 +98,16 @@ async function submit(): Promise<void> {
       cli: cli.value,
       model: model.value,
     })
+    // Falha na posição vai ao feed pelo store; o agente já criado fica em "Sem posição".
+    if (placementRequired.value) {
+      await orchestration.placeAgent({
+        agentId: profile.id,
+        teamId: teamId.value,
+        layerId: layerId.value,
+        instructions: '',
+        maxInstances: 1,
+      })
+    }
     submitting.value = false
     previousFocus?.focus()
     emit('created', profile)
@@ -123,6 +153,16 @@ onMounted(focusName)
         <label class="flex flex-col gap-1.5">
           <span class="text-label font-medium text-muted">{{ MODEL_LABEL }}</span>
           <UiSelect v-model="model" :options="modelOptions" :label="MODEL_LABEL" />
+        </label>
+      </div>
+      <div v-if="placementRequired" class="flex gap-3">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-label font-medium text-muted">{{ TEAM_LABEL }}</span>
+          <UiSelect v-model="teamId" :options="teamOptions" :label="TEAM_LABEL" />
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-label font-medium text-muted">{{ LAYER_LABEL }}</span>
+          <UiSelect v-model="layerId" :options="layerOptions" :label="LAYER_LABEL" />
         </label>
       </div>
       </fieldset>

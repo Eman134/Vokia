@@ -1,15 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiEmpty from '../../ui/UiEmpty.vue'
 import NewAgentDialog from '../agents/NewAgentDialog.vue'
+import { useOrchestration } from '../orchestration/useOrchestration'
+import { useProjects } from '../projects/useProjects'
 import type { AgentProfile } from '../team/teamApi'
+import { useRoster } from '../team/useRoster'
+import FlowRules from './FlowRules.vue'
+import MovementList from './MovementList.vue'
+import NewLayerDialog from './NewLayerDialog.vue'
+import NewTeamDialog from './NewTeamDialog.vue'
+import PlaceAgentDialog from './PlaceAgentDialog.vue'
 import TeamMatrix from './TeamMatrix.vue'
+import UnplacedAgents from './UnplacedAgents.vue'
 import {
   ADD_AGENT_LABEL,
   ADD_LAYER_LABEL,
   ADD_TEAM_LABEL,
+  CREATE_LAYER_LABEL,
+  CREATE_TEAM_LABEL,
+  LOAD_ERROR_TITLE,
   MAP_SUBTITLE,
   MAP_TITLE,
+  NO_LAYERS_TITLE,
+  NO_PROJECT_TITLE,
+  NO_TEAMS_TITLE,
   TAB_ORCHESTRATION,
   TAB_TEAMS,
 } from './teamMapLayers'
@@ -19,11 +35,30 @@ const TAB_LIST_CLASSES = 'flex gap-0.5 rounded-control-lg bg-surface-2 p-0.75'
 const TAB_BASE_CLASSES = 'rounded-[9px] px-3 py-1.5 text-caption disabled:opacity-40'
 const TAB_ACTIVE_CLASSES = 'bg-surface font-semibold text-ink shadow-seg'
 const TAB_INACTIVE_CLASSES = 'text-muted'
+const EMPTY_ACTION_CLASSES = 'flex flex-col items-center gap-3'
 
-const creating = ref(false)
+const orchestration = useOrchestration()
+const projects = useProjects()
+const roster = useRoster()
+
+const snapshot = computed(() => orchestration.snapshot)
+const projectId = computed(() => orchestration.loadedProjectId)
+const unplaced = computed<AgentProfile[]>(() => {
+  const placed = new Set((snapshot.value?.placements ?? []).map((placement) => placement.agentId))
+  return roster.agents.filter((agent) => !placed.has(agent.id))
+})
+
+const agentDialog = ref<{ teamId: string | null; layerId: string | null } | null>(null)
+const teamDialogOpen = ref(false)
+const layerDialogOpen = ref(false)
+const placing = ref<AgentProfile | null>(null)
 const highlightedId = ref<string | null>(null)
 
-function onCreated(agent: AgentProfile): void {
+function openNewAgent(teamId: string | null = null, layerId: string | null = null): void {
+  agentDialog.value = { teamId, layerId }
+}
+
+function onAgentCreated(agent: AgentProfile): void {
   highlightedId.value = agent.id
 }
 </script>
@@ -51,12 +86,46 @@ function onCreated(agent: AgentProfile): void {
             {{ TAB_ORCHESTRATION }}
           </button>
         </div>
-        <UiButton variant="quiet" size="lg" :disabled="true" aria-disabled="true">{{ ADD_TEAM_LABEL }}</UiButton>
-        <UiButton variant="primary" size="lg" :disabled="true" aria-disabled="true">{{ ADD_LAYER_LABEL }}</UiButton>
-        <UiButton variant="primary" size="lg" @press="creating = true">{{ ADD_AGENT_LABEL }}</UiButton>
+        <UiButton variant="quiet" size="lg" :disabled="projectId === null" @press="teamDialogOpen = true">
+          {{ ADD_TEAM_LABEL }}
+        </UiButton>
+        <UiButton variant="primary" size="lg" :disabled="projectId === null" @press="layerDialogOpen = true">
+          {{ ADD_LAYER_LABEL }}
+        </UiButton>
+        <UiButton variant="primary" size="lg" @press="openNewAgent()">{{ ADD_AGENT_LABEL }}</UiButton>
       </div>
     </header>
-    <TeamMatrix :highlighted-id="highlightedId" @add-agent="creating = true" />
-    <NewAgentDialog v-if="creating" @created="onCreated" @close="creating = false" />
+
+    <UiEmpty v-if="!projects.selected" :title="NO_PROJECT_TITLE" />
+    <UiEmpty v-else-if="orchestration.loadError" :title="LOAD_ERROR_TITLE" :text="orchestration.loadError" />
+    <template v-else-if="snapshot">
+      <div v-if="snapshot.layers.length === 0" :class="EMPTY_ACTION_CLASSES">
+        <UiEmpty :title="NO_LAYERS_TITLE" />
+        <UiButton variant="primary" size="lg" @press="layerDialogOpen = true">{{ CREATE_LAYER_LABEL }}</UiButton>
+      </div>
+      <div v-else-if="snapshot.teams.length === 0" :class="EMPTY_ACTION_CLASSES">
+        <UiEmpty :title="NO_TEAMS_TITLE" />
+        <UiButton variant="primary" size="lg" @press="teamDialogOpen = true">{{ CREATE_TEAM_LABEL }}</UiButton>
+      </div>
+      <TeamMatrix v-else :highlighted-id="highlightedId" @add-agent="openNewAgent" />
+      <UnplacedAgents v-if="unplaced.length > 0" :agents="unplaced" @place="placing = $event" />
+      <div class="grid gap-5 lg:grid-cols-2">
+        <MovementList :movements="orchestration.movements" :rules="snapshot.rules" />
+        <FlowRules :rules="snapshot.rules" :layers="snapshot.layers" :enforcement="snapshot.settings.enforcement" />
+      </div>
+    </template>
+
+    <template v-if="projectId !== null">
+      <NewTeamDialog v-if="teamDialogOpen" :project-id="projectId" @close="teamDialogOpen = false" />
+      <NewLayerDialog v-if="layerDialogOpen" :project-id="projectId" @close="layerDialogOpen = false" />
+      <PlaceAgentDialog v-if="placing" :project-id="projectId" :agent="placing" @close="placing = null" />
+    </template>
+    <NewAgentDialog
+      v-if="agentDialog"
+      :initial-team-id="agentDialog.teamId"
+      :initial-layer-id="agentDialog.layerId"
+      @created="onAgentCreated"
+      @close="agentDialog = null"
+    />
   </section>
 </template>

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useAgentControl } from '../panel/useAgentControl'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { presenceOf } from '../team/agentStateStyle'
+import type { BacklogItem } from '../backlog/backlogTypes'
 import type { AgentState } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
@@ -16,7 +17,7 @@ const TONE_CLASSES: Record<AgentState, string> = {
   idle: 'border border-dashed border-line',
 }
 
-const props = defineProps<{ agent: AgentProfile }>()
+const props = defineProps<{ agent: AgentProfile; activeCard: BacklogItem | undefined }>()
 
 const feed = useFeed()
 const control = useAgentControl()
@@ -35,7 +36,8 @@ const toneClass = computed(() => TONE_CLASSES[paused.value ? 'idle' : state.valu
         <span class="truncate text-control font-semibold text-ink">{{ agent.name }}</span>
         <span class="size-1.75 shrink-0 rounded-full" :class="presence.dot" />
       </div>
-      <span class="truncate text-small text-muted">{{ agent.role }} · {{ presence.label }}</span>
+      <span v-if="activeCard" class="truncate text-small text-muted">{{ activeCard.id }} · {{ activeCard.title }}</span>
+      <span v-else class="truncate text-small text-muted">{{ agent.role }} · {{ presence.label }}</span>
     </div>
   </div>
 </template>
