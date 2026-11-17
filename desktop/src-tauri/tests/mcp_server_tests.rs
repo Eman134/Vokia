@@ -1,0 +1,571 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::time::Duration;
+
+use serde_json::{json, Value};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+
+use super::*;
+use crate::events::Agent;
+
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+const OVER_LIMIT_BYTES: usize = 64 * 1024 + 1;
+const PARSE_ERROR: i64 = -32700;
+const INVALID_REQUEST: i64 = -32600;
+const METHOD_NOT_FOUND: i64 = -32601;
+const INVALID_PARAMS: i64 = -32602;
+
+struct Reply {
+    status: u16,
+    body: String,
+}
+
+impl Reply {
+    fn json(&self) -> Value {
+        serde_json::from_str(&self.body)
+            .unwrap_or_else(|error| panic!("corpo não é JSON ({error}): {:?}", self.body))
+    }
+
+    fn error_code(&self) -> i64 {
+        self.json()["error"]["code"]
+            .as_i64()
+            .unwrap_or_else(|| panic!("a resposta não tem error.code: {}", self.body))
+    }
+}
+
+struct Request<'a> {
+    method: &'a str,
+    host: Option<String>,
+    token: Option<&'a str>,
+    authorization: Option<String>,
+    origin: Option<&'a str>,
+    body: Vec<u8>,
+}
+
+impl<'a> Request<'a> {
+    fn post(port: u16, token: &'a Token, body: Value) -> Request<'a> {
+        Request {
+            method: "POST",
+            host: Some(format!("127.0.0.1:{port}")),
+            token: Some(token.as_str()),
+            authorization: None,
+            origin: None,
+            body: body.to_string().into_bytes(),
+        }
+    }
+
+    fn raw_authorization(mut self, value: &str) -> Request<'a> {
+        self.token = None;
+        self.authorization = Some(value.to_string());
+        self
+    }
+
+    fn without_authorization(mut self) -> Request<'a> {
+        self.token = None;
+        self
+    }
+
+    fn with_host(mut self, host: &str) -> Request<'a> {
+        self.host = Some(host.to_string());
+        self
+    }
+
+    fn with_origin(mut self, origin: &'a str) -> Request<'a> {
+        self.origin = Some(origin);
+        self
+    }
+
+    fn with_method(mut self, method: &'a str) -> Request<'a> {
+        self.method = method;
+        self
+    }
+
+    fn with_body(mut self, body: Vec<u8>) -> Request<'a> {
+        self.body = body;
+        self
+    }
+
+    fn render(&self) -> Vec<u8> {
+        let mut head = format!("{} /mcp HTTP/1.1\r\n", self.method);
+        if let Some(host) = &self.host {
+            head.push_str(&format!("Host: {host}\r\n"));
+        }
+        if let Some(token) = self.token {
+            head.push_str(&format!("Authorization: Bearer {token}\r\n"));
+        }
+        if let Some(value) = &self.authorization {
+            head.push_str(&format!("Authorization: {value}\r\n"));
+        }
+        if let Some(origin) = self.origin {
+            head.push_str(&format!("Origin: {origin}\r\n"));
+        }
+        head.push_str("Content-Type: application/json\r\n");
+        head.push_str(&format!("Content-Length: {}\r\n", self.body.len()));
+        head.push_str("Connection: close\r\n\r\n");
+        let mut bytes = head.into_bytes();
+        bytes.extend_from_slice(&self.body);
+        bytes
+    }
+}
+
+fn parse_reply(raw: &[u8]) -> Reply {
+    let text = String::from_utf8_lossy(raw).into_owned();
+    let status = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|code| code.parse().ok())
+        .unwrap_or_else(|| panic!("resposta HTTP sem status: {text:?}"));
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    let body = if head
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
+        dechunk(body)
+    } else {
+        body.to_string()
+    };
+    Reply { status, body }
+}
+
+fn dechunk(body: &str) -> String {
+    let mut rest = body;
+    let mut out = String::new();
+    while let Some((size_line, after)) = rest.split_once("\r\n") {
+        let size = usize::from_str_radix(size_line.trim(), 16).unwrap_or(0);
+        if size == 0 {
+            break;
+        }
+        out.push_str(&after[..size]);
+        rest = &after[size + 2..];
+    }
+    out
+}
+
+async fn send(port: u16, request: &Request<'_>) -> Reply {
+    let mut stream = tokio::time::timeout(IO_TIMEOUT, TcpStream::connect(("127.0.0.1", port)))
+        .await
+        .expect("conectar demorou")
+        .expect("o servidor deveria aceitar conexão em 127.0.0.1");
+    // O servidor pode responder 413 e fechar antes de consumir o corpo inteiro: o erro de escrita não importa.
+    let _ = stream.write_all(&request.render()).await;
+    let mut raw = Vec::new();
+    let _ = tokio::time::timeout(IO_TIMEOUT, stream.read_to_end(&mut raw)).await;
+    parse_reply(&raw)
+}
+
+fn port_of(server: &McpServer) -> u16 {
+    server
+        .url()
+        .rsplit(':')
+        .next()
+        .and_then(|tail| tail.strip_suffix("/mcp"))
+        .and_then(|port| port.parse().ok())
+        .unwrap_or_else(|| panic!("url sem porta: {}", server.url()))
+}
+
+fn binding(agent: &str, name: &str) -> Binding {
+    Binding {
+        project_id: 1,
+        agent: Agent::from_stored(agent).expect("id de agente válido no teste"),
+        agent_name: name.to_string(),
+    }
+}
+
+fn rpc(id: i64, method: &str) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "method": method })
+}
+
+fn run<T>(scenario: impl std::future::Future<Output = T>) -> T {
+    tauri::async_runtime::block_on(scenario)
+}
+
+async fn started() -> (McpServer, u16, Token) {
+    let server = McpServer::start().await.expect("o servidor deveria abrir");
+    let port = port_of(&server);
+    let token = server
+        .register(binding("iara", "Iara"))
+        .expect("o token deveria ser gerado");
+    (server, port, token)
+}
+
+#[test]
+fn bind_em_porta_zero_devolve_porta_maior_que_zero_e_url_em_loopback() {
+    run(async {
+        let (server, port, _) = started().await;
+
+        assert!(port > 0);
+        assert_eq!(server.url(), format!("http://127.0.0.1:{port}/mcp"));
+    });
+}
+
+#[test]
+fn servidor_nao_atende_fora_do_loopback() {
+    run(async {
+        let (server, port, _) = started().await;
+        let probe = UdpSocket::bind("0.0.0.0:0").expect("socket de sondagem");
+        let lan = probe
+            .connect("192.0.2.1:9")
+            .ok()
+            .and_then(|()| probe.local_addr().ok())
+            .map(|address| address.ip());
+        let ipv6_loopback = SocketAddr::from((IpAddr::from(std::net::Ipv6Addr::LOCALHOST), port));
+
+        let ipv6 = tokio::time::timeout(IO_TIMEOUT, TcpStream::connect(ipv6_loopback))
+            .await
+            .expect("conectar demorou");
+
+        assert!(ipv6.is_err(), "o servidor não pode ouvir em ::1");
+        if let Some(ip) =
+            lan.filter(|ip| !ip.is_loopback() && *ip != IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+        {
+            let external =
+                tokio::time::timeout(IO_TIMEOUT, TcpStream::connect(SocketAddr::new(ip, port)))
+                    .await
+                    .expect("conectar demorou");
+            assert!(external.is_err(), "o servidor não pode ouvir em {ip}");
+        }
+        drop(server);
+    });
+}
+
+#[test]
+fn sem_cabecalho_authorization_responde_401() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping")).without_authorization(),
+        )
+        .await;
+
+        assert_eq!(reply.status, 401);
+    });
+}
+
+#[test]
+fn token_errado_em_branco_ou_com_bearer_em_caixa_errada_responde_401() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let valid = token.as_str().to_string();
+        let wrong_last = format!(
+            "{}{}",
+            &valid[..valid.len() - 1],
+            if valid.ends_with('0') { '1' } else { '0' }
+        );
+        let cases = [
+            ("token errado", format!("Bearer {wrong_last}")),
+            ("token em branco", "Bearer ".to_string()),
+            ("sem esquema", valid.clone()),
+            ("bearer minúsculo", format!("bearer {valid}")),
+            ("BEARER maiúsculo", format!("BEARER {valid}")),
+        ];
+
+        for (label, authorization) in cases {
+            let reply = send(
+                port,
+                &Request::post(port, &token, rpc(1, "ping")).raw_authorization(&authorization),
+            )
+            .await;
+
+            assert_eq!(reply.status, 401, "{label}");
+        }
+    });
+}
+
+#[test]
+fn token_revogado_responde_401_e_antes_da_revogacao_respondia_200() {
+    run(async {
+        let (server, port, token) = started().await;
+        let before = send(port, &Request::post(port, &token, rpc(1, "ping"))).await;
+
+        server.revoke(&token);
+        let after = send(port, &Request::post(port, &token, rpc(2, "ping"))).await;
+
+        assert_eq!(before.status, 200);
+        assert_eq!(after.status, 401);
+    });
+}
+
+#[test]
+fn dois_tokens_de_agentes_diferentes_nao_se_cruzam() {
+    run(async {
+        let (server, port, iara) = started().await;
+        let davi = server
+            .register(binding("davi", "Davi"))
+            .expect("token do Davi");
+
+        assert_ne!(iara.as_str(), davi.as_str());
+        server.revoke(&iara);
+        let revoked = send(port, &Request::post(port, &iara, rpc(1, "ping"))).await;
+        let kept = send(port, &Request::post(port, &davi, rpc(2, "ping"))).await;
+
+        assert_eq!(revoked.status, 401);
+        assert_eq!(kept.status, 200);
+        assert_eq!(kept.json()["id"], json!(2));
+    });
+}
+
+#[test]
+fn duas_chamadas_concorrentes_de_agentes_diferentes_recebem_cada_uma_a_sua_resposta() {
+    run(async {
+        let (server, port, iara) = started().await;
+        let davi = server
+            .register(binding("davi", "Davi"))
+            .expect("token do Davi");
+        let tasks: Vec<_> = (0..20)
+            .map(|index| {
+                let (token, id) = if index % 2 == 0 {
+                    (iara.clone(), 1000 + index)
+                } else {
+                    (davi.clone(), 2000 + index)
+                };
+                tauri::async_runtime::spawn(async move {
+                    let reply = send(port, &Request::post(port, &token, rpc(id, "ping"))).await;
+                    (id, reply)
+                })
+            })
+            .collect();
+
+        for task in tasks {
+            let (id, reply) = task.await.expect("a tarefa não deveria falhar");
+            assert_eq!(reply.status, 200);
+            assert_eq!(reply.json()["id"], json!(id));
+        }
+    });
+}
+
+#[test]
+fn host_errado_responde_403_mesmo_com_token_valido() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        for host in [
+            "localhost",
+            "evil.example",
+            &format!("127.0.0.1:{}", port.wrapping_add(1)),
+            "127.0.0.1",
+        ] {
+            let reply = send(
+                port,
+                &Request::post(port, &token, rpc(1, "ping")).with_host(host),
+            )
+            .await;
+
+            assert_eq!(reply.status, 403, "Host {host}");
+        }
+    });
+}
+
+#[test]
+fn origin_presente_responde_403_mesmo_com_token_valido() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping")).with_origin("http://evil.example"),
+        )
+        .await;
+
+        assert_eq!(reply.status, 403);
+    });
+}
+
+#[test]
+fn initialize_devolve_versao_capacidade_de_ferramentas_e_nome_vokia() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "id": 7, "method": "initialize", "params": { "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": { "name": "teste", "version": "0" } } });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        let json = reply.json();
+        assert_eq!(reply.status, 200);
+        assert_eq!(json["jsonrpc"], json!("2.0"));
+        assert_eq!(json["id"], json!(7));
+        assert_eq!(json["result"]["protocolVersion"], json!("2025-03-26"));
+        assert!(json["result"]["capabilities"]["tools"].is_object());
+        assert_eq!(json["result"]["serverInfo"]["name"], json!("vokia"));
+    });
+}
+
+#[test]
+fn initialize_com_versao_desconhecida_responde_a_mais_recente_suportada() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": { "protocolVersion": "1999-01-01" } });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        assert_eq!(
+            reply.json()["result"]["protocolVersion"],
+            json!("2025-06-18")
+        );
+    });
+}
+
+#[test]
+fn notifications_initialized_responde_204_sem_corpo() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        assert_eq!(reply.status, 204);
+        assert_eq!(reply.body, "");
+    });
+}
+
+#[test]
+fn tools_list_responde_json_rpc_valido_com_lista_vazia_nesta_etapa() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(port, &Request::post(port, &token, rpc(3, "tools/list"))).await;
+
+        assert_eq!(reply.status, 200);
+        assert_eq!(
+            reply.json(),
+            json!({ "jsonrpc": "2.0", "id": 3, "result": { "tools": [] } })
+        );
+    });
+}
+
+#[test]
+fn get_em_mcp_responde_405() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping"))
+                .with_method("GET")
+                .with_body(Vec::new()),
+        )
+        .await;
+
+        assert_eq!(reply.status, 405);
+    });
+}
+
+#[test]
+fn server_discover_responde_menos_32601_e_o_servidor_segue_atendendo_initialize() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let discover = send(
+            port,
+            &Request::post(port, &token, rpc(1, "server/discover")),
+        )
+        .await;
+        let initialize = send(port, &Request::post(port, &token, rpc(2, "initialize"))).await;
+
+        assert_eq!(discover.status, 200);
+        assert_eq!(discover.error_code(), METHOD_NOT_FOUND);
+        assert_eq!(discover.json()["id"], json!(1));
+        assert_eq!(
+            initialize.json()["result"]["serverInfo"]["name"],
+            json!("vokia")
+        );
+    });
+}
+
+#[test]
+fn metodo_desconhecido_responde_menos_32601_com_o_id_da_chamada() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(port, &Request::post(port, &token, rpc(9, "resources/list"))).await;
+
+        assert_eq!(reply.error_code(), METHOD_NOT_FOUND);
+        assert_eq!(reply.json()["id"], json!(9));
+    });
+}
+
+#[test]
+fn requisicao_sem_o_campo_method_responde_menos_32600() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "id": 4 });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        assert_eq!(reply.error_code(), INVALID_REQUEST);
+    });
+}
+
+#[test]
+fn json_invalido_responde_menos_32700_com_id_nulo() {
+    run(async {
+        let (_server, port, token) = started().await;
+
+        let reply = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping")).with_body(b"{ isso nao e json".to_vec()),
+        )
+        .await;
+
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.error_code(), PARSE_ERROR);
+        assert_eq!(reply.json()["id"], Value::Null);
+    });
+}
+
+#[test]
+fn tools_call_de_ferramenta_desconhecida_responde_menos_32602_citando_o_nome() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "apagar_tudo", "arguments": {} } });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        assert_eq!(reply.error_code(), INVALID_PARAMS);
+        assert_eq!(reply.json()["id"], json!(5));
+        assert!(reply.json()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("apagar_tudo"));
+    });
+}
+
+#[test]
+fn tools_call_sem_nome_responde_menos_32602() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let body = json!({ "jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {} });
+
+        let reply = send(port, &Request::post(port, &token, body)).await;
+
+        assert_eq!(reply.error_code(), INVALID_PARAMS);
+    });
+}
+
+#[test]
+fn corpo_acima_de_64_kb_responde_413_e_no_limite_exato_responde_200() {
+    run(async {
+        let (_server, port, token) = started().await;
+        let padding = |total: usize| {
+            let base =
+                json!({ "jsonrpc": "2.0", "id": 1, "method": "ping", "params": { "x": "" } })
+                    .to_string();
+            let fill = total - base.len();
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "ping", "params": { "x": "a".repeat(fill) } }).to_string().into_bytes()
+        };
+
+        let over = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping")).with_body(padding(OVER_LIMIT_BYTES)),
+        )
+        .await;
+        let at_limit = send(
+            port,
+            &Request::post(port, &token, rpc(1, "ping")).with_body(padding(OVER_LIMIT_BYTES - 1)),
+        )
+        .await;
+
+        assert_eq!(over.status, 413);
+        assert_eq!(at_limit.status, 200);
+    });
+}

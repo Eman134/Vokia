@@ -7,6 +7,7 @@ mod commands;
 mod console_log;
 mod db;
 mod events;
+mod mcp;
 mod orchestrator;
 mod permissions;
 mod projects;
@@ -71,6 +72,7 @@ fn main() {
             let data_dir = app.path().app_data_dir()?;
             app.manage(agents::AgentRegistry::load(&data_dir));
             app.manage(DbState::open(&data_dir));
+            app.manage(mcp::McpState::start());
             shell::setup_tray(app)
         })
         .on_window_event(shell::hide_main_window_on_close)
