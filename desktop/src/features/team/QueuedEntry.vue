@@ -4,12 +4,15 @@ import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UserAvatar from '../profile/UserAvatar.vue'
+import { useUserProfile } from '../profile/useUserProfile'
 
-const USER_INITIAL = 'V'
+const USER_AVATAR_SIZE = 28
 
 defineProps<{ request: QueuedRequest }>()
 
 const requests = useRequests()
+const userProfile = useUserProfile()
 </script>
 
 <template>
@@ -32,8 +35,6 @@ const requests = useRequests()
         </div>
       </template>
     </div>
-    <span class="grid size-7 shrink-0 place-items-center rounded-full bg-ink text-small font-semibold text-bg">
-      {{ USER_INITIAL }}
-    </span>
+    <UserAvatar :size="USER_AVATAR_SIZE" :title="userProfile.displayName" />
   </div>
 </template>
