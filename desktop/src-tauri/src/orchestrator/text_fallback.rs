@@ -6,7 +6,10 @@ use crate::state::AppState;
 use crate::task::Applied;
 
 use super::error::FlowError;
-use super::markers::{find_delegation, parse_decision, parse_reply, ParsedDecision, ParsedReply};
+use super::markers::{
+    find_delegation, parse_decision, parse_reply, without_delegation_lines, ParsedDecision,
+    ParsedReply,
+};
 use super::turns::with_cache;
 
 const MAX_CARD_OPERATIONS: usize = 10;
@@ -38,9 +41,9 @@ pub(super) fn read_reply(
     reply: &str,
 ) -> Result<TextReply, FlowError> {
     if with_tools {
-        // Só a menção a um colega vira ação; o resto é texto e a linha segue visível.
+        // Só a menção a um colega vira ação e sai do texto; o resto é fala do agente.
         return Ok(TextReply {
-            visible: reply.trim().to_string(),
+            visible: without_delegation_lines(reply, context.speaker, context.team),
             delegation: find_delegation(reply, context.speaker, context.team),
             ..TextReply::default()
         });

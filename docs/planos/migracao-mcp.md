@@ -102,7 +102,7 @@ Executada pelo Implementador; **não repetir a chamada real**. Evidência regist
 ### MCP-1 · Servidor MCP local
 - **Contrato:** módulo `mcp` com `McpServer::start(app) -> Result<McpServer, McpError>` (porta 0 em `127.0.0.1`), `register(binding) -> Token`, `revoke(&Token)`, `url()`. Rotas: `POST /mcp`. Métodos: `initialize` (devolve `protocolVersion`, `capabilities.tools`, `serverInfo {name:"vokia"}`), `notifications/initialized` (204), `ping`, `tools/list` (lista do registro de ferramentas; vazia nesta etapa), `tools/call` (ferramenta desconhecida → erro JSON-RPC `-32602`). **Qualquer outro método (inclusive `server/discover`, que a CLI envia no início) responde `-32601` (M16).** Autenticação e validação de `Host`/`Origin` conforme M3. Estado Tauri: `McpState` gerenciado em `main.rs:70` (falha de bind guardada, não derruba o app, M7).
 - **Aceite:** testes em `tests/mcp_server_tests.rs`: sem token → 401; token errado → 401; token revogado → 401; `Host` errado → 403; `initialize` e `tools/list` respondem JSON-RPC válido; `GET /mcp` → 405 (M16); `server/discover` → `-32601` e a CLI segue para `initialize`; corpo maior que 64 KB → 413; bind em porta 0 devolve porta > 0 e só ouve em loopback.
-- **Falhas a cobrir:** token em branco; `Bearer` com maiúscula/minúscula errada; dois tokens de agentes diferentes não se cruzam; revogar durante uma chamada em andamento; JSON inválido → `-32700`; método ausente → `-32601`; chamada concorrente de dois agentes.
+- **Falhas a cobrir:** token em branco; `Bearer` com maiúscula/minúscula errada; dois tokens de agentes diferentes não se cruzam; revogar durante uma chamada em andamento; JSON inválido → `-32700`; requisição sem `method` → `-32600` (JSON-RPC: requisição inválida, não método inexistente); chamada concorrente de dois agentes.
 
 ### MCP-2 · Configuração em cada lançamento
 - **Contrato:** `agent_command` (`claude/command.rs:119`) recebe `mcp: Option<&McpConfigFile>` e, só em `Access::Project`, acrescenta `--mcp-config <caminho> --strict-mcp-config` (antes de `--append-system-prompt`, M9) e os nomes completos `mcp__vokia__<ferramenta>` em `--allowedTools` (`allowed_tools`, `:171`, M14). `LiveSession::open` (`live_session.rs:40`) ganha o parâmetro; `agent_session.rs:171` (`fresh_reply`) e `:376` (sessão reutilizada) criam `Binding` + token + arquivo antes do `open` e revogam e apagam depois do `close`. `base_command` ganha `NO_PROXY` (M8). O `ExchangeSlot` é preenchido com `item_id` e `channel_id` antes de cada `send` e esvaziado depois.
@@ -156,4 +156,8 @@ Executada pelo Implementador; **não repetir a chamada real**. Evidência regist
 Nenhuma. M1 a M17 decididas; a MCP-0 confirmou o que dependia da CLI (HTTP, `headers`, `--strict-mcp-config`, liberação por nome completo).
 
 ## 10. Resultado
-(preenchido ao fim da implementação)
+- **MCP-9:** feita antes da versão publicada (decisão aceita).
+- **MCP-10:** fallback sem MCP em `c14d2c7`.
+- **MCP-11:** `update_card` em `4766f4a`; card em Ready é recusado.
+- **Delegação automática:** `@Nome:` no texto delega, e a resposta de quem foi chamado aparece como fala dirigida a quem pediu, sem novo turno.
+- **Dívida aceita:** controles negativos de sub-abas, canais e MC-1.

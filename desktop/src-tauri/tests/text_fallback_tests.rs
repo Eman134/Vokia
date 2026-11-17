@@ -205,7 +205,11 @@ fn com_mcp_so_a_linha_de_mencao_age_e_as_outras_aparecem_como_texto_sem_executar
 
     let reply = world.read(true, "iara", OLD_MARKER_LINES);
 
-    assert_eq!(reply.visible, OLD_MARKER_LINES);
+    assert_eq!(reply.delegation, Some((davi(), "revise isso".to_string())));
+    assert_eq!(
+        reply.visible,
+        "Texto.\n#card criar Fantasma|x\n#decisao pergunta|Posso?||\n$contagem = 3"
+    );
     assert!(reply.decision.is_none());
     assert!(reply.rejected.is_empty());
     assert!(reply.applied.accepted.is_empty() && !reply.applied.created_variable);
@@ -219,17 +223,26 @@ fn davi() -> Agent {
 }
 
 #[test]
-fn com_mcp_mencao_de_agente_real_delega_e_a_linha_continua_visivel() {
+fn com_mcp_mencao_de_agente_real_delega_e_a_linha_sai_da_fala() {
     let world = world();
-    let reply_text = "Preciso de revisão.\n@Davi: revise o login";
 
-    let reply = world.read(true, "iara", reply_text);
+    let reply = world.read(true, "iara", "Preciso de revisão.\n@Davi: revise o login");
 
     assert_eq!(
         reply.delegation,
         Some((davi(), "revise o login".to_string()))
     );
-    assert_eq!(reply.visible, reply_text);
+    assert_eq!(reply.visible, "Preciso de revisão.");
+}
+
+#[test]
+fn com_mcp_so_a_mencao_nao_deixa_fala_do_agente() {
+    let world = world();
+
+    let reply = world.read(true, "iara", "@Davi: davi oi");
+
+    assert_eq!(reply.delegation, Some((davi(), "davi oi".to_string())));
+    assert_eq!(reply.visible, "");
 }
 
 #[test]

@@ -181,7 +181,7 @@ fn se_ferramenta_e_texto_divergem_a_ferramenta_vale_e_o_texto_sozinho_tambem_del
 }
 
 #[test]
-fn resposta_de_quem_foi_chamado_volta_a_quem_pediu_so_com_a_fala_sem_prefixo() {
+fn resposta_de_quem_foi_chamado_sem_delegacao_nao_gera_turno_de_volta() {
     let (iara, davi) = iara_and_davi();
     let definition = empty_definition(iara.clone());
     let first = Turn::first(&definition, &iara, "Faça");
@@ -189,10 +189,7 @@ fn resposta_de_quem_foi_chamado_volta_a_quem_pediu_so_com_a_fala_sem_prefixo() {
     let helper_turn = next_turn(&definition, &first, "feed", Some(&delegation))
         .expect("deveria haver turno do colega");
 
-    let back = next_turn(&definition, &helper_turn, "Entendi", None)
-        .expect("a resposta deveria voltar a quem pediu");
+    let back = next_turn(&definition, &helper_turn, "Entendi", None);
 
-    assert_eq!(back.speaker, iara);
-    assert_eq!(back.base, "Entendi");
-    assert_eq!(back.received, "Entendi");
+    assert!(back.is_none());
 }

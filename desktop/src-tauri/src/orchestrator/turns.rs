@@ -218,9 +218,7 @@ pub(super) async fn run_turns(
             feed.as_deref().unwrap_or_default(),
             delegation.as_ref(),
         );
-        let to = next
-            .as_ref()
-            .map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
+        let to = speech_recipient(definition, &turn, next.as_ref());
         if let Some(text) = &feed {
             say(
                 app,
@@ -238,6 +236,9 @@ pub(super) async fn run_turns(
             emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
+            for requester in &turn.requesters {
+                emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
+            }
             match resolve(
                 exchange,
                 transcript,
@@ -555,6 +556,7 @@ impl Turn {
     }
 }
 
+// Sem revezamento, a resposta do helper fica na linha dele para quem pediu e não volta como turno.
 fn next_turn(
     definition: &TaskDefinition,
     turn: &Turn,
@@ -566,14 +568,21 @@ fn next_turn(
         let agent = next_participant(&definition.participants, &speaker);
         return Some(Turn::new(agent, ALTERNATE_INSTRUCTION, feed, Vec::new()));
     }
-    if let Some((helper, request)) = delegation {
-        let mut requesters = turn.requesters.clone();
-        requesters.push(speaker);
-        return Some(Turn::new(helper.clone(), request, request, requesters));
+    let (helper, request) = delegation?;
+    let mut requesters = turn.requesters.clone();
+    requesters.push(speaker);
+    Some(Turn::new(helper.clone(), request, request, requesters))
+}
+
+// A fala de quem falou vai ao próximo do revezamento ou, sem revezamento, a quem pediu o turno.
+fn speech_recipient(definition: &TaskDefinition, turn: &Turn, next: Option<&Turn>) -> Speaker {
+    if definition.alternate {
+        return next.map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
     }
-    let (requester, remaining) = turn.requesters.split_last()?;
-    // Só a fala segue: quem mostra remetente e destinatário é o layout de agente para agente.
-    Some(Turn::new(requester.clone(), feed, feed, remaining.to_vec()))
+    turn.requesters
+        .last()
+        .cloned()
+        .map_or(Speaker::User, Speaker::from)
 }
 
 fn next_participant(participants: &[Agent], speaker: &Agent) -> Agent {
@@ -655,3 +664,7 @@ mod backlog_cards_tests;
 #[cfg(test)]
 #[path = "../../tests/mcp_cut_tests.rs"]
 mod mcp_cut_tests;
+
+#[cfg(test)]
+#[path = "../../tests/turn_relay_tests.rs"]
+mod turn_relay_tests;

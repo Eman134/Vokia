@@ -117,13 +117,24 @@ fn delegation_request<'a>(line: &'a str, from: &Agent, team: &Team) -> Option<(A
     (agent != *from && !request.is_empty()).then_some((agent, request))
 }
 
-// A última linha `@Nome: pedido` de um agente real do time vale; as demais linhas ficam como estão.
+// A última linha `@Nome: pedido` de um agente real do time vale.
 pub(super) fn find_delegation(reply: &str, from: &Agent, team: &Team) -> Option<(Agent, String)> {
     reply
         .lines()
         .filter_map(|line| delegation_request(line, from, team))
         .last()
         .map(|(agent, request)| (agent, request.to_string()))
+}
+
+// A linha de delegação vira mensagem de agente para agente; o resto da fala segue como fala do agente.
+pub(super) fn without_delegation_lines(reply: &str, from: &Agent, team: &Team) -> String {
+    reply
+        .lines()
+        .filter(|line| delegation_request(line, from, team).is_none())
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 // Mesmo contrato de parse_update_line: None não é a linha; Err é a linha, mas inválida.
