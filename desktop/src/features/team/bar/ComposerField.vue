@@ -4,7 +4,6 @@ import { useConnection } from '../useConnection'
 import { useFeed } from '../useFeed'
 import { useFlow } from '../useFlow'
 import { useRequests } from '../useRequests'
-import { useMentionCard } from '../useMentionCard'
 import { agentName } from '../agents'
 import { useRoster } from '../useRoster'
 import { useTeamStatus } from '../useTeamStatus'
@@ -48,7 +47,6 @@ const connection = useConnection()
 const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
-const mentionCard = useMentionCard()
 const channelsStore = useChannels()
 const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const statusStore = useTeamStatus()
@@ -142,19 +140,6 @@ watch(
   },
 )
 
-// O espelho não recebe o ponteiro (o campo fica por cima), então o hover é achado pela posição no eixo x.
-function hoverMention(event: MouseEvent): void {
-  const mentions = wrapperRef.value?.querySelectorAll<HTMLElement>('[data-mention]') ?? []
-  for (const element of mentions) {
-    const { left, right } = element.getBoundingClientRect()
-    if (event.clientX >= left && event.clientX <= right && element.dataset.mention) {
-      mentionCard.open(element.dataset.mention, element)
-      return
-    }
-  }
-  mentionCard.scheduleClose()
-}
-
 function anchorLeft(): number {
   const wrapper = wrapperRef.value
   const measure = measureRef.value
@@ -191,8 +176,6 @@ defineExpose({ isFocused })
     v-if="canAsk && !composerHidden"
     ref="wrapperRef"
     class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
-    @mousemove="hoverMention"
-    @mouseleave="mentionCard.scheduleClose()"
   >
     <div
       aria-hidden="true"

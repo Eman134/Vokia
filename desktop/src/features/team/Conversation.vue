@@ -13,7 +13,7 @@ import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
-import { ALL_SCREEN_LABEL, groupParticipants, isLongMessage } from './timeline'
+import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
@@ -205,9 +205,8 @@ onMounted(followEnd)
       <ol class="flex max-w-3xl flex-col gap-3">
         <li v-for="item in feed.timeline" :key="item.start">
           <details
-            v-if="item.type === 'group'"
+            v-if="item.type === 'group' && collapsesGroup(item.messages)"
             class="rounded-card border border-line bg-surface px-4 py-3"
-            :open="!item.messages.some(isLongMessage)"
           >
             <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
               <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
@@ -219,6 +218,9 @@ onMounted(followEnd)
               </li>
             </ol>
           </details>
+          <div v-else-if="item.type === 'group'" class="flex flex-col gap-3">
+            <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
+          </div>
           <MessageEntry v-else :entry="item.entry" />
         </li>
       </ol>

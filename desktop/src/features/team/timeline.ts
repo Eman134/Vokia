@@ -8,12 +8,11 @@ export type TimelineItem =
   | { type: 'entry'; start: number; entry: FeedEntry }
   | { type: 'group'; start: number; messages: VokiaMessage[] }
 
-// Troca entre agentes só recolhe quando o texto ou a atividade passam destes limites.
-const COLLAPSE_TEXT_CHARS = 600
-const COLLAPSE_TOOL_COUNT = 5
+// Só um fio com muitas mensagens entre os mesmos agentes recolhe; até este número ele fica aberto.
+const GROUP_COLLAPSE_SIZE = 5
 
-export function isLongMessage(message: VokiaMessage): boolean {
-  return message.text.length > COLLAPSE_TEXT_CHARS || (message.activity?.tools.length ?? 0) > COLLAPSE_TOOL_COUNT
+export function collapsesGroup(messages: readonly VokiaMessage[]): boolean {
+  return messages.length > GROUP_COLLAPSE_SIZE
 }
 
 export function isBetweenAgents(message: VokiaMessage): boolean {

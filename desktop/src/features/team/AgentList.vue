@@ -20,15 +20,12 @@ import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
-const CONSOLE_LABEL = 'Console'
-const SEARCH_LABEL = 'Buscar conversas'
+const CONSOLE_LABEL = 'Terminal'
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
 const CLOSE_LABEL = 'Fechar'
 const PANEL_CLASSES =
   'flex min-h-0 w-full shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 max-md:max-h-72 md:w-52'
-const SEARCH_CLASSES =
-  'mb-3 h-8.5 w-full rounded-control bg-surface-2 px-3 text-label text-ink placeholder:text-muted disabled:opacity-40'
 const QUEUE_BADGE_CLASSES =
   'absolute right-2 top-2 grid min-w-5 place-items-center rounded-full bg-accent-soft px-1.5 text-tiny font-semibold text-accent'
 const MENTION_LABEL = 'Mencionar'
@@ -114,7 +111,6 @@ function closeChannelDialog(): void {
       <span aria-hidden="true">{{ stripCollapsed ? '▾' : '▴' }}</span>
     </button>
     <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
-      <input type="search" :class="SEARCH_CLASSES" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" disabled />
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
         <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog">

@@ -7,7 +7,6 @@ import { useNavigation } from './shell/useNavigation'
 import { useRail } from './shell/useRail'
 import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
-import MentionCard from './features/team/MentionCard.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
 import { useBacklog } from './features/backlog/useBacklog'
 import UserProfileDialog from './features/profile/UserProfileDialog.vue'
@@ -71,7 +70,6 @@ onUnmounted(limitNotices.stop)
   </div>
   <SplashScreen v-else />
   <NewRequestDialog />
-  <MentionCard />
   <UserProfileDialog v-if="connection.cliChecked" />
   <UpdatePrompt />
 </template>
