@@ -83,6 +83,7 @@ async fn run_step(
         item_id: exchange.item_id.map(str::to_string),
         channel_id: exchange.channel_id,
         mcp,
+        has_variables: !exchange.definition.variables.is_empty(),
         collected: StdMutex::default(),
     };
     let first = sessions.opened.insert(agent.clone());
@@ -452,6 +453,7 @@ pub(super) struct AgentCall {
     item_id: Option<String>,
     channel_id: Option<i64>,
     mcp: Option<McpLaunch>,
+    has_variables: bool,
     collected: StdMutex<ExchangeOutcome>,
 }
 
@@ -513,6 +515,9 @@ async fn send_in_slot(
     let slot = live.exchange_slot().cloned();
     if let Some(slot) = &slot {
         slot.begin(call.item_id.as_deref(), call.channel_id);
+        if call.has_variables {
+            slot.enable_variables();
+        }
     }
     let reply = live
         .send(

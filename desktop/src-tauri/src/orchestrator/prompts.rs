@@ -86,7 +86,7 @@ fn step_prompt(
     sections.join("\n")
 }
 
-pub(super) fn variables_listing(cache: &Cache, agent: &Agent) -> String {
+pub(crate) fn variables_listing(cache: &Cache, agent: &Agent) -> String {
     let lines: Vec<String> = cache
         .visible_to(agent)
         .into_iter()

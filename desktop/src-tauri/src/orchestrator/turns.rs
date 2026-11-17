@@ -82,6 +82,7 @@ pub(super) async fn run_turns(
             confirmations,
             decision,
             delegation: registered_delegation,
+            variables,
         } = outcome;
         if let Some(mut parsed) = pick_decision(decision, &reply) {
             let shown = Some(parsed.visible).filter(|visible| !visible.is_empty());
@@ -136,8 +137,16 @@ pub(super) async fn run_turns(
         }
         rejections = 0;
 
-        let advanced = applied.created_variable || applied.changed_value;
-        let feed = with_confirmations(feed_text(&visible, &applied.accepted), &confirmations);
+        let advanced = applied.created_variable
+            || applied.changed_value
+            || variables.created_variable
+            || variables.changed_value;
+        let accepted: Vec<Change> = variables
+            .accepted
+            .into_iter()
+            .chain(applied.accepted)
+            .collect();
+        let feed = with_confirmations(feed_text(&visible, &accepted), &confirmations);
         let finished = with_cache(state, project_id, |cache| {
             Ok(definition
                 .stop
@@ -626,7 +635,7 @@ fn say(
     Ok(())
 }
 
-pub(super) fn with_cache<T>(
+pub(crate) fn with_cache<T>(
     state: &AppState,
     project_id: i64,
     action: impl FnOnce(&mut Cache) -> Result<T, String>,

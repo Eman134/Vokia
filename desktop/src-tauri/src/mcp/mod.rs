@@ -85,3 +85,7 @@ mod decision_tests;
 #[cfg(test)]
 #[path = "../../tests/mcp_delegation_tests.rs"]
 mod delegation_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_variables_tests.rs"]
+mod variables_tests;

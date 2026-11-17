@@ -8,7 +8,9 @@ use crate::db::{
     AGENT_FORBIDDEN_COLUMN, BOARD_COLUMNS,
 };
 use crate::events::DecisionKind;
-use crate::orchestrator::emit_backlog_changed;
+use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
+use crate::state::AppState;
+use crate::task::{Change, VarValue};
 
 use super::registry::Binding;
 use super::slot::SlotDecision;
@@ -19,6 +21,10 @@ const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
 const REQUEST_DECISION: &str = "request_decision";
 const DELEGATE: &str = "delegate";
+const GET_VARIABLES: &str = "get_variables";
+const SET_VARIABLE: &str = "set_variable";
+const OP_SET: &str = "set";
+const OP_APPEND: &str = "append";
 
 const MAX_TITLE_CHARS: usize = 200;
 const LIST_LIMIT: usize = 50;
@@ -29,6 +35,15 @@ const TITLE_TOO_LONG: &str = "O título do card passa de 200 caracteres.";
 const SYSTEM_FAILURE: &str = "Não foi possível acessar o backlog agora. Tente de novo mais tarde.";
 const EMPTY_BACKLOG: &str = "Nenhum card.";
 const NO_DESCRIPTION: &str = "sem descrição";
+
+const VARIABLES_FAILURE: &str =
+    "Não foi possível acessar as variáveis agora. Tente de novo mais tarde.";
+const NO_VARIABLES_IN_EXCHANGE: &str =
+    "Esta tarefa não usa variáveis: não há o que registrar. Responda só com texto.";
+const INVALID_OP: &str = "Operação inválida. Use set ou append.";
+const EMPTY_VALUE: &str = "O valor não pode ser vazio.";
+const NON_INTEGER_VALUE: &str = "O valor numérico precisa ser um inteiro.";
+const UNSUPPORTED_VALUE: &str = "O valor precisa ser um texto ou um número inteiro.";
 
 const DELEGATION_REGISTERED: &str = "Delegação registrada. Termine a resposta agora.";
 const DELEGATION_ALREADY_REGISTERED: &str =
@@ -65,6 +80,14 @@ struct CreateArgs {
 struct MoveArgs {
     id: String,
     column: String,
+}
+
+#[derive(Deserialize)]
+struct SetVariableArgs {
+    name: String,
+    op: String,
+    value: Value,
+    share: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +162,23 @@ pub fn definitions() -> Vec<Value> {
             }),
             &["agent", "request"],
         ),
+        tool(
+            GET_VARIABLES,
+            "Lista as variáveis da tarefa que você pode ver, com tipo, escopo e valor.",
+            json!({}),
+            &[],
+        ),
+        tool(
+            SET_VARIABLE,
+            "Grava uma variável da tarefa: op set troca o valor; op append acrescenta um item a uma lista; share compartilha com o time.",
+            json!({
+                "name": { "type": "string" },
+                "op": { "type": "string", "enum": [OP_SET, OP_APPEND] },
+                "value": { "type": ["string", "integer"] },
+                "share": { "type": "boolean" },
+            }),
+            &["name", "op", "value"],
+        ),
     ]
 }
 
@@ -171,6 +211,8 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
+        GET_VARIABLES => get_variables(app, binding),
+        SET_VARIABLE => parse(name, arguments).and_then(|args| set_variable(app, binding, args)),
         _ => return None,
     };
     Some(match outcome {
@@ -290,6 +332,89 @@ fn move_card(app: &AppHandle, binding: &Binding, args: MoveArgs) -> ToolText {
             column: args.column,
         },
     )
+}
+
+fn get_variables(app: &AppHandle, binding: &Binding) -> ToolText {
+    let state = app.state::<AppState>();
+    with_cache(&state, binding.project_id, |cache| {
+        Ok(variables_listing(cache, &binding.agent))
+    })
+    .map_err(|_| VARIABLES_FAILURE.to_string())
+}
+
+fn set_variable(app: &AppHandle, binding: &Binding, args: SetVariableArgs) -> ToolText {
+    if !binding.slot.lock().variables_enabled {
+        return Err(NO_VARIABLES_IN_EXCHANGE.to_string());
+    }
+    let name = args.name.trim().to_string();
+    let changes = variable_changes(&name, &args)?;
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|_| VARIABLES_FAILURE.to_string())?;
+    let state = app.state::<AppState>();
+    let applied = with_cache(&state, binding.project_id, |cache| {
+        let updates = changes.into_iter().map(Ok).collect();
+        Ok(cache.apply_reply(&binding.agent, updates, &team))
+    })
+    .map_err(|_| VARIABLES_FAILURE.to_string())?;
+    if !applied.rejected.is_empty() {
+        return Err(format!(
+            "Variável recusada: {}.",
+            applied.rejected.join("; ")
+        ));
+    }
+    let mut slot = binding.slot.lock();
+    slot.variables.created_variable |= applied.created_variable;
+    slot.variables.changed_value |= applied.changed_value;
+    slot.variables.accepted.extend(applied.accepted);
+    Ok(format!("Variável {name} registrada."))
+}
+
+fn variable_changes(name: &str, args: &SetVariableArgs) -> Result<Vec<Change>, String> {
+    let share = args.share.unwrap_or(false);
+    match args.op.as_str() {
+        OP_SET => Ok(vec![Change::Set {
+            name: name.to_string(),
+            value: variable_value(&args.value)?,
+            share,
+        }]),
+        OP_APPEND => {
+            let mut changes = vec![Change::Append {
+                name: name.to_string(),
+                item: item_text(&args.value)?,
+            }];
+            if share {
+                changes.push(Change::Share {
+                    name: name.to_string(),
+                });
+            }
+            Ok(changes)
+        }
+        _ => Err(INVALID_OP.to_string()),
+    }
+}
+
+// Texto numérico vira número, como na linha `$nome = valor`.
+fn variable_value(value: &Value) -> Result<VarValue, String> {
+    match value {
+        Value::Number(number) => number
+            .as_i64()
+            .map(VarValue::Number)
+            .ok_or_else(|| NON_INTEGER_VALUE.to_string()),
+        Value::String(text) if !text.trim().is_empty() => Ok(VarValue::from_text(text.trim())),
+        Value::String(_) => Err(EMPTY_VALUE.to_string()),
+        _ => Err(UNSUPPORTED_VALUE.to_string()),
+    }
+}
+
+fn item_text(value: &Value) -> Result<String, String> {
+    match value {
+        Value::Number(number) => Ok(number.to_string()),
+        Value::String(text) if !text.trim().is_empty() => Ok(text.trim().to_string()),
+        Value::String(_) => Err(EMPTY_VALUE.to_string()),
+        _ => Err(UNSUPPORTED_VALUE.to_string()),
+    }
 }
 
 fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText {

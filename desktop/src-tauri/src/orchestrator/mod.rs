@@ -15,6 +15,8 @@ mod turns;
 
 pub(crate) use archive::remove_archive;
 pub(crate) use emit::emit_backlog_changed;
+pub(crate) use prompts::variables_listing;
+pub(crate) use turns::with_cache;
 pub use emit::now_millis;
 pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};

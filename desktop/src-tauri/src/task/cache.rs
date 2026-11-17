@@ -26,7 +26,7 @@ pub enum VarValue {
 }
 
 impl VarValue {
-    fn from_text(text: &str) -> Self {
+    pub fn from_text(text: &str) -> Self {
         text.parse()
             .map_or_else(|_| VarValue::Text(text.to_string()), VarValue::Number)
     }
