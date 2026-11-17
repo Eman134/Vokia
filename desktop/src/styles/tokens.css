@@ -31,6 +31,17 @@
   --color-feature-purple: light-dark(#6250d6, #6250d6);
   --color-client: light-dark(#c2185b, #c2185b);
 
+  /* Paleta dos ícones de projeto: as chaves espelham PROJECT_COLORS de projects/manage.rs. O traço escuro vale nos dois temas porque o círculo é claro nos dois. */
+  --color-project-rose: light-dark(#f6c1cc, #d9a0ad);
+  --color-project-peach: light-dark(#f8d3b5, #dcb08a);
+  --color-project-yellow: light-dark(#f5e7a6, #d8c985);
+  --color-project-green: light-dark(#c4e7b8, #a2c796);
+  --color-project-teal: light-dark(#b5e4dc, #92c3ba);
+  --color-project-blue: light-dark(#bcd6f3, #99b7d8);
+  --color-project-purple: light-dark(#d4c8f2, #b4a7d6);
+  --color-project-pink: light-dark(#f2c5e3, #d5a3c3);
+  --color-project-line: #2a2a31;
+
   /* Terminal do console: escuro nos dois temas, com os valores do tema escuro acima. */
   --color-term-bg: #1a1a1e;
   --color-term-line: #2f2f36;

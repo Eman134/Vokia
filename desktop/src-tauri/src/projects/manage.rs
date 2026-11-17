@@ -19,6 +19,10 @@ const PROJECT_ICONS: [&str; 8] = [
     "diagram",
     "whiteboard",
 ];
+// Espelha as chaves de desktop/src/features/projects/projectColors.ts.
+const PROJECT_COLORS: [&str; 8] = [
+    "rose", "peach", "yellow", "green", "teal", "blue", "purple", "pink",
+];
 static CREATE_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Deserialize)]
@@ -43,6 +47,7 @@ pub struct ProjectEdit {
     name: String,
     symbol: String,
     description: String,
+    color: String,
 }
 
 struct CreateGuard;
@@ -77,10 +82,21 @@ fn ensure_known_icon(symbol: &str) -> Result<(), ProjectError> {
     ))
 }
 
+fn ensure_known_color(color: &str) -> Result<(), ProjectError> {
+    if PROJECT_COLORS.contains(&color) {
+        return Ok(());
+    }
+    Err(ProjectError::new(
+        ErrorCode::InvalidColor,
+        "A cor do projeto não está na paleta.",
+    ))
+}
+
 pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, ProjectError> {
     let symbol = edit.symbol.trim();
     ensure_known_icon(symbol)?;
-    Ok(db.update_project(id, &edit.name, symbol, &edit.description)?)
+    ensure_known_color(&edit.color)?;
+    Ok(db.update_project(id, &edit.name, symbol, &edit.description, &edit.color)?)
 }
 
 pub fn pin_project(db: &Db, id: Option<i64>) -> Result<(), ProjectError> {
@@ -110,3 +126,7 @@ pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, 
         Origin::Github(origin) => create_from_github(db, &input, origin).await,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/project_color_tests.rs"]
+mod tests;

@@ -20,6 +20,7 @@ pub enum ErrorCode {
     ProjectAlreadyAdded,
     CreateInProgress,
     InvalidIcon,
+    InvalidColor,
     ProjectNotFound,
     ProjectBusy,
     ProjectHasNoFolder,

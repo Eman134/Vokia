@@ -8,7 +8,7 @@ use super::error::DbError;
 
 const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
-     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level";
+     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level, color";
 
 // item_plans antes de backlog_items: a chave estrangeira deles aponta para backlog_items.
 const PROJECT_CHILD_TABLES: &[&str] = &[
@@ -39,6 +39,7 @@ pub struct Project {
     pub pinned: bool,
     pub last_activity_at: Option<i64>,
     pub permission_level: PermissionLevel,
+    pub color: Option<String>,
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -63,6 +64,7 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         pinned: row.get(9)?,
         last_activity_at: row.get(10)?,
         permission_level,
+        color: row.get(12)?,
     })
 }
 
@@ -172,12 +174,13 @@ impl Db {
         name: &str,
         symbol: &str,
         description: &str,
+        color: &str,
     ) -> Result<Project, DbError> {
         validate_project_fields(name, symbol)?;
         let conn = self.conn()?;
         let changed = conn.execute(
-            "UPDATE projects SET name = ?1, symbol = ?2, description = ?3 WHERE id = ?4",
-            params![name.trim(), symbol.trim(), description.trim(), id],
+            "UPDATE projects SET name = ?1, symbol = ?2, description = ?3, color = ?4 WHERE id = ?5",
+            params![name.trim(), symbol.trim(), description.trim(), color, id],
         )?;
         if changed == 0 {
             return Err(DbError::ProjectNotFound(id));

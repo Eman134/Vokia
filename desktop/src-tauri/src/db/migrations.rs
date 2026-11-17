@@ -145,6 +145,9 @@ const MIGRATIONS: &[&str] = &[
     "
     ALTER TABLE messages ADD COLUMN activity TEXT;
 ",
+    "
+    ALTER TABLE projects ADD COLUMN color TEXT;
+",
 ];
 
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {

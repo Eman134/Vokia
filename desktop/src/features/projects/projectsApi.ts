@@ -32,6 +32,7 @@ export interface Project {
   pinned: boolean
   lastActivityAt: number | null
   permissionLevel: PermissionLevel
+  color: string | null
 }
 
 export interface DbProblem {
@@ -53,7 +54,7 @@ export function loadHistory(projectId: number): Promise<VokiaMessage[]> {
 export type ProjectErrorCode =
   | 'GitNotInstalled' | 'FolderNotFound' | 'NotADirectory'  | 'GhNotInstalled' | 'GhNotAuthenticated' | 'InvalidRepoRef' | 'RepoNotFound' | 'GhFailed'
   | 'DestinationExists' | 'CloneFailed' | 'CloneTimeout' | 'BranchNotFound'
-  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'ProjectNotFound' | 'ProjectBusy' | 'ProjectHasNoFolder' | 'Db'
+  | 'ProjectAlreadyAdded' | 'CreateInProgress' | 'InvalidIcon' | 'InvalidColor' | 'ProjectNotFound' | 'ProjectBusy' | 'ProjectHasNoFolder' | 'Db'
 
 export interface ProjectError {
   code: ProjectErrorCode
@@ -114,6 +115,7 @@ export interface ProjectEdit {
   name: string
   symbol: string
   description: string
+  color: string
 }
 
 export function createProject(input: NewProjectInput): Promise<Project> {

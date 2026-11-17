@@ -15,7 +15,8 @@ import { useNavigation } from './useNavigation'
 import { useRail } from './useRail'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
-import { projectIconOf } from '../features/projects/projectIcons'
+import ProjectBadge from '../features/projects/ProjectBadge.vue'
+import { projectColorOf } from '../features/projects/projectColors'
 import type { Project } from '../features/projects/projectsApi'
 import { useProjects } from '../features/projects/useProjects'
 import { useFeed } from '../features/team/useFeed'
@@ -26,6 +27,7 @@ const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap
 const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
 const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
+const PROJECT_BADGE = 'size-4.5 flex-none'
 const ITEM_ON = 'bg-accent-soft text-accent'
 const ITEM_OFF = 'text-muted'
 const TOGGLE = 'cursor-pointer bg-transparent text-ink'
@@ -157,17 +159,7 @@ function toggleProject(project: Project) {
           @click="toggleProject(project)"
         >
           <span :class="ICON_BOX">
-            <svg
-              class="size-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              stroke-linejoin="round"
-              aria-hidden="true"
-            >
-              <path :d="projectIconOf(project.symbol).path" />
-            </svg>
+            <ProjectBadge :color="projectColorOf(project)" :class="PROJECT_BADGE" />
           </span>
           <span v-if="expanded" :class="LABEL">{{ project.name }}</span>
         </button>
