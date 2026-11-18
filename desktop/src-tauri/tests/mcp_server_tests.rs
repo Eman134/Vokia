@@ -19,7 +19,7 @@ async fn started() -> (McpServer, u16, Token) {
     let server = McpServer::start().await.expect("o servidor deveria abrir");
     let port = port_of(&server);
     let token = server
-        .register(binding("iara", "Iara"))
+        .register(binding("axiom", "Axiom"))
         .expect("o token deveria ser gerado");
     (server, port, token)
 }
@@ -126,15 +126,15 @@ fn token_revogado_responde_401_e_antes_da_revogacao_respondia_200() {
 #[test]
 fn dois_tokens_de_agentes_diferentes_nao_se_cruzam() {
     run(async {
-        let (server, port, iara) = started().await;
-        let davi = server
-            .register(binding("davi", "Davi"))
-            .expect("token do Davi");
+        let (server, port, axiom) = started().await;
+        let vexa = server
+            .register(binding("vexa", "Vexa"))
+            .expect("token do Vexa");
 
-        assert_ne!(iara.as_str(), davi.as_str());
-        server.revoke(&iara);
-        let revoked = send(port, &Request::post(port, &iara, rpc(1, "ping"))).await;
-        let kept = send(port, &Request::post(port, &davi, rpc(2, "ping"))).await;
+        assert_ne!(axiom.as_str(), vexa.as_str());
+        server.revoke(&axiom);
+        let revoked = send(port, &Request::post(port, &axiom, rpc(1, "ping"))).await;
+        let kept = send(port, &Request::post(port, &vexa, rpc(2, "ping"))).await;
 
         assert_eq!(revoked.status, 401);
         assert_eq!(kept.status, 200);
@@ -145,16 +145,16 @@ fn dois_tokens_de_agentes_diferentes_nao_se_cruzam() {
 #[test]
 fn duas_chamadas_concorrentes_de_agentes_diferentes_recebem_cada_uma_a_sua_resposta() {
     run(async {
-        let (server, port, iara) = started().await;
-        let davi = server
-            .register(binding("davi", "Davi"))
-            .expect("token do Davi");
+        let (server, port, axiom) = started().await;
+        let vexa = server
+            .register(binding("vexa", "Vexa"))
+            .expect("token do Vexa");
         let tasks: Vec<_> = (0..20)
             .map(|index| {
                 let (token, id) = if index % 2 == 0 {
-                    (iara.clone(), 1000 + index)
+                    (axiom.clone(), 1000 + index)
                 } else {
-                    (davi.clone(), 2000 + index)
+                    (vexa.clone(), 2000 + index)
                 };
                 tauri::async_runtime::spawn(async move {
                     let reply = send(port, &Request::post(port, &token, rpc(id, "ping"))).await;

@@ -182,6 +182,29 @@ pub(super) async fn run_turns(
                 }
             }
         }
+        // Cada delegação em paralelo passa pela mesma política; uma recusa ou escalada derruba o conjunto inteiro.
+        let mut parallel_checked: Vec<(Agent, String, Passage)> = Vec::new();
+        if rejected.is_empty() && escalation.is_none() {
+            let mut trial = counters.task.clone();
+            for (helper, request) in &parallel_delegations {
+                match policy::check(exchange.orchestration, team, &turn.speaker, helper, &trial) {
+                    Verdict::Deliver(found) => {
+                        count_passage(&mut trial, &turn.speaker, helper, &found);
+                        parallel_checked.push((helper.clone(), request.clone(), found));
+                    }
+                    Verdict::Refuse(motive) => {
+                        parallel_checked.clear();
+                        rejected.push(motive);
+                        break;
+                    }
+                    Verdict::Escalate(motive) => {
+                        parallel_checked.clear();
+                        escalation = Some(motive);
+                        break;
+                    }
+                }
+            }
+        }
         if !rejected.is_empty() {
             let shown = with_confirmations(
                 (!visible.is_empty()).then(|| visible.clone()),
@@ -287,9 +310,12 @@ pub(super) async fn run_turns(
         }
 
         // Cada delegação em paralelo vai para a instância do helper (ou espera no teto); a delegação em série segue o caminho normal.
-        if !parallel_delegations.is_empty() {
+        if !parallel_checked.is_empty() {
             let snapshot = exchange.orchestration;
             let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
+            for (helper, _, found) in &parallel_checked {
+                count_passage(&mut counters.task, &turn.speaker, helper, found);
+            }
             let batch = open_batch(
                 state,
                 Batch {
@@ -308,7 +334,17 @@ pub(super) async fn run_turns(
                     counters: counters.task.clone(),
                 },
             )?;
-            for (helper, request) in parallel_delegations {
+            for (helper, request, found) in parallel_checked {
+                record_passage(
+                    app,
+                    exchange.run_id,
+                    project_id,
+                    *item_id,
+                    None,
+                    &turn.speaker,
+                    &helper,
+                    &found,
+                )?;
                 let max_instances = snapshot
                     .and_then(|snapshot| placement_of(snapshot, &helper))
                     .map_or(1, |placement| placement.max_instances);
@@ -498,10 +534,7 @@ pub(super) async fn run_turns(
             )?;
             if let Some(passage) = &passage {
                 lote_open = true;
-                counters.task.register_passage(&turn.speaker, helper);
-                if passage.action == ACTION_RETURN {
-                    counters.task.register_return(&turn.speaker, helper);
-                }
+                count_passage(&mut counters.task, &turn.speaker, helper, passage);
                 record_passage(
                     app,
                     exchange.run_id,
@@ -816,6 +849,14 @@ fn labeled_request(request: &str, intent: &DelegationIntent) -> String {
         (None, _) => request.to_string(),
         (Some(label), Some(item)) => format!("{label} de {item}: {request}"),
         (Some(label), None) => format!("{label}: {request}"),
+    }
+}
+
+// Conta a passagem e, quando ela devolve trabalho, o retorno; a contagem vale para o limite de turnos e de passagens.
+fn count_passage(counters: &mut TaskCounters, from: &Agent, to: &Agent, passage: &Passage) {
+    counters.register_passage(from, to);
+    if passage.action == ACTION_RETURN {
+        counters.register_return(from, to);
     }
 }
 

@@ -39,7 +39,7 @@ impl TempDb {
 
     fn channel(&self, project: i64, name: &str) -> Channel {
         self.db
-            .create_channel(project, name, &members(&["iara", "davi"]))
+            .create_channel(project, name, &members(&["axiom", "vexa"]))
             .expect("o canal deveria ser criado")
     }
 
@@ -77,17 +77,17 @@ fn canal_criado_volta_listado_com_membros_na_ordem_gravada() {
     let project = t.project("a");
 
     let created =
-        t.db.create_channel(project, "front", &members(&["teo", "iara", "davi"]))
+        t.db.create_channel(project, "front", &members(&["sentry", "axiom", "vexa"]))
             .unwrap();
     let listed = t.db.list_channels(project).unwrap();
 
     assert_eq!(created.project_id, project);
     assert_eq!(created.name, "front");
-    assert_eq!(created.members, members(&["teo", "iara", "davi"]));
+    assert_eq!(created.members, members(&["sentry", "axiom", "vexa"]));
     assert!(created.created_at > 0);
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, created.id);
-    assert_eq!(listed[0].members, members(&["teo", "iara", "davi"]));
+    assert_eq!(listed[0].members, members(&["sentry", "axiom", "vexa"]));
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn nome_repetido_no_mesmo_projeto_falha_com_a_mensagem_do_nome() {
     t.channel(project, "front");
 
     let error =
-        t.db.create_channel(project, "front", &members(&["nina", "teo"]))
+        t.db.create_channel(project, "front", &members(&["kairo", "sentry"]))
             .unwrap_err();
 
     assert_eq!(
@@ -134,7 +134,7 @@ fn criar_em_projeto_inexistente_falha_sem_gravar() {
     let t = TempDb::open();
 
     let error =
-        t.db.create_channel(999, "front", &members(&["iara", "davi"]))
+        t.db.create_channel(999, "front", &members(&["axiom", "vexa"]))
             .unwrap_err();
 
     assert_eq!(error.to_string(), "O projeto 999 não existe.");

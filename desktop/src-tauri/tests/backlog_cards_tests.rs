@@ -54,12 +54,12 @@ fn actor(id: &str, name: &str, current_card: Option<&str>) -> AgentActor {
     }
 }
 
-fn davi() -> AgentActor {
-    actor("davi", "Davi", None)
+fn vexa() -> AgentActor {
+    actor("vexa", "Vexa", None)
 }
 
-fn iara() -> AgentActor {
-    actor("iara", "Iara", None)
+fn axiom() -> AgentActor {
+    actor("axiom", "Axiom", None)
 }
 
 fn create(title: &str) -> CardOperation {
@@ -118,7 +118,7 @@ fn criar_grava_card_do_agente_em_backlog_com_atividade_e_origem() {
     let results = db
         .apply_card_operations(
             project_id,
-            &davi(),
+            &vexa(),
             &[CardOperation::Create {
                 title: "Revisar login".to_string(),
                 description: Some("Checar o token".to_string()),
@@ -132,11 +132,11 @@ fn criar_grava_card_do_agente_em_backlog_com_atividade_e_origem() {
     let item = &db.list_backlog(project_id).unwrap().items[0];
     assert_eq!(item.id, results[0].id);
     assert_eq!(item.origin, "agente");
-    assert_eq!(item.who, "davi");
-    assert_eq!(item.by, "davi");
+    assert_eq!(item.who, "vexa");
+    assert_eq!(item.by, "vexa");
     assert_eq!(item.description.as_deref(), Some("Checar o token"));
     assert_eq!(item.activity.len(), 1);
-    assert_eq!(item.activity[0].text, "Davi criou o card na conversa.");
+    assert_eq!(item.activity[0].text, "Vexa criou o card na conversa.");
 }
 
 #[test]
@@ -145,12 +145,12 @@ fn mover_para_ready_e_recusado_e_o_card_fica_onde_estava() {
     let db = dir.open();
     let project_id = project(&db, "a");
     let id = db
-        .apply_card_operations(project_id, &davi(), &[create("Um")])
+        .apply_card_operations(project_id, &vexa(), &[create("Um")])
         .unwrap()[0]
         .id
         .clone();
 
-    let error = refused(db.apply_card_operations(project_id, &davi(), &[move_to(&id, "Ready")]));
+    let error = refused(db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "Ready")]));
 
     assert!(
         matches!(error, DbError::AgentForbiddenColumn(_)),
@@ -167,13 +167,13 @@ fn mover_card_de_outro_agente_e_recusado_mas_o_card_do_pedido_atual_e_aceito() {
     let db = dir.open();
     let project_id = project(&db, "a");
     let id = db
-        .apply_card_operations(project_id, &iara(), &[create("Da Iara")])
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
         .unwrap()[0]
         .id
         .clone();
 
     let error =
-        refused(db.apply_card_operations(project_id, &davi(), &[move_to(&id, "In progress")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "In progress")]));
 
     assert!(
         matches!(&error, DbError::CardNotOwned(found) if *found == id),
@@ -185,7 +185,7 @@ fn mover_card_de_outro_agente_e_recusado_mas_o_card_do_pedido_atual_e_aceito() {
     );
     assert_eq!(column_of(&db, project_id, &id), "Backlog");
 
-    let current = actor("davi", "Davi", Some(&id));
+    let current = actor("vexa", "Vexa", Some(&id));
     let results = db
         .apply_card_operations(project_id, &current, &[move_to(&id, "In progress")])
         .unwrap();
@@ -201,7 +201,7 @@ fn mover_id_inexistente_e_recusado_e_nada_e_gravado() {
     let project_id = project(&db, "a");
 
     let error =
-        refused(db.apply_card_operations(project_id, &davi(), &[move_to("item-99", "Done")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[move_to("item-99", "Done")]));
 
     assert!(
         matches!(&error, DbError::BacklogItemNotFound(id) if id == "item-99"),
@@ -217,13 +217,13 @@ fn titulo_duplicado_ignora_caixa_e_espacos_e_so_libera_com_o_card_em_done() {
     let db = dir.open();
     let project_id = project(&db, "a");
     let id = db
-        .apply_card_operations(project_id, &davi(), &[create("Revisar login")])
+        .apply_card_operations(project_id, &vexa(), &[create("Revisar login")])
         .unwrap()[0]
         .id
         .clone();
 
     let error =
-        refused(db.apply_card_operations(project_id, &davi(), &[create("  revisar LOGIN ")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[create("  revisar LOGIN ")]));
 
     assert!(
         matches!(&error, DbError::DuplicateCardTitle(found) if *found == id),
@@ -232,9 +232,9 @@ fn titulo_duplicado_ignora_caixa_e_espacos_e_so_libera_com_o_card_em_done() {
     assert!(error.is_card_refusal());
     assert_eq!(titles(&db, project_id), vec!["Revisar login"]);
 
-    db.apply_card_operations(project_id, &davi(), &[move_to(&id, "Done")])
+    db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "Done")])
         .unwrap();
-    db.apply_card_operations(project_id, &davi(), &[create("Revisar login")])
+    db.apply_card_operations(project_id, &vexa(), &[create("Revisar login")])
         .unwrap();
 
     assert_eq!(
@@ -250,7 +250,7 @@ fn dois_criar_com_o_mesmo_titulo_na_mesma_resposta_recusam_e_nenhum_grava() {
     let project_id = project(&db, "a");
 
     let error =
-        refused(db.apply_card_operations(project_id, &davi(), &[create("Igual"), create("igual")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[create("Igual"), create("igual")]));
 
     assert!(matches!(error, DbError::DuplicateCardTitle(_)), "{error:?}");
     assert!(titles(&db, project_id).is_empty());
@@ -264,7 +264,7 @@ fn criar_valido_mais_mover_invalido_na_mesma_resposta_nao_grava_nenhum_dos_dois(
 
     let error = refused(db.apply_card_operations(
         project_id,
-        &davi(),
+        &vexa(),
         &[create("Valido"), move_to("item-99", "Done")],
     ));
 
@@ -282,9 +282,9 @@ fn repetir_a_mesma_resposta_nao_duplica_o_card() {
     let project_id = project(&db, "a");
     let operations = [create("Uma vez só")];
 
-    db.apply_card_operations(project_id, &davi(), &operations)
+    db.apply_card_operations(project_id, &vexa(), &operations)
         .unwrap();
-    let error = refused(db.apply_card_operations(project_id, &davi(), &operations));
+    let error = refused(db.apply_card_operations(project_id, &vexa(), &operations));
 
     assert!(matches!(error, DbError::DuplicateCardTitle(_)), "{error:?}");
     assert_eq!(titles(&db, project_id), vec!["Uma vez só"]);
@@ -296,22 +296,22 @@ fn card_em_done_nao_sai_e_mover_para_a_coluna_atual_nao_muda_nem_registra_ativid
     let db = dir.open();
     let project_id = project(&db, "a");
     let id = db
-        .apply_card_operations(project_id, &davi(), &[create("Um")])
+        .apply_card_operations(project_id, &vexa(), &[create("Um")])
         .unwrap()[0]
         .id
         .clone();
 
     let same = db
-        .apply_card_operations(project_id, &davi(), &[move_to(&id, "Backlog")])
+        .apply_card_operations(project_id, &vexa(), &[move_to(&id, "Backlog")])
         .unwrap();
 
     assert_eq!(same[0].outcome, CardOutcome::Unchanged);
     assert_eq!(activity_count(&db, project_id, &id), 1);
 
-    db.apply_card_operations(project_id, &davi(), &[move_to(&id, "Done")])
+    db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "Done")])
         .unwrap();
     let error =
-        refused(db.apply_card_operations(project_id, &davi(), &[move_to(&id, "In progress")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "In progress")]));
 
     assert!(
         matches!(&error, DbError::CardClosed(found) if *found == id),
@@ -326,20 +326,20 @@ fn coluna_em_minusculas_e_aceita_e_grava_a_forma_canonica_com_atividade_de_ida()
     let db = dir.open();
     let project_id = project(&db, "a");
     let id = db
-        .apply_card_operations(project_id, &davi(), &[create("Um")])
+        .apply_card_operations(project_id, &vexa(), &[create("Um")])
         .unwrap()[0]
         .id
         .clone();
 
     let results = db
-        .apply_card_operations(project_id, &davi(), &[move_to(&id, "in progress")])
+        .apply_card_operations(project_id, &vexa(), &[move_to(&id, "in progress")])
         .unwrap();
 
     assert_eq!(results[0].column, "In progress");
     let item = &db.list_backlog(project_id).unwrap().items[0];
     assert_eq!(
         item.activity.last().unwrap().text,
-        "Davi moveu de Backlog para In progress."
+        "Vexa moveu de Backlog para In progress."
     );
 }
 
@@ -350,13 +350,13 @@ fn coluna_inexistente_e_card_de_outro_projeto_sao_recusados() {
     let first = project(&db, "a");
     let second = project(&db, "b");
     let id = db
-        .apply_card_operations(first, &davi(), &[create("Do A")])
+        .apply_card_operations(first, &vexa(), &[create("Do A")])
         .unwrap()[0]
         .id
         .clone();
 
-    let column = refused(db.apply_card_operations(first, &davi(), &[move_to(&id, "Review")]));
-    let other_project = refused(db.apply_card_operations(second, &davi(), &[move_to(&id, "Done")]));
+    let column = refused(db.apply_card_operations(first, &vexa(), &[move_to(&id, "Review")]));
+    let other_project = refused(db.apply_card_operations(second, &vexa(), &[move_to(&id, "Done")]));
 
     assert!(
         matches!(column, DbError::InvalidBacklogColumn(_)),

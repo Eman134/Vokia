@@ -30,15 +30,15 @@ fn collected(title: &str, detail: &str) -> RequestProposal {
 fn propose_request_grava_a_proposta_no_slot_sem_criar_card() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "propose_request",
         proposal(" Revisar login ", json!(" Detalhe ")),
     );
-    let slot = iara.slot.end();
+    let slot = axiom.slot.end();
 
     assert!(!outcome.is_error, "{}", outcome.text);
     assert_eq!(outcome.text, REGISTERED);
@@ -50,25 +50,25 @@ fn propose_request_grava_a_proposta_no_slot_sem_criar_card() {
 fn detail_e_opcional() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
-    let outcome = world.call(&iara, "propose_request", json!({ "title": "Sem detalhe" }));
+    axiom.slot.begin(None, None);
+    let outcome = world.call(&axiom, "propose_request", json!({ "title": "Sem detalhe" }));
 
     assert!(!outcome.is_error, "{}", outcome.text);
-    assert_eq!(iara.slot.end().proposal, Some(collected("Sem detalhe", "")));
+    assert_eq!(axiom.slot.end().proposal, Some(collected("Sem detalhe", "")));
 }
 
 #[test]
 fn segunda_chamada_na_mesma_resposta_e_erro_e_a_primeira_fica() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
-    world.call(&iara, "propose_request", proposal("Primeira", json!("")));
-    let second = world.call(&iara, "propose_request", proposal("Segunda", json!("")));
-    let slot = iara.slot.end();
+    axiom.slot.begin(None, None);
+    world.call(&axiom, "propose_request", proposal("Primeira", json!("")));
+    let second = world.call(&axiom, "propose_request", proposal("Segunda", json!("")));
+    let slot = axiom.slot.end();
 
     assert!(second.is_error);
     assert_eq!(second.text, ALREADY);
@@ -79,31 +79,31 @@ fn segunda_chamada_na_mesma_resposta_e_erro_e_a_primeira_fica() {
 fn titulo_vazio_ou_acima_de_200_e_recusado_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
     let too_long = "x".repeat(MAX_TITLE + 1);
 
-    iara.slot.begin(None, None);
-    let empty = world.call(&iara, "propose_request", proposal("   ", json!("")));
-    let long = world.call(&iara, "propose_request", proposal(&too_long, json!("")));
-    let missing = world.call(&iara, "propose_request", json!({ "detail": "só detalhe" }));
+    axiom.slot.begin(None, None);
+    let empty = world.call(&axiom, "propose_request", proposal("   ", json!("")));
+    let long = world.call(&axiom, "propose_request", proposal(&too_long, json!("")));
+    let missing = world.call(&axiom, "propose_request", json!({ "detail": "só detalhe" }));
 
     assert!(empty.is_error);
     assert_eq!(empty.text, EMPTY_TITLE);
     assert!(long.is_error);
     assert_eq!(long.text, TITLE_TOO_LONG);
     assert!(missing.is_error);
-    assert!(iara.slot.end().proposal.is_none());
+    assert!(axiom.slot.end().proposal.is_none());
 }
 
 #[test]
 fn titulo_com_exatamente_200_e_aceito() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "propose_request",
         proposal(&"x".repeat(MAX_TITLE), json!("")),
     );
@@ -115,27 +115,27 @@ fn titulo_com_exatamente_200_e_aceito() {
 fn proposta_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
-    let davi = world.agent("davi", "Davi", project);
+    let axiom = world.leader(project);
+    let vexa = world.agent("vexa", "Vexa", project);
 
-    iara.slot.begin(None, None);
-    world.call(&iara, "propose_request", proposal("Da Iara", json!("")));
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
+    world.call(&axiom, "propose_request", proposal("Da Axiom", json!("")));
+    axiom.slot.begin(None, None);
 
-    assert!(davi.slot.end().proposal.is_none());
-    assert!(iara.slot.end().proposal.is_none());
+    assert!(vexa.slot.end().proposal.is_none());
+    assert!(axiom.slot.end().proposal.is_none());
 }
 
 #[test]
 fn tools_list_traz_propose_request_com_titulo_obrigatorio() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
     let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
 
     let reply = run(send(
         world.port,
-        &Request::post(world.port, &iara.token, body),
+        &Request::post(world.port, &axiom.token, body),
     ));
     let tools = reply.json()["result"]["tools"].clone();
     let tool = tools
@@ -192,7 +192,7 @@ fn comando_cria_card_de_origem_agente_no_backlog_com_a_descricao() {
     let card = create_from(
         &world,
         project,
-        Agent::ember().as_str(),
+        Agent::axiom().as_str(),
         "Revisar login",
         Some("Detalhe"),
     )
@@ -217,7 +217,7 @@ fn segundo_clique_com_o_mesmo_titulo_e_recusado_e_fica_um_card_so() {
     create_from(
         &world,
         project,
-        Agent::ember().as_str(),
+        Agent::axiom().as_str(),
         "Revisar login",
         None,
     )
@@ -225,7 +225,7 @@ fn segundo_clique_com_o_mesmo_titulo_e_recusado_e_fica_um_card_so() {
     let second = create_from(
         &world,
         project,
-        Agent::ember().as_str(),
+        Agent::axiom().as_str(),
         "Revisar login",
         None,
     );
@@ -240,7 +240,7 @@ fn comando_cria_no_projeto_recebido_e_recusa_agente_desconhecido() {
     let first = world.project("a");
     let second = world.project("b");
 
-    create_from(&world, second, "davi", "Do segundo", None).expect("criação");
+    create_from(&world, second, "vexa", "Do segundo", None).expect("criação");
     let unknown = create_from(&world, first, "fantasma", "Qualquer", None);
 
     assert!(world.cards(first).is_empty());

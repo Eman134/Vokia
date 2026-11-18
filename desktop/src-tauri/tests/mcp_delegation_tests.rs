@@ -21,21 +21,21 @@ fn request_of(delegation: &Option<(Agent, String)>) -> Option<&str> {
 fn delegate_registra_agente_e_pedido_no_slot_sem_bloquear() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "delegate",
-        json!({ "agent": " davi ", "request": " Revise o login " }),
+        json!({ "agent": " vexa ", "request": " Revise o login " }),
     );
-    let collected = iara.slot.end();
+    let collected = axiom.slot.end();
 
     assert!(!outcome.is_error, "{}", outcome.text);
     assert_eq!(outcome.text, REGISTERED);
     assert_eq!(
         collected.delegation,
-        Some((agent("davi"), "Revise o login".to_string()))
+        Some((agent("vexa"), "Revise o login".to_string()))
     );
 }
 
@@ -43,29 +43,29 @@ fn delegate_registra_agente_e_pedido_no_slot_sem_bloquear() {
 fn delegar_a_si_mesmo_e_recusado_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "delegate",
         json!({ "agent": world.leader_name(), "request": "Faça isso" }),
     );
 
     assert!(outcome.is_error);
     assert_eq!(outcome.text, TO_SELF);
-    assert!(iara.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegation.is_none());
 }
 
 #[test]
 fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "delegate",
         json!({ "agent": "Fantasma", "request": "Faça isso" }),
     );
@@ -78,53 +78,53 @@ fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente
         "{}",
         outcome.text
     );
-    assert!(outcome.text.contains("Davi"), "{}", outcome.text);
+    assert!(outcome.text.contains("Vexa"), "{}", outcome.text);
     assert!(
         !outcome.text.contains(&world.leader_name()),
         "{}",
         outcome.text
     );
-    assert!(iara.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegation.is_none());
 }
 
 #[test]
 fn pedido_vazio_ou_em_branco_e_recusado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     for request in ["", "   "] {
         let outcome = world.call(
-            &iara,
+            &axiom,
             "delegate",
-            json!({ "agent": "Davi", "request": request }),
+            json!({ "agent": "Vexa", "request": request }),
         );
         assert!(outcome.is_error);
         assert_eq!(outcome.text, EMPTY_REQUEST);
     }
 
-    assert!(iara.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegation.is_none());
 }
 
 #[test]
 fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     world.call(
-        &iara,
+        &axiom,
         "delegate",
-        json!({ "agent": "Davi", "request": "Primeiro" }),
+        json!({ "agent": "Vexa", "request": "Primeiro" }),
     );
     let second = world.call(
-        &iara,
+        &axiom,
         "delegate",
-        json!({ "agent": "Davi", "request": "Segundo" }),
+        json!({ "agent": "Vexa", "request": "Segundo" }),
     );
-    let collected = iara.slot.end();
+    let collected = axiom.slot.end();
 
     assert!(second.is_error);
     assert_eq!(second.text, ALREADY);
@@ -135,28 +135,28 @@ fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
 fn delegacao_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
-    let davi = world.agent("davi", "Davi", project);
+    let axiom = world.leader(project);
+    let vexa = world.agent("vexa", "Vexa", project);
 
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
     world.call(
-        &iara,
+        &axiom,
         "delegate",
-        json!({ "agent": "Davi", "request": "Da Iara" }),
+        json!({ "agent": "Vexa", "request": "Da Axiom" }),
     );
-    iara.slot.begin(None, None);
+    axiom.slot.begin(None, None);
 
-    assert!(davi.slot.end().delegation.is_none());
-    assert!(iara.slot.end().delegation.is_none());
+    assert!(vexa.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegation.is_none());
 }
 
 #[test]
 fn argumentos_fora_do_schema_voltam_como_is_error() {
     let world = world();
     let project = world.project("a");
-    let iara = world.leader(project);
+    let axiom = world.leader(project);
 
-    let outcome = world.call(&iara, "delegate", json!({ "agent": "Davi" }));
+    let outcome = world.call(&axiom, "delegate", json!({ "agent": "Vexa" }));
 
     assert!(outcome.is_error);
     assert!(outcome.text.contains("delegate"), "{}", outcome.text);
@@ -165,7 +165,7 @@ fn argumentos_fora_do_schema_voltam_como_is_error() {
 #[test]
 fn absorb_fica_com_a_delegacao_mais_recente() {
     let mut collected = ExchangeOutcome {
-        delegation: Some((agent("davi"), "Antiga".to_string())),
+        delegation: Some((agent("vexa"), "Antiga".to_string())),
         ..ExchangeOutcome::default()
     };
 
@@ -173,7 +173,7 @@ fn absorb_fica_com_a_delegacao_mais_recente() {
     assert_eq!(request_of(&collected.delegation), Some("Antiga"));
 
     collected.absorb(ExchangeOutcome {
-        delegation: Some((agent("davi"), "Nova".to_string())),
+        delegation: Some((agent("vexa"), "Nova".to_string())),
         ..ExchangeOutcome::default()
     });
     assert_eq!(request_of(&collected.delegation), Some("Nova"));

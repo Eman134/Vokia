@@ -6,13 +6,14 @@ import { useOrchestration } from '../orchestration/useOrchestration'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import AgentCard from './AgentCard.vue'
-import { agentCountLabel, CORNER_LABEL, EMPTY_CELL_LABEL, IN_PROGRESS_COLUMN, teamInitial } from './teamMapLayers'
+import { agentCountLabel, CORNER_LABEL, IN_PROGRESS_COLUMN, LINK_SLOT_LABEL, teamInitial } from './teamMapLayers'
 
 const TEAM_COLUMN_PX = 150
 const LAYER_COLUMN_MIN_PX = 170
+const LINK_ICON_SIZE = 16
 
-defineProps<{ canPlaceExisting: boolean }>()
-const emit = defineEmits<{ placeExisting: [teamId: string, layerId: string] }>()
+defineProps<{ canLink: boolean }>()
+const emit = defineEmits<{ link: [teamId: string, layerId: string] }>()
 
 const orchestration = useOrchestration()
 const roster = useRoster()
@@ -100,11 +101,25 @@ const gridStyle = computed(() => ({
             <button
               v-if="cellAgents(team.id, layer.id).length === 0"
               type="button"
-              :disabled="!canPlaceExisting"
-              class="self-stretch rounded-card border border-dashed border-line py-3 text-center text-small text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-              @click="emit('placeExisting', team.id, layer.id)"
+              :disabled="!canLink"
+              class="flex flex-col items-center justify-center gap-1.5 self-stretch rounded-card border border-dashed border-line py-3 text-small text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+              @click="emit('link', team.id, layer.id)"
             >
-              {{ EMPTY_CELL_LABEL }}
+              <svg
+                :width="LINK_ICON_SIZE"
+                :height="LINK_ICON_SIZE"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <span>{{ LINK_SLOT_LABEL }}</span>
             </button>
           </div>
         </template>

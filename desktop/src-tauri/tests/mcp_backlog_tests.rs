@@ -88,12 +88,12 @@ impl World {
             .state::<crate::agents::AgentRegistry>()
             .team()
             .expect("o elenco do teste deveria carregar");
-        team.name_of(&crate::agents::Agent::ember()).to_string()
+        team.name_of(&crate::agents::Agent::axiom()).to_string()
     }
 
     pub(super) fn leader(&self, project_id: i64) -> Caller {
         self.agent(
-            crate::agents::Agent::ember().as_str(),
+            crate::agents::Agent::axiom().as_str(),
             &self.leader_name(),
             project_id,
         )
@@ -152,10 +152,10 @@ impl World {
 fn create_card_grava_no_projeto_do_binding_com_o_agente_dono_e_confirma_na_frase() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
     let outcome = world.call(
-        &iara,
+        &axiom,
         "create_card",
         json!({ "title": "Revisar login", "description": "Checar o token" }),
     );
@@ -163,21 +163,21 @@ fn create_card_grava_no_projeto_do_binding_com_o_agente_dono_e_confirma_na_frase
     assert!(!outcome.is_error);
     assert_eq!(outcome.text, "Card item-1 criado: Revisar login.");
     let card = &world.cards(project)[0];
-    assert_eq!(card.who, "iara");
+    assert_eq!(card.who, "axiom");
     assert_eq!(card.origin, "agente");
     assert_eq!(card.description.as_deref(), Some("Checar o token"));
-    assert_eq!(card.activity[0].text, "Iara criou o card na conversa.");
+    assert_eq!(card.activity[0].text, "Axiom criou o card na conversa.");
 }
 
 #[test]
 fn move_card_aceita_coluna_em_minuscula_e_grava_a_forma_canonica() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let id = world.create(&iara, "Um");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let id = world.create(&axiom, "Um");
 
     let outcome = world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": id, "column": "in progress" }),
     );
@@ -194,31 +194,31 @@ fn move_card_aceita_coluna_em_minuscula_e_grava_a_forma_canonica() {
 fn move_card_para_a_coluna_atual_avisa_sem_mudar_nem_confirmar_no_slot() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let id = world.create(&iara, "Um");
-    iara.slot.lock().confirmations.clear();
-    iara.slot.lock().changed = false;
+    let axiom = world.agent("axiom", "Axiom", project);
+    let id = world.create(&axiom, "Um");
+    axiom.slot.lock().confirmations.clear();
+    axiom.slot.lock().changed = false;
 
-    let outcome = world.call(&iara, "move_card", json!({ "id": id, "column": "Backlog" }));
+    let outcome = world.call(&axiom, "move_card", json!({ "id": id, "column": "Backlog" }));
 
     assert!(!outcome.is_error);
     assert_eq!(outcome.text, "Card item-1 já está em Backlog.");
-    assert!(!iara.slot.lock().changed);
-    assert!(iara.slot.lock().confirmations.is_empty());
+    assert!(!axiom.slot.lock().changed);
+    assert!(axiom.slot.lock().confirmations.is_empty());
 }
 
 #[test]
 fn read_card_devolve_coluna_dono_origem_descricao_e_atividade() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
     world.call(
-        &iara,
+        &axiom,
         "create_card",
         json!({ "title": "Um", "description": "Detalhe" }),
     );
 
-    let outcome = world.call(&iara, "read_card", json!({ "id": "item-1" }));
+    let outcome = world.call(&axiom, "read_card", json!({ "id": "item-1" }));
 
     assert!(!outcome.is_error);
     let lines: Vec<&str> = outcome.text.lines().collect();
@@ -227,13 +227,13 @@ fn read_card_devolve_coluna_dono_origem_descricao_e_atividade() {
         [
             "Card item-1: Um",
             "Coluna: Backlog",
-            "Dono: iara",
+            "Dono: axiom",
             "Origem: agente",
             "Descrição: Detalhe"
         ]
     );
     assert!(
-        lines[5].ends_with("Iara criou o card na conversa."),
+        lines[5].ends_with("Axiom criou o card na conversa."),
         "{}",
         lines[5]
     );
@@ -243,24 +243,24 @@ fn read_card_devolve_coluna_dono_origem_descricao_e_atividade() {
 fn list_backlog_lista_do_mais_novo_para_o_mais_antigo_e_filtra_por_coluna() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    world.create(&iara, "Primeiro");
-    let second = world.create(&iara, "Segundo");
+    let axiom = world.agent("axiom", "Axiom", project);
+    world.create(&axiom, "Primeiro");
+    let second = world.create(&axiom, "Segundo");
     world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": second, "column": "Done" }),
     );
 
-    let all = world.call(&iara, "list_backlog", json!({}));
-    let done = world.call(&iara, "list_backlog", json!({ "column": "done" }));
-    let ready = world.call(&iara, "list_backlog", json!({ "column": "Ready" }));
+    let all = world.call(&axiom, "list_backlog", json!({}));
+    let done = world.call(&axiom, "list_backlog", json!({ "column": "done" }));
+    let ready = world.call(&axiom, "list_backlog", json!({ "column": "Ready" }));
 
     assert_eq!(
         all.text,
-        "item-2 | Segundo | Done | iara | agente\nitem-1 | Primeiro | Backlog | iara | agente"
+        "item-2 | Segundo | Done | axiom | agente\nitem-1 | Primeiro | Backlog | axiom | agente"
     );
-    assert_eq!(done.text, "item-2 | Segundo | Done | iara | agente");
+    assert_eq!(done.text, "item-2 | Segundo | Done | axiom | agente");
     assert_eq!((ready.is_error, ready.text.as_str()), (false, NO_CARDS));
 }
 
@@ -268,9 +268,9 @@ fn list_backlog_lista_do_mais_novo_para_o_mais_antigo_e_filtra_por_coluna() {
 fn list_backlog_de_projeto_sem_cards_responde_nenhum_card_sem_erro() {
     let world = world();
     let project = world.project("vazio");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    let outcome = world.call(&iara, "list_backlog", json!({}));
+    let outcome = world.call(&axiom, "list_backlog", json!({}));
 
     assert!(!outcome.is_error);
     assert_eq!(outcome.text, NO_CARDS);
@@ -280,13 +280,13 @@ fn list_backlog_de_projeto_sem_cards_responde_nenhum_card_sem_erro() {
 fn recusas_do_banco_voltam_como_is_error_com_a_frase_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    let own = world.create(&iara, "Da Iara");
-    let foreign = world.create(&davi, "Do Davi");
-    let closed = world.create(&iara, "Fechado");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    let own = world.create(&axiom, "Da Axiom");
+    let foreign = world.create(&vexa, "Do Vexa");
+    let closed = world.create(&axiom, "Fechado");
     world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": closed, "column": "Done" }),
     );
@@ -314,7 +314,7 @@ fn recusas_do_banco_voltam_como_is_error_com_a_frase_e_nada_e_gravado() {
         (
             "título duplicado",
             "create_card",
-            json!({ "title": "  da IARA " }),
+            json!({ "title": "  da AXIOM " }),
             format!("Já existe o card {own} com esse título."),
         ),
         (
@@ -331,7 +331,7 @@ fn recusas_do_banco_voltam_como_is_error_com_a_frase_e_nada_e_gravado() {
         ),
     ];
     for (label, tool, arguments, phrase) in cases {
-        let outcome = world.call(&iara, tool, arguments);
+        let outcome = world.call(&axiom, tool, arguments);
 
         assert!(outcome.is_error, "{label}");
         assert_eq!(outcome.text, phrase, "{label}");
@@ -354,13 +354,13 @@ fn column(world: &World, project: i64, id: &str) -> String {
 fn o_card_do_pedido_atual_no_slot_pode_ser_movido_mesmo_com_outro_dono() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    let foreign = world.create(&davi, "Do Davi");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    let foreign = world.create(&vexa, "Do Vexa");
 
-    iara.slot.begin(Some(&foreign), None);
+    axiom.slot.begin(Some(&foreign), None);
     let outcome = world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": foreign, "column": "In progress" }),
     );
@@ -374,19 +374,19 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
     let world = world();
     let mine = world.project("minha");
     let other = world.project("outra");
-    let iara = world.agent("iara", "Iara", mine);
-    let davi = world.agent("davi", "Davi", mine);
-    let davis = world.create(&davi, "Do Davi");
+    let axiom = world.agent("axiom", "Axiom", mine);
+    let vexa = world.agent("vexa", "Vexa", mine);
+    let davis = world.create(&vexa, "Do Vexa");
 
     let created = world.call(
-        &iara,
+        &axiom,
         "create_card",
-        json!({ "title": "Injetado", "project_id": other, "projectId": other, "agent": "davi" }),
+        json!({ "title": "Injetado", "project_id": other, "projectId": other, "agent": "vexa" }),
     );
     let moved = world.call(
-        &iara,
+        &axiom,
         "move_card",
-        json!({ "id": davis, "column": "Done", "agent": "davi", "project_id": other }),
+        json!({ "id": davis, "column": "Done", "agent": "vexa", "project_id": other }),
     );
 
     assert!(!created.is_error, "{}", created.text);
@@ -395,7 +395,7 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
         .into_iter()
         .find(|card| card.title == "Injetado")
         .expect("no projeto do binding");
-    assert_eq!(card.who, "iara");
+    assert_eq!(card.who, "axiom");
     assert!(world.cards(other).is_empty());
     assert!(moved.is_error);
     assert_eq!(column(&world, mine, &davis), "Backlog");
@@ -405,16 +405,16 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
 fn titulo_com_mais_de_200_caracteres_e_recusado_e_com_exatamente_200_e_aceito() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
     let over = world.call(
-        &iara,
+        &axiom,
         "create_card",
         json!({ "title": "a".repeat(MAX_TITLE + 1) }),
     );
     let created_after_over = world.cards(project).len();
     let exact = world.call(
-        &iara,
+        &axiom,
         "create_card",
         json!({ "title": "é".repeat(MAX_TITLE) }),
     );
@@ -431,8 +431,8 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_aparece_nem_se_confunde() {
     let world = world();
     let first = world.project("a");
     let second = world.project("b");
-    let in_a = world.agent("iara", "Iara", first);
-    let in_b = world.agent("iara", "Iara", second);
+    let in_a = world.agent("axiom", "Axiom", first);
+    let in_b = world.agent("axiom", "Axiom", second);
     world.create(&in_a, "Só do A");
 
     let missing = world.call(&in_b, "read_card", json!({ "id": "item-1" }));
@@ -455,7 +455,7 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_aparece_nem_se_confunde() {
         "{}",
         read_b.text
     );
-    assert_eq!(list_b.text, "item-1 | Do B | Backlog | iara | agente");
+    assert_eq!(list_b.text, "item-1 | Do B | Backlog | axiom | agente");
     assert_eq!(column(&world, first, "item-1"), "Backlog");
 }
 
@@ -463,9 +463,9 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_aparece_nem_se_confunde() {
 fn argumentos_fora_do_schema_voltam_como_is_error() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    let outcome = world.call(&iara, "create_card", json!({ "description": "sem título" }));
+    let outcome = world.call(&axiom, "create_card", json!({ "description": "sem título" }));
 
     assert!(outcome.is_error);
     assert_eq!(
@@ -479,12 +479,12 @@ fn argumentos_fora_do_schema_voltam_como_is_error() {
 fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
     let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
 
     let reply = run(send(
         world.port,
-        &Request::post(world.port, &iara.token, body),
+        &Request::post(world.port, &axiom.token, body),
     ));
 
     let tools = reply.json()["result"]["tools"]
@@ -553,7 +553,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
 fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
     let events: Arc<Mutex<Vec<Value>>> = Arc::default();
     let sink = events.clone();
     world.app.handle().listen(EVENT_NAME, move |event| {
@@ -562,26 +562,26 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
             .push(serde_json::from_str(event.payload()).unwrap());
     });
 
-    world.call(&iara, "create_card", json!({ "title": "Um" }));
+    world.call(&axiom, "create_card", json!({ "title": "Um" }));
     world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": "item-1", "column": "Backlog" }),
     );
     world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": "item-1", "column": "Ready" }),
     );
-    world.call(&iara, "read_card", json!({ "id": "item-1" }));
+    world.call(&axiom, "read_card", json!({ "id": "item-1" }));
     world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": "item-1", "column": "Done" }),
     );
     std::thread::sleep(std::time::Duration::from_millis(300));
 
-    let slot = iara.slot.lock();
+    let slot = axiom.slot.lock();
     assert!(slot.changed);
     assert_eq!(
         slot.confirmations,
@@ -602,47 +602,47 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
 fn confirmacao_da_troca_sai_no_end_e_o_slot_fica_vazio_depois_do_envio() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    iara.slot.begin(None, None);
-    world.call(&iara, "create_card", json!({ "title": "Um" }));
-    let collected = iara.slot.end().confirmations;
-    let again = iara.slot.end().confirmations;
+    axiom.slot.begin(None, None);
+    world.call(&axiom, "create_card", json!({ "title": "Um" }));
+    let collected = axiom.slot.end().confirmations;
+    let again = axiom.slot.end().confirmations;
 
     assert_eq!(collected, ["Card item-1 criado: Um."]);
     assert!(again.is_empty());
-    assert!(!iara.slot.lock().changed);
-    assert!(iara.slot.lock().confirmations.is_empty());
+    assert!(!axiom.slot.lock().changed);
+    assert!(axiom.slot.lock().confirmations.is_empty());
 }
 
 #[test]
 fn confirmacao_nao_coletada_de_uma_troca_nao_vaza_para_a_proxima() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    iara.slot.begin(None, None);
-    world.call(&iara, "create_card", json!({ "title": "Um" }));
+    axiom.slot.begin(None, None);
+    world.call(&axiom, "create_card", json!({ "title": "Um" }));
     // A troca caiu antes do end(): a seguinte começa do zero.
-    iara.slot.begin(None, None);
-    let collected = iara.slot.end().confirmations;
+    axiom.slot.begin(None, None);
+    let collected = axiom.slot.end().confirmations;
 
     assert!(collected.is_empty(), "{collected:?}");
-    assert!(!iara.slot.lock().changed);
+    assert!(!axiom.slot.lock().changed);
 }
 
 #[test]
 fn card_do_pedido_so_vale_dentro_da_troca_e_deixa_de_valer_depois_do_end() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    let foreign = world.create(&davi, "Do Davi");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    let foreign = world.create(&vexa, "Do Vexa");
 
-    iara.slot.begin(Some(&foreign), None);
-    iara.slot.end();
+    axiom.slot.begin(Some(&foreign), None);
+    axiom.slot.end();
     let outcome = world.call(
-        &iara,
+        &axiom,
         "move_card",
         json!({ "id": foreign, "column": "In progress" }),
     );

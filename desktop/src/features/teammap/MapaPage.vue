@@ -13,7 +13,7 @@ import MovementList from './MovementList.vue'
 import NewLayerDialog from './NewLayerDialog.vue'
 import NewTeamDialog from './NewTeamDialog.vue'
 import PlaceAgentDialog from './PlaceAgentDialog.vue'
-import PlaceExistingAgentDialog from './PlaceExistingAgentDialog.vue'
+import LinkAgentDialog from './LinkAgentDialog.vue'
 import TeamMatrix from './TeamMatrix.vue'
 import UnplacedAgents from './UnplacedAgents.vue'
 import {
@@ -44,9 +44,10 @@ const roster = useRoster()
 
 const snapshot = computed(() => orchestration.snapshot)
 const projectId = computed(() => orchestration.loadedProjectId)
+const linkableAgents = computed<AgentProfile[]>(() => placeableAgents(roster.agents))
 const unplaced = computed<AgentProfile[]>(() => {
   const placed = new Set((snapshot.value?.placements ?? []).map((placement) => placement.agentId))
-  return placeableAgents(roster.agents).filter((agent) => !placed.has(agent.id))
+  return linkableAgents.value.filter((agent) => !placed.has(agent.id))
 })
 
 type MapTab = 'teams' | 'orchestration'
@@ -56,10 +57,10 @@ const activeTab = ref<MapTab>('teams')
 const teamDialogOpen = ref(false)
 const layerDialogOpen = ref(false)
 const placing = ref<AgentProfile | null>(null)
-const placingCell = ref<{ teamId: string; layerId: string } | null>(null)
+const linkingCell = ref<{ teamId: string; layerId: string } | null>(null)
 
-function openPlaceExisting(teamId: string, layerId: string): void {
-  placingCell.value = { teamId, layerId }
+function openLink(teamId: string, layerId: string): void {
+  linkingCell.value = { teamId, layerId }
 }
 </script>
 
@@ -111,7 +112,7 @@ function openPlaceExisting(teamId: string, layerId: string): void {
         <UiEmpty :title="NO_TEAMS_TITLE" />
         <UiButton variant="primary" size="lg" @press="teamDialogOpen = true">{{ CREATE_TEAM_LABEL }}</UiButton>
       </div>
-      <TeamMatrix v-else :can-place-existing="unplaced.length > 0" @place-existing="openPlaceExisting" />
+      <TeamMatrix v-else :can-link="linkableAgents.length > 0" @link="openLink" />
       <UnplacedAgents v-if="unplaced.length > 0" :agents="unplaced" @place="placing = $event" />
       <div class="grid gap-5 lg:grid-cols-2">
         <MovementList :movements="orchestration.movements" :rules="snapshot.rules" />
@@ -129,13 +130,13 @@ function openPlaceExisting(teamId: string, layerId: string): void {
       <NewTeamDialog v-if="teamDialogOpen" :project-id="projectId" @close="teamDialogOpen = false" />
       <NewLayerDialog v-if="layerDialogOpen" :project-id="projectId" @close="layerDialogOpen = false" />
       <PlaceAgentDialog v-if="placing" :project-id="projectId" :agent="placing" @close="placing = null" />
-      <PlaceExistingAgentDialog
-        v-if="placingCell"
+      <LinkAgentDialog
+        v-if="linkingCell"
         :project-id="projectId"
-        :team-id="placingCell.teamId"
-        :layer-id="placingCell.layerId"
-        :agents="unplaced"
-        @close="placingCell = null"
+        :team-id="linkingCell.teamId"
+        :layer-id="linkingCell.layerId"
+        :agents="linkableAgents"
+        @close="linkingCell = null"
       />
     </template>
   </section>

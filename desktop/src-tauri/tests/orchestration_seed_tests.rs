@@ -54,8 +54,8 @@ fn team_without(dir: &TempDir, removed: &str) -> Team {
 fn draft(name: &str) -> AgentDraft {
     AgentDraft {
         name: name.to_string(),
-        role: "Dev backend".to_string(),
-        avatar: "vesper".to_string(),
+        role: "Backend Developer".to_string(),
+        avatar: "onix".to_string(),
         cli: "claude".to_string(),
         model: "sonnet".to_string(),
     }
@@ -105,7 +105,7 @@ fn table_rows(db: &Db, table: &str) -> i64 {
 fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente() {
     let dir = TempDir::new();
 
-    let leader = Agent::ember();
+    let leader = Agent::axiom();
     let seed = build(&full_team(&dir));
 
     let layers: Vec<(&str, &str, &str, &str)> = seed
@@ -146,31 +146,31 @@ fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente()
         placed,
         vec![
             (leader.as_str(), "time", "lideranca", 1),
-            ("davi", "time", "implementacao", 1),
-            ("nina", "time", "implementacao", 1),
-            ("teo", "time", "revisao", 1),
-            ("rui", "time", "implementacao", 1),
+            ("vexa", "time", "implementacao", 1),
+            ("kairo", "time", "implementacao", 1),
+            ("sentry", "time", "revisao", 1),
+            ("oracle", "time", "implementacao", 1),
         ]
     );
 }
 
 #[test]
-fn semente_sem_teo_no_elenco_nao_posiciona_teo_e_deixa_revisao_sem_agente() {
+fn semente_sem_sentry_no_elenco_nao_posiciona_sentry_e_deixa_revisao_sem_agente() {
     let dir = TempDir::new();
-    let leader = Agent::ember();
+    let leader = Agent::axiom();
     let db = Db::open(&dir.0).unwrap();
     let project = project(&db, "alfa");
 
-    db.seed_orchestration(project, &build(&team_without(&dir, "teo")))
+    db.seed_orchestration(project, &build(&team_without(&dir, "sentry")))
         .unwrap();
 
     assert_eq!(
         placement_layers(&db, project),
         sorted_pairs(vec![
-            pair("davi", "implementacao"),
+            pair("vexa", "implementacao"),
             pair(leader.as_str(), "lideranca"),
-            pair("nina", "implementacao"),
-            pair("rui", "implementacao"),
+            pair("kairo", "implementacao"),
+            pair("oracle", "implementacao"),
         ])
     );
     assert_eq!(db.orchestration(project).unwrap().layers.len(), 3);
@@ -319,9 +319,9 @@ fn registro_recusa_nome_com_espaco_ou_hifen_que_colidiria_com_id_de_replica() {
     let dir = TempDir::new();
     let registry = AgentRegistry::load(&dir.0);
 
-    for name in ["Davi 2", "Davi-2", "Lia-3"] {
+    for name in ["Vexa 2", "Vexa-2", "Lia-3"] {
         let error = registry.create(&draft(name)).unwrap_err();
         assert!(matches!(error, AgentError::InvalidName), "{name}");
     }
-    assert_eq!(registry.team().unwrap().ids().count(), 5);
+    assert_eq!(registry.team().unwrap().ids().count(), 6);
 }

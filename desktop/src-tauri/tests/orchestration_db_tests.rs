@@ -114,8 +114,8 @@ fn placement_draft(agent: &str, team: &str, layer: &str) -> PlacementDraft {
 fn handoff_draft(item: &str, action: &str) -> HandoffDraft {
     HandoffDraft {
         run_id: Some(7),
-        from_agent: "iara".to_string(),
-        to_agent: "davi".to_string(),
+        from_agent: "axiom".to_string(),
+        to_agent: "vexa".to_string(),
         from_layer: Some("lideranca".to_string()),
         to_layer: None,
         action: action.to_string(),
@@ -154,7 +154,7 @@ fn projeto_novo_le_o_snapshot_com_os_valores_iniciais_e_sem_nada_cadastrado() {
         snapshot.settings,
         OrchestrationSettings {
             enforcement: "off".to_string(),
-            leader_agent: crate::agents::Agent::ember().as_str().to_string(),
+            leader_agent: crate::agents::Agent::axiom().as_str().to_string(),
             step_mode: "lotes".to_string(),
             human_gate: "lote".to_string(),
             max_parallel: 4,
@@ -315,7 +315,7 @@ fn instrucoes_de_4001_caracteres_sao_recusadas_e_4000_passam_na_camada_e_no_agen
             project,
             &PlacementDraft {
                 instructions: at_limit.clone(),
-                ..placement_draft("davi", &team.id, &layer.id)
+                ..placement_draft("vexa", &team.id, &layer.id)
             },
         )
         .unwrap();
@@ -337,7 +337,7 @@ fn instrucoes_de_4001_caracteres_sao_recusadas_e_4000_passam_na_camada_e_no_agen
             project,
             &PlacementDraft {
                 instructions: over_limit,
-                ..placement_draft("rui", &team.id, &layer.id)
+                ..placement_draft("oracle", &team.id, &layer.id)
             }
         )),
         expected
@@ -359,7 +359,7 @@ fn max_instances_0_e_5_sao_recusados_e_1_e_4_passam() {
     for instances in [0, 5] {
         let draft = PlacementDraft {
             max_instances: instances,
-            ..placement_draft("davi", &team.id, &layer.id)
+            ..placement_draft("vexa", &team.id, &layer.id)
         };
         assert_eq!(
             message_of(t.db.place_agent(project, &draft)),
@@ -370,7 +370,7 @@ fn max_instances_0_e_5_sao_recusados_e_1_e_4_passam() {
     for instances in [1, 4] {
         let draft = PlacementDraft {
             max_instances: instances,
-            ..placement_draft("davi", &team.id, &layer.id)
+            ..placement_draft("vexa", &team.id, &layer.id)
         };
         assert_eq!(
             t.db.place_agent(project, &draft).unwrap().max_instances,
@@ -389,8 +389,8 @@ fn agente_posicionado_duas_vezes_continua_com_uma_so_posicao_a_ultima() {
     let build = t.layer(project, "Implementação");
     let review = t.layer(project, "Revisão");
 
-    t.place(project, "davi", &web.id, &build.id);
-    let moved = t.place(project, "davi", &api.id, &review.id);
+    t.place(project, "vexa", &web.id, &build.id);
+    let moved = t.place(project, "vexa", &api.id, &review.id);
 
     let placements = t.db.orchestration(project).unwrap().placements;
     assert_eq!(placements.len(), 1);
@@ -400,7 +400,7 @@ fn agente_posicionado_duas_vezes_continua_com_uma_so_posicao_a_ultima() {
             placements[0].team_id.as_str(),
             placements[0].layer_id.as_str()
         ),
-        ("davi", "api", "revisao")
+        ("vexa", "api", "revisao")
     );
     assert_eq!(moved.layer_id, "revisao");
 }
@@ -415,13 +415,13 @@ fn agente_so_e_posicionado_em_time_e_camada_que_existem_no_projeto() {
     let foreign_layer = t.layer(other, "Externa");
 
     assert_eq!(
-        message_of(t.db.place_agent(project, &placement_draft("davi", "fantasma", &layer.id))),
+        message_of(t.db.place_agent(project, &placement_draft("vexa", "fantasma", &layer.id))),
         "O time fantasma não existe neste projeto."
     );
     assert_eq!(
         message_of(t.db.place_agent(
             project,
-            &placement_draft("davi", &team.id, &foreign_layer.id)
+            &placement_draft("vexa", &team.id, &foreign_layer.id)
         )),
         "A camada externa não existe neste projeto."
     );
@@ -436,7 +436,7 @@ fn apagar_camada_com_agente_posicionado_e_recusado_e_nada_muda() {
     t.layer(project, "Liderança");
     t.layer(project, "Implementação");
     t.rule(project, "lideranca", "implementacao", "delegar");
-    t.place(project, "davi", &team.id, "implementacao");
+    t.place(project, "vexa", &team.id, "implementacao");
 
     let error = message_of(t.db.delete_layer(project, "implementacao"));
 
@@ -480,7 +480,7 @@ fn apagar_time_com_agente_e_recusado_e_sem_agente_passa() {
     let project = t.project("alfa");
     let team = t.team(project, "Time");
     let layer = t.layer(project, "Implementação");
-    t.place(project, "davi", &team.id, &layer.id);
+    t.place(project, "vexa", &team.id, &layer.id);
 
     assert_eq!(
         message_of(t.db.delete_team(project, &team.id)),
@@ -827,7 +827,7 @@ fn list_movements_devolve_os_mais_recentes_primeiro_respeitando_o_limite_e_o_pro
             all[0].to_agent.as_str(),
             all[0].run_id
         ),
-        ("iara", "davi", Some(7))
+        ("axiom", "vexa", Some(7))
     );
 }
 
@@ -945,7 +945,7 @@ fn configuracao_fora_das_faixas_e_recusada_e_dentro_das_faixas_e_gravada() {
 
     let edge = OrchestrationSettings {
         enforcement: "on".to_string(),
-        leader_agent: "rui".to_string(),
+        leader_agent: "oracle".to_string(),
         step_mode: "livre".to_string(),
         human_gate: "nunca".to_string(),
         max_parallel: 8,
@@ -981,7 +981,7 @@ fn apagar_o_projeto_apaga_camadas_times_setas_e_movimentos() {
     t.layer(project, "Liderança");
     t.layer(project, "Implementação");
     t.rule(project, "lideranca", "implementacao", "delegar");
-    t.place(project, "davi", &team.id, "implementacao");
+    t.place(project, "vexa", &team.id, "implementacao");
     t.db.record_handoff(project, &handoff_draft("item-1", "delegar"))
         .unwrap();
 

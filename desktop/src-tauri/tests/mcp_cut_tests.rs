@@ -26,8 +26,8 @@ fn with_team(check: impl FnOnce(&Team)) {
     let _ = fs::remove_dir_all(&dir);
 }
 
-fn iara_and_davi() -> (Agent, Agent) {
-    (Agent::ember(), Agent::from_stored("davi").expect("agente"))
+fn axiom_and_vexa() -> (Agent, Agent) {
+    (Agent::axiom(), Agent::from_stored("vexa").expect("agente"))
 }
 
 fn empty_definition(participant: Agent) -> TaskDefinition {
@@ -45,7 +45,7 @@ fn empty_definition(participant: Agent) -> TaskDefinition {
 
 #[test]
 fn linha_de_marcador_antigo_na_resposta_do_agente_vira_texto_comum_inteiro() {
-    let reply = "Registrando.\n#card criar Revisar|x\n#decisao pergunta|Posso?||\n$contagem = 3\n$lista += item\n@Davi: revise isso\nPronto.";
+    let reply = "Registrando.\n#card criar Revisar|x\n#decisao pergunta|Posso?||\n$contagem = 3\n$lista += item\n@Vexa: revise isso\nPronto.";
 
     let feed = feed_text(reply, &[]);
 
@@ -73,8 +73,8 @@ fn resposta_vazia_com_uma_variavel_aceita_pela_ferramenta_mostra_o_valor() {
 #[test]
 fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
     with_team(|team| {
-        let (iara, _) = iara_and_davi();
-        let profile = team.profile(&iara).expect("perfil");
+        let (axiom, _) = axiom_and_vexa();
+        let profile = team.profile(&axiom).expect("perfil");
 
         let with = role(profile, &team.roster_line(), None, "contexto", true);
         let without = role(profile, &team.roster_line(), None, "contexto", false);
@@ -90,8 +90,8 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
 #[test]
 fn papel_ensina_a_sintaxe_de_texto_so_sem_mcp() {
     with_team(|team| {
-        let (iara, _) = iara_and_davi();
-        let profile = team.profile(&iara).expect("perfil");
+        let (axiom, _) = axiom_and_vexa();
+        let profile = team.profile(&axiom).expect("perfil");
 
         let with = role(profile, &team.roster_line(), None, "contexto", true);
         let without = role(profile, &team.roster_line(), None, "contexto", false);
@@ -107,12 +107,12 @@ fn papel_ensina_a_sintaxe_de_texto_so_sem_mcp() {
 
 #[test]
 fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() {
-    let (iara, _) = iara_and_davi();
-    let definition = empty_definition(iara.clone());
+    let (axiom, _) = axiom_and_vexa();
+    let definition = empty_definition(axiom.clone());
     let cache = Cache::default();
 
-    let with = StepPrompts::build(&cache, &definition, &iara, "Faça", true);
-    let without = StepPrompts::build(&cache, &definition, &iara, "Faça", false);
+    let with = StepPrompts::build(&cache, &definition, &axiom, "Faça", true);
+    let without = StepPrompts::build(&cache, &definition, &axiom, "Faça", false);
 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");
@@ -132,34 +132,34 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
 
 #[test]
 fn next_turn_passa_a_vez_ao_agente_delegado_e_empilha_quem_pediu() {
-    let (iara, davi) = iara_and_davi();
-    let definition = empty_definition(iara.clone());
-    let turn = Turn::first(&definition, &iara, "Faça");
-    let delegation = (davi.clone(), "Revise".to_string());
+    let (axiom, vexa) = axiom_and_vexa();
+    let definition = empty_definition(axiom.clone());
+    let turn = Turn::first(&definition, &axiom, "Faça");
+    let delegation = (vexa.clone(), "Revise".to_string());
 
     let next = next_turn(&definition, &turn, "feed", Some(&delegation))
         .expect("deveria haver próximo turno");
 
-    assert_eq!(next.speaker, davi);
+    assert_eq!(next.speaker, vexa);
     assert_eq!(next.base, "Revise");
-    assert_eq!(next.requesters, [iara]);
+    assert_eq!(next.requesters, [axiom]);
 }
 
 #[test]
 fn mencao_do_usuario_na_barra_chega_intacta_ao_primeiro_turno() {
-    let (iara, _) = iara_and_davi();
-    let definition = empty_definition(iara.clone());
+    let (axiom, _) = axiom_and_vexa();
+    let definition = empty_definition(axiom.clone());
 
-    let turn = Turn::first(&definition, &iara, "@Davi revise o login");
+    let turn = Turn::first(&definition, &axiom, "@Vexa revise o login");
 
-    assert_eq!(turn.base, "Pedido do usuário: @Davi revise o login");
-    assert_eq!(turn.received, "@Davi revise o login");
+    assert_eq!(turn.base, "Pedido do usuário: @Vexa revise o login");
+    assert_eq!(turn.received, "@Vexa revise o login");
 }
 
 #[test]
 fn pedido_igual_pela_ferramenta_e_pelo_texto_conta_uma_delegacao_so() {
-    let (_, davi) = iara_and_davi();
-    let same = Some((davi.clone(), "Revise".to_string()));
+    let (_, vexa) = axiom_and_vexa();
+    let same = Some((vexa.clone(), "Revise".to_string()));
 
     let merged = merged_delegation(same.clone(), same.clone(), false);
 
@@ -168,9 +168,9 @@ fn pedido_igual_pela_ferramenta_e_pelo_texto_conta_uma_delegacao_so() {
 
 #[test]
 fn se_ferramenta_e_texto_divergem_a_ferramenta_vale_e_o_texto_sozinho_tambem_delega() {
-    let (iara, davi) = iara_and_davi();
-    let tool = Some((davi.clone(), "Da ferramenta".to_string()));
-    let text = Some((iara, "Do texto".to_string()));
+    let (axiom, vexa) = axiom_and_vexa();
+    let tool = Some((vexa.clone(), "Da ferramenta".to_string()));
+    let text = Some((axiom, "Do texto".to_string()));
 
     assert_eq!(merged_delegation(tool.clone(), text.clone(), false), tool);
     assert_eq!(merged_delegation(None, text.clone(), false), text);
@@ -179,10 +179,10 @@ fn se_ferramenta_e_texto_divergem_a_ferramenta_vale_e_o_texto_sozinho_tambem_del
 
 #[test]
 fn resposta_de_quem_foi_chamado_sem_delegacao_nao_gera_turno_de_volta() {
-    let (iara, davi) = iara_and_davi();
-    let definition = empty_definition(iara.clone());
-    let first = Turn::first(&definition, &iara, "Faça");
-    let delegation = (davi.clone(), "Revise".to_string());
+    let (axiom, vexa) = axiom_and_vexa();
+    let definition = empty_definition(axiom.clone());
+    let first = Turn::first(&definition, &axiom, "Faça");
+    let delegation = (vexa.clone(), "Revise".to_string());
     let helper_turn = next_turn(&definition, &first, "feed", Some(&delegation))
         .expect("deveria haver turno do colega");
 

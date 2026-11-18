@@ -29,26 +29,26 @@ fn listing(world: &World, who: &Caller) -> String {
 fn sem_variaveis_na_troca_set_variable_explica_e_nada_e_gravado() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    iara.slot.begin(None, None);
-    let outcome = set(&world, &iara, "contagem", json!(1));
+    axiom.slot.begin(None, None);
+    let outcome = set(&world, &axiom, "contagem", json!(1));
 
     assert!(outcome.is_error);
     assert_eq!(outcome.text, NO_VARIABLES);
-    assert_eq!(listing(&world, &iara), EMPTY_LISTING);
-    assert!(iara.slot.end().variables.accepted.is_empty());
+    assert_eq!(listing(&world, &axiom), EMPTY_LISTING);
+    assert!(axiom.slot.end().variables.accepted.is_empty());
 }
 
 #[test]
 fn set_cria_a_variavel_e_o_slot_leva_o_que_foi_aceito_para_o_orquestrador() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    open_exchange(&iara);
-    let outcome = set(&world, &iara, "contagem", json!(3));
-    let effects = iara.slot.end().variables;
+    open_exchange(&axiom);
+    let outcome = set(&world, &axiom, "contagem", json!(3));
+    let effects = axiom.slot.end().variables;
 
     assert!(!outcome.is_error, "{}", outcome.text);
     assert_eq!(outcome.text, "Variável contagem registrada.");
@@ -63,7 +63,7 @@ fn set_cria_a_variavel_e_o_slot_leva_o_que_foi_aceito_para_o_orquestrador() {
     assert!(effects.created_variable);
     assert!(!effects.changed_value);
     assert_eq!(
-        listing(&world, &iara),
+        listing(&world, &axiom),
         "- contagem (número, compartilhada) = 3"
     );
 }
@@ -72,33 +72,33 @@ fn set_cria_a_variavel_e_o_slot_leva_o_que_foi_aceito_para_o_orquestrador() {
 fn texto_numerico_vira_numero_e_a_mudanca_de_valor_marca_changed_value() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    open_exchange(&iara);
-    set(&world, &iara, "n", json!(1));
-    iara.slot.end();
-    open_exchange(&iara);
-    let outcome = set(&world, &iara, "n", json!("2"));
-    let effects = iara.slot.end().variables;
+    open_exchange(&axiom);
+    set(&world, &axiom, "n", json!(1));
+    axiom.slot.end();
+    open_exchange(&axiom);
+    let outcome = set(&world, &axiom, "n", json!("2"));
+    let effects = axiom.slot.end().variables;
 
     assert!(!outcome.is_error, "{}", outcome.text);
     assert!(!effects.created_variable);
     assert!(effects.changed_value);
-    assert_eq!(listing(&world, &iara), "- n (número, compartilhada) = 2");
+    assert_eq!(listing(&world, &axiom), "- n (número, compartilhada) = 2");
 }
 
 #[test]
 fn recusa_volta_como_is_error_nao_grava_e_nao_entra_nos_efeitos() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    open_exchange(&iara);
-    set(&world, &iara, "n", json!(1));
-    iara.slot.end();
+    let axiom = world.agent("axiom", "Axiom", project);
+    open_exchange(&axiom);
+    set(&world, &axiom, "n", json!(1));
+    axiom.slot.end();
 
-    open_exchange(&iara);
-    let outcome = set(&world, &iara, "n", json!("abc"));
-    let effects = iara.slot.end().variables;
+    open_exchange(&axiom);
+    let outcome = set(&world, &axiom, "n", json!("abc"));
+    let effects = axiom.slot.end().variables;
 
     assert!(outcome.is_error);
     assert_eq!(
@@ -107,78 +107,78 @@ fn recusa_volta_como_is_error_nao_grava_e_nao_entra_nos_efeitos() {
     );
     assert!(effects.accepted.is_empty());
     assert!(!effects.created_variable && !effects.changed_value);
-    assert_eq!(listing(&world, &iara), "- n (número, compartilhada) = 1");
+    assert_eq!(listing(&world, &axiom), "- n (número, compartilhada) = 1");
 }
 
 #[test]
 fn cada_chamada_grava_sozinha_e_uma_recusa_depois_nao_desfaz_a_anterior() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
+    let axiom = world.agent("axiom", "Axiom", project);
 
-    open_exchange(&iara);
-    let first = set(&world, &iara, "a", json!("um"));
-    let second = set(&world, &iara, "Inválido", json!("dois"));
-    let effects = iara.slot.end().variables;
+    open_exchange(&axiom);
+    let first = set(&world, &axiom, "a", json!("um"));
+    let second = set(&world, &axiom, "Inválido", json!("dois"));
+    let effects = axiom.slot.end().variables;
 
     assert!(!first.is_error);
     assert!(second.is_error);
     assert_eq!(effects.accepted.len(), 1);
-    assert_eq!(listing(&world, &iara), "- a (texto, compartilhada) = um");
+    assert_eq!(listing(&world, &axiom), "- a (texto, compartilhada) = um");
 }
 
 #[test]
 fn variavel_nasce_compartilhada_e_outro_agente_le_e_altera() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    open_exchange(&iara);
-    open_exchange(&davi);
-    set(&world, &iara, "tema", json!("x"));
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    open_exchange(&axiom);
+    open_exchange(&vexa);
+    set(&world, &axiom, "tema", json!("x"));
 
-    let seen = listing(&world, &davi);
-    let write = set(&world, &davi, "tema", json!("y"));
+    let seen = listing(&world, &vexa);
+    let write = set(&world, &vexa, "tema", json!("y"));
 
     assert_eq!(seen, "- tema (texto, compartilhada) = x");
     assert!(!write.is_error, "{}", write.text);
-    assert_eq!(listing(&world, &iara), "- tema (texto, compartilhada) = y");
+    assert_eq!(listing(&world, &axiom), "- tema (texto, compartilhada) = y");
 }
 
 #[test]
 fn variavel_privada_so_quando_pedida_e_continua_isolada_de_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    open_exchange(&iara);
-    open_exchange(&davi);
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    open_exchange(&axiom);
+    open_exchange(&vexa);
     let created = world.call(
-        &iara,
+        &axiom,
         "set_variable",
         json!({ "name": "rascunho", "op": "set", "value": "x", "share": false }),
     );
 
-    let hidden = listing(&world, &davi);
-    let write = set(&world, &davi, "rascunho", json!("y"));
+    let hidden = listing(&world, &vexa);
+    let write = set(&world, &vexa, "rascunho", json!("y"));
     let append = world.call(
-        &davi,
+        &vexa,
         "set_variable",
         json!({ "name": "rascunho", "op": "append", "value": "z" }),
     );
 
     assert!(!created.is_error, "{}", created.text);
-    assert_eq!(listing(&world, &iara), "- rascunho (texto, privada) = x");
+    assert_eq!(listing(&world, &axiom), "- rascunho (texto, privada) = x");
     assert_eq!(hidden, EMPTY_LISTING);
     assert!(write.is_error);
     assert!(
-        write.text.to_lowercase().contains("é privada de iara"),
+        write.text.to_lowercase().contains("é privada de axiom"),
         "{}",
         write.text
     );
     assert!(append.is_error);
     assert!(
-        append.text.to_lowercase().contains("é privada de iara"),
+        append.text.to_lowercase().contains("é privada de axiom"),
         "{}",
         append.text
     );
@@ -188,35 +188,35 @@ fn variavel_privada_so_quando_pedida_e_continua_isolada_de_outro_agente() {
 fn share_so_vale_ao_criar_e_nao_publica_variavel_privada_existente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    open_exchange(&iara);
-    open_exchange(&davi);
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    open_exchange(&axiom);
+    open_exchange(&vexa);
     world.call(
-        &iara,
+        &axiom,
         "set_variable",
         json!({ "name": "rascunho", "op": "set", "value": "x", "share": false }),
     );
 
     let again = world.call(
-        &iara,
+        &axiom,
         "set_variable",
         json!({ "name": "rascunho", "op": "set", "value": "z", "share": true }),
     );
 
     assert!(!again.is_error, "{}", again.text);
-    assert_eq!(listing(&world, &davi), EMPTY_LISTING);
-    assert_eq!(listing(&world, &iara), "- rascunho (texto, privada) = z");
+    assert_eq!(listing(&world, &vexa), EMPTY_LISTING);
+    assert_eq!(listing(&world, &axiom), "- rascunho (texto, privada) = z");
 }
 
 #[test]
 fn append_nasce_compartilhada_e_outro_agente_acrescenta_na_mesma_lista() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    open_exchange(&iara);
-    open_exchange(&davi);
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    open_exchange(&axiom);
+    open_exchange(&vexa);
     let append = |who: &Caller, item: &str| {
         world.call(
             who,
@@ -225,12 +225,12 @@ fn append_nasce_compartilhada_e_outro_agente_acrescenta_na_mesma_lista() {
         )
     };
 
-    append(&iara, "gato");
-    let second = append(&davi, "cão");
+    append(&axiom, "gato");
+    let second = append(&vexa, "cão");
 
     assert!(!second.is_error, "{}", second.text);
     assert_eq!(
-        listing(&world, &iara),
+        listing(&world, &axiom),
         "- animais (lista, compartilhada) = gato, cão"
     );
 }
@@ -239,30 +239,30 @@ fn append_nasce_compartilhada_e_outro_agente_acrescenta_na_mesma_lista() {
 fn append_privado_so_quando_pedido_nao_aparece_para_outro_agente() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    let davi = world.agent("davi", "Davi", project);
-    open_exchange(&iara);
-    open_exchange(&davi);
+    let axiom = world.agent("axiom", "Axiom", project);
+    let vexa = world.agent("vexa", "Vexa", project);
+    open_exchange(&axiom);
+    open_exchange(&vexa);
 
     world.call(
-        &iara,
+        &axiom,
         "set_variable",
         json!({ "name": "notas", "op": "append", "value": "a", "share": false }),
     );
 
-    assert_eq!(listing(&world, &iara), "- notas (lista, privada) = a");
-    assert_eq!(listing(&world, &davi), EMPTY_LISTING);
+    assert_eq!(listing(&world, &axiom), "- notas (lista, privada) = a");
+    assert_eq!(listing(&world, &vexa), EMPTY_LISTING);
 }
 
 #[test]
 fn operacao_e_valores_invalidos_sao_recusados_sem_gravar() {
     let world = world();
     let project = world.project("a");
-    let iara = world.agent("iara", "Iara", project);
-    open_exchange(&iara);
+    let axiom = world.agent("axiom", "Axiom", project);
+    open_exchange(&axiom);
     let call = |op: &str, value: Value| {
         world.call(
-            &iara,
+            &axiom,
             "set_variable",
             json!({ "name": "v", "op": op, "value": value }),
         )
@@ -289,7 +289,7 @@ fn operacao_e_valores_invalidos_sao_recusados_sem_gravar() {
         assert!(outcome.is_error, "{text}");
         assert_eq!(outcome.text, text);
     }
-    assert_eq!(listing(&world, &iara), EMPTY_LISTING);
+    assert_eq!(listing(&world, &axiom), EMPTY_LISTING);
 }
 
 #[test]
@@ -297,8 +297,8 @@ fn variaveis_de_um_projeto_nao_aparecem_no_outro() {
     let world = world();
     let first = world.project("a");
     let second = world.project("b");
-    let in_first = world.agent("iara", "Iara", first);
-    let in_second = world.agent("iara", "Iara", second);
+    let in_first = world.agent("axiom", "Axiom", first);
+    let in_second = world.agent("axiom", "Axiom", second);
     open_exchange(&in_first);
 
     set(&world, &in_first, "v", json!("x"));
@@ -312,17 +312,17 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
     let world = world();
     let first = world.project("a");
     let second = world.project("b");
-    let iara = world.agent("iara", "Iara", first);
-    let other = world.agent("iara", "Iara", second);
-    open_exchange(&iara);
+    let axiom = world.agent("axiom", "Axiom", first);
+    let other = world.agent("axiom", "Axiom", second);
+    open_exchange(&axiom);
 
     world.call(
-        &iara,
+        &axiom,
         "set_variable",
-        json!({ "name": "v", "op": "set", "value": "x", "project_id": second, "agent": "davi" }),
+        json!({ "name": "v", "op": "set", "value": "x", "project_id": second, "agent": "vexa" }),
     );
 
-    assert_eq!(listing(&world, &iara), "- v (texto, compartilhada) = x");
+    assert_eq!(listing(&world, &axiom), "- v (texto, compartilhada) = x");
     assert_eq!(listing(&world, &other), EMPTY_LISTING);
 }
 

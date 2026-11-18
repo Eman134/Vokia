@@ -72,8 +72,8 @@ fn mcp_fixture(folder: &str) -> McpFixture {
                 &config_dir,
                 crate::mcp::Binding {
                     project_id: 1,
-                    agent: crate::agents::Agent::from_stored("iara").expect("agente"),
-                    agent_name: "Iara".to_string(),
+                    agent: crate::agents::Agent::from_stored("axiom").expect("agente"),
+                    agent_name: "Axiom".to_string(),
                     slot: crate::mcp::ExchangeSlot::default(),
                 },
             )

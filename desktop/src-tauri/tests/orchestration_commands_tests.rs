@@ -151,7 +151,7 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
     let world = world();
     let project = world.project("alfa");
 
-    let leader = Agent::ember();
+    let leader = Agent::axiom();
     let first = world.get(project).unwrap();
     let second = world.get(project).unwrap();
 
@@ -163,11 +163,11 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
     assert_eq!(
         placed(&first),
         sorted(vec![
-            ("davi", "implementacao"),
+            ("vexa", "implementacao"),
             (leader.as_str(), "lideranca"),
-            ("nina", "implementacao"),
-            ("rui", "implementacao"),
-            ("teo", "revisao"),
+            ("kairo", "implementacao"),
+            ("oracle", "implementacao"),
+            ("sentry", "revisao"),
         ])
     );
     assert!(first.rules.is_empty());
@@ -342,8 +342,8 @@ fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
         .state::<AgentRegistry>()
         .create(&crate::agents::AgentDraft {
             name: "Lia".to_string(),
-            role: "Dev backend".to_string(),
-            avatar: "vesper".to_string(),
+            role: "Backend Developer".to_string(),
+            avatar: "onix".to_string(),
             cli: "claude".to_string(),
             model: "sonnet".to_string(),
         })
@@ -365,8 +365,8 @@ fn list_movements_devolve_os_20_mais_recentes_sem_semear_nem_emitir() {
                 project,
                 &HandoffDraft {
                     run_id: None,
-                    from_agent: "iara".to_string(),
-                    to_agent: "davi".to_string(),
+                    from_agent: "axiom".to_string(),
+                    to_agent: "vexa".to_string(),
                     from_layer: None,
                     to_layer: None,
                     action: "delegar".to_string(),

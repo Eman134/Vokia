@@ -2,17 +2,34 @@
 import { computed, ref } from 'vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import { placeAgent } from '../orchestration/orchestrationApi'
+import { useOrchestration } from '../orchestration/useOrchestration'
 import type { Agent } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import MapDialog from './MapDialog.vue'
-import { AGENT_PICK_LABEL, PLACE_AGENT_TITLE, PLACE_LABEL, PLACE_PLACEHOLDER } from './teamMapLayers'
+import { AGENT_PICK_LABEL, LINK_AGENT_TITLE, LINK_LABEL, PLACE_PLACEHOLDER } from './teamMapLayers'
 
 const props = defineProps<{ projectId: number; teamId: string; layerId: string; agents: AgentProfile[] }>()
 const emit = defineEmits<{ close: [] }>()
 
 const DEFAULT_MAX_INSTANCES = 1
+const PLACED_HINT_SEPARATOR = ' · '
 
-const agentOptions = computed(() => props.agents.map((agent) => ({ label: agent.name, value: agent.id })))
+const orchestration = useOrchestration()
+
+function placementOf(id: string) {
+  return orchestration.snapshot?.placements.find((candidate) => candidate.agentId === id)
+}
+
+const agentOptions = computed(() =>
+  props.agents.map((agent) => {
+    const placement = placementOf(agent.id)
+    if (!placement) return { label: agent.name, value: agent.id }
+    const team = orchestration.snapshot?.teams.find((candidate) => candidate.id === placement.teamId)?.name ?? ''
+    const layer = orchestration.snapshot?.layers.find((candidate) => candidate.id === placement.layerId)?.name ?? ''
+    return { label: [agent.name, team, layer].join(PLACED_HINT_SEPARATOR), value: agent.id }
+  }),
+)
+
 const agentId = ref('')
 const submitting = ref(false)
 const failure = ref<string | null>(null)
@@ -23,12 +40,14 @@ async function submit(): Promise<void> {
   submitting.value = true
   failure.value = null
   try {
+    // Mover só troca time e camada: instruções e réplicas da posição atual são mantidas.
+    const current = placementOf(agentId.value)
     await placeAgent(props.projectId, {
       agentId: agentId.value as Agent,
       teamId: props.teamId,
       layerId: props.layerId,
-      instructions: '',
-      maxInstances: DEFAULT_MAX_INSTANCES,
+      instructions: current?.instructions ?? '',
+      maxInstances: current?.maxInstances ?? DEFAULT_MAX_INSTANCES,
     })
     submitting.value = false
     emit('close')
@@ -41,8 +60,8 @@ async function submit(): Promise<void> {
 
 <template>
   <MapDialog
-    :title="PLACE_AGENT_TITLE"
-    :submit-label="PLACE_LABEL"
+    :title="LINK_AGENT_TITLE"
+    :submit-label="LINK_LABEL"
     :can-submit="canSubmit"
     :submitting="submitting"
     :failure="failure"

@@ -11,7 +11,7 @@ use crate::mcp::support::build_app;
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
 const OLD_MARKER_LINES: &str =
-    "Texto.\n#card criar Fantasma|x\n#decisao pergunta|Posso?||\n$contagem = 3\n@Davi: revise isso";
+    "Texto.\n#card criar Fantasma|x\n#decisao pergunta|Posso?||\n$contagem = 3\n@Vexa: revise isso";
 
 struct World {
     app: tauri::App,
@@ -98,7 +98,7 @@ fn sem_mcp_card_criar_grava_o_card_do_agente_e_a_linha_some_do_texto() {
 
     let reply = world.read(
         false,
-        "iara",
+        "axiom",
         "Registrando.\n#card criar Revisar login|Checar o token\nPronto.",
     );
 
@@ -118,9 +118,9 @@ fn sem_mcp_card_criar_grava_o_card_do_agente_e_a_linha_some_do_texto() {
 #[test]
 fn sem_mcp_card_mover_leva_o_card_do_proprio_agente_para_a_coluna() {
     let world = world();
-    world.read(false, "iara", "#card criar Um");
+    world.read(false, "axiom", "#card criar Um");
 
-    let reply = world.read(false, "iara", "#card mover item-1|In progress");
+    let reply = world.read(false, "axiom", "#card mover item-1|In progress");
 
     assert!(reply.rejected.is_empty(), "{:?}", reply.rejected);
     assert_eq!(
@@ -136,7 +136,7 @@ fn sem_mcp_decisao_vira_decisao_para_subir_e_a_linha_some_do_texto() {
 
     let reply = world.read(
         false,
-        "iara",
+        "axiom",
         "Preciso decidir.\n#decisao escolha|Qual caminho?|Com detalhe|A;B",
     );
     let decision = reply.decision.expect("a linha #decisao deveria ser lida");
@@ -152,7 +152,7 @@ fn sem_mcp_decisao_vira_decisao_para_subir_e_a_linha_some_do_texto() {
 fn sem_mcp_variavel_de_texto_altera_o_cache_e_conta_como_avanco() {
     let world = world();
 
-    let reply = world.read(false, "iara", "Feito.\n$contagem = 3");
+    let reply = world.read(false, "axiom", "Feito.\n$contagem = 3");
 
     assert_eq!(reply.visible, "Feito.");
     assert!(reply.rejected.is_empty(), "{:?}", reply.rejected);
@@ -165,13 +165,13 @@ fn sem_mcp_variavel_de_texto_altera_o_cache_e_conta_como_avanco() {
 fn sem_mcp_nome_do_colega_com_dois_pontos_delega_e_a_linha_some_do_texto() {
     let world = world();
 
-    let reply = world.read(false, "iara", "Preciso de revisão.\n@Davi: revise o login");
+    let reply = world.read(false, "axiom", "Preciso de revisão.\n@Vexa: revise o login");
 
     assert_eq!(reply.visible, "Preciso de revisão.");
     assert_eq!(
         reply.delegation,
         Some((
-            Agent::from_stored("davi").expect("agente"),
+            Agent::from_stored("vexa").expect("agente"),
             "revise o login".to_string()
         ))
     );
@@ -181,7 +181,7 @@ fn sem_mcp_nome_do_colega_com_dois_pontos_delega_e_a_linha_some_do_texto() {
 fn sem_mcp_uma_linha_invalida_recusa_a_resposta_inteira_e_nada_e_gravado() {
     let world = world();
 
-    let reply = world.read(false, "iara", "$ok = 1\n#card criar |sem título");
+    let reply = world.read(false, "axiom", "$ok = 1\n#card criar |sem título");
 
     assert_eq!(reply.rejected, ["o título do card não pode ser vazio"]);
     assert!(!reply.cards.changed);
@@ -192,7 +192,7 @@ fn sem_mcp_uma_linha_invalida_recusa_a_resposta_inteira_e_nada_e_gravado() {
 fn sem_mcp_marcador_de_variavel_mal_formado_e_recusado_sem_gravar_o_resto() {
     let world = world();
 
-    let reply = world.read(false, "iara", "$bom = 1\n$ruim");
+    let reply = world.read(false, "axiom", "$bom = 1\n$ruim");
 
     assert!(!reply.rejected.is_empty());
     assert_eq!(world.number("bom"), None);
@@ -203,9 +203,9 @@ fn sem_mcp_marcador_de_variavel_mal_formado_e_recusado_sem_gravar_o_resto() {
 fn com_mcp_so_a_linha_de_mencao_age_e_as_outras_aparecem_como_texto_sem_executar() {
     let world = world();
 
-    let reply = world.read(true, "iara", OLD_MARKER_LINES);
+    let reply = world.read(true, "axiom", OLD_MARKER_LINES);
 
-    assert_eq!(reply.delegation, Some((davi(), "revise isso".to_string())));
+    assert_eq!(reply.delegation, Some((vexa(), "revise isso".to_string())));
     assert_eq!(
         reply.visible,
         "Texto.\n#card criar Fantasma|x\n#decisao pergunta|Posso?||\n$contagem = 3"
@@ -218,19 +218,19 @@ fn com_mcp_so_a_linha_de_mencao_age_e_as_outras_aparecem_como_texto_sem_executar
     assert_eq!(world.number("contagem"), None);
 }
 
-fn davi() -> Agent {
-    Agent::from_stored("davi").expect("agente")
+fn vexa() -> Agent {
+    Agent::from_stored("vexa").expect("agente")
 }
 
 #[test]
 fn com_mcp_mencao_de_agente_real_delega_e_a_linha_sai_da_fala() {
     let world = world();
 
-    let reply = world.read(true, "iara", "Preciso de revisão.\n@Davi: revise o login");
+    let reply = world.read(true, "axiom", "Preciso de revisão.\n@Vexa: revise o login");
 
     assert_eq!(
         reply.delegation,
-        Some((davi(), "revise o login".to_string()))
+        Some((vexa(), "revise o login".to_string()))
     );
     assert_eq!(reply.visible, "Preciso de revisão.");
 }
@@ -239,9 +239,9 @@ fn com_mcp_mencao_de_agente_real_delega_e_a_linha_sai_da_fala() {
 fn com_mcp_so_a_mencao_nao_deixa_fala_do_agente() {
     let world = world();
 
-    let reply = world.read(true, "iara", "@Davi: davi oi");
+    let reply = world.read(true, "axiom", "@Vexa: vexa oi");
 
-    assert_eq!(reply.delegation, Some((davi(), "davi oi".to_string())));
+    assert_eq!(reply.delegation, Some((vexa(), "vexa oi".to_string())));
     assert_eq!(reply.visible, "");
 }
 
@@ -251,11 +251,11 @@ fn com_mcp_mencao_de_quem_nao_existe_ou_de_si_mesmo_ou_sem_pedido_fica_texto() {
 
     for text in [
         "@Fantasma: faça isso",
-        "@Iara: faça isso",
-        "@Davi:",
-        "@Davi sem dois pontos",
+        "@Axiom: faça isso",
+        "@Vexa:",
+        "@Vexa sem dois pontos",
     ] {
-        let reply = world.read(true, "iara", text);
+        let reply = world.read(true, "axiom", text);
 
         assert!(reply.delegation.is_none(), "{text}");
         assert_eq!(reply.visible, text);
@@ -268,19 +268,19 @@ fn com_mcp_a_ultima_mencao_valida_vale() {
 
     let reply = world.read(
         true,
-        "iara",
-        "@Fantasma: x\n@Davi: primeiro\n@Davi: segundo",
+        "axiom",
+        "@Fantasma: x\n@Vexa: primeiro\n@Vexa: segundo",
     );
 
-    assert_eq!(reply.delegation, Some((davi(), "segundo".to_string())));
+    assert_eq!(reply.delegation, Some((vexa(), "segundo".to_string())));
 }
 
 #[test]
 fn sem_mcp_a_mencao_segue_delegando_e_a_linha_continua_saindo_do_texto() {
     let world = world();
 
-    let reply = world.read(false, "iara", "Preciso.\n@Davi: revise");
+    let reply = world.read(false, "axiom", "Preciso.\n@Vexa: revise");
 
-    assert_eq!(reply.delegation, Some((davi(), "revise".to_string())));
+    assert_eq!(reply.delegation, Some((vexa(), "revise".to_string())));
     assert_eq!(reply.visible, "Preciso.");
 }
