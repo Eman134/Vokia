@@ -40,7 +40,7 @@ pub(super) struct StepReply {
 
 pub(super) async fn ask_step(
     exchange: &Exchange<'_>,
-    sessions: &mut ExchangeSessions,
+    sessions: &mut ExchangeSessions<'_>,
     agent: &Agent,
     prompts: &StepPrompts,
 ) -> Result<StepReply, FlowError> {
@@ -61,7 +61,7 @@ pub(super) async fn ask_step(
 
 async fn run_step(
     exchange: &Exchange<'_>,
-    sessions: &mut ExchangeSessions,
+    sessions: &mut ExchangeSessions<'_>,
     agent: &Agent,
     prompts: &StepPrompts,
     console: &ConsoleSink<'_>,
@@ -101,7 +101,7 @@ async fn run_step(
         collected: StdMutex::default(),
     };
     let first = sessions.opened.insert(agent.clone());
-    let held = sessions.held(agent, team)?;
+    let mut held = sessions.hold(agent).await;
     if first {
         held.guard.begin_exchange();
     }

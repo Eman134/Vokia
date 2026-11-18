@@ -52,6 +52,8 @@ pub struct RequestContext {
     pub run_id: Option<u64>,
     pub item_id: Option<String>,
     pub channel_id: Option<i64>,
+    // Pedido delegado em paralelo: roda uma vez na instância, sem tarefa do projeto.
+    pub parallel: bool,
 }
 
 impl RequestContext {
@@ -63,11 +65,19 @@ impl RequestContext {
             run_id,
             item_id,
             channel_id,
+            parallel: false,
         }
     }
 }
 
 pub struct QueuedJob {
+    pub text: String,
+    pub context: RequestContext,
+}
+
+// Delegação paralela que esperou o teto de max_parallel liberar uma vaga.
+pub struct WaitingDelegation {
+    pub base: crate::events::Agent,
     pub text: String,
     pub context: RequestContext,
 }
@@ -78,4 +88,5 @@ pub struct FlowQueue {
     pub pending: HashMap<SessionKey, VecDeque<QueuedJob>>,
     // Item do turno em andamento de cada fluxo; sai junto com a chave em pending.
     pub running: HashMap<SessionKey, String>,
+    pub waiting: HashMap<i64, VecDeque<WaitingDelegation>>,
 }

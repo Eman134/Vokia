@@ -19,7 +19,7 @@ use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
 use super::error::FlowError;
-use super::flow::{dispatch_request, stop_with_error, Dispatch};
+use super::flow::{dispatch_request, stop_with_error};
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
     idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
@@ -59,7 +59,7 @@ pub(super) struct Exchange<'a> {
 
 pub(super) async fn run_turns(
     exchange: &Exchange<'_>,
-    sessions: &mut ExchangeSessions,
+    sessions: &mut ExchangeSessions<'_>,
     transcript: &mut Vec<String>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
@@ -216,7 +216,7 @@ pub(super) async fn run_turns(
                     Step::End(outcome) => return Ok(outcome),
                 }
             }
-            sessions.review(&turn.speaker, rejections, 0, team)?.await;
+            sessions.review(&turn.speaker, rejections, 0).await;
             turn.rejection = Some(rejected.join("; "));
             continue;
         }
@@ -279,22 +279,8 @@ pub(super) async fn run_turns(
             return Ok(TaskOutcome::Finished);
         }
 
-        // Delegações em paralelo viram pedidos próprios na fila dos agentes; o turno do líder termina aqui (sem fan-out dentro de run_turns).
+        // Cada delegação em paralelo vai para a instância do helper (ou espera no teto); a delegação em série segue o caminho normal.
         if !parallel_delegations.is_empty() {
-            if let Some(text) = &feed {
-                say(
-                    app,
-                    project_id,
-                    transcript,
-                    &turn.speaker,
-                    Speaker::User,
-                    text,
-                    team,
-                    *channel_id,
-                    activity.take(),
-                    proposal.take(),
-                )?;
-            }
             let snapshot = exchange.orchestration;
             let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
             for (helper, request) in parallel_delegations {
@@ -306,7 +292,7 @@ pub(super) async fn run_turns(
                     (*item_id).map(str::to_string),
                     *channel_id,
                 );
-                match dispatch_request(
+                dispatch_request(
                     app,
                     state,
                     project_id,
@@ -315,34 +301,38 @@ pub(super) async fn run_turns(
                     context,
                     max_instances,
                     max_parallel,
-                )? {
-                    Dispatch::Started | Dispatch::Queued => {
-                        say(
-                            app,
-                            project_id,
-                            transcript,
-                            &turn.speaker,
-                            Speaker::from(helper.clone()),
-                            &request,
-                            team,
-                            *channel_id,
-                            None,
-                            None,
-                        )?;
-                    }
-                    Dispatch::Full => emit(
-                        app,
-                        VokiaEvent::Error {
-                            message: format!(
-                                "O limite de {max_parallel} agentes em paralelo foi atingido; o pedido para {} não foi iniciado.",
-                                team.name_of(&helper)
-                            ),
-                        },
-                    )?,
-                }
+                )?;
+                say(
+                    app,
+                    project_id,
+                    transcript,
+                    &turn.speaker,
+                    Speaker::from(helper.clone()),
+                    &request,
+                    team,
+                    *channel_id,
+                    None,
+                    None,
+                )?;
             }
-            emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
-            return Ok(TaskOutcome::Finished);
+            if delegation.is_none() {
+                if let Some(text) = &feed {
+                    say(
+                        app,
+                        project_id,
+                        transcript,
+                        &turn.speaker,
+                        Speaker::User,
+                        text,
+                        team,
+                        *channel_id,
+                        activity.take(),
+                        proposal.take(),
+                    )?;
+                }
+                emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
+                return Ok(TaskOutcome::Finished);
+            }
         }
         if let Some(motive) = escalation {
             return escalate_limit(
@@ -507,15 +497,10 @@ pub(super) async fn run_turns(
         emit_state(app, project_id, turn.speaker.clone(), speaker_state)?;
         if !advanced {
             sessions
-                .review(
-                    &turn.speaker,
-                    counters.passes.by_speaker(&turn.speaker),
-                    0,
-                    team,
-                )?
+                .review(&turn.speaker, counters.passes.by_speaker(&turn.speaker), 0)
                 .await;
         }
-        sessions.review(&next.speaker, 0, loop_repeats, team)?.await;
+        sessions.review(&next.speaker, 0, loop_repeats).await;
         turn = next;
     }
 }
@@ -911,7 +896,10 @@ fn say(
         activity,
         request_proposal,
     )?;
-    transcript.push(format!("{}: {text}", team.name_of(from)));
+    transcript.push(format!(
+        "{}: {text}",
+        crate::orchestration::instances::display_name(team, from)
+    ));
     Ok(())
 }
 

@@ -11,17 +11,21 @@ use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::orchestration::instances;
 use crate::orchestration::policy::placed_participants;
 use crate::session_key::SessionKey;
-use crate::state::{AppState, QueuedJob, RequestContext};
+use crate::state::{AppState, QueuedJob, RequestContext, WaitingDelegation};
 use crate::task::{long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome};
 
+use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{emit, emit_message, emit_state, report_limits};
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{load_project, project_context, project_dir, scan_structure};
 use super::prompts::NO_NAMES;
-use super::prompts::{channel_note, interpreter_role};
+use super::prompts::{channel_note, interpreter_role, StepPrompts};
 use super::session_pool::ExchangeSessions;
+use super::text_fallback::{read_reply, TextContext};
 use super::turns::{first_speaker, run_turns, with_cache, Exchange, USER_LABEL};
+use crate::mcp::McpState;
+use crate::orchestration::snapshot::placement_of;
 
 pub async fn handle_request(
     app: &AppHandle,
@@ -92,13 +96,8 @@ pub async fn answer_decision(
     .map(|_| ())
 }
 
-pub(super) enum Dispatch {
-    Started,
-    Queued,
-    Full,
-}
-
-// Pedido delegado em paralelo: uma instância ociosa do agente base, ou a fila do base quando todas estão ocupadas; no teto de max_parallel não inicia nada.
+// Delegação paralela: uma instância ociosa do base; todas ocupadas, fila da instância base; no teto de max_parallel, espera no projeto (nada se perde).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn dispatch_request(
     app: &AppHandle,
     state: &AppState,
@@ -108,10 +107,14 @@ pub(super) fn dispatch_request(
     context: RequestContext,
     max_instances: i64,
     max_parallel: i64,
-) -> Result<Dispatch, FlowError> {
+) -> Result<(), FlowError> {
     let key_of = |agent: &Agent| SessionKey {
         project_id,
         agent: agent.clone(),
+    };
+    let parallel = RequestContext {
+        parallel: true,
+        ..context
     };
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let Some(agent) = instances::pick(base, max_instances, |agent| {
@@ -122,9 +125,9 @@ pub(super) fn dispatch_request(
             .or_default()
             .push_back(QueuedJob {
                 text: request.to_string(),
-                context,
+                context: parallel,
             });
-        return Ok(Dispatch::Queued);
+        return Ok(());
     };
     let running = flow
         .pending
@@ -132,13 +135,21 @@ pub(super) fn dispatch_request(
         .filter(|key| key.project_id == project_id)
         .count() as i64;
     if running >= max_parallel {
-        return Ok(Dispatch::Full);
+        flow.waiting
+            .entry(project_id)
+            .or_default()
+            .push_back(WaitingDelegation {
+                base: base.clone(),
+                text: request.to_string(),
+                context: parallel,
+            });
+        return Ok(());
     }
     let key = key_of(&agent);
     flow.pending.insert(key.clone(), VecDeque::new());
     drop(flow);
-    spawn_flow(app, key, request.to_string(), context);
-    Ok(Dispatch::Started)
+    spawn_flow(app, key, request.to_string(), parallel);
+    Ok(())
 }
 
 fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: RequestContext) {
@@ -241,24 +252,41 @@ async fn run_flow(
     let mut request = request.to_string();
     let mut item_id = context.item_id;
     let mut channel_id = context.channel_id;
+    let mut parallel = context.parallel;
+    let parallel_run = context.run_id;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = None;
     loop {
         set_running_item(state, &key, item_id.as_deref())?;
-        let exchange = run_exchange(
-            app,
-            state,
-            cli,
-            key.clone(),
-            &request,
-            item_id.as_deref(),
-            channel_id,
-            team,
-            current_run,
-        )
-        .await;
+        let exchange = if parallel {
+            run_parallel_item(
+                app,
+                state,
+                cli,
+                key.clone(),
+                &request,
+                item_id.as_deref(),
+                channel_id,
+                current_run.or(parallel_run),
+                team,
+            )
+            .await
+        } else {
+            run_exchange(
+                app,
+                state,
+                cli,
+                key.clone(),
+                &request,
+                item_id.as_deref(),
+                channel_id,
+                team,
+                current_run,
+            )
+            .await
+        };
         let this = match exchange {
             Ok(TaskOutcome::Finished) => RequestOutcome::Finished,
             Ok(_) => RequestOutcome::Failed,
@@ -284,8 +312,12 @@ async fn run_flow(
                 current_run = job.context.run_id;
                 item_id = job.context.item_id;
                 channel_id = job.context.channel_id;
+                parallel = job.context.parallel;
             }
-            None => return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed)),
+            None => {
+                drain_waiting(app, state, key.project_id);
+                return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed));
+            }
         }
     }
 }
@@ -302,12 +334,10 @@ async fn run_exchange(
     team: &Team,
     run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {
-    // A réplica reserva a própria sessão além das do time; a ordem fixa da lista evita impasse.
-    let mut agents: Vec<Agent> = team.ids().cloned().collect();
-    if !agents.contains(&key.agent) {
-        agents.push(key.agent.clone());
-    }
-    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, &agents).await;
+    // Uma tarefa por projeto: a troca de líder segura o lock da tarefa; cada passo reserva só a instância que fala.
+    let task = state.sessions.task_lock(key.project_id);
+    let _task_guard = task.lock_owned().await;
+    let mut sessions = ExchangeSessions::new(&state.sessions, key.project_id);
     let result = exchange_turns(
         app,
         state,
@@ -323,6 +353,161 @@ async fn run_exchange(
     .await;
     sessions.release().await;
     result
+}
+
+// Delegação paralela: a instância responde ao pedido uma vez. Não interpreta nem abre tarefa do projeto, então a tarefa do líder fica intacta.
+#[allow(clippy::too_many_arguments)]
+async fn run_parallel_item(
+    app: &AppHandle,
+    state: &AppState,
+    cli: &Path,
+    key: SessionKey,
+    request: &str,
+    item_id: Option<&str>,
+    channel_id: Option<i64>,
+    run_id: Option<u64>,
+    team: &Team,
+) -> Result<TaskOutcome, FlowError> {
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
+    let project_dir = project_dir(app, key.project_id)?;
+    let project = load_project(app, key.project_id)?;
+    let tree = scan_structure(&project_dir).await;
+    let context = project_context(&project, tree.as_ref());
+    let orchestration = load_orchestration(app, key.project_id)?;
+    let definition = parallel_definition(&key.agent, request);
+    let exchange = Exchange {
+        app,
+        state,
+        cli,
+        project: ProjectAccess {
+            dir: &project_dir,
+            level: project.permission_level,
+        },
+        project_context: &context,
+        request,
+        item_id,
+        channel_id,
+        key: key.clone(),
+        definition: &definition,
+        team,
+        orchestration: orchestration.as_ref(),
+        run_id,
+    };
+    let mut sessions = ExchangeSessions::new(&state.sessions, key.project_id);
+    let result = answer_once(&exchange, &mut sessions).await;
+    sessions.release().await;
+    result
+}
+
+async fn answer_once(
+    exchange: &Exchange<'_>,
+    sessions: &mut ExchangeSessions<'_>,
+) -> Result<TaskOutcome, FlowError> {
+    let agent = exchange.key.agent.clone();
+    let project_id = exchange.key.project_id;
+    let with_tools = exchange.app.state::<McpState>().server().is_some();
+    let prompts = with_cache(exchange.state, project_id, |cache| {
+        Ok(StepPrompts::build(
+            cache,
+            exchange.definition,
+            &agent,
+            exchange.request,
+            with_tools,
+        ))
+    })?;
+    let reply = ask_step(exchange, sessions, &agent, &prompts).await?;
+    let read = read_reply(
+        with_tools,
+        &TextContext {
+            app: exchange.app,
+            state: exchange.state,
+            project_id,
+            speaker: &agent,
+            item_id: exchange.item_id,
+            team: exchange.team,
+        },
+        &reply.text,
+    )?;
+    if !read.visible.is_empty() {
+        emit_message(
+            exchange.app,
+            project_id,
+            Speaker::from(agent.clone()),
+            Speaker::User,
+            &read.visible,
+            exchange.channel_id,
+            reply.activity,
+            reply.outcome.proposal,
+        )?;
+    }
+    emit_state(exchange.app, project_id, agent, AgentState::Idle)?;
+    Ok(TaskOutcome::Finished)
+}
+
+fn parallel_definition(agent: &Agent, request: &str) -> TaskDefinition {
+    TaskDefinition {
+        nova_tarefa: false,
+        objetivo: request.to_string(),
+        criterion: String::new(),
+        verify: false,
+        participants: vec![agent.clone()],
+        alternate: false,
+        variables: Vec::new(),
+        stop: None,
+    }
+}
+
+// Ao fim de um fluxo, as delegações que esperavam o teto entram enquanto houver vaga.
+fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
+    let snapshot = match load_orchestration(app, project_id) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let _ = report_failure(app, project_id, &error);
+            return;
+        }
+    };
+    let max_parallel = snapshot
+        .as_ref()
+        .map_or(1, |snapshot| snapshot.settings.max_parallel);
+    while has_room(state, project_id, max_parallel) {
+        let Some(waiting) = take_waiting(state, project_id) else {
+            return;
+        };
+        let max_instances = snapshot
+            .as_ref()
+            .and_then(|snapshot| placement_of(snapshot, &waiting.base))
+            .map_or(1, |placement| placement.max_instances);
+        if let Err(error) = dispatch_request(
+            app,
+            state,
+            project_id,
+            &waiting.base,
+            &waiting.text,
+            waiting.context,
+            max_instances,
+            max_parallel,
+        ) {
+            let _ = report_failure(app, project_id, &error);
+            return;
+        }
+    }
+}
+
+fn has_room(state: &AppState, project_id: i64, max_parallel: i64) -> bool {
+    let Ok(flow) = state.flow.lock() else {
+        return false;
+    };
+    let running = flow
+        .pending
+        .keys()
+        .filter(|key| key.project_id == project_id)
+        .count() as i64;
+    running < max_parallel
+}
+
+fn take_waiting(state: &AppState, project_id: i64) -> Option<WaitingDelegation> {
+    let mut flow = state.flow.lock().ok()?;
+    flow.waiting.get_mut(&project_id)?.pop_front()
 }
 
 // Banco ausente vira None (prompt de antes); erro de leitura do banco interrompe a troca.
@@ -348,7 +533,7 @@ async fn exchange_turns(
     request: &str,
     item_id: Option<&str>,
     channel_id: Option<i64>,
-    sessions: &mut ExchangeSessions,
+    sessions: &mut ExchangeSessions<'_>,
     team: &Team,
     run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {

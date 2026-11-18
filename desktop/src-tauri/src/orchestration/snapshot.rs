@@ -1,4 +1,4 @@
-use crate::agents::{join_items, Agent, Team};
+use crate::agents::{join_items, replica_of, Agent, Team};
 use crate::db::{Layer, OrchestrationSnapshot, Placement, Rule};
 
 const ENFORCEMENT_ON: &str = "on";
@@ -47,11 +47,7 @@ pub(crate) fn agent_prompt(
     let Some(snapshot) = snapshot else {
         return without_layer(team);
     };
-    let Some(placement) = snapshot
-        .placements
-        .iter()
-        .find(|placement| placement.agent_id == agent.as_str())
-    else {
+    let Some(placement) = placement_of(snapshot, agent) else {
         return without_layer(team);
     };
     let Some(layer) = snapshot
@@ -264,10 +260,19 @@ pub(crate) fn placement_of<'a>(
     snapshot: &'a OrchestrationSnapshot,
     agent: &Agent,
 ) -> Option<&'a Placement> {
+    // Réplica herda a posição do agente base: mesma camada e time, sem posição gravada.
+    let id = agent.as_str();
     snapshot
         .placements
         .iter()
-        .find(|placement| placement.agent_id == agent.as_str())
+        .find(|placement| placement.agent_id == id)
+        .or_else(|| {
+            let (base, _) = replica_of(id)?;
+            snapshot
+                .placements
+                .iter()
+                .find(|placement| placement.agent_id == base)
+        })
 }
 
 pub(crate) fn enforced(snapshot: Option<&OrchestrationSnapshot>) -> bool {

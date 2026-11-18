@@ -4,13 +4,12 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use crate::agents::{Agent, Team};
+use crate::agents::Agent;
 use crate::claude::kill_process_tree;
 use crate::db::{Db, DbError};
 use crate::session_key::SessionKey;
 
 use super::agent_session::AgentSession;
-use super::error::FlowError;
 use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS};
 
 pub(super) const NO_PID: u32 = 0;
@@ -44,9 +43,20 @@ impl SessionSlot {
 #[derive(Default)]
 pub(crate) struct SessionPool {
     slots: StdMutex<HashMap<SessionKey, Arc<SessionSlot>>>,
+    tasks: StdMutex<HashMap<i64, Arc<Mutex<()>>>>,
 }
 
 impl SessionPool {
+    // A tarefa do projeto é uma só (Cache guarda uma tarefa ativa): trocas de líder rodam uma de cada vez.
+    pub(super) fn task_lock(&self, project_id: i64) -> Arc<Mutex<()>> {
+        let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(
+            tasks
+                .entry(project_id)
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
+    }
+
     fn slot(&self, key: SessionKey) -> Arc<SessionSlot> {
         Arc::clone(
             self.lock()
@@ -148,56 +158,48 @@ pub(super) struct Held {
     pub(super) guard: OwnedMutexGuard<AgentSession>,
 }
 
-pub(super) struct ExchangeSessions {
-    pub(super) held: Vec<(Agent, Held)>,
+// Cada passo reserva só a instância que fala; o lock de uma instância não impede as outras.
+pub(super) struct ExchangeSessions<'a> {
+    pool: &'a SessionPool,
+    project_id: i64,
     pub(super) opened: HashSet<Agent>,
+    touched: Vec<Arc<SessionSlot>>,
 }
 
-impl ExchangeSessions {
-    pub(super) async fn acquire(pool: &SessionPool, project_id: i64, agents: &[Agent]) -> Self {
-        let mut held = Vec::new();
-        for agent in agents {
-            let slot = pool.slot(SessionKey {
-                project_id,
-                agent: agent.clone(),
-            });
-            let guard = Arc::clone(&slot.session).lock_owned().await;
-            held.push((agent.clone(), Held { slot, guard }));
-        }
+impl<'a> ExchangeSessions<'a> {
+    pub(super) fn new(pool: &'a SessionPool, project_id: i64) -> Self {
         Self {
-            held,
+            pool,
+            project_id,
             opened: HashSet::new(),
+            touched: Vec::new(),
         }
     }
 
-    pub(super) fn held(&mut self, agent: &Agent, team: &Team) -> Result<&mut Held, FlowError> {
-        self.held
-            .iter_mut()
-            .find(|(held_agent, _)| held_agent == agent)
-            .map(|(_, held)| held)
-            .ok_or_else(|| FlowError::SessionNotHeld(team.name_of(agent).to_string()))
+    pub(super) async fn hold(&mut self, agent: &Agent) -> Held {
+        let slot = self.pool.slot(SessionKey {
+            project_id: self.project_id,
+            agent: agent.clone(),
+        });
+        let guard = Arc::clone(&slot.session).lock_owned().await;
+        if !self.touched.iter().any(|known| Arc::ptr_eq(known, &slot)) {
+            self.touched.push(Arc::clone(&slot));
+        }
+        Held { slot, guard }
     }
 
-    pub(super) fn review(
-        &mut self,
-        agent: &Agent,
-        stalls: u32,
-        repeats: u32,
-        team: &Team,
-    ) -> Result<impl std::future::Future<Output = ()> + '_, FlowError> {
-        let session = &mut self.held(agent, team)?.guard;
-        Ok(async move {
-            if degrades_to_fresh(stalls, repeats, session.recoveries) {
-                session.degrade().await;
-            }
-        })
+    pub(super) async fn review(&mut self, agent: &Agent, stalls: u32, repeats: u32) {
+        let mut held = self.hold(agent).await;
+        if degrades_to_fresh(stalls, repeats, held.guard.recoveries) {
+            held.guard.degrade().await;
+        }
     }
 
     // Sessão marcada para fechar durante a mensagem fecha aqui, antes de qualquer outra mensagem usá-la.
     pub(super) async fn release(self) {
-        for (_, mut held) in self.held {
-            if held.slot.closing.swap(false, Ordering::SeqCst) {
-                held.guard.end().await;
+        for slot in self.touched {
+            if slot.closing.swap(false, Ordering::SeqCst) {
+                slot.session.lock().await.end().await;
             }
         }
     }
