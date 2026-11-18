@@ -11,7 +11,8 @@ use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, Turn
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
-    Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState, CONFIG_DIR,
+    tool_definitions, Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState,
+    CONFIG_DIR,
 };
 use crate::orchestration::snapshot::agent_prompt;
 use crate::permissions::PermissionGate;
@@ -21,7 +22,8 @@ use super::console::ConsoleSink;
 use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::flow::profile_of;
-use super::prompts::{role, StepPrompts};
+use super::project_context::project_choices;
+use super::prompts::{maestro_role, role, StepPrompts};
 use super::session_policy::{
     call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
     SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
@@ -85,14 +87,26 @@ async fn run_step(
         &crate::orchestration::instances::display_name(team, agent),
     )?;
     let prompt = agent_prompt(*orchestration, team, agent);
+    let base = role(
+        profile,
+        &prompt.roster,
+        prompt.layer.as_ref(),
+        project_context,
+        mcp.is_some(),
+    );
+    let role = if agent == &Agent::ember() {
+        let tools = if mcp.is_some() {
+            tool_definitions()
+        } else {
+            Vec::new()
+        };
+        // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
+        maestro_role(&base, &tools, &project_choices(app)?, None)
+    } else {
+        base
+    };
     let call = AgentCall {
-        role: role(
-            profile,
-            &prompt.roster,
-            prompt.layer.as_ref(),
-            project_context,
-            mcp.is_some(),
-        ),
+        role,
         model: profile.model.clone(),
         item_id: exchange.item_id.map(str::to_string),
         channel_id: exchange.channel_id,

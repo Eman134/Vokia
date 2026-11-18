@@ -16,7 +16,7 @@ mod text_fallback;
 mod turns;
 
 pub(crate) use archive::remove_archive;
-pub(crate) use emit::emit_backlog_changed;
+pub(crate) use emit::{emit_backlog_changed, emit_feed_note};
 pub(crate) use prompts::variables_listing;
 pub(crate) use turns::with_cache;
 pub use emit::now_millis;

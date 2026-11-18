@@ -14,6 +14,8 @@ const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
 const LIST_AGENTS_COMMAND = 'list_agents'
 const CREATE_AGENT_COMMAND = 'create_agent'
 const UPDATE_AGENT_COMMAND = 'update_agent'
+const DELETE_AGENT_COMMAND = 'delete_agent'
+const SET_AGENT_INSTRUCTIONS_COMMAND = 'set_agent_instructions'
 const LIST_INTERRUPTED_RUNS_COMMAND = 'list_interrupted_runs'
 const RESUME_INTERRUPTED_RUN_COMMAND = 'resume_interrupted_run'
 const DISCARD_INTERRUPTED_RUN_COMMAND = 'discard_interrupted_run'
@@ -42,6 +44,7 @@ export interface AgentProfile {
   cli: string
   model: string
   builtin: boolean
+  extraInstructions: string
 }
 
 export interface CliPreset {
@@ -119,6 +122,14 @@ export function createAgent(draft: AgentDraft): Promise<AgentProfile> {
 
 export function updateAgent(id: Agent, draft: AgentDraft): Promise<AgentProfile> {
   return invoke<AgentProfile>(UPDATE_AGENT_COMMAND, { id, draft })
+}
+
+export function setAgentInstructions(id: Agent, text: string): Promise<AgentProfile> {
+  return invoke<AgentProfile>(SET_AGENT_INSTRUCTIONS_COMMAND, { id, text })
+}
+
+export function deleteAgent(id: Agent): Promise<void> {
+  return invoke<void>(DELETE_AGENT_COMMAND, { id })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

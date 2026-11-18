@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::{self, Display};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,6 +7,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use serde::{Deserialize, Serialize};
 
 use crate::claude::DEFAULT_MODEL;
+use crate::db::DbError;
 
 const NAME_MIN_CHARS: usize = 2;
 const NAME_MAX_CHARS: usize = 20;
@@ -18,6 +20,7 @@ const AGENTS_FILE: &str = "agents.json";
 const AGENTS_FILE_TMP: &str = "agents.json.tmp";
 const FILE_VERSION: u32 = 1;
 const AVATAR_MAX_CHARS: usize = 32;
+const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 const CLAUDE_CLI: &str = "claude";
 const CLAUDE_CLI_LABEL: &str = "Claude Code";
 const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
@@ -110,6 +113,9 @@ pub struct AgentProfile {
     pub model: String,
     #[serde(default)]
     pub builtin: bool,
+    // Vem do mapa de instruções do registro, não do registro de cada agente; vazio quando não há.
+    #[serde(default)]
+    pub extra_instructions: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -163,6 +169,17 @@ pub enum AgentError {
     LoadFailed(String),
     SaveFailed(String),
     InstanceSuffixReserved(String),
+    PositionHeld(String),
+    InstructionsTooLong,
+}
+
+impl From<DbError> for AgentError {
+    fn from(error: DbError) -> Self {
+        match error {
+            DbError::AgentHasPosition(message) => AgentError::PositionHeld(message),
+            other => AgentError::SaveFailed(other.to_string()),
+        }
+    }
 }
 
 impl Display for AgentError {
@@ -195,7 +212,11 @@ impl Display for AgentError {
                 f,
                 "O id {id} termina em -<número>, sufixo reservado para as réplicas de agentes."
             ),
-            AgentError::LoadFailed(message) | AgentError::SaveFailed(message) => {
+            AgentError::InstructionsTooLong => write!(
+                f,
+                "As instruções extras passam de {INSTRUCTIONS_MAX_CHARS} caracteres."
+            ),
+            AgentError::PositionHeld(message) | AgentError::LoadFailed(message) | AgentError::SaveFailed(message) => {
                 f.write_str(message)
             }
         }
@@ -211,6 +232,7 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         cli: CLAUDE_CLI.to_string(),
         model: DEFAULT_MODEL.to_string(),
         builtin: true,
+        extra_instructions: String::new(),
     }
 }
 
@@ -233,6 +255,7 @@ fn initial_agents() -> Vec<AgentProfile> {
             cli: CLAUDE_CLI.to_string(),
             model: DEFAULT_MODEL.to_string(),
             builtin: false,
+            extra_instructions: String::new(),
         })
         .collect()
 }
@@ -369,6 +392,7 @@ fn validate(
         cli: draft.cli.clone(),
         model: draft.model.clone(),
         builtin: false,
+        extra_instructions: String::new(),
     })
 }
 
@@ -377,6 +401,17 @@ fn team_of(stored: &[AgentProfile]) -> Vec<AgentProfile> {
         .into_iter()
         .chain(stored.iter().cloned())
         .collect()
+}
+
+fn with_instructions(profile: AgentProfile, instructions: &BTreeMap<String, String>) -> AgentProfile {
+    let extra_instructions = instructions
+        .get(profile.id.as_str())
+        .cloned()
+        .unwrap_or_default();
+    AgentProfile {
+        extra_instructions,
+        ..profile
+    }
 }
 
 pub struct Team(Vec<AgentProfile>);
@@ -439,11 +474,20 @@ pub(crate) fn join_items(items: &[String]) -> String {
 struct AgentsFile {
     version: u32,
     agents: Vec<AgentProfile>,
+    #[serde(default)]
+    instructions: BTreeMap<String, String>,
+}
+
+// Agentes gravados e instruções extras por id (inclusive dos embutidos, que não ficam em `agents`).
+#[derive(Clone, Default)]
+struct Stored {
+    agents: Vec<AgentProfile>,
+    instructions: BTreeMap<String, String>,
 }
 
 pub struct AgentRegistry {
     file: PathBuf,
-    state: Mutex<Result<Vec<AgentProfile>, String>>,
+    state: Mutex<Result<Stored, String>>,
 }
 
 impl AgentRegistry {
@@ -458,7 +502,12 @@ impl AgentRegistry {
 
     pub fn team(&self) -> Result<Team, AgentError> {
         match &*self.lock() {
-            Ok(stored) => Ok(Team(team_of(stored))),
+            Ok(stored) => Ok(Team(
+                team_of(&stored.agents)
+                    .into_iter()
+                    .map(|profile| with_instructions(profile, &stored.instructions))
+                    .collect(),
+            )),
             Err(message) => Err(AgentError::LoadFailed(message.clone())),
         }
     }
@@ -474,11 +523,11 @@ impl AgentRegistry {
     pub fn create(&self, draft: &AgentDraft) -> Result<AgentProfile, AgentError> {
         let mut state = self.lock();
         let stored = stored_mut(&mut state)?;
-        let profile = validate(draft, &team_of(stored), None)?;
-        let mut next = stored.clone();
+        let profile = validate(draft, &team_of(&stored.agents), None)?;
+        let mut next = stored.agents.clone();
         next.push(profile.clone());
-        write_file(&self.file, next.clone()).map_err(AgentError::SaveFailed)?;
-        *stored = next;
+        write_file(&self.file, &next, &stored.instructions).map_err(AgentError::SaveFailed)?;
+        stored.agents = next;
         Ok(profile)
     }
 
@@ -489,25 +538,71 @@ impl AgentRegistry {
         let mut state = self.lock();
         let stored = stored_mut(&mut state)?;
         let index = stored
+            .agents
             .iter()
             .position(|profile| &profile.id == id)
             .ok_or_else(|| AgentError::UnknownAgent(id.to_string()))?;
-        let profile = validate(draft, &team_of(stored), Some(id))?;
-        let mut next = stored.clone();
+        let profile = validate(draft, &team_of(&stored.agents), Some(id))?;
+        let mut next = stored.agents.clone();
         next[index] = profile.clone();
-        write_file(&self.file, next.clone()).map_err(AgentError::SaveFailed)?;
-        *stored = next;
-        Ok(profile)
+        write_file(&self.file, &next, &stored.instructions).map_err(AgentError::SaveFailed)?;
+        stored.agents = next;
+        Ok(with_instructions(profile, &stored.instructions))
     }
 
-    fn lock(&self) -> MutexGuard<'_, Result<Vec<AgentProfile>, String>> {
+    // Só tira o registro: posições e cards são tratados antes, na mesma operação do banco.
+    pub fn remove(&self, id: &Agent) -> Result<(), AgentError> {
+        if let Some(builtin) = builtins().into_iter().find(|profile| &profile.id == id) {
+            return Err(AgentError::BuiltinLocked(builtin.name));
+        }
+        let mut state = self.lock();
+        let stored = stored_mut(&mut state)?;
+        let index = stored
+            .agents
+            .iter()
+            .position(|profile| &profile.id == id)
+            .ok_or_else(|| AgentError::UnknownAgent(id.to_string()))?;
+        let mut agents = stored.agents.clone();
+        agents.remove(index);
+        let mut instructions = stored.instructions.clone();
+        instructions.remove(id.as_str());
+        write_file(&self.file, &agents, &instructions).map_err(AgentError::SaveFailed)?;
+        stored.agents = agents;
+        stored.instructions = instructions;
+        Ok(())
+    }
+
+    // Texto vazio apaga as instruções; o embutido é aceito, porque o campo não altera a identidade do agente.
+    pub fn set_instructions(&self, id: &Agent, text: &str) -> Result<AgentProfile, AgentError> {
+        let text = text.trim();
+        if text.chars().count() > INSTRUCTIONS_MAX_CHARS {
+            return Err(AgentError::InstructionsTooLong);
+        }
+        let mut state = self.lock();
+        let stored = stored_mut(&mut state)?;
+        let profile = team_of(&stored.agents)
+            .into_iter()
+            .find(|profile| &profile.id == id)
+            .ok_or_else(|| AgentError::UnknownAgent(id.to_string()))?;
+        let mut instructions = stored.instructions.clone();
+        if text.is_empty() {
+            instructions.remove(id.as_str());
+        } else {
+            instructions.insert(id.to_string(), text.to_string());
+        }
+        write_file(&self.file, &stored.agents, &instructions).map_err(AgentError::SaveFailed)?;
+        stored.instructions = instructions;
+        Ok(with_instructions(profile, &stored.instructions))
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Result<Stored, String>> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
 fn stored_mut<'a>(
-    state: &'a mut MutexGuard<'_, Result<Vec<AgentProfile>, String>>,
-) -> Result<&'a mut Vec<AgentProfile>, AgentError> {
+    state: &'a mut MutexGuard<'_, Result<Stored, String>>,
+) -> Result<&'a mut Stored, AgentError> {
     match &mut **state {
         Ok(stored) => Ok(stored),
         Err(message) => Err(AgentError::LoadFailed(message.clone())),
@@ -521,12 +616,16 @@ fn load_failed(file: &Path, detail: impl Display) -> AgentError {
     ))
 }
 
-fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError> {
+fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
     if !file.exists() {
         let seeds = initial_agents();
+        let instructions = BTreeMap::new();
         fs::create_dir_all(dir).map_err(|error| load_failed(file, error))?;
-        write_file(file, seeds.clone()).map_err(|detail| load_failed(file, detail))?;
-        return Ok(seeds);
+        write_file(file, &seeds, &instructions).map_err(|detail| load_failed(file, detail))?;
+        return Ok(Stored {
+            agents: seeds,
+            instructions,
+        });
     }
     let text = fs::read_to_string(file).map_err(|error| load_failed(file, error))?;
     let parsed: AgentsFile =
@@ -538,11 +637,11 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
         ));
     }
     let mut loaded: Vec<AgentProfile> = Vec::new();
-    let mut renamed = false;
+    let mut rewrite = false;
     for stored in parsed.agents {
         let profile = renamed_stored(stored.clone());
-        renamed |= profile.id != stored.id;
-        let draft = AgentDraft {
+        rewrite |= profile.id != stored.id;
+        let mut draft = AgentDraft {
             name: profile.name.clone(),
             role: profile.role.clone(),
             avatar: profile.avatar.clone(),
@@ -550,6 +649,18 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
             model: profile.model.clone(),
         };
         let team = team_of(&loaded);
+        // Avatar repetido já gravado não derruba o carregamento: o segundo recebe o próximo livre.
+        if team.iter().any(|other| other.avatar == draft.avatar) {
+            let free = free_avatar(&team).ok_or_else(|| {
+                load_failed(file, format!("não há avatar livre para {}", profile.name))
+            })?;
+            eprintln!(
+                "Avatar {} de {} já era usado por outro agente; {} passa a usar {free}.",
+                draft.avatar, profile.name, profile.name
+            );
+            draft.avatar = free.to_string();
+            rewrite = true;
+        }
         let validated = validate(&draft, &team, None).map_err(|error| load_failed(file, error))?;
         if validated.id != profile.id {
             return Err(load_failed(
@@ -559,10 +670,37 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
         }
         loaded.push(validated);
     }
-    if renamed {
-        write_file(file, loaded.clone()).map_err(|detail| load_failed(file, detail))?;
+    if rewrite {
+        write_file(file, &loaded, &parsed.instructions).map_err(|detail| load_failed(file, detail))?;
     }
-    Ok(loaded)
+    Ok(Stored {
+        agents: loaded,
+        instructions: parsed.instructions,
+    })
+}
+
+// Catálogo de avatares do app: espelha os ids de identities/avatarProfiles.ts.
+const AVATAR_IDS: [&str; 13] = [
+    "lume",
+    "ambar",
+    "vesper",
+    "quarzo",
+    "onix",
+    "selene",
+    "ambar-ouro",
+    "ambar-rubi",
+    "ambar-rosa",
+    "vesper-agua",
+    "onix-negro",
+    "selene-ouro",
+    "ember",
+];
+
+fn free_avatar(team: &[AgentProfile]) -> Option<&'static str> {
+    AVATAR_IDS
+        .iter()
+        .copied()
+        .find(|avatar| team.iter().all(|profile| profile.avatar != *avatar))
 }
 
 // Perfis do elenco inicial gravados com o id antigo passam ao nome novo; o resto fica como está.
@@ -587,10 +725,15 @@ fn renamed_stored(profile: AgentProfile) -> AgentProfile {
     }
 }
 
-fn write_file(file: &Path, agents: Vec<AgentProfile>) -> Result<(), String> {
+fn write_file(
+    file: &Path,
+    agents: &[AgentProfile],
+    instructions: &BTreeMap<String, String>,
+) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&AgentsFile {
         version: FILE_VERSION,
-        agents,
+        agents: agents.to_vec(),
+        instructions: instructions.clone(),
     })
     .map_err(|error| error.to_string())?;
     write_atomic(file, AGENTS_FILE_TMP, &text)

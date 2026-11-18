@@ -6,8 +6,17 @@ use crate::task::{
 };
 
 use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, TeamOutline};
+use serde_json::Value;
 
-use super::project_context::PROJECT_RULE;
+const MAESTRO_INSTRUCTIONS: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time certo ou ao agente certo. Não execute trabalho técnico que cabe a um agente. Decida quando delegar, pedir revisão, pesquisar antes ou chamar o usuário. Respeite as regras de passagem de camadas e os limites de turno. Relate ao usuário o que foi delegado e o resultado.";
+const MAESTRO_PROJECT_RULE: &str = "Identifique o projeto do pedido pelo contexto da conversa, que é o projeto em que o pedido foi feito. Sem contexto, use o projeto fixado pelo usuário. Se ainda houver dúvida, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português (por exemplo: Em qual projeto devo seguir com este pedido?) e options com os nomes dos projetos listados abaixo.";
+const MAESTRO_PINNED_LABEL: &str = "Projeto fixado pelo usuário:";
+const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
+const MAESTRO_EXTRA_LABEL: &str = "Instruções extras do agente:";
+const MAESTRO_COMMANDS_LABEL: &str = "Comandos disponíveis:";
+const NO_PROJECT_TEXT: &str = "nenhum";
+
+use super::project_context::{ProjectChoices, PROJECT_RULE};
 use super::turns::NO_CONVERSATION;
 
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Variáveis da tarefa são compartilhadas por padrão e todos os agentes podem ler e alterar. Use `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
@@ -26,6 +35,7 @@ pub(super) const CHANNEL_NOTE_PREFIX: &str = "Mensagem enviada no canal #";
 const NO_VARIABLES: &str = "- nenhuma";
 const LAYER_INSTRUCTIONS_LABEL: &str = "Instruções da camada";
 const AGENT_INSTRUCTIONS_LABEL: &str = "Instruções do agente";
+const EXTRA_INSTRUCTIONS_LABEL: &str = "Instruções extras";
 const INTERPRETER_INTRO: &str = "Você extrai a definição de uma tarefa e não conversa. <líder> é o orquestrador máximo do Vokia: os pedidos chegam a ele e ele os encaminha ao time certo. Responda somente com um objeto JSON, sem texto fora dele, com os campos: nova_tarefa (true se o pedido inicia um assunto diferente do anterior, false se continua o anterior); objetivo (frase curta); participantes (só quem precisa agir: por padrão o líder, <líder>";
 const INTERPRETER_FIELDS: &str = r#", ou o agente que o pedido cita; inclua os dois apenas quando o pedido mandar os dois agirem); alternar (true somente se o pedido pedir revezamento explícito entre os dois, como alternadamente, um de cada vez ou revezando; sem esse pedido é false); variaveis (lista de {"nome", "tipo": "numero" | "texto" | "lista", "valor", "regra": "livre" | "mais_um" | "so_leitura"}; use variáveis quando a tarefa tiver um estado a acompanhar, com ou sem revezamento; [] caso contrário); parada ({"variavel", "alcanca": nome de uma variável numérica, inteiro, ou "existe" para parar quando a variável tiver conteúdo}, ou null); criterio (frase curta sobre o que a conversa mostra quando o objetivo estiver cumprido; se o pedido disser "pronto quando…", use essa condição); verificar (true só quando o pedido tem meta verificável de vários passos, como "faça X até Y"; senão false)."#;
 const EXAMPLES_LABEL: &str = "Exemplos:";
@@ -229,6 +239,41 @@ fn scope_label(scope: Scope) -> &'static str {
     }
 }
 
+// Ember orquestra o programa: as instruções fixas vêm sempre, e os comandos vêm do registro real de ferramentas.
+pub(super) fn maestro_role(
+    base: &str,
+    tools: &[Value],
+    choices: &ProjectChoices,
+    extra: Option<&str>,
+) -> String {
+    let pinned = choices.pinned.as_deref().unwrap_or(NO_PROJECT_TEXT);
+    let names = if choices.names.is_empty() {
+        NO_PROJECT_TEXT.to_string()
+    } else {
+        join_items(&choices.names)
+    };
+    let projects = format!("{MAESTRO_PINNED_LABEL} {pinned}. {MAESTRO_PROJECTS_LABEL} {names}.");
+    let extra = extra
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| format!(" {MAESTRO_EXTRA_LABEL} {text}"))
+        .unwrap_or_default();
+    let head = format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{extra}");
+    let commands: Vec<String> = tools.iter().filter_map(command_line).collect();
+    if commands.is_empty() {
+        return head;
+    }
+    format!("{head} {MAESTRO_COMMANDS_LABEL}\n{}", commands.join("\n"))
+}
+
+fn command_line(tool: &Value) -> Option<String> {
+    Some(format!(
+        "- {}: {}",
+        tool.get("name")?.as_str()?,
+        tool.get("description")?.as_str()?
+    ))
+}
+
 pub(super) fn role(
     profile: &AgentProfile,
     roster: &str,
@@ -243,10 +288,19 @@ pub(super) fn role(
         format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}")
     };
     let layer_sections = layer_sections(layer);
+    let extra = extra_instructions(profile);
     format!(
-        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{PROJECT_RULE} {project_context}",
+        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{extra}{PROJECT_RULE} {project_context}",
         profile.name, profile.role
     )
+}
+
+// Sem instruções extras, o prompt sai igual ao de antes.
+fn extra_instructions(profile: &AgentProfile) -> String {
+    if profile.extra_instructions.is_empty() {
+        return String::new();
+    }
+    format!(" {EXTRA_INSTRUCTIONS_LABEL}: {}", profile.extra_instructions)
 }
 
 // Cada seção só existe com texto; sem nenhuma, o resultado é vazio e o prompt segue igual ao de antes.

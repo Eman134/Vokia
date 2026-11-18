@@ -3,7 +3,9 @@ import { defineStore } from 'pinia'
 import type { Agent } from './events'
 import {
   createAgent,
+  deleteAgent,
   listAgents,
+  setAgentInstructions,
   updateAgent,
   type AgentDraft,
   type AgentProfile,
@@ -36,6 +38,18 @@ export const useRoster = defineStore('roster', () => {
     return profile
   }
 
+  async function setInstructions(id: Agent, text: string): Promise<AgentProfile> {
+    const profile = await setAgentInstructions(id, text)
+    agents.value = agents.value.map((agent) => (agent.id === id ? profile : agent))
+    return profile
+  }
+
+  // Os cards do agente já foram para o Ember no banco; a recarga do backlog vem pelo evento backlog-changed.
+  async function remove(id: Agent): Promise<void> {
+    await deleteAgent(id)
+    agents.value = agents.value.filter((agent) => agent.id !== id)
+  }
+
   function profileOf(id: Agent): AgentProfile | undefined {
     return agents.value.find((agent) => agent.id === id)
   }
@@ -61,6 +75,8 @@ export const useRoster = defineStore('roster', () => {
     load,
     create,
     update,
+    setInstructions,
+    remove,
     profileOf,
     nameOf,
     nameInstance,

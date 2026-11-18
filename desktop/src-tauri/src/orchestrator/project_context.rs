@@ -35,6 +35,29 @@ pub(super) fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, 
         .map_err(|error| FlowError::ProjectFolder(error.to_string()))
 }
 
+// Projeto fixado e nomes de todos os projetos: o Ember usa para identificar o projeto de um pedido.
+pub(super) struct ProjectChoices {
+    pub(super) pinned: Option<String>,
+    pub(super) names: Vec<String>,
+}
+
+pub(super) fn project_choices(app: &AppHandle) -> Result<ProjectChoices, FlowError> {
+    let state = app.state::<DbState>();
+    let db = state
+        .require()
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
+    let projects = db
+        .list_projects()
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
+    Ok(ProjectChoices {
+        pinned: projects
+            .iter()
+            .find(|project| project.pinned)
+            .map(|project| project.name.clone()),
+        names: projects.into_iter().map(|project| project.name).collect(),
+    })
+}
+
 pub(super) fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
     let project = load_project(app, project_id)?;
     if project.path.trim().is_empty() {

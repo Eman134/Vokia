@@ -1,13 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
+import UiNotice from '../../ui/UiNotice.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import type { AgentProfile } from '../team/teamApi'
 import { normalizeName, useRoster } from '../team/useRoster'
+import AgentInstructions from './AgentInstructions.vue'
 import NewAgentDialog from './NewAgentDialog.vue'
 import {
   BUILTIN_TEXT,
+  DELETE_AGENT_CONFIRM_LABEL,
+  DELETE_AGENT_MESSAGE,
+  DELETE_LABEL,
   EDIT_LABEL,
   NEW_AGENT_LABEL,
   NO_AGENTS_TEXT,
@@ -29,6 +35,8 @@ const roster = useRoster()
 const query = ref('')
 const selectedId = ref<string | null>(null)
 const dialog = ref<{ agent?: AgentProfile } | null>(null)
+const failure = ref<string | null>(null)
+const removing = ref(false)
 
 const visible = computed(() => {
   const key = normalizeName(query.value.trim())
@@ -42,6 +50,22 @@ const selected = computed(
 
 function onSaved(profile: AgentProfile): void {
   selectedId.value = profile.id
+}
+
+async function removeSelected(): Promise<void> {
+  const agent = selected.value
+  if (!agent || removing.value) return
+  removing.value = true
+  failure.value = null
+  try {
+    await roster.remove(agent.id)
+    selectedId.value = null
+  } catch (error) {
+    // O backend recusa com o motivo (posição em time ou camada); o agente continua no elenco.
+    failure.value = String(error)
+  } finally {
+    removing.value = false
+  }
 }
 </script>
 
@@ -82,8 +106,18 @@ function onSaved(profile: AgentProfile): void {
         <div class="flex gap-2"><dt class="w-24 text-muted">{{ CLI_LABEL }}</dt><dd class="text-ink">{{ selected.cli }}</dd></div>
         <div class="flex gap-2"><dt class="w-24 text-muted">{{ MODEL_LABEL }}</dt><dd class="text-ink">{{ selected.model }}</dd></div>
       </dl>
+      <AgentInstructions :key="selected.id" :agent="selected" />
       <p v-if="selected.builtin" :class="MUTED_TEXT_CLASSES">{{ BUILTIN_TEXT }}</p>
-      <div class="flex justify-end">
+      <UiNotice v-if="failure !== null" :text="failure" @close="failure = null" />
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <UiConfirm
+          v-if="!selected.builtin"
+          :label="DELETE_LABEL"
+          :message="DELETE_AGENT_MESSAGE"
+          :confirm-label="DELETE_AGENT_CONFIRM_LABEL"
+          :busy="removing"
+          @confirm="removeSelected()"
+        />
         <UiButton
           variant="quiet"
           size="lg"

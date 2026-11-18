@@ -33,6 +33,29 @@ fn usage_window(window: LimitWindow) -> UsageWindow {
     }
 }
 
+// Aviso já gravado no banco pela operação que o gerou: só leva o evento ao feed aberto.
+pub(crate) fn emit_feed_note(
+    app: &AppHandle,
+    project_id: i64,
+    from: Speaker,
+    text: &str,
+    time: u64,
+) -> Result<(), FlowError> {
+    emit(
+        app,
+        VokiaEvent::Message {
+            from,
+            to: Speaker::User,
+            text: text.to_string(),
+            time,
+            project_id: Some(project_id),
+            channel_id: None,
+            activity: None,
+            request_proposal: None,
+        },
+    )
+}
+
 pub(super) fn emit_message(
     app: &AppHandle,
     project_id: i64,

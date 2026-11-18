@@ -14,6 +14,7 @@ use tauri::AppHandle;
 pub use registry::{Binding, RandomnessUnavailable, Token};
 pub use server::{McpConfigFile, McpServer, McpSession};
 pub use slot::{DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
+pub(crate) use tools::definitions as tool_definitions;
 
 pub const SERVER_NAME: &str = "vokia";
 pub const CONFIG_DIR: &str = "mcp";

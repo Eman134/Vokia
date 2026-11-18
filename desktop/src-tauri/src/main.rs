@@ -78,6 +78,8 @@ fn main() {
             commands::agents::list_agents,
             commands::agents::create_agent,
             commands::agents::update_agent,
+            commands::agents::delete_agent,
+            commands::agents::set_agent_instructions,
             commands::roles::role_list,
             commands::roles::role_create,
             commands::roles::role_update,

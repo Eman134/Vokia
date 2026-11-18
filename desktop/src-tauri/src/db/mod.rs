@@ -1,3 +1,4 @@
+mod agent_removal;
 mod agent_sessions;
 mod approvals;
 mod backlog;

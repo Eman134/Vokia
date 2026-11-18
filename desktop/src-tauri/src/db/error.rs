@@ -41,6 +41,7 @@ pub enum DbError {
     BacklogLabelNotFound(String),
     ResponsibleAlreadySet(String),
     ResponsibleOutsideTeam(String),
+    AgentHasPosition(String),
     BacklogItemArchived,
     BacklogItemNotArchived,
     BacklogDeleteInProgress,
@@ -222,6 +223,7 @@ impl fmt::Display for DbError {
             DbError::ResponsibleOutsideTeam(agent) => {
                 write!(f, "O agente {agent} não faz parte do elenco.")
             }
+            DbError::AgentHasPosition(message) => f.write_str(message),
             DbError::BacklogItemArchived => write!(f, "O item já está arquivado."),
             DbError::BacklogItemNotArchived => write!(f, "O item não está arquivado."),
             DbError::BacklogDeleteInProgress => {
