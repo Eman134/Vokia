@@ -21,6 +21,7 @@ pub enum ErrorCode {
     CreateInProgress,
     InvalidIcon,
     InvalidColor,
+    SetupCommandTooLong,
     ProjectNotFound,
     ProjectBusy,
     ProjectHasNoFolder,

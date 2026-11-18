@@ -9,6 +9,7 @@ use crate::claude::base_command;
 use super::error::{ErrorCode, ProjectError};
 
 pub(super) const GIT_PROGRAM: &str = "git";
+pub(super) const GIT_MISSING_MESSAGE: &str = "O git não está instalado ou não está no PATH.";
 const STDERR_MAX_LINES: usize = 10;
 
 pub(super) enum RunError {

@@ -33,7 +33,10 @@ export interface Project {
   lastActivityAt: number | null
   permissionLevel: PermissionLevel
   color: string | null
+  setupCommand: string | null
 }
+
+export const SETUP_COMMAND_MAX_CHARS = 300
 
 export interface DbProblem {
   reason: string
@@ -117,6 +120,7 @@ export interface ProjectEdit {
   symbol: string
   description: string
   color: string
+  setupCommand: string
 }
 
 export function createProject(input: NewProjectInput): Promise<Project> {

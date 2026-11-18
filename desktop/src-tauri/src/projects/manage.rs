@@ -38,6 +38,7 @@ const PROJECT_ICONS: [&str; 23] = [
 const PROJECT_COLORS: [&str; 8] = [
     "rose", "peach", "yellow", "green", "teal", "blue", "purple", "pink",
 ];
+const SETUP_COMMAND_MAX_CHARS: usize = 300;
 static CREATE_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Deserialize)]
@@ -64,6 +65,7 @@ pub struct ProjectEdit {
     symbol: String,
     description: String,
     color: String,
+    setup_command: Option<String>,
 }
 
 struct CreateGuard;
@@ -108,11 +110,32 @@ fn ensure_known_color(color: &str) -> Result<(), ProjectError> {
     ))
 }
 
+fn normalize_setup_command(raw: Option<String>) -> Result<Option<String>, ProjectError> {
+    let Some(trimmed) = raw.as_deref().map(str::trim).filter(|text| !text.is_empty()) else {
+        return Ok(None);
+    };
+    if trimmed.chars().count() > SETUP_COMMAND_MAX_CHARS {
+        return Err(ProjectError::new(
+            ErrorCode::SetupCommandTooLong,
+            format!("O comando de preparo passa de {SETUP_COMMAND_MAX_CHARS} caracteres."),
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, ProjectError> {
     let symbol = edit.symbol.trim();
     ensure_known_icon(symbol)?;
     ensure_known_color(&edit.color)?;
-    Ok(db.update_project(id, &edit.name, symbol, &edit.description, &edit.color)?)
+    let setup_command = normalize_setup_command(edit.setup_command)?;
+    Ok(db.update_project(
+        id,
+        &edit.name,
+        symbol,
+        &edit.description,
+        &edit.color,
+        setup_command.as_deref(),
+    )?)
 }
 
 pub fn pin_project(db: &Db, id: Option<i64>) -> Result<(), ProjectError> {
@@ -152,6 +175,7 @@ pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, 
             &project.symbol,
             &project.description,
             color,
+            None,
         )?),
         None => Ok(project),
     }

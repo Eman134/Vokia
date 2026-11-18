@@ -9,7 +9,7 @@ use crate::db::{Db, NewProject, Project, ORIGIN_GITHUB};
 use super::error::{ErrorCode, ProjectError};
 use super::folder::ensure_directory;
 use super::manage::NewProjectInput;
-use super::process::{git_output, locate, run, tail, RunError, GIT_PROGRAM};
+use super::process::{git_output, locate, run, tail, RunError, GIT_MISSING_MESSAGE, GIT_PROGRAM};
 
 const GH_PROGRAM: &str = "gh";
 const CLONE_TIMEOUT: Duration = Duration::from_secs(600);
@@ -128,11 +128,7 @@ pub(super) async fn create_from_github(
     origin: &GithubOrigin,
 ) -> Result<Project, ProjectError> {
     let gh = locate_gh()?;
-    locate(
-        GIT_PROGRAM,
-        ErrorCode::GitNotInstalled,
-        "O git não está instalado ou não está no PATH.",
-    )?;
+    locate(GIT_PROGRAM, ErrorCode::GitNotInstalled, GIT_MISSING_MESSAGE)?;
     let repo = parse_repo_ref(&origin.repo).ok_or_else(invalid_repo_ref)?;
     let full_name = repo.full_name();
     let parent = ensure_directory(&origin.parent_dir)?;
@@ -228,11 +224,7 @@ async fn switch_branch(
     full_name: &str,
     branch: &str,
 ) -> Result<(), ProjectError> {
-    let git = locate(
-        GIT_PROGRAM,
-        ErrorCode::GitNotInstalled,
-        "O git não está instalado ou não está no PATH.",
-    )?;
+    let git = locate(GIT_PROGRAM, ErrorCode::GitNotInstalled, GIT_MISSING_MESSAGE)?;
     match git_output(&git, destination, &["switch", branch]).await? {
         Some(_) => Ok(()),
         None => Err(branch_not_found(full_name, branch)),

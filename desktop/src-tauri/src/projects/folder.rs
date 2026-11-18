@@ -6,7 +6,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::error::{ErrorCode, ProjectError};
 use super::github::github_repo_of;
-use super::process::{git_output, locate, GIT_PROGRAM};
+use super::process::{git_output, locate, GIT_MISSING_MESSAGE, GIT_PROGRAM};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,7 +49,7 @@ async fn folder_git_details(path: &str) -> (Option<String>, Option<String>) {
     let Ok(git) = locate(
         GIT_PROGRAM,
         ErrorCode::GitNotInstalled,
-        "O git não está instalado ou não está no PATH.",
+        GIT_MISSING_MESSAGE,
     ) else {
         return (None, None);
     };

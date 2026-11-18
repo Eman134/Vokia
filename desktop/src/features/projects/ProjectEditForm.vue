@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, useId } from 'vue'
+import { computed, onMounted, ref, useId } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
@@ -9,7 +9,7 @@ import ProjectColorPicker from './ProjectColorPicker.vue'
 import ProjectIconPicker from './ProjectIconPicker.vue'
 import { projectColorOf } from './projectColors'
 import { CANCEL_LABEL, EMPTY_PATH_TEXT, SAVE_LABEL } from './projetosSample'
-import type { PermissionLevel, Project, ProjectEdit } from './projectsApi'
+import { SETUP_COMMAND_MAX_CHARS, type PermissionLevel, type Project, type ProjectEdit } from './projectsApi'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ save: [input: ProjectEdit, level: PermissionLevel]; cancel: []; remove: [] }>()
@@ -44,6 +44,13 @@ const symbol = ref(props.project.symbol)
 const description = ref(props.project.description)
 const color = ref<string>(projectColorOf(props.project))
 const level = ref<PermissionLevel>(props.project.permissionLevel)
+const setupCommand = ref(props.project.setupCommand ?? '')
+const SETUP_COMMAND_LABEL = 'Comando de preparo (opcional)'
+const SETUP_COMMAND_HINT = 'Roda dentro do worktree de cada item; até 300 caracteres.'
+const SETUP_COMMAND_TOO_LONG = `Use no máximo ${SETUP_COMMAND_MAX_CHARS} caracteres.`
+const setupCommandError = computed(() =>
+  [...setupCommand.value].length > SETUP_COMMAND_MAX_CHARS ? SETUP_COMMAND_TOO_LONG : undefined,
+)
 
 function close(): void {
   previousFocus?.focus()
@@ -51,9 +58,16 @@ function close(): void {
 }
 
 function submit(): void {
+  if (setupCommandError.value) return
   emit(
     'save',
-    { name: name.value, symbol: symbol.value, description: description.value, color: color.value },
+    {
+      name: name.value,
+      symbol: symbol.value,
+      description: description.value,
+      color: color.value,
+      setupCommand: setupCommand.value,
+    },
     level.value,
   )
 }
@@ -83,6 +97,13 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
     <ProjectIconPicker v-model="symbol" />
     <ProjectColorPicker v-model="color" />
     <UiField v-model="description" label="Descrição" data-testid="edit-description" />
+    <UiField
+      v-model="setupCommand"
+      :label="SETUP_COMMAND_LABEL"
+      :hint="SETUP_COMMAND_HINT"
+      :error="setupCommandError"
+      data-testid="edit-setup-command"
+    />
     <div class="flex flex-col gap-1.5">
       <UiSegmented
         v-model="level"
@@ -103,7 +124,7 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
       <UiButton variant="quiet" size="lg" data-testid="edit-cancel" @press="close()">
         {{ CANCEL_LABEL }}
       </UiButton>
-      <UiButton variant="primary" size="lg" data-testid="edit-save" @press="submit">
+      <UiButton variant="primary" size="lg" data-testid="edit-save" :disabled="Boolean(setupCommandError)" @press="submit">
         {{ SAVE_LABEL }}
       </UiButton>
     </div>

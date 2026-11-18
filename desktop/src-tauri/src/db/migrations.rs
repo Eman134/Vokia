@@ -26,28 +26,18 @@ const RENAME_LEGACY_AGENT_IDS: &str = "
     UPDATE orch_handoffs SET to_agent = 'ember' WHERE to_agent = 'iara';
 ";
 
-const HAS_HANDOFF_EVENT: &str =
-    "SELECT COUNT(*) FROM pragma_table_info('orch_handoffs') WHERE name = 'event'";
-const ADD_HANDOFF_EVENT: &str = "ALTER TABLE orch_handoffs ADD COLUMN event TEXT";
+const HAS_COLUMN: &str = "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2";
 
-// Mesmo padrão de ensure_archived_at: o schema novo já traz a coluna; bancos existentes ganham ela aqui.
-fn ensure_handoff_event(conn: &Connection) -> rusqlite::Result<()> {
-    let present: i64 = conn.query_row(HAS_HANDOFF_EVENT, [], |row| row.get(0))?;
+// schema.sql só roda em banco novo; cada coluna nova passa por aqui em toda abertura e entra só se faltar.
+fn ensure_column(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    declaration: &str,
+) -> rusqlite::Result<()> {
+    let present: i64 = conn.query_row(HAS_COLUMN, [table, column], |row| row.get(0))?;
     if present == 0 {
-        conn.execute_batch(ADD_HANDOFF_EVENT)?;
-    }
-    Ok(())
-}
-
-const HAS_ARCHIVED_AT: &str =
-    "SELECT COUNT(*) FROM pragma_table_info('backlog_items') WHERE name = 'archived_at'";
-const ADD_ARCHIVED_AT: &str = "ALTER TABLE backlog_items ADD COLUMN archived_at TEXT";
-
-// schema.sql só roda em banco novo; este passo leva a coluna também aos bancos já existentes.
-fn ensure_archived_at(conn: &Connection) -> rusqlite::Result<()> {
-    let present: i64 = conn.query_row(HAS_ARCHIVED_AT, [], |row| row.get(0))?;
-    if present == 0 {
-        conn.execute_batch(ADD_ARCHIVED_AT)?;
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {declaration}"))?;
     }
     Ok(())
 }
@@ -74,7 +64,10 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     }
     let tx = conn.transaction()?;
     tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
-    ensure_archived_at(&tx)?;
-    ensure_handoff_event(&tx)?;
+    ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
+    ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
+    ensure_column(&tx, "backlog_items", "branch", "TEXT")?;
+    ensure_column(&tx, "backlog_items", "worktree_path", "TEXT")?;
+    ensure_column(&tx, "projects", "setup_command", "TEXT")?;
     tx.commit()
 }
