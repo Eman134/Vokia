@@ -5,18 +5,22 @@ const LIST_AGENT_COPIES_COMMAND = 'list_agent_copies'
 
 export interface AgentCopy {
   id: string
-  agent: Agent
   number: number
   itemId: string | null
   itemTitle: string | null
   worktreePath: string | null
 }
 
+export interface AgentCopies {
+  agent: Agent
+  copies: AgentCopy[]
+}
+
 export const SAME_FOLDER_TEXT = 'mesma pasta do projeto'
 const PATH_SEPARATOR = /[\\/]/
 
-export function fetchAgentCopies(projectId: number): Promise<AgentCopy[]> {
-  return invoke<AgentCopy[]>(LIST_AGENT_COPIES_COMMAND, { projectId })
+export function fetchAgentCopies(projectId: number): Promise<AgentCopies[]> {
+  return invoke<AgentCopies[]>(LIST_AGENT_COPIES_COMMAND, { projectId })
 }
 
 export function worktreeFolder(path: string): string {

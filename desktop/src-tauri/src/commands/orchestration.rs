@@ -1,5 +1,7 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::agents::{replica_of, Agent, AgentError, AgentRegistry};
@@ -72,14 +74,12 @@ fn close_project_sessions(app: &AppHandle, project_id: i64) {
     });
 }
 
-#[tauri::command]
-pub fn get_orchestration(
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
+pub(crate) fn read_orchestration(
+    db: &Db,
+    registry: &AgentRegistry,
     project_id: i64,
 ) -> Result<OrchestrationSnapshot, String> {
-    let db = state.require().map_err(|error| error.to_string())?;
-    let team = load_team_and_seed(db, &registry, project_id)?;
+    let team = load_team_and_seed(db, registry, project_id)?;
     let mut snapshot = db
         .orchestration(project_id)
         .map_err(|error| error.to_string())?;
@@ -87,6 +87,16 @@ pub fn get_orchestration(
         .placements
         .retain(|placement| team.ids().any(|id| id.as_str() == placement.agent_id));
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn get_orchestration(
+    state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
+    project_id: i64,
+) -> Result<OrchestrationSnapshot, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    read_orchestration(db, &registry, project_id)
 }
 
 #[tauri::command]
@@ -225,35 +235,45 @@ pub fn save_orchestration_settings(
     })
 }
 
+pub(crate) fn read_movements(db: &Db, project_id: i64) -> Result<Vec<Handoff>, String> {
+    db.list_movements(project_id, MOVEMENTS_LIMIT)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn list_movements(state: State<'_, DbState>, project_id: i64) -> Result<Vec<Handoff>, String> {
     let db = state.require().map_err(|error| error.to_string())?;
-    db.list_movements(project_id, MOVEMENTS_LIMIT)
-        .map_err(|error| error.to_string())
+    read_movements(db, project_id)
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentCopy {
     id: String,
-    agent: String,
     number: u32,
     item_id: Option<String>,
     item_title: Option<String>,
     worktree_path: Option<String>,
 }
 
-// Só réplicas em execução (id <base>-<n>); o item vem do turno em andamento e o worktree do próprio item.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCopies {
+    agent: String,
+    copies: Vec<AgentCopy>,
+}
+
+// Agrupa só as réplicas em execução (id <base>-<n>) sob o agente base; o grupo some quando não há réplica. O item vem do turno em andamento e o worktree do próprio item.
 #[tauri::command]
 pub fn list_agent_copies(
     app_state: State<'_, AppState>,
     state: State<'_, DbState>,
     project_id: i64,
-) -> Result<Vec<AgentCopy>, String> {
+) -> Result<Vec<AgentCopies>, String> {
     let db = state.require().map_err(|error| error.to_string())?;
     let instances =
         orchestrator::active_instances(&app_state, project_id).map_err(|error| error.to_string())?;
-    let mut copies = Vec::new();
+    let mut groups: BTreeMap<String, Vec<AgentCopy>> = BTreeMap::new();
     for instance in instances {
         let Some((base, number)) = replica_of(instance.agent.as_str()) else {
             continue;
@@ -266,17 +286,21 @@ pub fn list_agent_copies(
             },
             None => (None, None, None),
         };
-        copies.push(AgentCopy {
+        groups.entry(base.to_string()).or_default().push(AgentCopy {
             id: instance.agent.to_string(),
-            agent: base.to_string(),
             number,
             item_id,
             item_title,
             worktree_path,
         });
     }
-    copies.sort_by(|a, b| a.agent.cmp(&b.agent).then(a.number.cmp(&b.number)));
-    Ok(copies)
+    Ok(groups
+        .into_iter()
+        .map(|(agent, mut copies)| {
+            copies.sort_by_key(|copy| copy.number);
+            AgentCopies { agent, copies }
+        })
+        .collect())
 }
 
 #[cfg(test)]

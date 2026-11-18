@@ -56,7 +56,7 @@ pub(crate) fn emit_feed_note(
     )
 }
 
-pub(super) fn emit_message(
+pub(crate) fn emit_message(
     app: &AppHandle,
     project_id: i64,
     from: Speaker,
@@ -66,7 +66,6 @@ pub(super) fn emit_message(
     activity: Option<TurnActivity>,
     request_proposal: Option<RequestProposal>,
 ) -> Result<(), FlowError> {
-    let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
         db.insert_message(

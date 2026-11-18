@@ -15,7 +15,7 @@ import ChannelForm from '../channels/ChannelForm.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { useConversationTab } from './conversationTabs'
-import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
+import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useProjects } from '../projects/useProjects'
 import { trapFocus } from '../backlog/dialogFocus'
@@ -52,6 +52,8 @@ const COPY_CLASSES =
 const COPY_SELECTED_CLASSES = 'outline-2 outline-solid outline-accent bg-accent-soft'
 const COPIES_LIST_LABEL = 'Cópias'
 const COPY_MARK_TEXT = 'Cópia'
+const COPY_NOUN_SINGULAR = 'cópia'
+const COPY_NOUN_PLURAL = 'cópias'
 
 const connection = useConnection()
 const feed = useFeed()
@@ -80,14 +82,8 @@ function presence(agent: Agent) {
   return presenceOf(feed.stateOf(agent), control.isPaused(agent))
 }
 
-// Só aparece com mais de uma instância; uma cópia sozinha não muda nada na lista.
-function copiesOf(agent: Agent): AgentCopy[] {
-  const copies = agentCopies.copiesOf(agent)
-  return copies.length > 1 ? copies : []
-}
-
 function copiesLabel(count: number): string {
-  return `${count} cópias`
+  return `${count} ${count === 1 ? COPY_NOUN_SINGULAR : COPY_NOUN_PLURAL}`
 }
 
 function isShown(agent: Agent): boolean {
@@ -199,8 +195,8 @@ function closeChannelDialog(): void {
               </span>
               <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
             </span>
-            <span v-if="copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
-              {{ copiesLabel(copiesOf(agent.id).length) }}
+            <span v-if="agentCopies.copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
+              {{ copiesLabel(agentCopies.copiesOf(agent.id).length) }}
             </span>
           </button>
           <button
@@ -231,11 +227,11 @@ function closeChannelDialog(): void {
             </svg>
           </button>
           <ul
-            v-if="copiesOf(agent.id).length"
+            v-if="agentCopies.copiesOf(agent.id).length"
             :aria-label="`${COPIES_LIST_LABEL} de ${agent.name}`"
             class="mt-1 ml-5 flex flex-col gap-1"
           >
-            <li v-for="copy in copiesOf(agent.id)" :key="copy.id">
+            <li v-for="copy in agentCopies.copiesOf(agent.id)" :key="copy.id">
               <button
                 type="button"
                 :class="[COPY_CLASSES, agentCopies.selectedId === copy.id && COPY_SELECTED_CLASSES]"

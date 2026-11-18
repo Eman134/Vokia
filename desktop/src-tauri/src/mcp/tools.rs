@@ -3,10 +3,12 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::AgentRegistry;
+use crate::commands::channels::post_agent_message;
+use crate::commands::orchestration::{read_movements, read_orchestration};
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
-    OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
-    REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
+    ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS,
+    BOARD_COLUMNS, REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestration::policy::{check_intent, parallel_pair};
@@ -33,6 +35,11 @@ const PROPOSE_REQUEST: &str = "propose_request";
 const DELEGATE: &str = "delegate";
 const GET_VARIABLES: &str = "get_variables";
 const SET_VARIABLE: &str = "set_variable";
+const GET_ORCHESTRATION: &str = "get_orchestration";
+const LIST_AGENTS: &str = "list_agents";
+const SAVE_ITEM_PLAN: &str = "save_item_plan";
+const LIST_MOVEMENTS: &str = "list_movements";
+const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
 const OP_SET: &str = "set";
 const OP_APPEND: &str = "append";
 
@@ -151,6 +158,19 @@ struct DecisionArgs {
 struct ProposalArgs {
     title: String,
     detail: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PostChannelArgs {
+    channel: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct SavePlanArgs {
+    item_id: String,
+    #[serde(flatten)]
+    plan: ItemPlanInput,
 }
 
 pub fn definitions() -> Vec<Value> {
@@ -295,6 +315,52 @@ pub fn definitions() -> Vec<Value> {
             }),
             &["name", "op", "value"],
         ),
+        tool(
+            GET_ORCHESTRATION,
+            "Lê os times, as camadas e as regras de passagem do projeto, com a posição de cada agente.",
+            json!({}),
+            &[],
+        ),
+        tool(
+            LIST_AGENTS,
+            "Lista os agentes do elenco, com nome, papel e instruções.",
+            json!({}),
+            &[],
+        ),
+        tool(
+            SAVE_ITEM_PLAN,
+            "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id, name e meta.",
+            json!({
+                "item_id": { "type": "string" },
+                "state": { "type": "string" },
+                "proposal": { "type": "string" },
+                "plan": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "meta": { "type": "string" },
+                    },
+                },
+                "agent": { "type": "string" },
+            }),
+            &["item_id", "state"],
+        ),
+        tool(
+            LIST_MOVEMENTS,
+            "Lista as passagens de trabalho recentes entre agentes do projeto.",
+            json!({}),
+            &[],
+        ),
+        tool(
+            POST_CHANNEL_MESSAGE,
+            "Escreve uma mensagem num canal do projeto do qual você é membro.",
+            json!({
+                "channel": { "type": "string" },
+                "text": { "type": "string" },
+            }),
+            &["channel", "text"],
+        ),
     ]
 }
 
@@ -341,6 +407,13 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
         GET_VARIABLES => get_variables(app, binding),
         SET_VARIABLE => parse(name, arguments).and_then(|args| set_variable(app, binding, args)),
+        GET_ORCHESTRATION => get_orchestration(app, binding),
+        LIST_AGENTS => list_agents(app),
+        SAVE_ITEM_PLAN => parse(name, arguments).and_then(|args| save_item_plan(app, binding, args)),
+        LIST_MOVEMENTS => list_movements(app, binding),
+        POST_CHANNEL_MESSAGE => {
+            parse(name, arguments).and_then(|args| post_channel_message(app, binding, args))
+        }
         _ => return None,
     };
     Some(match outcome {
@@ -725,6 +798,54 @@ fn propose_request(binding: &Binding, args: ProposalArgs) -> ToolText {
         detail: args.detail.unwrap_or_default().trim().to_string(),
     });
     Ok(PROPOSAL_REGISTERED.to_string())
+}
+
+fn to_json(value: &impl serde::Serialize) -> ToolText {
+    serde_json::to_string(value).map_err(|_| SYSTEM_FAILURE.to_string())
+}
+
+fn get_orchestration(app: &AppHandle, binding: &Binding) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    let registry = app.state::<AgentRegistry>();
+    let snapshot = read_orchestration(db, &registry, binding.project_id)
+        .map_err(|_| SYSTEM_FAILURE.to_string())?;
+    to_json(&snapshot)
+}
+
+fn list_agents(app: &AppHandle) -> ToolText {
+    let listing = app
+        .state::<AgentRegistry>()
+        .listing()
+        .map_err(|_| SYSTEM_FAILURE.to_string())?;
+    to_json(&listing)
+}
+
+fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.save_item_plan(binding.project_id, &args.item_id, &args.plan)
+        .map_err(|error| refusal_or_system(&error))?;
+    Ok(format!("Plano do card {} gravado.", args.item_id))
+}
+
+fn list_movements(app: &AppHandle, binding: &Binding) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    let movements =
+        read_movements(db, binding.project_id).map_err(|_| SYSTEM_FAILURE.to_string())?;
+    to_json(&movements)
+}
+
+fn post_channel_message(app: &AppHandle, binding: &Binding, args: PostChannelArgs) -> ToolText {
+    post_agent_message(
+        app,
+        binding.project_id,
+        &binding.agent,
+        &args.channel,
+        &args.text,
+    )?;
+    Ok(format!("Mensagem gravada no canal {}.", args.channel.trim()))
 }
 
 fn apply(app: &AppHandle, binding: &Binding, operation: CardOperation) -> ToolText {
