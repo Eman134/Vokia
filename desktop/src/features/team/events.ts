@@ -160,6 +160,16 @@ export interface VokiaConsoleLine extends ConsoleEntry {
   projectId: number
 }
 
+export interface VokiaTaskResult {
+  type: 'task-result'
+  projectId: number
+  objective: string
+  concluded: boolean
+  turns: number
+  agents: Agent[]
+  time: number
+}
+
 export type GoalState = 'atingido' | 'incompleto' | 'sem-avanco' | 'repetindo'
 
 export interface VokiaGoalState {
@@ -217,6 +227,7 @@ export type VokiaEvent =
   | VokiaPlanUsage
   | VokiaRequestSettled
   | VokiaConsoleLine
+  | VokiaTaskResult
   | VokiaGoalState
   | VokiaBacklogChanged
   | VokiaOrchestrationChanged

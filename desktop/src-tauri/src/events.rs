@@ -210,6 +210,15 @@ pub enum VokiaEvent {
         checks: u32,
     },
     #[serde(rename_all = "camelCase")]
+    TaskResult {
+        project_id: i64,
+        objective: String,
+        concluded: bool,
+        turns: i64,
+        agents: Vec<Agent>,
+        time: u64,
+    },
+    #[serde(rename_all = "camelCase")]
     BacklogChanged {
         project_id: i64,
     },

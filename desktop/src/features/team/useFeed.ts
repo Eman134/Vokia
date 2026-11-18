@@ -9,6 +9,7 @@ import {
   type VokiaGoalState,
   type VokiaPermission,
   type VokiaRequestSettled,
+  type VokiaTaskResult,
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
 import { buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
@@ -162,6 +163,9 @@ export const useFeed = defineStore('feed', () => {
       case 'goal-state':
         showGoalState(event)
         break
+      case 'task-result':
+        showTaskResult(event)
+        break
       case 'backlog-changed':
         void useBacklog().reloadAfterAgentChange(event.projectId)
         break
@@ -176,6 +180,12 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'plan-usage':
         break
+    }
+  }
+
+  function showTaskResult(event: VokiaTaskResult): void {
+    if (event.projectId === projects.selected?.id) {
+      feed.value.push(event)
     }
   }
 

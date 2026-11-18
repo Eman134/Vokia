@@ -1,8 +1,8 @@
-import type { Agent, FeedNotice, FeedPermissionResult, VokiaError, VokiaMessage } from './events'
+import type { Agent, FeedNotice, FeedPermissionResult, VokiaError, VokiaMessage, VokiaTaskResult } from './events'
 import type { Channel } from '../channels/channelsApi'
 import { channelOf, GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 
-export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult
+export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult | VokiaTaskResult
 
 export type TimelineItem =
   | { type: 'entry'; start: number; entry: FeedEntry }
@@ -47,6 +47,7 @@ export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
       return entry.agent === agent
     case 'notice':
     case 'error':
+    case 'task-result':
       return false
   }
 }
@@ -70,7 +71,7 @@ export function screenEntries(
 // #geral recebe o que não tem canal específico, os pedidos de permissão (E7) e os avisos e erros, que não pertencem a canal nenhum;
 // canal específico recebe só as suas mensagens.
 function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNEL_NAME, channels: readonly Channel[]): boolean {
-  if (entry.type === 'permission-result' || entry.type === 'notice' || entry.type === 'error') {
+  if (entry.type === 'permission-result' || entry.type === 'notice' || entry.type === 'error' || entry.type === 'task-result') {
     return target === GENERAL_CHANNEL_NAME
   }
   if (entry.type !== 'message') {

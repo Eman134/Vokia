@@ -17,7 +17,7 @@ use crate::state::{AppState, Batch, PendingDecision, RequestContext};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
-use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
+use super::emit::{emit, emit_backlog_changed, emit_message, emit_state, now_millis};
 use super::error::FlowError;
 use super::flow::{announce_batch, dispatch_request, open_batch, seal_batch, stop_with_error};
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
@@ -264,6 +264,13 @@ pub(super) async fn run_turns(
                 Some(GoalState::Atingido),
                 "",
                 counters.goal.checks(),
+            )?;
+            report_task_result(
+                app,
+                project_id,
+                definition,
+                TaskOutcome::Finished,
+                counters.task.turns(),
             )?;
             let message = format!("Tarefa concluída: {}.", definition.objetivo);
             conclude(
@@ -584,6 +591,13 @@ async fn resolve(
                 team,
                 *channel_id,
             )?;
+            report_task_result(
+                app,
+                project_id,
+                definition,
+                TaskOutcome::Finished,
+                counters.task.turns(),
+            )?;
             Step::End(TaskOutcome::Finished)
         }
         Settlement::Continue { instruction } => {
@@ -597,13 +611,48 @@ async fn resolve(
         }
         Settlement::Stalled { message } => {
             stop_with_error(app, project_id, message)?;
+            report_task_result(
+                app,
+                project_id,
+                definition,
+                TaskOutcome::Stalled,
+                counters.task.turns(),
+            )?;
             Step::End(TaskOutcome::Stalled)
         }
         Settlement::Ended => {
             emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
+            report_task_result(
+                app,
+                project_id,
+                definition,
+                TaskOutcome::Finished,
+                counters.task.turns(),
+            )?;
             Step::End(TaskOutcome::Finished)
         }
     })
+}
+
+// Cartão para o usuário: vem do registro da tarefa (objetivo e participantes) e do contador de turnos.
+fn report_task_result(
+    app: &AppHandle,
+    project_id: i64,
+    definition: &TaskDefinition,
+    outcome: TaskOutcome,
+    turns: i64,
+) -> Result<(), FlowError> {
+    emit(
+        app,
+        VokiaEvent::TaskResult {
+            project_id,
+            objective: definition.objetivo.clone(),
+            concluded: outcome == TaskOutcome::Finished,
+            turns,
+            agents: definition.participants.clone(),
+            time: now_millis()?,
+        },
+    )
 }
 
 fn conclude(
