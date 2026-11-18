@@ -78,7 +78,12 @@ async fn run_step(
         ..
     } = exchange;
     let profile = profile_of(team, agent)?;
-    let mcp = McpLaunch::new(app, key.project_id, agent, &profile.name)?;
+    let mcp = McpLaunch::new(
+        app,
+        key.project_id,
+        agent,
+        &crate::orchestration::instances::display_name(team, agent),
+    )?;
     let prompt = agent_prompt(*orchestration, team, agent);
     let call = AgentCall {
         role: role(

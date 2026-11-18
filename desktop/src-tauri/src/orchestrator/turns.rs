@@ -10,15 +10,16 @@ use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speake
 use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::policy::{self, Passage, Verdict};
+use crate::orchestration::snapshot::placement_of;
 use crate::orchestration::snapshot::ACTION_RETURN;
 use crate::session_key::SessionKey;
-use crate::state::{AppState, PendingDecision};
+use crate::state::{AppState, PendingDecision, RequestContext};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
 use super::error::FlowError;
-use super::flow::stop_with_error;
+use super::flow::{dispatch_request, stop_with_error, Dispatch};
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
     idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
@@ -121,6 +122,7 @@ pub(super) async fn run_turns(
             mut proposal,
             delegation: registered_delegation,
             delegation_intent,
+            parallel_delegations,
             variables,
         } = outcome;
         let TextReply {
@@ -277,6 +279,71 @@ pub(super) async fn run_turns(
             return Ok(TaskOutcome::Finished);
         }
 
+        // Delegações em paralelo viram pedidos próprios na fila dos agentes; o turno do líder termina aqui (sem fan-out dentro de run_turns).
+        if !parallel_delegations.is_empty() {
+            if let Some(text) = &feed {
+                say(
+                    app,
+                    project_id,
+                    transcript,
+                    &turn.speaker,
+                    Speaker::User,
+                    text,
+                    team,
+                    *channel_id,
+                    activity.take(),
+                    proposal.take(),
+                )?;
+            }
+            let snapshot = exchange.orchestration;
+            let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
+            for (helper, request) in parallel_delegations {
+                let max_instances = snapshot
+                    .and_then(|snapshot| placement_of(snapshot, &helper))
+                    .map_or(1, |placement| placement.max_instances);
+                let context = RequestContext::new(
+                    exchange.run_id,
+                    (*item_id).map(str::to_string),
+                    *channel_id,
+                );
+                match dispatch_request(
+                    app,
+                    state,
+                    project_id,
+                    &helper,
+                    &request,
+                    context,
+                    max_instances,
+                    max_parallel,
+                )? {
+                    Dispatch::Started | Dispatch::Queued => {
+                        say(
+                            app,
+                            project_id,
+                            transcript,
+                            &turn.speaker,
+                            Speaker::from(helper.clone()),
+                            &request,
+                            team,
+                            *channel_id,
+                            None,
+                            None,
+                        )?;
+                    }
+                    Dispatch::Full => emit(
+                        app,
+                        VokiaEvent::Error {
+                            message: format!(
+                                "O limite de {max_parallel} agentes em paralelo foi atingido; o pedido para {} não foi iniciado.",
+                                team.name_of(&helper)
+                            ),
+                        },
+                    )?,
+                }
+            }
+            emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
+            return Ok(TaskOutcome::Finished);
+        }
         if let Some(motive) = escalation {
             return escalate_limit(
                 exchange,

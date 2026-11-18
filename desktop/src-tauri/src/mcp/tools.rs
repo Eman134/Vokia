@@ -9,7 +9,7 @@ use crate::db::{
     REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
-use crate::orchestration::policy::check_intent;
+use crate::orchestration::policy::{check_intent, parallel_pair};
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
 use crate::state::AppState;
 use crate::task::{Change, VarValue};
@@ -608,6 +608,11 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         event,
     )?;
     let mut slot = binding.slot.lock();
+    if parallel_pair(snapshot.as_ref(), &binding.agent, &helper) {
+        slot.parallel_delegations
+            .push((helper, request.to_string()));
+        return Ok(DELEGATION_REGISTERED.to_string());
+    }
     if slot.delegation.is_some() {
         return Err(DELEGATION_ALREADY_REGISTERED.to_string());
     }

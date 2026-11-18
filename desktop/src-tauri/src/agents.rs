@@ -146,6 +146,7 @@ pub enum AgentError {
     BuiltinLocked(String),
     LoadFailed(String),
     SaveFailed(String),
+    InstanceSuffixReserved(String),
 }
 
 impl Display for AgentError {
@@ -173,6 +174,10 @@ impl Display for AgentError {
             AgentError::BuiltinLocked(name) => {
                 write!(f, "{name} é um agente embutido e não pode ser alterado.")
             }
+            AgentError::InstanceSuffixReserved(id) => write!(
+                f,
+                "O id {id} termina em -<número>, sufixo reservado para as réplicas de agentes."
+            ),
             AgentError::LoadFailed(message) | AgentError::SaveFailed(message) => {
                 f.write_str(message)
             }
@@ -234,6 +239,22 @@ fn is_name_char(c: char) -> bool {
     is_name_letter(c) || c.is_ascii_digit()
 }
 
+// Réplica é <base>-<n> com n ≥ 2; o id do usuário nunca usa essa forma (is_agent_id continua recusando o hífen).
+pub(crate) fn replica_of(id: &str) -> Option<(&str, u32)> {
+    let (base, number) = id.rsplit_once('-')?;
+    let n: u32 = number.parse().ok()?;
+    (n >= 2 && is_agent_id(base)).then_some((base, n))
+}
+
+pub(crate) fn replica_id(base: &Agent, n: u32) -> Agent {
+    Agent(format!("{}-{n}", base.as_str()))
+}
+
+fn ends_with_number_suffix(id: &str) -> bool {
+    id.rsplit_once('-')
+        .is_some_and(|(_, digits)| !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
+}
+
 fn is_agent_id(id: &str) -> bool {
     !id.is_empty()
         && id
@@ -278,6 +299,9 @@ fn validate(
     }
 
     let key = name_key(name);
+    if ends_with_number_suffix(&key) {
+        return Err(AgentError::InstanceSuffixReserved(key));
+    }
     if RESERVED_IDS.contains(&key.as_str()) {
         return Err(AgentError::ReservedName(name.to_string()));
     }
@@ -342,8 +366,12 @@ impl Team {
         self.0.iter().map(|profile| &profile.id)
     }
 
+    // Réplica (<base>-<n>) usa o perfil do agente base; o nome de exibição sai de instances::display_name.
     pub fn profile(&self, id: &Agent) -> Option<&AgentProfile> {
-        self.0.iter().find(|profile| &profile.id == id)
+        self.0.iter().find(|profile| &profile.id == id).or_else(|| {
+            let (base, _) = replica_of(id.as_str())?;
+            self.0.iter().find(|profile| profile.id.as_str() == base)
+        })
     }
 
     pub fn name_of<'a>(&'a self, id: &'a Agent) -> &'a str {

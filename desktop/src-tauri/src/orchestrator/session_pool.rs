@@ -154,9 +154,9 @@ pub(super) struct ExchangeSessions {
 }
 
 impl ExchangeSessions {
-    pub(super) async fn acquire(pool: &SessionPool, project_id: i64, team: &Team) -> Self {
+    pub(super) async fn acquire(pool: &SessionPool, project_id: i64, agents: &[Agent]) -> Self {
         let mut held = Vec::new();
-        for agent in team.ids() {
+        for agent in agents {
             let slot = pool.slot(SessionKey {
                 project_id,
                 agent: agent.clone(),

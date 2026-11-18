@@ -8,6 +8,7 @@ use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, Speaker, VokiaEvent};
+use crate::orchestration::instances;
 use crate::orchestration::policy::placed_participants;
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
@@ -89,6 +90,80 @@ pub async fn answer_decision(
     )
     .await
     .map(|_| ())
+}
+
+pub(super) enum Dispatch {
+    Started,
+    Queued,
+    Full,
+}
+
+// Pedido delegado em paralelo: uma instância ociosa do agente base, ou a fila do base quando todas estão ocupadas; no teto de max_parallel não inicia nada.
+pub(super) fn dispatch_request(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    base: &Agent,
+    request: &str,
+    context: RequestContext,
+    max_instances: i64,
+    max_parallel: i64,
+) -> Result<Dispatch, FlowError> {
+    let key_of = |agent: &Agent| SessionKey {
+        project_id,
+        agent: agent.clone(),
+    };
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    let Some(agent) = instances::pick(base, max_instances, |agent| {
+        flow.pending.contains_key(&key_of(agent))
+    }) else {
+        flow.pending
+            .entry(key_of(base))
+            .or_default()
+            .push_back(QueuedJob {
+                text: request.to_string(),
+                context,
+            });
+        return Ok(Dispatch::Queued);
+    };
+    let running = flow
+        .pending
+        .keys()
+        .filter(|key| key.project_id == project_id)
+        .count() as i64;
+    if running >= max_parallel {
+        return Ok(Dispatch::Full);
+    }
+    let key = key_of(&agent);
+    flow.pending.insert(key.clone(), VecDeque::new());
+    drop(flow);
+    spawn_flow(app, key, request.to_string(), context);
+    Ok(Dispatch::Started)
+}
+
+fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: RequestContext) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let project_id = key.project_id;
+        let state = app.state::<AppState>();
+        let cli = match state.cli.as_ref() {
+            Ok(cli) => cli.clone(),
+            Err(problem) => {
+                let _ = stop_with_error(&app, project_id, problem.reason.clone());
+                return;
+            }
+        };
+        let team = match app.state::<AgentRegistry>().team() {
+            Ok(team) => team,
+            Err(error) => {
+                let _ = report_failure(&app, project_id, &FlowError::Team(error));
+                return;
+            }
+        };
+        if let Err(error) = run_flow(&app, &state, &cli, key, &request, context, &team).await {
+            let _ = report_failure(&app, project_id, &error);
+        }
+    });
 }
 
 fn start_or_enqueue(
@@ -190,7 +265,12 @@ async fn run_exchange(
     team: &Team,
     run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {
-    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, team).await;
+    // A réplica reserva a própria sessão além das do time; a ordem fixa da lista evita impasse.
+    let mut agents: Vec<Agent> = team.ids().cloned().collect();
+    if !agents.contains(&key.agent) {
+        agents.push(key.agent.clone());
+    }
+    let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, &agents).await;
     let result = exchange_turns(
         app,
         state,

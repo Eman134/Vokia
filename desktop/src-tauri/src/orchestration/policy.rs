@@ -13,6 +13,7 @@ const REVIEW_TASK_TITLE: &str = "Revisão da tarefa";
 const HUMAN_GATE_NEVER: &str = "nunca";
 const HUMAN_GATE_END: &str = "fim";
 const DEFAULT_KIND: &str = "implementar";
+const EXEC_MODE_PARALLEL: &str = "paralelo";
 
 pub(crate) struct Passage {
     pub(crate) from_layer: Option<String>,
@@ -126,6 +127,18 @@ pub(crate) fn check_intent(
         }
     }
     Ok(())
+}
+
+// Várias delegações no mesmo turno só valem quando a seta do par tem execução em paralelo.
+pub(crate) fn parallel_pair(
+    snapshot: Option<&OrchestrationSnapshot>,
+    from: &Agent,
+    to: &Agent,
+) -> bool {
+    snapshot
+        .filter(|snapshot| enforced(Some(snapshot)))
+        .and_then(|snapshot| pair_rule(snapshot, from, to))
+        .is_some_and(|rule| rule.exec_mode == EXEC_MODE_PARALLEL)
 }
 
 fn pair_rule<'a>(
