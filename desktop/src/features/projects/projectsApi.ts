@@ -14,6 +14,8 @@ const DELETE_PROJECT_COMMAND = 'delete_project'
 const CLEAR_CONVERSATION_COMMAND = 'clear_conversation'
 const PIN_PROJECT_COMMAND = 'pin_project'
 const SET_PERMISSION_LEVEL_COMMAND = 'set_permission_level'
+const LIST_PERMISSION_RULES_COMMAND = 'list_permission_rules'
+const DELETE_PERMISSION_RULE_COMMAND = 'delete_permission_rule'
 
 export type OriginKind = 'folder' | 'github'
 export type CloneMode = 'link' | 'fork'
@@ -145,4 +147,18 @@ export function pinProject(id: number | null): Promise<void> {
 
 export function setPermissionLevel(projectId: number, level: PermissionLevel): Promise<void> {
   return invoke<void>(SET_PERMISSION_LEVEL_COMMAND, { projectId, level })
+}
+
+export interface PermissionRule {
+  tool: string
+  command: string
+  createdAt: number
+}
+
+export function listPermissionRules(projectId: number): Promise<PermissionRule[]> {
+  return invoke<PermissionRule[]>(LIST_PERMISSION_RULES_COMMAND, { projectId })
+}
+
+export function deletePermissionRule(projectId: number, rule: PermissionRule): Promise<void> {
+  return invoke<void>(DELETE_PERMISSION_RULE_COMMAND, { projectId, tool: rule.tool, command: rule.command })
 }

@@ -73,6 +73,8 @@ fn main() {
             commands::backlog::restore_backlog_item,
             commands::backlog::delete_backlog_item,
             commands::projects::set_permission_level,
+            commands::projects::list_permission_rules,
+            commands::projects::delete_permission_rule,
             commands::agents::list_agents,
             commands::agents::create_agent,
             commands::agents::update_agent,

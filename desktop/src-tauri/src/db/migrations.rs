@@ -43,6 +43,25 @@ const RUNS_SCHEMA: &str = "
     UPDATE orch_runs SET state = 'interrompido' WHERE state = 'em_andamento';
 ";
 
+// schema.sql só roda em banco novo: estas tabelas entram a cada abertura, sem tocar nas existentes.
+const PERMISSION_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS permission_denials (
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        tool TEXT NOT NULL,
+        command TEXT NOT NULL,
+        denied_count INTEGER NOT NULL DEFAULT 0,
+        last_denied_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, tool, command)
+    );
+    CREATE TABLE IF NOT EXISTS permission_rules (
+        project_id INTEGER NOT NULL REFERENCES projects(id),
+        tool TEXT NOT NULL,
+        command TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, tool, command)
+    );
+";
+
 const HAS_COLUMN: &str = "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2";
 
 // schema.sql só roda em banco novo; cada coluna nova passa por aqui em toda abertura e entra só se faltar.
@@ -82,6 +101,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
     tx.execute_batch(RUNS_SCHEMA)?;
+    tx.execute_batch(PERMISSION_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

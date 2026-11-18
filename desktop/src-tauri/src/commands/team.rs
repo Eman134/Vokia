@@ -5,7 +5,7 @@ use crate::claude::{self, CliProblem};
 use crate::console_log::ConsoleEntry;
 use crate::db::{AgentPause, DbState, InterruptedRun};
 use crate::orchestrator::{self, RequestOutcome};
-use crate::permissions::PermissionError;
+use crate::permissions::{Answer, PermissionError};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, RequestContext};
 
@@ -56,8 +56,14 @@ pub fn answer_permission(
     state: State<'_, AppState>,
     id: String,
     allow: bool,
+    always: bool,
 ) -> Result<(), String> {
-    match state.permissions.answer(&id, allow) {
+    let answer = if allow {
+        Answer::Allow { always }
+    } else {
+        Answer::Deny
+    };
+    match state.permissions.answer(&id, answer) {
         // A outra superfície já decidiu ou o pedido expirou: nada a mostrar.
         Ok(()) | Err(PermissionError::Unknown) => Ok(()),
         Err(error) => Err(error.to_string()),

@@ -104,6 +104,21 @@
   --animate-dot-1: dot-pulse 1.2s ease-in-out infinite;
   --animate-dot-2: dot-pulse 1.2s ease-in-out 0.2s infinite;
   --animate-dot-3: dot-pulse 1.2s ease-in-out 0.4s infinite;
+  --animate-permission-sway: permission-sway 8s ease-in-out infinite;
+
+  @keyframes permission-sway {
+    0%,
+    90%,
+    100% {
+      transform: rotate(0deg);
+    }
+    93% {
+      transform: rotate(-4deg);
+    }
+    96% {
+      transform: rotate(4deg);
+    }
+  }
 
   @keyframes dot-pulse {
     0%,

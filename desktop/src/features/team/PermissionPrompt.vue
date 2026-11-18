@@ -2,10 +2,12 @@
 import UiButton from '../../ui/UiButton.vue'
 import type { VokiaPermission } from './events'
 import { agentName } from './agents'
+import { useFeed } from './useFeed'
 import { usePermissionCountdown } from './usePermissionCountdown'
 
 const props = defineProps<{ permission: VokiaPermission }>()
 const emit = defineEmits<{ decide: [allow: boolean] }>()
+const feed = useFeed()
 
 const name = agentName(props.permission.agent)
 const { label } = usePermissionCountdown(props.permission.expiresAt)
@@ -40,8 +42,16 @@ const approvals =
           Expira em <span data-testid="permission-countdown">{{ label }}</span> · também dá para decidir na barra
         </p>
         <p class="text-caption text-muted">{{ approvals }}</p>
-        <div class="mt-3 flex gap-2">
+        <p v-if="permission.suggestAlways" class="mt-2 text-caption text-ink">
+          Você costuma permitir isto neste projeto. Quer permitir sempre neste projeto?
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
           <UiButton variant="approve" size="sm" @press="emit('decide', true)">Permitir</UiButton>
+          <span v-if="permission.suggestAlways" class="inline-flex motion-safe:animate-permission-sway">
+            <UiButton variant="approve" size="sm" @press="feed.decidePermission(permission.id, true, true)">
+              Permitir sempre
+            </UiButton>
+          </span>
           <UiButton variant="danger" size="sm" @press="emit('decide', false)">Negar</UiButton>
         </div>
       </div>

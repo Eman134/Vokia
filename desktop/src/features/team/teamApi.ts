@@ -81,8 +81,8 @@ export function sendRequest(
   return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId, channelId })
 }
 
-export function answerPermission(id: string, allow: boolean): Promise<void> {
-  return invoke<void>(ANSWER_PERMISSION_COMMAND, { id, allow })
+export function answerPermission(id: string, allow: boolean, always: boolean): Promise<void> {
+  return invoke<void>(ANSWER_PERMISSION_COMMAND, { id, allow, always })
 }
 
 export function answerDecision(id: number, answer: string): Promise<void> {

@@ -149,12 +149,19 @@ pub enum VokiaEvent {
         project_id: Option<i64>,
         expires_at: u64,
         approved_before: u32,
+        suggest_always: bool,
     },
     #[serde(rename_all = "camelCase")]
     PermissionClosed {
         id: String,
         project_id: Option<i64>,
         outcome: PermissionOutcome,
+    },
+    #[serde(rename_all = "camelCase")]
+    PermissionByRule {
+        agent: Agent,
+        detail: String,
+        project_id: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     Decision {

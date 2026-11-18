@@ -17,6 +17,8 @@ const PROJECT_CHILD_TABLES: &[&str] = &[
     "messages",
     "agent_pauses",
     "permission_approvals",
+    "permission_denials",
+    "permission_rules",
     "agent_sessions",
     "channels",
 ];

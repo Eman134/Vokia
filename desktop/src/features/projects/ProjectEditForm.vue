@@ -7,6 +7,7 @@ import UiSegmented from '../../ui/UiSegmented.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import ProjectColorPicker from './ProjectColorPicker.vue'
 import ProjectIconPicker from './ProjectIconPicker.vue'
+import ProjectPermissionRules from './ProjectPermissionRules.vue'
 import { projectColorOf } from './projectColors'
 import { CANCEL_LABEL, EMPTY_PATH_TEXT, SAVE_LABEL } from './projetosSample'
 import { SETUP_COMMAND_MAX_CHARS, type PermissionLevel, type Project, type ProjectEdit } from './projectsApi'
@@ -113,6 +114,7 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
       />
       <p class="text-caption text-muted">{{ PERMISSION_HINTS[level] }}</p>
     </div>
+    <ProjectPermissionRules :project-id="project.id" />
     <div :class="FOOTER_CLASSES">
       <UiConfirm
         class="mr-auto"

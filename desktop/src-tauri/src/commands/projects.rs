@@ -1,6 +1,6 @@
 use tauri::{AppHandle, Manager, State};
 
-use crate::db::{DbError, DbState, Project};
+use crate::db::{DbError, DbState, PermissionRule, Project};
 use crate::events::VokiaEvent;
 use crate::orchestrator;
 use crate::permissions::PermissionLevel;
@@ -130,6 +130,28 @@ pub async fn clear_conversation(
         .map_err(|error| error.to_string())?;
     orchestrator::forget_project(&app_state, project_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn list_permission_rules(
+    state: State<'_, DbState>,
+    project_id: i64,
+) -> Result<Vec<PermissionRule>, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.list_permission_rules(project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_permission_rule(
+    state: State<'_, DbState>,
+    project_id: i64,
+    tool: String,
+    command: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.delete_permission_rule(project_id, &tool, &command)
+        .map_err(|error| error.to_string())
 }
 
 pub(super) async fn stop_project_work(state: &AppState, project_id: i64) {

@@ -7,11 +7,14 @@ mod error;
 mod messages;
 mod migrations;
 mod orchestration;
+mod permission_rules;
 mod projects;
 mod runs;
 mod settings;
 
 pub use agent_sessions::AgentPause;
+pub use approvals::ApprovalHistory;
+pub use permission_rules::PermissionRule;
 pub use backlog::{
     board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResult,
     ItemPlanInput, NewCard, AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,

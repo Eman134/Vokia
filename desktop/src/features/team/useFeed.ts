@@ -141,6 +141,15 @@ export const useFeed = defineStore('feed', () => {
         permissions.value = permissions.value.filter((permission) => permission.id !== event.id)
         break
       }
+      case 'permission-by-rule':
+        feed.value.push({
+          type: 'permission-result',
+          agent: event.agent,
+          detail: event.detail,
+          outcome: 'project-rule',
+          time: Date.now(),
+        })
+        break
       case 'decision':
         useDecisions().apply(event)
         break
@@ -221,9 +230,9 @@ export const useFeed = defineStore('feed', () => {
     }
   }
 
-  async function decidePermission(id: string, allow: boolean): Promise<void> {
+  async function decidePermission(id: string, allow: boolean, always = false): Promise<void> {
     try {
-      await answerPermission(id, allow)
+      await answerPermission(id, allow, always)
     } catch (error) {
       feed.value.push({ type: 'error', message: String(error) })
       permissions.value = permissions.value.filter((permission) => permission.id !== id)

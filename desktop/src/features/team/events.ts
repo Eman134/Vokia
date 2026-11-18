@@ -72,11 +72,13 @@ export interface FeedNotice {
 
 export type PermissionOutcome = 'allowed' | 'denied' | 'expired'
 
+export type PermissionResultOutcome = PermissionOutcome | 'project-rule'
+
 export interface FeedPermissionResult {
   type: 'permission-result'
   agent: Agent
   detail: string
-  outcome: PermissionOutcome
+  outcome: PermissionResultOutcome
   time: number
 }
 
@@ -94,6 +96,7 @@ export interface VokiaPermission {
   projectId: number | null
   expiresAt: number
   approvedBefore: number
+  suggestAlways: boolean
 }
 
 export interface VokiaPermissionClosed {
@@ -101,6 +104,13 @@ export interface VokiaPermissionClosed {
   id: string
   projectId: number | null
   outcome: PermissionOutcome
+}
+
+export interface VokiaPermissionByRule {
+  type: 'permission-by-rule'
+  agent: Agent
+  detail: string
+  projectId: number | null
 }
 
 export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao'
@@ -185,6 +195,7 @@ export type VokiaEvent =
   | VokiaError
   | VokiaPermission
   | VokiaPermissionClosed
+  | VokiaPermissionByRule
   | VokiaDecision
   | VokiaPlanUsage
   | VokiaRequestSettled

@@ -3,7 +3,7 @@ import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
-import type { PermissionOutcome, Speaker } from './events'
+import type { PermissionResultOutcome, Speaker } from './events'
 import ActivityRun from './ActivityRun.vue'
 import MarkdownText from './MarkdownText.vue'
 import AgentPortrait from './AgentPortrait.vue'
@@ -22,10 +22,11 @@ const backlog = useBacklog()
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
 
-const OUTCOME_LABELS: Record<PermissionOutcome, string> = {
+const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
   allowed: '✓ Aprovado:',
   denied: '✕ Negado:',
   expired: '⏱ Expirou sem resposta:',
+  'project-rule': '✓ Regra do projeto:',
 }
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
