@@ -44,7 +44,7 @@ const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
 
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
-    questions, links, activity, children_total, children_done, origin";
+    questions, links, activity, children_total, children_done, origin, branch, worktree_path";
 
 const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
@@ -185,6 +185,8 @@ pub struct BacklogItem {
     pub links: Vec<Link>,
     #[serde(default = "default_origin")]
     pub origin: String,
+    pub branch: Option<String>,
+    pub worktree_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ItemError>,
 }
@@ -764,6 +766,8 @@ fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
         links: draft.links,
         error: None,
         origin: draft.origin.to_string(),
+        branch: None,
+        worktree_path: None,
     }
 }
 
@@ -1069,6 +1073,8 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
         who: row.get("who")?,
         by: row.get("by")?,
         origin: origin_from_row(row)?,
+        branch: row.get("branch")?,
+        worktree_path: row.get("worktree_path")?,
         is_new: None,
         column: BOARD_COLUMNS.contains(&column.as_str()).then_some(column),
         priority: None,
@@ -1123,6 +1129,8 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         activity: json_column(row, "activity", &id)?,
         links: json_column(row, "links", &id)?,
         origin: row.get("origin")?,
+        branch: row.get("branch")?,
+        worktree_path: row.get("worktree_path")?,
         error: None,
         id,
     };

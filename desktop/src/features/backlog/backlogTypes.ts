@@ -114,6 +114,8 @@ export interface BacklogItem {
   who: 'voce' | string
   by: string
   origin: BacklogOrigin
+  branch: string | null
+  worktreePath: string | null
   isNew?: boolean
   column?: BacklogColumn
   priority?: string
