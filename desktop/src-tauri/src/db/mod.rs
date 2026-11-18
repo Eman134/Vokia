@@ -22,5 +22,6 @@ pub use orchestration::{
     Handoff, HandoffDraft, Layer, LayerDraft, OrchestrationSeed, OrchestrationSettings,
     OrchestrationSnapshot, Placement, PlacementDraft, Rule, RuleDraft, Team, TeamDraft,
 };
+pub(crate) use orchestration::{REQUEST_KIND_VALUES, WHEN_EVENT_VALUES};
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use settings::{GRANT_SESSION, SETTING_PERMISSION_GRANT};

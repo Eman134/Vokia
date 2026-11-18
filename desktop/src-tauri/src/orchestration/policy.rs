@@ -45,12 +45,7 @@ pub(crate) fn check(
     };
     let from_layer = layer_of(snapshot, from);
     let to_layer = layer_of(snapshot, to);
-    let rule = from_layer.zip(to_layer).and_then(|(from_layer, to_layer)| {
-        snapshot
-            .rules
-            .iter()
-            .find(|rule| rule.from_layer == from_layer.id && rule.to_layer == to_layer.id)
-    });
+    let rule = pair_rule(snapshot, from, to);
     if !enforced(Some(snapshot)) {
         return Verdict::Deliver(passage(from_layer, to_layer, rule, 0));
     }
@@ -93,6 +88,57 @@ pub(crate) fn check(
         Some(rule),
         return_count,
     ))
+}
+
+// Usado pela ferramenta MCP: o tipo e o evento informados precisam bater com a seta do par, além da política.
+// Os limites de turno continuam sendo contados na troca; a chamada não recebe os contadores.
+pub(crate) fn check_intent(
+    snapshot: Option<&OrchestrationSnapshot>,
+    team: &Team,
+    from: &Agent,
+    to: &Agent,
+    kind: Option<&str>,
+    event: Option<&str>,
+) -> Result<(), String> {
+    let passage = match check(snapshot, team, from, to, &TaskCounters::default()) {
+        Verdict::Deliver(passage) => passage,
+        Verdict::Refuse(motive) | Verdict::Escalate(motive) => return Err(motive),
+    };
+    let Some(snapshot) = snapshot.filter(|snapshot| enforced(Some(snapshot))) else {
+        return Ok(());
+    };
+    if let Some(kind) = kind.filter(|kind| *kind != passage.kind) {
+        return Err(format!(
+            "O tipo {kind} não é o da seta de {} para {}: use {}.",
+            team.name_of(from),
+            team.name_of(to),
+            passage.kind
+        ));
+    }
+    if let Some(event) = event {
+        let allowed = pair_rule(snapshot, from, to).map(|rule| rule.when_event.as_str());
+        if allowed != Some(event) {
+            return Err(format!(
+                "O evento {event} não é permitido de {} para {}.",
+                team.name_of(from),
+                team.name_of(to)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn pair_rule<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    from: &Agent,
+    to: &Agent,
+) -> Option<&'a Rule> {
+    let from_layer = layer_of(snapshot, from)?;
+    let to_layer = layer_of(snapshot, to)?;
+    snapshot
+        .rules
+        .iter()
+        .find(|rule| rule.from_layer == from_layer.id && rule.to_layer == to_layer.id)
 }
 
 // Sem setas, a delegação só registra; com `on`, participantes sem posição saem da tarefa e, se nenhum sobra, vale quem recebeu o pedido.

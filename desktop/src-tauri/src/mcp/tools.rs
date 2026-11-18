@@ -5,9 +5,11 @@ use tauri::{AppHandle, Manager};
 use crate::agents::AgentRegistry;
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
-    AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
+    OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
+    REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
+use crate::orchestration::policy::check_intent;
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
 use crate::state::AppState;
 use crate::task::{Change, VarValue};
@@ -132,6 +134,9 @@ struct SetVariableArgs {
 struct DelegateArgs {
     agent: String,
     request: String,
+    kind: Option<String>,
+    event: Option<String>,
+    item_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -267,6 +272,9 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "agent": { "type": "string" },
                 "request": { "type": "string" },
+                "kind": { "type": "string", "enum": REQUEST_KIND_VALUES },
+                "event": { "type": "string", "enum": WHEN_EVENT_VALUES },
+                "item_id": { "type": "string" },
             }),
             &["agent", "request"],
         ),
@@ -581,12 +589,72 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
     if helper == binding.agent {
         return Err(DELEGATION_TO_SELF.to_string());
     }
+    let kind = optional_choice(args.kind.as_deref(), REQUEST_KIND_VALUES, KIND_INVALID)?;
+    let event = optional_choice(args.event.as_deref(), WHEN_EVENT_VALUES, EVENT_INVALID)?;
+    check_item(app, binding.project_id, args.item_id.as_deref())?;
+    let snapshot = orchestration_snapshot(app, binding.project_id)?;
+    check_intent(
+        snapshot.as_ref(),
+        &team,
+        &binding.agent,
+        &helper,
+        kind,
+        event,
+    )?;
     let mut slot = binding.slot.lock();
     if slot.delegation.is_some() {
         return Err(DELEGATION_ALREADY_REGISTERED.to_string());
     }
     slot.delegation = Some((helper, request.to_string()));
     Ok(DELEGATION_REGISTERED.to_string())
+}
+
+const KIND_INVALID: &str = "Tipo de pedido inválido.";
+const EVENT_INVALID: &str = "Evento inválido.";
+
+fn optional_choice<'a>(
+    value: Option<&'a str>,
+    allowed: &[&str],
+    invalid: &str,
+) -> Result<Option<&'a str>, String> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if allowed.contains(&value) {
+        Ok(Some(value))
+    } else {
+        Err(format!("{invalid} Use um destes: {}.", allowed.join(", ")))
+    }
+}
+
+// Item de outro projeto não existe aqui: a conferência é sempre no backlog do projeto da troca.
+fn check_item(app: &AppHandle, project_id: i64, item: Option<&str>) -> Result<(), String> {
+    let Some(item) = item.map(str::trim).filter(|item| !item.is_empty()) else {
+        return Ok(());
+    };
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|_| SYSTEM_FAILURE.to_string())?;
+    let backlog = db
+        .list_backlog(project_id)
+        .map_err(|_| SYSTEM_FAILURE.to_string())?;
+    if backlog.items.iter().any(|candidate| candidate.id == item) {
+        Ok(())
+    } else {
+        Err(format!("O item {item} não existe no backlog deste projeto."))
+    }
+}
+
+fn orchestration_snapshot(
+    app: &AppHandle,
+    project_id: i64,
+) -> Result<Option<OrchestrationSnapshot>, String> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(None);
+    };
+    db.orchestration(project_id)
+        .map(Some)
+        .map_err(|_| SYSTEM_FAILURE.to_string())
 }
 
 fn request_decision(binding: &Binding, args: DecisionArgs) -> ToolText {

@@ -23,8 +23,9 @@ const STEP_MODE_VALUES: &[&str] = &["lotes", "livre"];
 const HUMAN_GATE_VALUES: &[&str] = &["lote", "fim", "nunca"];
 const WORKTREE_POLICY_VALUES: &[&str] = &["sempre", "paralelo", "nunca"];
 const LAYER_KIND_VALUES: &[&str] = &["planejar", "implementar", "revisar", "pesquisar", "livre"];
-const REQUEST_KIND_VALUES: &[&str] = &["planejar", "implementar", "testar", "revisar", "pesquisar"];
-const WHEN_EVENT_VALUES: &[&str] = &[
+pub(crate) const REQUEST_KIND_VALUES: &[&str] =
+    &["planejar", "implementar", "testar", "revisar", "pesquisar"];
+pub(crate) const WHEN_EVENT_VALUES: &[&str] = &[
     "plano_aprovado",
     "tarefa_concluida",
     "revisao_reprovou",
