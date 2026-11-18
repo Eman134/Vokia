@@ -47,7 +47,6 @@ pub(super) struct Exchange<'a> {
     pub(super) team: &'a Team,
     pub(super) orchestration: Option<&'a OrchestrationSnapshot>,
     pub(super) run_id: Option<u64>,
-    pub(super) answers_review: bool,
 }
 
 pub(super) async fn run_turns(
@@ -70,6 +69,8 @@ pub(super) async fn run_turns(
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
     let mut counters = Counters::default();
+    // Um lote é a entrega de trabalho até o próximo fim de cadeia; só ele exige revisão, e cada lote novo volta a exigi-la.
+    let mut lote_open = false;
     let mut rejections = 0;
     let with_tools = app.state::<McpState>().server().is_some();
     loop {
@@ -296,8 +297,10 @@ pub(super) async fn run_turns(
             emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
-            let review = policy::chain_review(exchange.orchestration, &turn.speaker)
-                .filter(|_| !exchange.answers_review);
+            let lote_delivered = std::mem::take(&mut lote_open);
+            let review = lote_delivered
+                .then(|| policy::chain_review(exchange.orchestration, &turn.speaker))
+                .flatten();
             if let Some(review) = review {
                 let decision = SlotDecision {
                     kind: DecisionKind::Revisao,
@@ -392,6 +395,7 @@ pub(super) async fn run_turns(
                 proposal.take(),
             )?;
             if let Some(passage) = &passage {
+                lote_open = true;
                 counters.task.register_passage(&turn.speaker, helper);
                 if passage.action == ACTION_RETURN {
                     counters.task.register_return(&turn.speaker, helper);
@@ -585,7 +589,6 @@ fn raise_decision(
             PendingDecision {
                 agent: agent.clone(),
                 project_id,
-                kind,
                 title: title.clone(),
                 request: request.to_string(),
                 item_id: item_id.map(str::to_string),
