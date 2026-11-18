@@ -114,6 +114,9 @@ impl DbError {
                 | DbError::BacklogItemNotArchived
                 | DbError::BacklogDeleteInProgress
                 | DbError::BacklogDeleteWithPlan
+                | DbError::InvalidPlanState(_)
+                | DbError::InvalidPlanAgent(_)
+                | DbError::InvalidBacklogPlan(_)
         )
     }
 }

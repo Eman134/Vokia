@@ -513,7 +513,12 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "propose_request",
             "delegate",
             "get_variables",
-            "set_variable"
+            "set_variable",
+            "get_orchestration",
+            "list_agents",
+            "save_item_plan",
+            "list_movements",
+            "post_channel_message"
         ]
     );
     assert!(tools
@@ -544,7 +549,12 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__propose_request",
             "mcp__vokia__delegate",
             "mcp__vokia__get_variables",
-            "mcp__vokia__set_variable"
+            "mcp__vokia__set_variable",
+            "mcp__vokia__get_orchestration",
+            "mcp__vokia__list_agents",
+            "mcp__vokia__save_item_plan",
+            "mcp__vokia__list_movements",
+            "mcp__vokia__post_channel_message"
         ]
     );
 }

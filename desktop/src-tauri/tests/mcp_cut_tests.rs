@@ -10,6 +10,7 @@ static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
 const TOOLS_RULE_TEXT: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
+const DELEGATE_TOOL_TEXT: &str = "chame a ferramenta delegate com agent e request";
 const OLD_MARKERS: [&str; 6] = ["#card", "#decisao", "@<Nome>", "$nome", "@time", "+= item"];
 
 fn with_team(check: impl FnOnce(&Team)) {
@@ -80,8 +81,8 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
         let without = role(profile, &team.roster_line(), None, "contexto", false);
 
         assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
-        assert!(with.contains("@Nome:"), "{with}");
-        assert!(!with.contains("delegate"), "{with}");
+        assert!(with.contains(DELEGATE_TOOL_TEXT), "{with}");
+        assert!(!with.contains("@Nome:"), "{with}");
         assert!(!without.contains(TOOLS_RULE_TEXT), "{without}");
         assert!(!without.contains("@Nome:"), "{without}");
     });
@@ -117,8 +118,8 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");
         assert!(prompt.contains("get_variables"), "{prompt}");
-        assert!(prompt.contains("@Nome:"), "{prompt}");
-        assert!(!prompt.contains("delegate"), "{prompt}");
+        assert!(prompt.contains(DELEGATE_TOOL_TEXT), "{prompt}");
+        assert!(!prompt.contains("@Nome:"), "{prompt}");
         for marker in OLD_MARKERS {
             assert!(!prompt.contains(marker), "{marker}: {prompt}");
         }

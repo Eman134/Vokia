@@ -98,3 +98,7 @@ mod variables_tests;
 #[cfg(test)]
 #[path = "../../tests/mcp_update_card_tests.rs"]
 mod update_card_tests;
+
+#[cfg(test)]
+#[path = "../../tests/mcp_orchestration_tests.rs"]
+mod orchestration_tests;
