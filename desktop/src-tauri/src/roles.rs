@@ -13,6 +13,7 @@ use crate::agents::{
 const ROLES_FILE: &str = "roles.json";
 const ROLES_FILE_TMP: &str = "roles.json.tmp";
 const ROLES_FILE_VERSION: u32 = 1;
+const ROLE_FALLBACK_ID: &str = "papel";
 const DESCRIPTION_MAX_CHARS: usize = 500;
 const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 
@@ -238,22 +239,42 @@ fn validated_texts(description: &str, instructions: &str) -> Result<(String, Str
 }
 
 // Um papel por valor distinto de AgentProfile.role: o cadastro começa com os papéis já em uso.
+// Valores que diferem só em maiúsculas ou acento viram um papel; ids que colidem ganham sufixo numérico.
 fn seed_roles(profiles: &[AgentProfile]) -> Vec<Role> {
-    let mut names: Vec<&str> = Vec::new();
+    let mut roles: Vec<Role> = Vec::new();
     for profile in profiles {
-        if !names.contains(&profile.role.as_str()) {
-            names.push(profile.role.as_str());
+        let name = profile.role.trim();
+        if name.is_empty() || roles.iter().any(|role| name_key(&role.name) == name_key(name)) {
+            continue;
         }
-    }
-    names
-        .into_iter()
-        .map(|name| Role {
-            id: role_id(name),
+        let id = unique_id(&roles, role_id(name));
+        roles.push(Role {
+            id,
             name: name.to_string(),
             description: String::new(),
             instructions: String::new(),
-        })
-        .collect()
+        });
+    }
+    roles
+}
+
+fn unique_id(roles: &[Role], base: String) -> String {
+    let base = if base.is_empty() {
+        ROLE_FALLBACK_ID.to_string()
+    } else {
+        base
+    };
+    if roles.iter().all(|role| role.id != base) {
+        return base;
+    }
+    let mut suffix = 2;
+    loop {
+        let candidate = format!("{base}-{suffix}");
+        if roles.iter().all(|role| role.id != candidate) {
+            return candidate;
+        }
+        suffix += 1;
+    }
 }
 
 fn read_or_seed(file: &Path, agents: &AgentRegistry) -> Result<Vec<Role>, RoleError> {
