@@ -27,6 +27,7 @@ const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta s
 const TOOLS_RULE: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
 const DELEGATION_TOOL_RULE: &str = "Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request. Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
+const INSTRUCTION_FILES_RULE: &str = "Antes de alterar um arquivo, leia o CLAUDE.md e o AGENTS.md da pasta desse arquivo, subindo até a raiz do projeto (o mais próximo primeiro); depois os da raiz do projeto; depois as instruções globais do usuário. A instrução mais específica vence em caso de conflito. Se a instrução do projeto contradizer o pedido, responda BLOQUEADO ao orquestrador.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
     "É a sua vez. Atualize as variáveis conforme o objetivo.";
@@ -290,7 +291,7 @@ pub(super) fn role(
     let layer_sections = layer_sections(layer);
     let extra = extra_instructions(profile);
     format!(
-        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{extra}{PROJECT_RULE} {project_context}",
+        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{extra}{PROJECT_RULE} {INSTRUCTION_FILES_RULE} {project_context}",
         profile.name, profile.role
     )
 }

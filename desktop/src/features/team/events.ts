@@ -142,7 +142,18 @@ export interface VokiaRequestSettled {
   type: 'request-settled'
   runId: number
   projectId: number
-  outcome: 'finished' | 'failed'
+  outcome: 'finished' | 'failed' | 'paused'
+}
+
+export type UsageLimitWindow = 'five-hour' | 'seven-day'
+
+export interface VokiaUsageLimit {
+  type: 'usage-limit'
+  agent: Agent
+  projectId: number
+  window: UsageLimitWindow
+  resetsAt: number
+  runId: number | null
 }
 
 export type ConsoleKind = 'start' | 'text' | 'tool' | 'output' | 'error' | 'permission' | 'done' | 'failed'
@@ -225,6 +236,7 @@ export type VokiaEvent =
   | VokiaPermissionByRule
   | VokiaDecision
   | VokiaPlanUsage
+  | VokiaUsageLimit
   | VokiaRequestSettled
   | VokiaConsoleLine
   | VokiaTaskResult

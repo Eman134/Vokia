@@ -4,7 +4,7 @@ use std::time::SystemTimeError;
 use serde::Serialize;
 
 use crate::agents::AgentError;
-use crate::claude::ClaudeError;
+use crate::claude::{ClaudeError, UsageLimit};
 use crate::db::DbError;
 use crate::projects::worktree::WorktreeError;
 
@@ -14,6 +14,7 @@ pub enum RequestOutcome {
     Finished,
     Failed,
     Queued,
+    Paused,
 }
 
 #[derive(Debug)]
@@ -101,6 +102,15 @@ impl fmt::Display for FlowError {
             }
             FlowError::Team(error) => write!(f, "{error}"),
             FlowError::Worktree(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl FlowError {
+    pub fn usage_limit(&self) -> Option<UsageLimit> {
+        match self {
+            FlowError::Claude(error) => error.usage_limit(),
+            _ => None,
         }
     }
 }

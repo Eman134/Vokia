@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import { useProjects } from '../projects/useProjects'
 import BacklogCard from './BacklogCard.vue'
@@ -40,18 +42,17 @@ import { useBacklog } from './useBacklog'
 import { useItemPlan, type PlanTab } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pt-7 pr-6 pb-[150px] pl-2'
-const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
-const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
-const SUBTITLE_CLASSES = 'mt-1 max-w-[70ch] text-body text-muted'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
 const SEARCH_CLASSES =
   'h-9 w-55 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint disabled:opacity-40'
 const MINE_CLASSES = 'h-7.5 rounded-control-sm border border-line px-3 text-caption text-muted disabled:opacity-40'
 const TAG_FILTER_CLASSES = 'h-7 cursor-pointer rounded-control-sm px-2.5 text-label font-medium hover:opacity-80'
 const GRID_SCROLL_CLASSES = 'min-w-0'
-const GRID_CLASSES = 'grid min-w-0 grid-cols-[repeat(5,minmax(0,1fr))] items-start gap-2'
+const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-2 md:grid-cols-[repeat(5,minmax(0,1fr))]'
 const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'
+const BOARD_AREA_CLASSES = 'flex flex-1 flex-col'
+const EMPTY_BOARD_CLASSES = 'flex flex-1 items-center justify-center'
 const TAG_TINT_PERCENT = 11
 const TAG_TINT_ACTIVE_PERCENT = 22
 
@@ -127,18 +128,6 @@ const pendingCount = computed(() => backlog.items.filter((item) => item.state ==
 const planAllLabel = computed(() =>
   pendingCount.value ? PLAN_ALL_LABEL.replace('{count}', String(pendingCount.value)) : ALL_TRIAGED_LABEL,
 )
-const summary = computed(() => {
-  const items = backlog.items
-  const count = (predicate: (item: BacklogItem) => boolean) => items.filter(predicate).length
-  return [
-    `${items.length} itens`,
-    `${count((item) => item.state === 'triagem')} em triagem`,
-    `${pendingCount.value} não triados`,
-    `${count((item) => item.state === 'proposto')} propostas esperando você`,
-    `${count((item) => columnOf(item) === 'In review')} em revisão`,
-  ].join(' · ')
-})
-
 function tagStyle(tag: string, active: boolean) {
   const token = colorVar(tagColor(tag))
   const percent = active ? TAG_TINT_ACTIVE_PERCENT : TAG_TINT_PERCENT
@@ -160,13 +149,8 @@ watch(
 
 <template>
   <section :class="PAGE_CLASSES">
-    <div :class="HEADER_CLASSES">
-      <div>
-        <span v-if="projectName" class="text-caption text-muted">{{ projectName }}</span>
-        <h1 :class="TITLE_CLASSES">{{ BACKLOG_TITLE }}</h1>
-        <p :class="SUBTITLE_CLASSES">{{ BACKLOG_SUBTITLE }}</p>
-      </div>
-      <div class="ml-auto flex flex-wrap items-center gap-2">
+    <UiPageHeader :title="BACKLOG_TITLE" :project-name="projectName" :subtitle="BACKLOG_SUBTITLE">
+      <template #actions>
         <UiButton
           variant="quiet"
           size="lg"
@@ -177,8 +161,8 @@ watch(
           {{ NEW_REQUEST_LABEL }}
         </UiButton>
         <UiButton variant="primary" size="lg" disabled aria-disabled="true">{{ planAllLabel }}</UiButton>
-      </div>
-    </div>
+      </template>
+    </UiPageHeader>
 
     <div :class="FILTER_ROW_CLASSES">
       <label for="backlog-search" class="sr-only">{{ SEARCH_LABEL }}</label>
@@ -207,34 +191,35 @@ watch(
           {{ tagLabel(tag) }}
         </button>
       </div>
-      <span class="ml-auto text-caption text-muted">{{ summary }}</span>
     </div>
 
     <UiNotice v-if="backlog.loadError && !dismissedError" :text="LOAD_ERROR_PREFIX + backlog.loadError" @close="dismissedError = true" />
-    <UiEmpty v-if="isEmptyBoard" :title="EMPTY_BOARD_TITLE" :text="EMPTY_BOARD_TEXT" />
-
-    <div :class="GRID_SCROLL_CLASSES">
-      <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
-        <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
-          <div class="flex items-center gap-2 text-control text-ink">
-            <span class="size-2.25 rounded-full" :style="{ backgroundColor: colorVar(column.dotToken) }" />
-            <b>{{ column.name }}</b>
-            <span class="text-caption text-muted">{{ column.cards.length }}</span>
-          </div>
-          <span class="truncate text-caption text-muted">{{ column.hint }}</span>
-          <BacklogCard
-            v-for="item in column.cards"
-            :key="item.id"
-            :item="item"
-            :column="column.name"
-            :state="itemPlan.stateFor(item)"
-            :plan-line="itemPlan.lineFor(item)"
-            @open="onOpenCard(item.id)"
-            @action="onCardAction(item.id, $event)"
-          />
-          <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
-          <div v-else-if="column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</div>
-        </section>
+    <div :class="BOARD_AREA_CLASSES">
+      <div :class="GRID_SCROLL_CLASSES">
+        <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
+          <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
+            <div class="flex items-center gap-2 text-control text-ink">
+              <span class="size-2.25 rounded-full" :style="{ backgroundColor: colorVar(column.dotToken) }" />
+              <b>{{ column.name }}</b>
+              <span class="text-caption text-muted">{{ column.cards.length }}</span>
+            </div>
+            <span v-if="!backlog.loading && column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</span>
+            <BacklogCard
+              v-for="item in column.cards"
+              :key="item.id"
+              :item="item"
+              :column="column.name"
+              :state="itemPlan.stateFor(item)"
+              :plan-line="itemPlan.lineFor(item)"
+              @open="onOpenCard(item.id)"
+              @action="onCardAction(item.id, $event)"
+            />
+            <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
+          </section>
+        </div>
+      </div>
+      <div v-if="isEmptyBoard" :class="EMPTY_BOARD_CLASSES">
+        <UiEmpty :title="EMPTY_BOARD_TITLE" :text="EMPTY_BOARD_TEXT" />
       </div>
     </div>
 

@@ -1,10 +1,14 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
 
 use super::activity::TurnActivity;
 use super::error::ClaudeError;
 
 const RESULT_KIND: &str = "result";
 const RATE_LIMIT_KIND: &str = "rate_limit_event";
+const REJECTED_STATUS: &str = "rejected";
+const USAGE_LIMIT_ERROR: &str = "usage_limit_reached";
+const USAGE_LIMIT_STATUS: u16 = 429;
 
 pub struct Reply {
     pub text: String,
@@ -22,6 +26,35 @@ pub struct RateLimits {
 pub struct LimitWindow {
     pub utilization: f64,
     pub resets_at: u64,
+    pub rejected: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LimitName {
+    FiveHour,
+    SevenDay,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UsageLimit {
+    pub window: LimitName,
+    pub resets_at: u64,
+}
+
+impl RateLimits {
+    fn exhausted(self) -> Option<UsageLimit> {
+        [
+            (LimitName::FiveHour, self.five_hour),
+            (LimitName::SevenDay, self.seven_day),
+        ]
+        .into_iter()
+        .find(|(_, window)| window.rejected)
+        .map(|(window, limit)| UsageLimit {
+            window,
+            resets_at: limit.resets_at,
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -52,6 +85,8 @@ struct WindowInfo {
     utilization: f64,
     #[serde(rename = "resetsAt")]
     resets_at: u64,
+    #[serde(default)]
+    status: String,
 }
 
 impl From<UnifiedWindows> for RateLimits {
@@ -68,6 +103,7 @@ impl From<WindowInfo> for LimitWindow {
         Self {
             utilization: window.utilization,
             resets_at: window.resets_at,
+            rejected: window.status == REJECTED_STATUS,
         }
     }
 }
@@ -81,12 +117,28 @@ pub(super) struct CliResponse {
     #[serde(default)]
     pub(super) session_id: String,
     is_error: bool,
+    #[serde(default)]
+    api_error_status: Option<u16>,
+    #[serde(default)]
+    api_error: Option<Json>,
+}
+
+impl CliResponse {
+    fn is_usage_limit(&self) -> bool {
+        self.api_error_status == Some(USAGE_LIMIT_STATUS)
+            || self.api_error.as_ref().and_then(Json::as_str) == Some(USAGE_LIMIT_ERROR)
+    }
 }
 
 pub(super) fn into_reply(
     response: CliResponse,
     limits: Option<RateLimits>,
 ) -> Result<Reply, ClaudeError> {
+    if response.is_error && response.is_usage_limit() {
+        if let Some(limit) = limits.and_then(RateLimits::exhausted) {
+            return Err(ClaudeError::UsageLimit(limit));
+        }
+    }
     if response.is_error {
         let message = if response.result.is_empty() {
             format!("sem texto (subtype: {})", response.subtype)

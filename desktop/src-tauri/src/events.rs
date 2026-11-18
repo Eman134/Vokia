@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::claude::{ConsoleKind, TurnActivity};
+use crate::claude::{ConsoleKind, LimitName, TurnActivity};
 use crate::orchestrator::RequestOutcome;
 
 pub use crate::agents::Agent;
@@ -139,6 +139,14 @@ pub enum VokiaEvent {
     },
     Error {
         message: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    UsageLimit {
+        agent: Agent,
+        project_id: i64,
+        window: LimitName,
+        resets_at: u64,
+        run_id: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     Permission {

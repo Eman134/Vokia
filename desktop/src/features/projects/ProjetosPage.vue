@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import { useNavigation } from '../../shell/useNavigation'
 import { useFeed } from '../team/useFeed'
 import { useConsole } from '../console/useConsole'
@@ -17,12 +19,8 @@ import {
 } from './projectsApi'
 import { useProjects } from './useProjects'
 
-const PROJECTS_CONTEXT = 'Workspace'
 const NO_PROJECTS_TEXT = 'Nenhum projeto ainda. Crie o primeiro para começar.'
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
-const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
-const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
-const SUBTITLE_CLASSES = 'mt-1 max-w-[64ch] text-body text-muted'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const GRID_CLASSES = 'grid grid-cols-[repeat(auto-fill,minmax(min(440px,100%),1fr))] gap-4.5'
 
 const navigation = useNavigation()
@@ -86,24 +84,18 @@ onMounted(async () => {
 
 <template>
   <section :class="PAGE_CLASSES">
-    <header :class="HEADER_CLASSES">
-      <div>
-        <p class="text-caption text-muted" data-testid="context-label">
-          {{ PROJECTS_CONTEXT }}
-        </p>
-        <h1 :class="TITLE_CLASSES">{{ PROJECTS_TITLE }}</h1>
-        <p :class="SUBTITLE_CLASSES">{{ PROJECTS_SUBTITLE }}</p>
-      </div>
-      <UiButton
-        class="ml-auto"
-        variant="primary"
-        size="lg"
-        data-testid="new-project"
-        @press="navigation.goTo('novo-projeto')"
-      >
-        {{ NEW_PROJECT_LABEL }}
-      </UiButton>
-    </header>
+    <UiPageHeader :title="PROJECTS_TITLE" :subtitle="PROJECTS_SUBTITLE">
+      <template #actions>
+        <UiButton
+          variant="primary"
+          size="lg"
+          data-testid="new-project"
+          @press="navigation.goTo('novo-projeto')"
+        >
+          {{ NEW_PROJECT_LABEL }}
+        </UiButton>
+      </template>
+    </UiPageHeader>
 
     <UiNotice v-if="failure" :text="failure" @close="failure = null" />
 

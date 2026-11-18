@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
-import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import { useProjects } from '../projects/useProjects'
 import PlanDetail from './PlanDetail.vue'
 import PlanList from './PlanList.vue'
@@ -17,11 +18,7 @@ import {
   type SamplePlan,
 } from './planosSample'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-4.5 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
-const HEADER_CLASSES = 'flex flex-wrap items-end gap-4'
-const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
-const SUBTITLE_CLASSES = 'mt-1 max-w-[70ch] text-body text-muted'
-const ACTIONS_CLASSES = 'ml-auto flex flex-wrap items-center gap-2'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4.5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const FILE_CLASSES = 'rounded-control bg-surface-2 px-2.5 py-1.25 font-mono text-small text-ink'
 const BODY_CLASSES = 'flex flex-wrap items-start gap-4'
 
@@ -34,9 +31,7 @@ const crumb = computed(() =>
     : `${SCOPE_CRUMB_PREFIX} ${selected.value.scope}`,
 )
 const projectsStore = useProjects()
-const contextLabel = computed(() =>
-  [projectsStore.selected?.name, crumb.value, SAMPLE_DATA_LABEL].filter(Boolean).join(' · '),
-)
+const projectLabel = computed(() => [projectsStore.selected?.name, crumb.value].filter(Boolean).join(' · '))
 const subtitle = computed(() => {
   const lead = parent.value
     ? `${SUB_PLAN_SUBTITLE_PREFIX} "${parent.value.name}". `
@@ -55,17 +50,12 @@ function select(plan: SamplePlan) {
 
 <template>
   <section :class="PAGE_CLASSES">
-    <header :class="HEADER_CLASSES">
-      <div>
-        <p class="text-caption text-muted">{{ contextLabel }}</p>
-        <h1 :class="TITLE_CLASSES">{{ selected.name }}</h1>
-        <p :class="SUBTITLE_CLASSES">{{ subtitle }}</p>
-      </div>
-      <div :class="ACTIONS_CLASSES">
+    <UiPageHeader :title="selected.name" :project-name="projectLabel" :subtitle="subtitle">
+      <template #actions>
         <span v-for="file in files" :key="file" :class="FILE_CLASSES">{{ file }}</span>
         <UiButton variant="primary" size="lg" disabled aria-disabled="true">{{ NEW_PLAN_LABEL }}</UiButton>
-      </div>
-    </header>
+      </template>
+    </UiPageHeader>
 
     <div :class="BODY_CLASSES">
       <PlanList :plans="PLANS" :selected-id="selected.id" @select="select" />

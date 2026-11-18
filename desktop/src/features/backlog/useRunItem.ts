@@ -21,9 +21,15 @@ const DONE_NOTE = (agent: string) => `Execução concluída por ${agent}.`
 const NOT_SENT_NOTE = 'A execução não foi enviada.'
 const FAILED_NOTE = 'A execução falhou; veja o erro no feed.'
 const CANCELLED_NOTE = 'Execução cancelada na fila.'
+const PAUSED_NOTE = 'Execução pausada pelo limite de uso; retome pelo aviso da barra.'
 const INTERRUPTED_NOTE = 'Execução interrompida: o app foi fechado ou o projeto trocado antes do fim.'
 const MOVED_NOTE = (label: string) => `Execução terminou (${label}) com o card já movido.`
-const RESULT_LABEL: Record<RunResult, string> = { finished: 'concluída', failed: 'falhou', cancelled: 'cancelada' }
+const RESULT_LABEL: Record<RunResult, string> = {
+  finished: 'concluída',
+  failed: 'falhou',
+  paused: 'pausada',
+  cancelled: 'cancelada',
+}
 // Com o card nessas colunas há execução (ou resto dela): Rodar não envia outro pedido.
 const BUSY_COLUMNS: readonly BacklogColumn[] = ['In progress', 'In review']
 
@@ -67,6 +73,8 @@ function outcomeOf(result: RunResult, agent: Agent): { column: RunColumn; note: 
       return { column: 'In review', note: DONE_NOTE(agentName(agent)) }
     case 'failed':
       return { column: 'Ready', note: FAILED_NOTE }
+    case 'paused':
+      return { column: 'Ready', note: PAUSED_NOTE }
     case 'cancelled':
       return { column: 'Ready', note: CANCELLED_NOTE }
   }

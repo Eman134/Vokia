@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import OrchestrationView from '../orchestration/OrchestrationView.vue'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useProjects } from '../projects/useProjects'
@@ -32,7 +34,7 @@ import {
   TAB_TEAMS,
 } from './teamMapLayers'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const TAB_LIST_CLASSES = 'flex gap-0.5 rounded-control-lg bg-surface-2 p-0.75'
 const TAB_BASE_CLASSES = 'rounded-[9px] px-3 py-1.5 text-caption disabled:opacity-40'
 const TAB_ACTIVE_CLASSES = 'bg-surface font-semibold text-ink shadow-seg'
@@ -42,6 +44,7 @@ const EMPTY_ACTION_CLASSES = 'flex flex-col items-center gap-3'
 const orchestration = useOrchestration()
 const projects = useProjects()
 const roster = useRoster()
+const projectName = computed(() => projects.selected?.name ?? '')
 
 const snapshot = computed(() => orchestration.snapshot)
 const projectId = computed(() => orchestration.loadedProjectId)
@@ -71,12 +74,8 @@ function openReplace(teamId: string, layerId: string, agentId: Agent): void {
 
 <template>
   <section :class="PAGE_CLASSES">
-    <header class="flex flex-wrap items-end gap-4">
-      <div>
-        <h1 class="mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink">{{ MAP_TITLE }}</h1>
-        <p class="mt-1 max-w-[64ch] text-body text-muted">{{ MAP_SUBTITLE }}</p>
-      </div>
-      <div class="ml-auto flex flex-wrap items-center gap-2">
+    <UiPageHeader :title="MAP_TITLE" :project-name="projectName" :subtitle="MAP_SUBTITLE">
+      <template #actions>
         <div role="tablist" :class="TAB_LIST_CLASSES">
           <button
             type="button"
@@ -103,8 +102,8 @@ function openReplace(teamId: string, layerId: string, agentId: Agent): void {
         <UiButton variant="primary" size="lg" :disabled="projectId === null" @press="layerDialogOpen = true">
           {{ ADD_LAYER_LABEL }}
         </UiButton>
-      </div>
-    </header>
+      </template>
+    </UiPageHeader>
 
     <UiEmpty v-if="!projects.selected" :title="NO_PROJECT_TITLE" />
     <UiEmpty v-else-if="orchestration.loadError" :title="LOAD_ERROR_TITLE" :text="orchestration.loadError" />

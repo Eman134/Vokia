@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { PAGE_LABELS, SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { PAGE_LABELS } from '../../shell/railNav'
 import UiButton from '../../ui/UiButton.vue'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UserAvatar from '../profile/UserAvatar.vue'
 import UserProfileForm from '../profile/UserProfileForm.vue'
 import { useProfileDraft } from '../profile/useProfileDraft'
@@ -10,16 +12,15 @@ import SettingRow from './SettingRow.vue'
 import SettingsSection from './SettingsSection.vue'
 import { SETTINGS_SECTIONS } from './configuracoesSample'
 
-const CONTEXT_LABEL = 'Workspace'
 const PAGE_SUBTITLE = 'Valem para todos os projetos. Regras de um projeto ou de um agente ficam nas páginas deles e têm prioridade.'
 const SEARCH_LABEL = 'Buscar configuração'
 const ACTIVE_SECTION_TITLE = 'Geral'
 const CONNECTION_STATUS = 'Tudo conectado'
 const CONNECTION_DETAIL = 'Claude Code, Codex, GitHub CLI e Git'
 
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col overflow-y-auto pt-7 pr-8 pb-37.5 pl-2'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col overflow-y-auto ${PAGE_INSET_CLASSES}`
 const SEARCH_CLASSES =
-  'ml-auto h-10 w-65 rounded-card border border-line bg-surface px-3.5 text-control text-ink placeholder:text-faint disabled:opacity-40'
+  'h-10 w-65 rounded-card border border-line bg-surface px-3.5 text-control text-ink placeholder:text-faint disabled:opacity-40'
 const NAV_CLASSES = 'flex w-full shrink-0 flex-col gap-0.5 lg:w-[210px]'
 const NAV_ITEM_CLASSES =
   'block w-full cursor-default rounded-control px-3 py-2 text-left text-control disabled:opacity-40'
@@ -46,14 +47,11 @@ async function save(): Promise<void> {
 
 <template>
   <div :class="PAGE_CLASSES">
-    <header class="flex flex-wrap items-end gap-4">
-      <div>
-        <p class="text-caption text-muted">{{ CONTEXT_LABEL }} · {{ SAMPLE_DATA_LABEL }}</p>
-        <h1 class="mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink">{{ PAGE_LABELS.config }}</h1>
-        <p class="mt-1 max-w-[70ch] text-body text-muted">{{ PAGE_SUBTITLE }}</p>
-      </div>
-      <input type="search" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" :class="SEARCH_CLASSES" disabled aria-disabled="true" />
-    </header>
+    <UiPageHeader :title="PAGE_LABELS.config" :subtitle="PAGE_SUBTITLE">
+      <template #actions>
+        <input type="search" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" :class="SEARCH_CLASSES" disabled aria-disabled="true" />
+      </template>
+    </UiPageHeader>
 
     <section :class="PROFILE_CLASSES" data-testid="profile-row" :aria-label="PROFILE_TITLE">
       <div class="flex items-center gap-3">

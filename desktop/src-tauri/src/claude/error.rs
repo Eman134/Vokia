@@ -1,6 +1,8 @@
 use std::fmt;
 use std::time::Duration;
 
+use super::stream::{LimitName, UsageLimit};
+
 #[derive(Debug)]
 pub enum ClaudeError {
     Spawn(std::io::Error),
@@ -8,6 +10,7 @@ pub enum ClaudeError {
     InvalidJson(serde_json::Error),
     MissingResult,
     Reported(String),
+    UsageLimit(UsageLimit),
     Timeout(Duration),
     SessionClosed(String),
     Mcp(String),
@@ -19,6 +22,22 @@ impl ClaudeError {
             self,
             ClaudeError::SessionClosed(_) | ClaudeError::Timeout(_)
         )
+    }
+
+    pub fn usage_limit(&self) -> Option<UsageLimit> {
+        match self {
+            ClaudeError::UsageLimit(limit) => Some(*limit),
+            _ => None,
+        }
+    }
+}
+
+impl LimitName {
+    pub fn label(self) -> &'static str {
+        match self {
+            LimitName::FiveHour => "de 5 horas",
+            LimitName::SevenDay => "semanal",
+        }
     }
 }
 
@@ -55,6 +74,11 @@ impl fmt::Display for ClaudeError {
                 )
             }
             ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
+            ClaudeError::UsageLimit(limit) => write!(
+                f,
+                "O limite de uso da janela {} foi atingido.",
+                limit.window.label()
+            ),
             ClaudeError::SessionClosed(reason) => {
                 write!(f, "A sessão da CLI claude foi encerrada: {reason}")
             }

@@ -9,6 +9,7 @@ use super::emit::{emit, now_millis};
 use super::error::FlowError;
 
 const TURN_STARTED_TEXT: &str = "início do turno";
+const TURN_PAUSED_TEXT: &str = "pausado: limite de uso atingido";
 const TURN_DONE_TEXT: &str = "concluído";
 const TURN_FAILED_PREFIX: &str = "falhou: ";
 
@@ -46,6 +47,9 @@ impl<'a> ConsoleSink<'a> {
     pub(super) fn finished<T>(&self, result: &Result<T, FlowError>) {
         let line = match result {
             Ok(_) => ConsoleLine::new(ConsoleKind::Done, TURN_DONE_TEXT),
+            Err(error) if error.usage_limit().is_some() => {
+                ConsoleLine::new(ConsoleKind::Text, TURN_PAUSED_TEXT)
+            }
             Err(error) => {
                 ConsoleLine::new(ConsoleKind::Failed, &format!("{TURN_FAILED_PREFIX}{error}"))
             }

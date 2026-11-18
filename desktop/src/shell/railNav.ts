@@ -26,7 +26,7 @@ export const PAGE_LABELS: Record<AppPage, string> = {
   estatisticas: 'Estatísticas',
   skills: 'Skills',
   mapa: 'Mapa do time',
-  backlog: 'Backlog e planos',
+  backlog: 'Tasks',
   conversas: 'Conversas',
   plano: 'Plano',
   canvas: 'Artefatos',
@@ -40,8 +40,6 @@ export const PAGE_LABELS: Record<AppPage, string> = {
 export const DEFAULT_PAGE: AppPage = 'conversas'
 
 export const PROJECT_LIST_PAGE: AppPage = 'projetos'
-
-export const SAMPLE_DATA_LABEL = 'dados de exemplo'
 
 export const RAIL_COLLAPSED_WIDTH = 88
 export const RAIL_EXPANDED_WIDTH = 232
@@ -78,7 +76,7 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
   {
     page: 'backlog',
     label: PAGE_LABELS.backlog,
-    path: 'M2 2.5h3.5v11H2zM6.25 2.5h3.5v7h-3.5zM10.5 2.5H14v4.5h-3.5z',
+    path: 'M3 3h2M3 8h2M3 13h2M7.5 3h6M7.5 8h6M7.5 13h6',
   },
   {
     page: 'conversas',

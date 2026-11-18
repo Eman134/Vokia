@@ -35,7 +35,7 @@ use super::project_context::{
 };
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
-use super::runs::{begin_run, end_run};
+use super::runs::{begin_run, end_run, pause_run};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext};
 use super::turns::{
@@ -512,15 +512,21 @@ async fn run_flow(
             )
             .await
         };
-        let this = match exchange {
-            Ok(TaskOutcome::Finished) => RequestOutcome::Finished,
-            Ok(_) => RequestOutcome::Failed,
-            Err(error) => {
-                outcome = outcome.and(report_failure(app, key.project_id, &error));
-                RequestOutcome::Failed
-            }
+        let (this, limit) = match exchange {
+            Ok(TaskOutcome::Finished) => (RequestOutcome::Finished, None),
+            Ok(_) => (RequestOutcome::Failed, None),
+            Err(error) => match error.usage_limit() {
+                Some(limit) => (RequestOutcome::Paused, Some(limit)),
+                None => {
+                    outcome = outcome.and(report_failure(app, key.project_id, &error));
+                    (RequestOutcome::Failed, None)
+                }
+            },
         };
-        end_run(app, journal)?;
+        match limit {
+            Some(limit) => pause_run(app, &key, journal, limit)?,
+            None => end_run(app, journal)?,
+        }
         if let Some(run_id) = current_run {
             emit(
                 app,
@@ -1050,6 +1056,7 @@ async fn exchange_turns(
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {
         Ok(outcome) => *outcome,
+        Err(error) if error.usage_limit().is_some() => TaskOutcome::Paused,
         Err(_) => TaskOutcome::Failed,
     };
     let closed = close_task(state, key.project_id, outcome, transcript);

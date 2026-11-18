@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, watch } from 'vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useFlow } from '../team/useFlow'
-import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import PrimeiroPedidoStep from './PrimeiroPedidoStep.vue'
 import ProjetoOrigemStep from './ProjetoOrigemStep.vue'
 import TimeStep from './TimeStep.vue'
@@ -14,7 +15,6 @@ import {
   CREATES_NOTE,
   MAP_PREVIEW_HEADING,
   MAP_PREVIEW_NOTE,
-  NEW_PROJECT_CONTEXT,
   PREVIEW_HEADING,
   SAMPLE_TEAM_PREVIEW,
   SHARED_HEADING,
@@ -27,9 +27,7 @@ import {
 import { useNovoProjeto, type WizardStep } from './useNovoProjeto'
 
 const PREVIEW_PORTRAIT_SIZE = 28
-const PAGE_CLASSES = 'flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto pt-7 pr-8 pb-[150px] pl-2'
-const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
-const SUBTITLE_CLASSES = 'mt-1 max-w-[64ch] text-body text-muted'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const COLUMNS_CLASSES = 'flex flex-wrap items-start gap-5.5'
 const FORM_CLASSES = 'flex min-w-0 basis-[560px] flex-1 flex-col gap-5.5 rounded-[28px] bg-surface p-7'
 const PREVIEW_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-[28px] border border-line p-6'
@@ -61,13 +59,7 @@ const previewOrigin = computed(() => (wizard.originKind === 'folder' ? 'Pasta' :
 
 <template>
   <section :class="PAGE_CLASSES">
-    <header>
-      <p class="text-caption text-muted" data-testid="sample-label">
-        {{ NEW_PROJECT_CONTEXT }} · {{ SAMPLE_DATA_LABEL }}
-      </p>
-      <h1 :class="TITLE_CLASSES">{{ STEP_TITLES[index] }}</h1>
-      <p :class="SUBTITLE_CLASSES">{{ STEP_SUBTITLES[index] }}</p>
-    </header>
+    <UiPageHeader :title="STEP_TITLES[index]" :subtitle="STEP_SUBTITLES[index]" />
 
     <div :class="COLUMNS_CLASSES">
       <div :class="FORM_CLASSES">

@@ -10,10 +10,12 @@ import { useRequests } from './useRequests'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
 import { useProjects } from '../projects/useProjects'
+import { useUsageLimit } from '../usage/useUsageLimit'
 import ActionMenu from './ActionMenu.vue'
 import PermissionInline from './PermissionInline.vue'
 import PinnedProject from './PinnedProject.vue'
 import PausedAgents from './PausedAgents.vue'
+import UsageLimitNotice from './UsageLimitNotice.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
 import PanelShell from '../panel/PanelShell.vue'
@@ -64,6 +66,7 @@ const statusStore = useTeamStatus()
 const requests = useRequests()
 const decisions = useDecisions()
 const control = useAgentControl()
+const usageLimit = useUsageLimit()
 // Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
 const layoutKey = computed(() =>
   [
@@ -75,6 +78,7 @@ const layoutKey = computed(() =>
     decisions.pendingCount,
     requests.queue.length,
     control.pausedList.length,
+    usageLimit.visible,
     feed.permissions.length,
     feed.activeAgents.length,
   ].join('|'),
@@ -166,6 +170,7 @@ function onPointerLeave(): void {
       <StatusRing :expanded="expanded" :collapsing="collapsing" :can-ask="canAsk" />
       <PermissionInline v-if="inlinePermission" />
       <PausedAgents />
+      <UsageLimitNotice />
       <FlowSteps v-if="flow.active" />
       <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
       <ComposerField

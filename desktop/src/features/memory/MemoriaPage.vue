@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { SAMPLE_DATA_LABEL } from '../../shell/railNav'
+import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import UiPageHeader from '../../ui/UiPageHeader.vue'
 import { useProjects } from '../projects/useProjects'
 import MemoryList from './MemoryList.vue'
 import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 
-const PAGE_CLASSES = 'flex-[999_1_640px] flex min-w-0 flex-col gap-5 overflow-y-auto pb-[150px] pl-2 pr-8 pt-7'
-const TITLE_CLASSES = 'mt-1 text-[32px] font-bold tracking-[-0.03em] text-ink'
+const PAGE_CLASSES = `flex-[999_1_640px] flex min-w-0 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
+const PAGE_TITLE = 'Memória e grafo'
+const PAGE_SUBTITLE =
+  'O que os agentes aprenderam sobre o projeto e o mapa que liga código e artefatos (diagramas, documentos e decisões) para ler menos e trabalhar sem se atropelar.'
 const SECTIONS_CLASSES = 'flex flex-wrap items-start gap-4.5'
 const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-dialog border border-line bg-surface'
 const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
@@ -20,14 +23,7 @@ const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 <template>
   <main :class="PAGE_CLASSES">
-    <header>
-      <span v-if="projectName" class="text-caption text-muted">{{ projectName }} · {{ SAMPLE_DATA_LABEL }}</span>
-      <h1 :class="TITLE_CLASSES">Memória e grafo</h1>
-      <p class="mt-1 max-w-[64ch] text-body text-muted">
-        O que os agentes aprenderam sobre o projeto e o mapa que liga código e artefatos (diagramas, documentos e
-        decisões) para ler menos e trabalhar sem se atropelar.
-      </p>
-    </header>
+    <UiPageHeader :title="PAGE_TITLE" :project-name="projectName" :subtitle="PAGE_SUBTITLE" />
     <div :class="SECTIONS_CLASSES">
       <section aria-label="Memória" :class="MEMORY_SECTION_CLASSES">
         <MemoryList />

@@ -19,4 +19,4 @@ pub use control::PermissionRequest;
 pub use error::ClaudeError;
 pub use live_session::LiveSession;
 pub use locate::{locate, CliProblem};
-pub use stream::{LimitWindow, RateLimits, Reply};
+pub use stream::{LimitName, LimitWindow, RateLimits, Reply, UsageLimit};

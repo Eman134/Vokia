@@ -73,6 +73,7 @@ pub enum TaskOutcome {
     Finished,
     Stalled,
     Failed,
+    Paused,
 }
 
 #[derive(Serialize)]

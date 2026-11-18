@@ -1,17 +1,19 @@
 use tauri::{AppHandle, Manager};
 
 use crate::agents::{replica_of, Agent, AgentError};
+use crate::claude::UsageLimit;
 use crate::db::{DbState, InterruptedRun, RunHandoff};
-use crate::events::VokiaEvent;
+use crate::events::{AgentState, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, RequestContext};
 
-use super::emit::{emit, now_millis};
+use super::emit::{emit, emit_state, now_millis};
 use super::error::{FlowError, RequestOutcome};
 use super::flow::handle_request;
 
 const JOURNAL_ERROR_PREFIX: &str = "Não foi possível registrar o pedido: ";
 const JOURNAL_CLOSE_ERROR_PREFIX: &str = "Não foi possível fechar o registro do pedido: ";
+const JOURNAL_PAUSE_ERROR_PREFIX: &str = "Não foi possível registrar a pausa do pedido: ";
 const RUN_CONTEXT_HEADING: &str = "Contexto do run interrompido (delegações já feitas):";
 
 // Réplica grava o registro no nome do agente base: é ele que existe no time e pode ser retomado.
@@ -73,6 +75,37 @@ pub(super) fn end_run(app: &AppHandle, id: Option<i64>) -> Result<(), FlowError>
             },
         ),
     }
+}
+
+// Pausa por limite de uso: o pedido fica interrompido (retomável) e o agente aguarda, sem erro no feed.
+pub(super) fn pause_run(
+    app: &AppHandle,
+    key: &SessionKey,
+    id: Option<i64>,
+    limit: UsageLimit,
+) -> Result<(), FlowError> {
+    if let Some(id) = id {
+        let state = app.state::<DbState>();
+        if let Err(error) = state.require().and_then(|db| db.interrupt_run(id)) {
+            emit(
+                app,
+                VokiaEvent::Error {
+                    message: format!("{JOURNAL_PAUSE_ERROR_PREFIX}{error}."),
+                },
+            )?;
+        }
+    }
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting)?;
+    emit(
+        app,
+        VokiaEvent::UsageLimit {
+            agent: key.agent.clone(),
+            project_id: key.project_id,
+            window: limit.window,
+            resets_at: limit.resets_at,
+            run_id: id,
+        },
+    )
 }
 
 pub async fn resume_run(

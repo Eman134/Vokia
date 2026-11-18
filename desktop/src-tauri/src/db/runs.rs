@@ -81,6 +81,16 @@ impl Db {
         Ok(())
     }
 
+    // Pausa por limite de uso: o pedido vira interrompido e a Retomada usa o caminho de sempre.
+    pub fn interrupt_run(&self, id: i64) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE orch_runs SET state = ?2 WHERE id = ?1 AND state = ?3",
+            params![id, STATE_INTERRUPTED, STATE_RUNNING],
+        )?;
+        Ok(())
+    }
+
     pub fn interrupted_runs(&self) -> Result<Vec<InterruptedRun>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(&format!(

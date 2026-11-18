@@ -1,4 +1,3 @@
-export const SKILLS_CONTEXT_LABEL = 'Workspace · 8 skills'
 export const SKILLS_TITLE = 'Skills'
 export const SKILLS_SUBTITLE =
   'Manuais que o agente segue numa situação. Você liga cada skill às ocupações que precisam dela, e o agente carrega só quando a tarefa pede.'
