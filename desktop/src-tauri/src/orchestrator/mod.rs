@@ -21,5 +21,5 @@ pub(crate) use turns::with_cache;
 pub use emit::now_millis;
 pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};
-pub(crate) use flow::{forget_project, has_flow};
+pub(crate) use flow::{active_instances, forget_project, has_flow, ActiveInstance};
 pub(crate) use session_pool::SessionPool;

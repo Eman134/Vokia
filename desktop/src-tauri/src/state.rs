@@ -76,4 +76,6 @@ pub struct QueuedJob {
 #[derive(Default)]
 pub struct FlowQueue {
     pub pending: HashMap<SessionKey, VecDeque<QueuedJob>>,
+    // Item do turno em andamento de cada fluxo; sai junto com a chave em pending.
+    pub running: HashMap<SessionKey, String>,
 }

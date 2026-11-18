@@ -189,8 +189,44 @@ fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, Flow
     let next = flow.pending.get_mut(&key).and_then(VecDeque::pop_front);
     if next.is_none() {
         flow.pending.remove(&key);
+        flow.running.remove(&key);
     }
     Ok(next)
+}
+
+fn set_running_item(
+    state: &AppState,
+    key: &SessionKey,
+    item_id: Option<&str>,
+) -> Result<(), FlowError> {
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    match item_id {
+        Some(id) => flow.running.insert(key.clone(), id.to_string()),
+        None => flow.running.remove(key),
+    };
+    Ok(())
+}
+
+pub(crate) struct ActiveInstance {
+    pub(crate) agent: Agent,
+    pub(crate) item_id: Option<String>,
+}
+
+// Fluxos em andamento do projeto; réplicas são as que têm sufixo -<n> no id.
+pub(crate) fn active_instances(
+    state: &AppState,
+    project_id: i64,
+) -> Result<Vec<ActiveInstance>, FlowError> {
+    let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    Ok(flow
+        .pending
+        .keys()
+        .filter(|key| key.project_id == project_id)
+        .map(|key| ActiveInstance {
+            agent: key.agent.clone(),
+            item_id: flow.running.get(key).cloned(),
+        })
+        .collect())
 }
 
 async fn run_flow(
@@ -210,6 +246,7 @@ async fn run_flow(
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = None;
     loop {
+        set_running_item(state, &key, item_id.as_deref())?;
         let exchange = run_exchange(
             app,
             state,

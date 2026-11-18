@@ -1,11 +1,14 @@
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::agents::AgentRegistry;
+use serde::Serialize;
+
+use crate::agents::{replica_of, AgentRegistry};
 use crate::db::{
     Db, DbError, DbState, Handoff, Layer, LayerDraft, OrchestrationSettings, OrchestrationSnapshot,
     Placement, PlacementDraft, Rule, RuleDraft, Team, TeamDraft,
 };
 use crate::events::{VokiaEvent, EVENT_NAME};
+use crate::orchestrator;
 use crate::orchestration::seed;
 use crate::state::AppState;
 
@@ -194,6 +197,53 @@ pub fn list_movements(state: State<'_, DbState>, project_id: i64) -> Result<Vec<
     let db = state.require().map_err(|error| error.to_string())?;
     db.list_movements(project_id, MOVEMENTS_LIMIT)
         .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCopy {
+    id: String,
+    agent: String,
+    number: u32,
+    item_id: Option<String>,
+    item_title: Option<String>,
+    worktree_path: Option<String>,
+}
+
+// Só réplicas em execução (id <base>-<n>); o item vem do turno em andamento e o worktree do próprio item.
+#[tauri::command]
+pub fn list_agent_copies(
+    app_state: State<'_, AppState>,
+    state: State<'_, DbState>,
+    project_id: i64,
+) -> Result<Vec<AgentCopy>, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    let instances =
+        orchestrator::active_instances(&app_state, project_id).map_err(|error| error.to_string())?;
+    let mut copies = Vec::new();
+    for instance in instances {
+        let Some((base, number)) = replica_of(instance.agent.as_str()) else {
+            continue;
+        };
+        let (item_id, item_title, worktree_path) = match instance.item_id {
+            Some(id) => match db.read_card(project_id, &id) {
+                Ok(item) => (Some(item.id), Some(item.title), item.worktree_path),
+                Err(DbError::BacklogItemNotFound(_)) => (Some(id), None, None),
+                Err(error) => return Err(error.to_string()),
+            },
+            None => (None, None, None),
+        };
+        copies.push(AgentCopy {
+            id: instance.agent.to_string(),
+            agent: base.to_string(),
+            number,
+            item_id,
+            item_title,
+            worktree_path,
+        });
+    }
+    copies.sort_by(|a, b| a.agent.cmp(&b.agent).then(a.number.cmp(&b.number)));
+    Ok(copies)
 }
 
 #[cfg(test)]

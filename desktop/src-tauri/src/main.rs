@@ -87,7 +87,8 @@ fn main() {
             commands::orchestration::save_rule,
             commands::orchestration::delete_rule,
             commands::orchestration::save_orchestration_settings,
-            commands::orchestration::list_movements
+            commands::orchestration::list_movements,
+            commands::orchestration::list_agent_copies
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
