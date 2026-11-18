@@ -5,3 +5,4 @@ pub(crate) mod orchestration;
 pub(crate) mod projects;
 pub(crate) mod settings;
 pub(crate) mod team;
+pub(crate) mod roles;

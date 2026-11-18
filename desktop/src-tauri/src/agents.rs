@@ -9,8 +9,8 @@ use crate::claude::DEFAULT_MODEL;
 
 const NAME_MIN_CHARS: usize = 2;
 const NAME_MAX_CHARS: usize = 20;
-const ROLE_MIN_CHARS: usize = 2;
-const ROLE_MAX_CHARS: usize = 40;
+pub(crate) const ROLE_MIN_CHARS: usize = 2;
+pub(crate) const ROLE_MAX_CHARS: usize = 40;
 const MAX_AGENTS: usize = 12;
 const RESERVED_IDS: [&str; 4] = ["todos", "time", "user", "voce"];
 const AGENTS_FILE: &str = "agents.json";
@@ -513,7 +513,12 @@ fn write_file(file: &Path, agents: Vec<AgentProfile>) -> Result<(), String> {
         agents,
     })
     .map_err(|error| error.to_string())?;
-    let tmp = file.with_file_name(AGENTS_FILE_TMP);
+    write_atomic(file, AGENTS_FILE_TMP, &text)
+}
+
+// Grava num arquivo temporário ao lado e troca pelo definitivo: uma queda no meio não deixa JSON pela metade.
+pub(crate) fn write_atomic(file: &Path, tmp_name: &str, text: &str) -> Result<(), String> {
+    let tmp = file.with_file_name(tmp_name);
     fs::write(&tmp, text).map_err(|error| error.to_string())?;
     fs::rename(&tmp, file).map_err(|error| error.to_string())
 }

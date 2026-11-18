@@ -12,6 +12,7 @@ mod orchestration;
 mod orchestrator;
 mod permissions;
 mod projects;
+mod roles;
 mod session_key;
 mod shell;
 mod state;
@@ -72,6 +73,10 @@ fn main() {
             commands::agents::list_agents,
             commands::agents::create_agent,
             commands::agents::update_agent,
+            commands::roles::role_list,
+            commands::roles::role_create,
+            commands::roles::role_update,
+            commands::roles::role_delete,
             commands::orchestration::get_orchestration,
             commands::orchestration::save_layer,
             commands::orchestration::delete_layer,
@@ -89,7 +94,9 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            app.manage(agents::AgentRegistry::load(&data_dir));
+            let agents = agents::AgentRegistry::load(&data_dir);
+            app.manage(roles::RoleRegistry::load(&data_dir, &agents));
+            app.manage(agents);
             app.manage(DbState::open(&data_dir));
             mcp::clear_stale_configs(&data_dir);
             app.manage(mcp::McpState::start(app.handle().clone()));
