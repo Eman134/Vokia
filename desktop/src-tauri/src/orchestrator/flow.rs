@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{DbState, OrchestrationSnapshot};
-use crate::events::{AgentState, Speaker, VokiaEvent};
+use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
 use crate::orchestration::policy::placed_participants;
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext};
@@ -78,7 +78,10 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    let context = RequestContext::new(None, decision.item_id, None);
+    let context = RequestContext {
+        answers_review: decision.kind == DecisionKind::Revisao,
+        ..RequestContext::new(None, decision.item_id, None)
+    };
     handle_request(
         app,
         state,
@@ -130,6 +133,7 @@ async fn run_flow(
     let mut request = request.to_string();
     let mut item_id = context.item_id;
     let mut channel_id = context.channel_id;
+    let mut answers_review = context.answers_review;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
@@ -145,6 +149,7 @@ async fn run_flow(
             channel_id,
             team,
             current_run,
+            answers_review,
         )
         .await;
         let this = match exchange {
@@ -172,6 +177,7 @@ async fn run_flow(
                 current_run = job.context.run_id;
                 item_id = job.context.item_id;
                 channel_id = job.context.channel_id;
+                answers_review = job.context.answers_review;
             }
             None => return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed)),
         }
@@ -189,6 +195,7 @@ async fn run_exchange(
     channel_id: Option<i64>,
     team: &Team,
     run_id: Option<u64>,
+    answers_review: bool,
 ) -> Result<TaskOutcome, FlowError> {
     let mut sessions = ExchangeSessions::acquire(&state.sessions, key.project_id, team).await;
     let result = exchange_turns(
@@ -202,6 +209,7 @@ async fn run_exchange(
         &mut sessions,
         team,
         run_id,
+        answers_review,
     )
     .await;
     sessions.release().await;
@@ -234,6 +242,7 @@ async fn exchange_turns(
     sessions: &mut ExchangeSessions,
     team: &Team,
     run_id: Option<u64>,
+    answers_review: bool,
 ) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
     let channel = find_channel(app, key.project_id, channel_id, team);
@@ -284,6 +293,7 @@ async fn exchange_turns(
         team,
         orchestration: orchestration.as_ref(),
         run_id,
+        answers_review,
     };
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {

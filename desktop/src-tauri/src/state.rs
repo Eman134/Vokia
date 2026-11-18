@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
-use crate::events::Agent;
+use crate::events::{Agent, DecisionKind};
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
 use crate::session_key::SessionKey;
@@ -42,6 +42,7 @@ impl AppState {
 pub struct PendingDecision {
     pub agent: Agent,
     pub project_id: i64,
+    pub kind: DecisionKind,
     pub title: String,
     pub request: String,
     pub item_id: Option<String>,
@@ -52,6 +53,8 @@ pub struct RequestContext {
     pub run_id: Option<u64>,
     pub item_id: Option<String>,
     pub channel_id: Option<i64>,
+    // Resposta a uma revisão: o fim de cadeia dela não abre outra revisão.
+    pub answers_review: bool,
 }
 
 impl RequestContext {
@@ -63,6 +66,7 @@ impl RequestContext {
             run_id,
             item_id,
             channel_id,
+            answers_review: false,
         }
     }
 }

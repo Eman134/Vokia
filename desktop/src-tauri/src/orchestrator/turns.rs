@@ -47,6 +47,7 @@ pub(super) struct Exchange<'a> {
     pub(super) team: &'a Team,
     pub(super) orchestration: Option<&'a OrchestrationSnapshot>,
     pub(super) run_id: Option<u64>,
+    pub(super) answers_review: bool,
 }
 
 pub(super) async fn run_turns(
@@ -145,6 +146,7 @@ pub(super) async fn run_turns(
         let delegation =
             merged_delegation(registered_delegation, text_delegation, definition.alternate);
         let mut passage: Option<Passage> = None;
+        let mut escalation: Option<String> = None;
         if rejected.is_empty() {
             if let Some((helper, _)) = &delegation {
                 match policy::check(
@@ -156,17 +158,7 @@ pub(super) async fn run_turns(
                 ) {
                     Verdict::Deliver(found) => passage = Some(found),
                     Verdict::Refuse(motive) => rejected.push(motive),
-                    Verdict::Escalate(motive) => {
-                        return escalate_limit(
-                            exchange,
-                            transcript,
-                            &turn,
-                            motive,
-                            visible,
-                            activity.take(),
-                            proposal.take(),
-                        );
-                    }
+                    Verdict::Escalate(motive) => escalation = Some(motive),
                 }
             }
         }
@@ -267,6 +259,17 @@ pub(super) async fn run_turns(
             return Ok(TaskOutcome::Finished);
         }
 
+        if let Some(motive) = escalation {
+            return escalate_limit(
+                exchange,
+                transcript,
+                &turn,
+                motive,
+                visible,
+                activity.take(),
+                proposal.take(),
+            );
+        }
         counters.goal.register_turn(advanced);
         let next = next_turn(
             definition,
@@ -293,7 +296,9 @@ pub(super) async fn run_turns(
             emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
-            if let Some(review) = policy::chain_review(exchange.orchestration, &turn.speaker) {
+            let review = policy::chain_review(exchange.orchestration, &turn.speaker)
+                .filter(|_| !exchange.answers_review);
+            if let Some(review) = review {
                 let decision = SlotDecision {
                     kind: DecisionKind::Revisao,
                     title: review.title.to_string(),
@@ -580,6 +585,7 @@ fn raise_decision(
             PendingDecision {
                 agent: agent.clone(),
                 project_id,
+                kind,
                 title: title.clone(),
                 request: request.to_string(),
                 item_id: item_id.map(str::to_string),
