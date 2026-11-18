@@ -1,7 +1,14 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent } from './events'
-import { createAgent, listAgents, type AgentDraft, type AgentProfile, type CliPreset } from './teamApi'
+import {
+  createAgent,
+  listAgents,
+  updateAgent,
+  type AgentDraft,
+  type AgentProfile,
+  type CliPreset,
+} from './teamApi'
 
 export function normalizeName(text: string): string {
   return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
@@ -23,6 +30,12 @@ export const useRoster = defineStore('roster', () => {
     return profile
   }
 
+  async function update(id: Agent, draft: AgentDraft): Promise<AgentProfile> {
+    const profile = await updateAgent(id, draft)
+    agents.value = agents.value.map((agent) => (agent.id === id ? profile : agent))
+    return profile
+  }
+
   function profileOf(id: Agent): AgentProfile | undefined {
     return agents.value.find((agent) => agent.id === id)
   }
@@ -35,5 +48,5 @@ export const useRoster = defineStore('roster', () => {
     return profileOf(id)?.avatar ?? id.trim().toLowerCase()
   }
 
-  return { agents, presets, load, create, profileOf, nameOf, avatarOf }
+  return { agents, presets, load, create, update, profileOf, nameOf, avatarOf }
 })

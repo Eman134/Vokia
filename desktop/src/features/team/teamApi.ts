@@ -13,6 +13,7 @@ const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
 const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
 const LIST_AGENTS_COMMAND = 'list_agents'
 const CREATE_AGENT_COMMAND = 'create_agent'
+const UPDATE_AGENT_COMMAND = 'update_agent'
 
 export interface AgentPause {
   projectId: number
@@ -88,6 +89,10 @@ export function listAgents(): Promise<TeamListing> {
 
 export function createAgent(draft: AgentDraft): Promise<AgentProfile> {
   return invoke<AgentProfile>(CREATE_AGENT_COMMAND, { draft })
+}
+
+export function updateAgent(id: Agent, draft: AgentDraft): Promise<AgentProfile> {
+  return invoke<AgentProfile>(UPDATE_AGENT_COMMAND, { id, draft })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {
