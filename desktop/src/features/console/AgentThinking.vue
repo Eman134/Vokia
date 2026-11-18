@@ -24,11 +24,15 @@ onMounted(() => {
 onUnmounted(() => clearInterval(timer))
 
 // Só o que o agente já escreveu neste turno: o stream não traz o texto do raciocínio.
-const written = computed(() =>
-  currentTurn(consoleStore.entriesOf(props.agent.id))
+// Fora de 'thinking' (envio) o turno ainda não começou: sem isso, currentTurn devolve a resposta anterior.
+const written = computed(() => {
+  if (props.state !== 'thinking') {
+    return undefined
+  }
+  return currentTurn(consoleStore.entriesOf(props.agent.id))
     .filter((entry) => entry.kind === 'text')
-    .at(-1)?.text,
-)
+    .at(-1)?.text
+})
 
 // Calculado pela diferença com o relógio atual: a aba oculta pausa o timer, não o tempo.
 const label = computed(() => {
