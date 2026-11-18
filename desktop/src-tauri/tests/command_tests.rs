@@ -222,12 +222,18 @@ fn comando_base_e_de_agente_definem_no_proxy_para_o_loopback() {
     assert_eq!(no_proxy(&agent).as_deref(), Some("127.0.0.1,localhost"));
 }
 
-const VOKIA_TOOLS: [&str; 10] = [
+const VOKIA_TOOLS: [&str; 16] = [
     "mcp__vokia__list_backlog",
     "mcp__vokia__read_card",
     "mcp__vokia__create_card",
     "mcp__vokia__move_card",
     "mcp__vokia__update_card",
+    "mcp__vokia__backlog_add_label",
+    "mcp__vokia__backlog_remove_label",
+    "mcp__vokia__backlog_set_responsible",
+    "mcp__vokia__backlog_archive_item",
+    "mcp__vokia__backlog_restore_item",
+    "mcp__vokia__backlog_delete_item",
     "mcp__vokia__request_decision",
     "mcp__vokia__propose_request",
     "mcp__vokia__delegate",
