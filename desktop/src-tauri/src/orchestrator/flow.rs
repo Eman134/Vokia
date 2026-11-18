@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
 use tauri::{AppHandle, Manager};
@@ -10,6 +10,8 @@ use crate::db::{DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::orchestration::instances;
 use crate::orchestration::policy::placed_participants;
+use crate::orchestration::worktree_policy::should_use;
+use crate::projects::worktree;
 use crate::session_key::SessionKey;
 use crate::state::{AppState, QueuedJob, RequestContext, WaitingDelegation};
 use crate::task::{long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome};
@@ -355,6 +357,35 @@ async fn run_exchange(
     result
 }
 
+const WORKTREES_DIR: &str = "worktrees";
+
+// Pedido com card roda no worktree do card quando a política manda; sem card, na pasta do projeto.
+async fn working_dir(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: Option<&str>,
+    snapshot: Option<&OrchestrationSnapshot>,
+    project_dir: &Path,
+) -> Result<PathBuf, FlowError> {
+    let (Some(snapshot), Some(item)) = (snapshot, item_id) else {
+        return Ok(project_dir.to_path_buf());
+    };
+    if !should_use(&snapshot.settings.worktree_policy, snapshot, Some(item)) {
+        return Ok(project_dir.to_path_buf());
+    }
+    let project = load_project(app, project_id)?;
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(FlowError::ArchivePath)?
+        .join(WORKTREES_DIR)
+        .join(project_id.to_string());
+    let worktree = worktree::ensure(project_dir, &root, item, project.setup_command.as_deref())
+        .await
+        .map_err(FlowError::Worktree)?;
+    Ok(worktree.path)
+}
+
 // Delegação paralela: a instância responde ao pedido uma vez. Não interpreta nem abre tarefa do projeto, então a tarefa do líder fica intacta.
 #[allow(clippy::too_many_arguments)]
 async fn run_parallel_item(
@@ -374,13 +405,21 @@ async fn run_parallel_item(
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
     let orchestration = load_orchestration(app, key.project_id)?;
+    let working = working_dir(
+        app,
+        key.project_id,
+        item_id,
+        orchestration.as_ref(),
+        &project_dir,
+    )
+    .await?;
     let definition = parallel_definition(&key.agent, request);
     let exchange = Exchange {
         app,
         state,
         cli,
         project: ProjectAccess {
-            dir: &project_dir,
+            dir: &working,
             level: project.permission_level,
         },
         project_context: &context,
@@ -548,6 +587,14 @@ async fn exchange_turns(
     let context = project_context(&project, tree.as_ref());
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app, key.project_id)?;
+    let working = working_dir(
+        app,
+        key.project_id,
+        item_id,
+        orchestration.as_ref(),
+        &project_dir,
+    )
+    .await?;
     let mut definition = interpret_task(
         app,
         state,
@@ -569,7 +616,7 @@ async fn exchange_turns(
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
     let access = ProjectAccess {
-        dir: &project_dir,
+        dir: &working,
         level: project.permission_level,
     };
     let exchange = Exchange {

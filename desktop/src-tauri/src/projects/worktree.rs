@@ -181,6 +181,24 @@ pub async fn create(
     Ok(Worktree { branch, path })
 }
 
+// Mesmo card, mesma pasta: o worktree já existente é reaproveitado; senão é criado.
+pub async fn ensure(
+    project_dir: &Path,
+    worktrees_root: &Path,
+    item_id: &str,
+    setup_command: Option<&str>,
+) -> Result<Worktree, WorktreeError> {
+    let name = safe_name(item_id);
+    let path = worktrees_root.join(&name);
+    if path.is_dir() {
+        return Ok(Worktree {
+            branch: format!("{BRANCH_PREFIX}{name}"),
+            path,
+        });
+    }
+    create(project_dir, worktrees_root, item_id, setup_command).await
+}
+
 // Trabalho não commitado nunca é removido aqui: o erro devolve a decisão a quem pediu.
 pub async fn remove(
     project_dir: &Path,

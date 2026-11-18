@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::agents::AgentError;
 use crate::claude::ClaudeError;
 use crate::db::DbError;
+use crate::projects::worktree::WorktreeError;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,8 +37,8 @@ pub enum FlowError {
     SessionStore(DbError),
     Settings(DbError),
     Orchestration(DbError),
-    SessionNotHeld(String),
     Team(AgentError),
+    Worktree(WorktreeError),
 }
 
 impl fmt::Display for FlowError {
@@ -94,13 +95,8 @@ impl fmt::Display for FlowError {
             FlowError::Orchestration(error) => {
                 write!(f, "Não foi possível ler a orquestração: {error}")
             }
-            FlowError::SessionNotHeld(name) => {
-                write!(
-                    f,
-                    "A sessão de {name} não foi reservada para esta conversa."
-                )
-            }
             FlowError::Team(error) => write!(f, "{error}"),
+            FlowError::Worktree(error) => write!(f, "{error}"),
         }
     }
 }

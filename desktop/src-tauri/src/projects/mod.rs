@@ -4,7 +4,7 @@ mod github;
 mod manage;
 mod process;
 mod tree;
-mod worktree;
+pub(crate) mod worktree;
 
 pub use error::ProjectError;
 pub(crate) use folder::ensure_directory;
