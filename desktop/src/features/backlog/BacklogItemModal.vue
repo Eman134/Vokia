@@ -317,7 +317,7 @@ watch(
             <div v-for="task in visibleMicro" :key="task.id" class="flex flex-col gap-2 rounded-control-lg border border-line p-3">
               <button
                 type="button"
-                class="flex items-center gap-2 text-left text-control text-ink"
+                class="flex cursor-pointer items-center gap-2 text-left text-control text-ink hover:opacity-80"
                 :aria-expanded="expandedMicro.has(task.id)"
                 @click="toggleMicro(task.id)"
               >

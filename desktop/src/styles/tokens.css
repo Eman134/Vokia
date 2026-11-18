@@ -14,6 +14,8 @@
   --color-accent: light-dark(#5b57d1, #a8a5ff);
   --color-accent-soft: light-dark(#eeedfb, #262540);
   --color-accent-ink: light-dark(#ffffff, #121214);
+  /* Véu de hover sobre superfícies neutras: tinta sobre fundo claro, claro sobre fundo escuro. */
+  --color-hover: light-dark(rgb(28 28 33 / 6%), rgb(236 236 240 / 8%));
   --color-ok: light-dark(#2f9e5b, #5fd08e);
   --color-ok-soft: light-dark(#e7f5ec, #1b2e23);
   --color-warn: light-dark(#e07b24, #ffa257);

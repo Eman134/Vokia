@@ -13,7 +13,10 @@ const LAYER_COLUMN_MIN_PX = 170
 const LINK_ICON_SIZE = 16
 
 defineProps<{ canLink: boolean }>()
-const emit = defineEmits<{ link: [teamId: string, layerId: string] }>()
+const emit = defineEmits<{
+  link: [teamId: string, layerId: string]
+  replace: [teamId: string, layerId: string, agentId: string]
+}>()
 
 const orchestration = useOrchestration()
 const roster = useRoster()
@@ -97,6 +100,8 @@ const gridStyle = computed(() => ({
               :key="agent.id"
               :agent="agent"
               :active-card="activeCardByAgent.get(agent.id)"
+              @replace="emit('replace', team.id, layer.id, agent.id)"
+              @unlink="orchestration.unplaceAgent(agent.id)"
             />
             <button
               v-if="cellAgents(team.id, layer.id).length === 0"

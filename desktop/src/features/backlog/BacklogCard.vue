@@ -129,7 +129,7 @@ function tagPillStyle(tag: BacklogTag) {
       <button
         v-if="action.id === 'triar'"
         type="button"
-        class="inline-flex size-6.5 shrink-0 items-center justify-center rounded-control-sm border border-line text-muted focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="inline-flex size-6.5 shrink-0 cursor-pointer items-center justify-center rounded-control-sm border border-line text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
         :aria-label="ACTION_TITLE.vincular"
         :title="ACTION_TITLE.vincular"
         @click.stop="emit('action', 'vincular')"

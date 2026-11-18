@@ -6,9 +6,9 @@ const model = defineModel<string>({ required: true })
 
 const ICON_LABEL = 'Ícone do projeto'
 const ICON_BUTTON_CLASSES =
-  'grid size-10 place-items-center rounded-control border focus:outline-2 focus:outline-solid focus:outline-accent'
+  'grid size-10 cursor-pointer place-items-center rounded-control border focus:outline-2 focus:outline-solid focus:outline-accent'
 const ICON_ACTIVE_CLASSES = 'border-accent bg-accent-soft text-accent'
-const ICON_INACTIVE_CLASSES = 'border-line text-muted'
+const ICON_INACTIVE_CLASSES = 'border-line text-muted hover:border-faint hover:text-ink'
 </script>
 
 <template>

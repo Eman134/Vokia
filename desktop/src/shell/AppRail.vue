@@ -23,13 +23,13 @@ import { useFeed } from '../features/team/useFeed'
 
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
-const ITEM = 'relative flex h-9.5 items-center rounded-control whitespace-nowrap text-left'
+const ITEM = 'relative flex h-9.5 cursor-pointer items-center rounded-control whitespace-nowrap text-left'
 const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
 const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
 const PROJECT_BADGE = 'size-4.5 flex-none'
 const ITEM_ON = 'bg-accent-soft text-accent'
-const ITEM_OFF = 'text-muted'
+const ITEM_OFF = 'text-muted hover:bg-hover hover:text-ink'
 const TOGGLE = 'cursor-pointer bg-transparent text-ink'
 const CARD = 'flex flex-col gap-0.5 rounded-card border border-line bg-surface p-1.25 shadow-float'
 const LABEL = 'overflow-hidden text-ellipsis text-label'

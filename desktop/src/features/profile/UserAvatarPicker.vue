@@ -30,8 +30,8 @@ function select(icon: UserIcon): void {
       :aria-pressed="isSelected(icon)"
       :aria-label="icon.label"
       :title="icon.label"
-      class="icon-option grid size-15 place-items-center rounded-full p-1.5 focus:outline-2 focus:outline-solid focus:outline-accent"
-      :class="isSelected(icon) ? 'bg-accent-soft outline-2 outline-solid outline-offset-2 outline-accent' : 'bg-transparent'"
+      class="icon-option grid size-15 cursor-pointer place-items-center rounded-full p-1.5 focus:outline-2 focus:outline-solid focus:outline-accent"
+      :class="isSelected(icon) ? 'bg-accent-soft outline-2 outline-solid outline-offset-2 outline-accent' : 'bg-transparent hover:bg-hover'"
       :style="{ animationDelay: `${index * ENTRY_STAGGER_MS}ms` }"
       @click="select(icon)"
     >

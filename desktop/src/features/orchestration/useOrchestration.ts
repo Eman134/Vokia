@@ -1,6 +1,7 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useProjects } from '../projects/useProjects'
+import type { Agent } from '../team/events'
 import { useFeed } from '../team/useFeed'
 import type { VokiaBatchProgress } from '../team/events'
 import * as orchestrationApi from './orchestrationApi'
@@ -137,6 +138,10 @@ export const useOrchestration = defineStore('orchestration', () => {
     return write((projectId) => orchestrationApi.placeAgent(projectId, draft))
   }
 
+  function unplaceAgent(agentId: Agent): Promise<boolean> {
+    return write((projectId) => orchestrationApi.unplaceAgent(projectId, agentId))
+  }
+
   function saveRule(draft: OrchRuleDraft): Promise<boolean> {
     return write((projectId) => orchestrationApi.saveRule(projectId, draft))
   }
@@ -178,6 +183,7 @@ export const useOrchestration = defineStore('orchestration', () => {
     saveTeam,
     deleteTeam,
     placeAgent,
+    unplaceAgent,
     saveRule,
     deleteRule,
     saveSettings,

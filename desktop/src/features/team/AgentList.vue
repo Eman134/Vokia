@@ -42,7 +42,7 @@ const CONSOLE_BUTTON_CLASSES =
   'absolute right-2 top-2 grid size-5 cursor-pointer place-items-center rounded-control text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
 const CONSOLE_GLYPH_PATH = 'M3 4.5l3 2.5-3 2.5M7.5 10.5h5'
 const SELECTED_CLASSES = 'border-accent bg-accent-soft'
-const UNSELECTED_CLASSES = 'border-line'
+const UNSELECTED_CLASSES = 'border-line hover:bg-hover'
 const CHANNEL_CLASSES =
   'flex w-full cursor-pointer items-center rounded-control border px-3 py-1.5 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
 const DELETE_CHANNEL_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'

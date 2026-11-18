@@ -8,7 +8,7 @@ defineProps<{
 const model = defineModel<string>()
 
 const SELECT_CLASSES =
-  'h-9 appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-control text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
+  'h-9 appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-control text-ink enabled:hover:border-faint focus:outline-2 focus:outline-solid focus:outline-accent'
 </script>
 
 <template>

@@ -180,7 +180,7 @@ async function saveProfile(): Promise<void> {
       type="button"
       :aria-label="NEW_PROFILE_LABEL"
       :disabled="creating"
-      class="grid size-12.5 place-items-center rounded-control border border-dashed border-line text-control text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+      class="grid size-12.5 cursor-pointer place-items-center rounded-control border border-dashed border-line text-control text-muted enabled:hover:bg-hover enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40"
       @click="openCreator()"
     >
       +
@@ -204,7 +204,7 @@ async function saveProfile(): Promise<void> {
           :aria-pressed="draftColor === color.id"
           :aria-label="color.label"
           :style="{ backgroundColor: color.base }"
-          class="size-6 rounded-full focus:outline-2 focus:outline-solid focus:outline-accent"
+          class="size-6 cursor-pointer rounded-full hover:opacity-80 focus:outline-2 focus:outline-solid focus:outline-accent"
           :class="draftColor === color.id ? 'ring-2 ring-accent ring-offset-2' : 'border border-line'"
           @click="draftColor = color.id"
         />

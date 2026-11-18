@@ -5,6 +5,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import OrchestrationView from '../orchestration/OrchestrationView.vue'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useProjects } from '../projects/useProjects'
+import type { Agent } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import { placeableAgents } from '../team/agents'
 import { useRoster } from '../team/useRoster'
@@ -57,10 +58,14 @@ const activeTab = ref<MapTab>('teams')
 const teamDialogOpen = ref(false)
 const layerDialogOpen = ref(false)
 const placing = ref<AgentProfile | null>(null)
-const linkingCell = ref<{ teamId: string; layerId: string } | null>(null)
+const linkingCell = ref<{ teamId: string; layerId: string; replacingId: Agent | null } | null>(null)
 
 function openLink(teamId: string, layerId: string): void {
-  linkingCell.value = { teamId, layerId }
+  linkingCell.value = { teamId, layerId, replacingId: null }
+}
+
+function openReplace(teamId: string, layerId: string, agentId: Agent): void {
+  linkingCell.value = { teamId, layerId, replacingId: agentId }
 }
 </script>
 
@@ -112,7 +117,7 @@ function openLink(teamId: string, layerId: string): void {
         <UiEmpty :title="NO_TEAMS_TITLE" />
         <UiButton variant="primary" size="lg" @press="teamDialogOpen = true">{{ CREATE_TEAM_LABEL }}</UiButton>
       </div>
-      <TeamMatrix v-else :can-link="linkableAgents.length > 0" @link="openLink" />
+      <TeamMatrix v-else :can-link="linkableAgents.length > 0" @link="openLink" @replace="openReplace" />
       <UnplacedAgents v-if="unplaced.length > 0" :agents="unplaced" @place="placing = $event" />
       <div class="grid gap-5 lg:grid-cols-2">
         <MovementList :movements="orchestration.movements" :rules="snapshot.rules" />
@@ -135,6 +140,7 @@ function openLink(teamId: string, layerId: string): void {
         :project-id="projectId"
         :team-id="linkingCell.teamId"
         :layer-id="linkingCell.layerId"
+        :replacing-id="linkingCell.replacingId"
         :agents="linkableAgents"
         @close="linkingCell = null"
       />

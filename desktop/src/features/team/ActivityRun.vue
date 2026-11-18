@@ -24,7 +24,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf))
     <template v-else-if="rows.length > 0">
       <button
         type="button"
-        class="flex w-fit items-center gap-1 text-left hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="flex w-fit cursor-pointer items-center gap-1 text-left hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
         :aria-expanded="open"
         :aria-controls="listId"
         data-testid="activity-toggle"

@@ -19,9 +19,9 @@ import { useRoles } from './useRoles'
 
 const LIST_CLASSES = 'flex min-w-0 basis-[320px] flex-1 flex-col gap-3 rounded-[28px] bg-surface p-5'
 const FICHA_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-[28px] border border-line p-6'
-const ROW_BASE_CLASSES = 'flex flex-col gap-0.5 rounded-control border px-3 py-2 text-left'
+const ROW_BASE_CLASSES = 'flex cursor-pointer flex-col gap-0.5 rounded-control border px-3 py-2 text-left'
 const ROW_ACTIVE_CLASSES = 'border-accent bg-accent-soft'
-const ROW_INACTIVE_CLASSES = 'border-line'
+const ROW_INACTIVE_CLASSES = 'border-line hover:bg-hover'
 const COLUMNS_CLASSES = 'flex flex-wrap items-start gap-5'
 const BODY_CLASSES = 'whitespace-pre-wrap text-body text-ink'
 

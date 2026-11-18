@@ -10,12 +10,12 @@ const props = withDefaults(
 const emit = defineEmits<{ press: [] }>()
 
 const BASE_CLASSES =
-  'inline-flex h-7 shrink-0 items-center rounded-full px-3 text-label font-medium focus:outline-2 focus:outline-solid focus:outline-accent'
+  'inline-flex h-7 shrink-0 cursor-pointer items-center rounded-full px-3 text-label font-medium focus:outline-2 focus:outline-solid focus:outline-accent'
 const OPTION_CLASSES: Record<'selected' | 'unselected', string> = {
-  selected: 'bg-accent-soft text-accent',
-  unselected: 'bg-surface-2 text-muted',
+  selected: 'bg-accent-soft text-accent hover:bg-accent/15',
+  unselected: 'bg-surface-2 text-muted hover:bg-hover hover:text-ink',
 }
-const ADD_CLASSES = 'border border-dashed border-line text-muted'
+const ADD_CLASSES = 'border border-dashed border-line text-muted hover:border-faint hover:text-ink'
 </script>
 
 <template>

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use crate::agents::Agent;
+use crate::agents::{replica_of, Agent};
 use crate::claude::kill_process_tree;
 use crate::db::{Db, DbError};
 use crate::session_key::SessionKey;
@@ -82,6 +82,16 @@ impl SessionPool {
     // se nenhuma roda, o lock livre fecha aqui. A marca nunca reabre a sessão.
     pub(crate) async fn close_project(&self, project_id: i64) {
         end_slots(self.matching(|key| key.project_id == project_id)).await;
+    }
+
+    // Instrução extra mudou: a sessão do agente e as das réplicas (<base>-<n>), em todos os projetos,
+    // fecham no fim da troca em curso e reabrem com o prompt novo.
+    pub(crate) async fn retire_agent(&self, agent: &Agent) {
+        end_slots(self.matching(|key| {
+            key.agent == *agent
+                || replica_of(key.agent.as_str()).is_some_and(|(base, _)| base == agent.as_str())
+        }))
+        .await;
     }
 
     // Gancho da remoção do agente (O4): ainda sem chamador.

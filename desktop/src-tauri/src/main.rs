@@ -91,6 +91,7 @@ fn main() {
             commands::orchestration::save_team,
             commands::orchestration::delete_team,
             commands::orchestration::place_agent,
+            commands::orchestration::unplace_agent,
             commands::orchestration::save_rule,
             commands::orchestration::delete_rule,
             commands::orchestration::save_orchestration_settings,

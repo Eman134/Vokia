@@ -31,9 +31,9 @@ const MODE_OPTIONS: readonly ToggleOption<CloneMode>[] = [
 ]
 
 const GROUP_CLASSES = 'flex w-fit gap-0.5 rounded-control bg-surface-2 p-0.75'
-const OPTION_CLASSES = 'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
+const OPTION_CLASSES = 'cursor-pointer whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
 const ACTIVE_CLASSES = 'bg-surface font-medium text-ink shadow-seg'
-const INACTIVE_CLASSES = 'text-muted'
+const INACTIVE_CLASSES = 'text-muted hover:bg-hover hover:text-ink'
 const DISABLED_FIELD_CLASSES =
   'flex h-9 items-center rounded-control border border-line bg-surface px-3 text-control text-faint opacity-60'
 const FOOTER_CLASSES ='flex items-center justify-end gap-2'

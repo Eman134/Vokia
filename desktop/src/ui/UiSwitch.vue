@@ -21,7 +21,7 @@ function toggle() {
     role="switch"
     :class="[
       TRACK_CLASSES,
-      model ? 'bg-accent' : 'bg-line',
+      model ? 'bg-accent enabled:hover:bg-accent/85' : 'bg-line enabled:hover:bg-faint',
       disabled ? 'cursor-default opacity-40' : 'cursor-pointer',
     ]"
     :aria-checked="model"

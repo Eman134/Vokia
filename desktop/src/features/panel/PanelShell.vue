@@ -51,8 +51,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         type="button"
         role="tab"
         :aria-selected="panelTab.tab === entry.id"
-        class="text-label font-semibold focus:outline-2 focus:outline-solid focus:outline-accent"
-        :class="panelTab.tab === entry.id ? 'text-ink' : 'text-muted'"
+        class="cursor-pointer text-label font-semibold focus:outline-2 focus:outline-solid focus:outline-accent"
+        :class="panelTab.tab === entry.id ? 'text-ink' : 'text-muted hover:text-ink'"
         @click="panelTab.tab = entry.id"
       >
         {{ entry.label }} <span data-testid="panel-tab-count">{{ entry.count }}</span>

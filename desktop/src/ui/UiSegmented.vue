@@ -11,7 +11,7 @@ const ROOT_CLASSES = 'flex gap-0.5 rounded-control bg-surface-2 p-0.75'
 const OPTION_CLASSES =
   'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
 const ACTIVE_CLASSES = 'bg-surface font-medium text-ink shadow-seg'
-const INACTIVE_CLASSES = 'text-muted'
+const INACTIVE_CLASSES = 'text-muted enabled:hover:bg-hover enabled:hover:text-ink'
 
 function select(value: T) {
   if (props.disabled || value === model.value) return

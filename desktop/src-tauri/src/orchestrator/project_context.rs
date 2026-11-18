@@ -35,27 +35,62 @@ pub(super) fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, 
         .map_err(|error| FlowError::ProjectFolder(error.to_string()))
 }
 
-// Projeto fixado e nomes de todos os projetos: o Ember usa para identificar o projeto de um pedido.
+// Projeto fixado e rótulos de todos os projetos: o Ember usa para identificar o projeto de um pedido.
 pub(super) struct ProjectChoices {
     pub(super) pinned: Option<String>,
-    pub(super) names: Vec<String>,
+    pub(super) labels: Vec<String>,
 }
 
-pub(super) fn project_choices(app: &AppHandle) -> Result<ProjectChoices, FlowError> {
+// Nomes não são únicos: o rótulo leva o id, e a escolha volta por ele.
+const PROJECT_LABEL_ID_PREFIX: &str = " (#";
+const PROJECT_LABEL_ID_SUFFIX: &str = ")";
+
+pub(super) fn project_label(name: &str, id: i64) -> String {
+    format!("{name}{PROJECT_LABEL_ID_PREFIX}{id}{PROJECT_LABEL_ID_SUFFIX}")
+}
+
+fn project_id_of_label(answer: &str) -> Option<i64> {
+    let (_, digits) = answer
+        .strip_suffix(PROJECT_LABEL_ID_SUFFIX)?
+        .rsplit_once(PROJECT_LABEL_ID_PREFIX)?;
+    digits.parse().ok()
+}
+
+fn list_projects(app: &AppHandle) -> Result<Vec<Project>, FlowError> {
     let state = app.state::<DbState>();
     let db = state
         .require()
         .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
-    let projects = db
-        .list_projects()
-        .map_err(|error| FlowError::ProjectFolder(error.to_string()))?;
+    db.list_projects()
+        .map_err(|error| FlowError::ProjectFolder(error.to_string()))
+}
+
+pub(super) fn project_choices(app: &AppHandle) -> Result<ProjectChoices, FlowError> {
+    let projects = list_projects(app)?;
     Ok(ProjectChoices {
         pinned: projects
             .iter()
             .find(|project| project.pinned)
-            .map(|project| project.name.clone()),
-        names: projects.into_iter().map(|project| project.name).collect(),
+            .map(|project| project_label(&project.name, project.id)),
+        labels: projects
+            .iter()
+            .map(|project| project_label(&project.name, project.id))
+            .collect(),
     })
+}
+
+// Projeto escolhido numa decisão, pelo id do rótulo; None quando o texto não é o rótulo de um projeto existente.
+pub(super) fn project_id_from_choice(
+    app: &AppHandle,
+    answer: &str,
+) -> Result<Option<i64>, FlowError> {
+    let Some(id) = project_id_of_label(answer) else {
+        return Ok(None);
+    };
+    Ok(list_projects(app)?
+        .into_iter()
+        .find(|project| project.id == id && project_label(&project.name, project.id) == answer)
+        .map(|project| project.id))
 }
 
 pub(super) fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {

@@ -881,6 +881,17 @@ impl Db {
         Ok(placement)
     }
 
+    // O agente continua no elenco e volta para "Sem posição"; posição inexistente já é o resultado pedido.
+    pub fn unplace_agent(&self, project_id: i64, agent_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        conn.execute(
+            "DELETE FROM orch_placements WHERE project_id = ?1 AND agent_id = ?2",
+            params![project_id, agent_id],
+        )?;
+        Ok(())
+    }
+
     pub fn save_rule(&self, project_id: i64, draft: &RuleDraft) -> Result<Rule, DbError> {
         check_one_of("when_event", &draft.when_event, WHEN_EVENT_VALUES)?;
         check_one_of("action", &draft.action, ACTION_VALUES)?;

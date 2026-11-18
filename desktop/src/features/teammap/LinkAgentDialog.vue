@@ -1,14 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiSelect from '../../ui/UiSelect.vue'
-import { placeAgent } from '../orchestration/orchestrationApi'
+import { placeAgent, unplaceAgent } from '../orchestration/orchestrationApi'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import type { Agent } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import MapDialog from './MapDialog.vue'
-import { AGENT_PICK_LABEL, LINK_AGENT_TITLE, LINK_LABEL, PLACE_PLACEHOLDER } from './teamMapLayers'
+import {
+  AGENT_PICK_LABEL,
+  LINK_AGENT_TITLE,
+  LINK_LABEL,
+  PLACE_PLACEHOLDER,
+  REPLACE_AGENT_TITLE,
+  REPLACE_CONFIRM_LABEL,
+} from './teamMapLayers'
 
-const props = defineProps<{ projectId: number; teamId: string; layerId: string; agents: AgentProfile[] }>()
+const props = defineProps<{
+  projectId: number
+  teamId: string
+  layerId: string
+  agents: AgentProfile[]
+  replacingId: Agent | null
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const DEFAULT_MAX_INSTANCES = 1
@@ -20,8 +33,10 @@ function placementOf(id: string) {
   return orchestration.snapshot?.placements.find((candidate) => candidate.agentId === id)
 }
 
+const choices = computed(() => props.agents.filter((agent) => agent.id !== props.replacingId))
+
 const agentOptions = computed(() =>
-  props.agents.map((agent) => {
+  choices.value.map((agent) => {
     const placement = placementOf(agent.id)
     if (!placement) return { label: agent.name, value: agent.id }
     const team = orchestration.snapshot?.teams.find((candidate) => candidate.id === placement.teamId)?.name ?? ''
@@ -35,20 +50,38 @@ const submitting = ref(false)
 const failure = ref<string | null>(null)
 const canSubmit = computed(() => agentId.value !== '')
 
+// Troca: o novo agente herda a posição do substituído (instruções e réplicas); o substituído sai depois.
+async function replace(replacedId: Agent): Promise<void> {
+  const replaced = placementOf(replacedId)
+  await placeAgent(props.projectId, {
+    agentId: agentId.value as Agent,
+    teamId: props.teamId,
+    layerId: props.layerId,
+    instructions: replaced?.instructions ?? '',
+    maxInstances: replaced?.maxInstances ?? DEFAULT_MAX_INSTANCES,
+  })
+  await unplaceAgent(props.projectId, replacedId)
+}
+
+// Vincular ou mover: só time e camada mudam; instruções e réplicas da posição atual são mantidas.
+async function link(): Promise<void> {
+  const current = placementOf(agentId.value)
+  await placeAgent(props.projectId, {
+    agentId: agentId.value as Agent,
+    teamId: props.teamId,
+    layerId: props.layerId,
+    instructions: current?.instructions ?? '',
+    maxInstances: current?.maxInstances ?? DEFAULT_MAX_INSTANCES,
+  })
+}
+
 async function submit(): Promise<void> {
   if (!canSubmit.value || submitting.value) return
   submitting.value = true
   failure.value = null
   try {
-    // Mover só troca time e camada: instruções e réplicas da posição atual são mantidas.
-    const current = placementOf(agentId.value)
-    await placeAgent(props.projectId, {
-      agentId: agentId.value as Agent,
-      teamId: props.teamId,
-      layerId: props.layerId,
-      instructions: current?.instructions ?? '',
-      maxInstances: current?.maxInstances ?? DEFAULT_MAX_INSTANCES,
-    })
+    if (props.replacingId !== null) await replace(props.replacingId)
+    else await link()
     submitting.value = false
     emit('close')
   } catch (error) {
@@ -60,8 +93,8 @@ async function submit(): Promise<void> {
 
 <template>
   <MapDialog
-    :title="LINK_AGENT_TITLE"
-    :submit-label="LINK_LABEL"
+    :title="replacingId ? REPLACE_AGENT_TITLE : LINK_AGENT_TITLE"
+    :submit-label="replacingId ? REPLACE_CONFIRM_LABEL : LINK_LABEL"
     :can-submit="canSubmit"
     :submitting="submitting"
     :failure="failure"

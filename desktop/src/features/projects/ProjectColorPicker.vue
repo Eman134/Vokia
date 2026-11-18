@@ -5,7 +5,7 @@ const model = defineModel<string>({ required: true })
 
 const COLOR_LABEL = 'Cor do projeto'
 const SWATCH_BASE_CLASSES =
-  'size-8 rounded-full border border-project-line focus:outline-2 focus:outline-solid focus:outline-accent'
+  'size-8 cursor-pointer rounded-full border border-project-line hover:opacity-80 focus:outline-2 focus:outline-solid focus:outline-accent'
 const SWATCH_ACTIVE_CLASSES = 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
 </script>
 

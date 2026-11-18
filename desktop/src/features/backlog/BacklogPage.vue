@@ -48,7 +48,7 @@ const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
 const SEARCH_CLASSES =
   'h-9 w-55 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint disabled:opacity-40'
 const MINE_CLASSES = 'h-7.5 rounded-control-sm border border-line px-3 text-caption text-muted disabled:opacity-40'
-const TAG_FILTER_CLASSES = 'h-7 rounded-control-sm px-2.5 text-label font-medium'
+const TAG_FILTER_CLASSES = 'h-7 cursor-pointer rounded-control-sm px-2.5 text-label font-medium hover:opacity-80'
 const GRID_SCROLL_CLASSES = 'min-w-0'
 const GRID_CLASSES = 'grid min-w-0 grid-cols-[repeat(5,minmax(0,1fr))] items-start gap-2'
 const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'

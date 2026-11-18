@@ -9,7 +9,7 @@ use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, Tea
 use serde_json::Value;
 
 const MAESTRO_INSTRUCTIONS: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time certo ou ao agente certo. Não execute trabalho técnico que cabe a um agente. Decida quando delegar, pedir revisão, pesquisar antes ou chamar o usuário. Respeite as regras de passagem de camadas e os limites de turno. Relate ao usuário o que foi delegado e o resultado.";
-const MAESTRO_PROJECT_RULE: &str = "Identifique o projeto do pedido pelo contexto da conversa, que é o projeto em que o pedido foi feito. Sem contexto, use o projeto fixado pelo usuário. Se ainda houver dúvida, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português (por exemplo: Em qual projeto devo seguir com este pedido?) e options com os nomes dos projetos listados abaixo.";
+const MAESTRO_PROJECT_RULE: &str = "Identifique o projeto do pedido pelo contexto da conversa, que é o projeto em que o pedido foi feito. Sem contexto, use o projeto fixado pelo usuário. Se ainda houver dúvida, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português (por exemplo: Em qual projeto devo seguir com este pedido?) e options com os rótulos dos projetos listados abaixo, exatamente como aparecem (nome e #id).";
 const MAESTRO_PINNED_LABEL: &str = "Projeto fixado pelo usuário:";
 const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
 const MAESTRO_EXTRA_LABEL: &str = "Instruções extras do agente:";
@@ -247,12 +247,12 @@ pub(super) fn maestro_role(
     extra: Option<&str>,
 ) -> String {
     let pinned = choices.pinned.as_deref().unwrap_or(NO_PROJECT_TEXT);
-    let names = if choices.names.is_empty() {
+    let labels = if choices.labels.is_empty() {
         NO_PROJECT_TEXT.to_string()
     } else {
-        join_items(&choices.names)
+        join_items(&choices.labels)
     };
-    let projects = format!("{MAESTRO_PINNED_LABEL} {pinned}. {MAESTRO_PROJECTS_LABEL} {names}.");
+    let projects = format!("{MAESTRO_PINNED_LABEL} {pinned}. {MAESTRO_PROJECTS_LABEL} {labels}.");
     let extra = extra
         .map(str::trim)
         .filter(|text| !text.is_empty())
@@ -300,7 +300,10 @@ fn extra_instructions(profile: &AgentProfile) -> String {
     if profile.extra_instructions.is_empty() {
         return String::new();
     }
-    format!(" {EXTRA_INSTRUCTIONS_LABEL}: {}", profile.extra_instructions)
+    format!(
+        " {EXTRA_INSTRUCTIONS_LABEL}: {}",
+        profile.extra_instructions
+    )
 }
 
 // Cada seção só existe com texto; sem nenhuma, o resultado é vazio e o prompt segue igual ao de antes.

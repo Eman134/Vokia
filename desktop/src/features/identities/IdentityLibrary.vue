@@ -135,8 +135,8 @@ function clearAll() {
         <li v-for="concept in family.concepts" :key="concept.id">
           <button
             type="button"
-            class="flex w-full flex-wrap items-center gap-4 rounded-card border p-3 text-left"
-            :class="isSelected(family.id, concept.id) ? 'border-accent bg-accent-soft' : 'border-line bg-surface'"
+            class="flex w-full cursor-pointer flex-wrap items-center gap-4 rounded-card border p-3 text-left"
+            :class="isSelected(family.id, concept.id) ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:bg-hover'"
             :aria-pressed="isSelected(family.id, concept.id)"
             @click="toggleCompare(family.id, concept.id)"
           >

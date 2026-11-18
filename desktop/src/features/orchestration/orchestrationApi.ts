@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { Agent } from '../team/events'
 import type {
   OrchLayer,
   OrchLayerDraft,
@@ -20,6 +21,7 @@ const REORDER_LAYERS_COMMAND = 'reorder_layers'
 const SAVE_TEAM_COMMAND = 'save_team'
 const DELETE_TEAM_COMMAND = 'delete_team'
 const PLACE_AGENT_COMMAND = 'place_agent'
+const UNPLACE_AGENT_COMMAND = 'unplace_agent'
 const SAVE_RULE_COMMAND = 'save_rule'
 const DELETE_RULE_COMMAND = 'delete_rule'
 const SAVE_ORCHESTRATION_SETTINGS_COMMAND = 'save_orchestration_settings'
@@ -51,6 +53,10 @@ export function deleteTeam(projectId: number, id: string): Promise<void> {
 
 export function placeAgent(projectId: number, draft: OrchPlacementDraft): Promise<OrchPlacement> {
   return invoke<OrchPlacement>(PLACE_AGENT_COMMAND, { projectId, draft })
+}
+
+export function unplaceAgent(projectId: number, agentId: Agent): Promise<void> {
+  return invoke<void>(UNPLACE_AGENT_COMMAND, { projectId, agentId })
 }
 
 export function saveRule(projectId: number, draft: OrchRuleDraft): Promise<OrchRule> {

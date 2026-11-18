@@ -174,6 +174,19 @@ pub fn place_agent(
 }
 
 #[tauri::command]
+pub fn unplace_agent(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
+    project_id: i64,
+    agent_id: String,
+) -> Result<(), String> {
+    write(&app, &state, &registry, project_id, |db| {
+        db.unplace_agent(project_id, &agent_id)
+    })
+}
+
+#[tauri::command]
 pub fn save_rule(
     app: AppHandle,
     state: State<'_, DbState>,

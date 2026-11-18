@@ -5,6 +5,7 @@ use crate::db::DbState;
 use crate::events::Speaker;
 use crate::orchestrator::{emit_backlog_changed, emit_feed_note, now_millis};
 use crate::roles::RoleRegistry;
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn list_agents(registry: State<'_, AgentRegistry>) -> Result<TeamListing, String> {
@@ -72,12 +73,16 @@ pub fn delete_agent(
 }
 
 #[tauri::command]
-pub fn set_agent_instructions(
+pub async fn set_agent_instructions(
     registry: State<'_, AgentRegistry>,
+    app_state: State<'_, AppState>,
     id: Agent,
     text: String,
 ) -> Result<AgentProfile, String> {
-    registry
+    let profile = registry
         .set_instructions(&id, &text)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    // Só depois de gravada: a sessão que reabrir já lê o prompt com o texto novo.
+    app_state.sessions.retire_agent(&id).await;
+    Ok(profile)
 }

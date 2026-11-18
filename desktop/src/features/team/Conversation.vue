@@ -41,9 +41,9 @@ const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border
 const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
 const TABS_LABEL = 'Abas da conversa'
 const TABS_CLASSES = 'flex gap-5'
-const TAB_CLASSES = 'whitespace-nowrap border-b-2 pb-1 text-label font-medium focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
+const TAB_CLASSES = 'cursor-pointer whitespace-nowrap border-b-2 pb-1 text-label font-medium focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 const TAB_ON = 'border-ink text-ink'
-const TAB_OFF = 'cursor-pointer border-transparent text-muted hover:text-ink'
+const TAB_OFF = 'border-transparent text-muted hover:text-ink'
 const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
 
 const feed = useFeed()

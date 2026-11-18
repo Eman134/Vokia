@@ -116,7 +116,7 @@ function triage(): void {
         </ul>
         <button
           type="button"
-          class="h-9 self-start rounded-control bg-ink px-3.5 text-control font-medium text-bg"
+          class="h-9 cursor-pointer self-start rounded-control bg-ink px-3.5 text-control font-medium text-bg hover:bg-ink/85"
           :class="chosenPlanId === null && 'opacity-50'"
           :aria-disabled="chosenPlanId === null"
           @click="linkChosen"

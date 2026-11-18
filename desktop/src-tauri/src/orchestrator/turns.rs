@@ -737,6 +737,7 @@ pub(super) fn open_decision(
                 title: decision.title.clone(),
                 request: request.to_string(),
                 item_id: item_id.map(str::to_string),
+                options: decision.options.clone(),
             },
         );
     emit(

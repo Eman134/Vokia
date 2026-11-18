@@ -15,7 +15,7 @@ const LIST_CLASSES =
 const LIST_HEADER_CLASSES = 'flex items-center px-2.5 py-1.5'
 const GROUP_LABEL_CLASSES = 'px-2.5 pt-2.5 pb-1 text-tiny font-semibold tracking-[0.03em] text-faint'
 const ROW_CLASSES =
-  'flex w-full items-center gap-2.25 rounded-control-lg px-2.5 py-2 text-left text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
+  'flex w-full cursor-pointer items-center gap-2.25 rounded-control-lg px-2.5 py-2 text-left text-ink hover:bg-hover focus:outline-2 focus:outline-solid focus:outline-accent'
 const SELECTED_ROW_CLASSES = 'bg-accent-soft'
 const CONNECTOR_CLASSES =
   '-mt-2.5 ml-1 h-4.5 w-3.5 flex-none rounded-bl-chip border-b-[1.5px] border-l-[1.5px] border-line'

@@ -19,7 +19,9 @@ use crate::orchestration::policy::{
 use crate::orchestration::worktree_policy::should_use;
 use crate::projects::worktree;
 use crate::session_key::SessionKey;
-use crate::state::{AppState, Batch, QueuedJob, RequestContext, WaitingDelegation};
+use crate::state::{
+    AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
+};
 use crate::task::{
     long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome, Variable,
 };
@@ -28,7 +30,9 @@ use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{emit, emit_backlog_changed, emit_message, emit_state, report_limits};
 use super::error::{FlowError, RequestOutcome};
-use super::project_context::{load_project, project_context, project_dir, scan_structure};
+use super::project_context::{
+    load_project, project_context, project_dir, project_id_from_choice, scan_structure,
+};
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
 use super::runs::{begin_run, end_run};
@@ -99,17 +103,28 @@ pub async fn answer_decision(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    let context = RequestContext::new(None, decision.item_id, None);
-    handle_request(
-        app,
-        state,
-        &text,
-        decision.agent,
-        decision.project_id,
-        context,
-    )
-    .await
-    .map(|_| ())
+    let (project_id, item_id) = match chosen_project(app, &decision, answer)? {
+        Some(chosen) if chosen != decision.project_id => (chosen, None),
+        _ => (decision.project_id, decision.item_id),
+    };
+    let context = RequestContext::new(None, item_id, None);
+    handle_request(app, state, &text, decision.agent, project_id, context)
+        .await
+        .map(|_| ())
+}
+
+// Escolha de projeto feita pelo Ember, pelo id do rótulo. O card de origem pertence ao projeto original e não vai junto.
+fn chosen_project(
+    app: &AppHandle,
+    decision: &PendingDecision,
+    answer: &str,
+) -> Result<Option<i64>, FlowError> {
+    let asks_project =
+        decision.agent == Agent::ember() && decision.options.iter().any(|option| option == answer);
+    if !asks_project {
+        return Ok(None);
+    }
+    project_id_from_choice(app, answer)
 }
 
 // Delegação paralela: uma instância ociosa do base; todas ocupadas, fila da instância base; no teto de max_parallel, espera no projeto (nada se perde).

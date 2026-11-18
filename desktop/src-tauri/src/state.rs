@@ -45,6 +45,8 @@ pub struct PendingDecision {
     pub title: String,
     pub request: String,
     pub item_id: Option<String>,
+    // Opções da decisão: quando o Ember pergunta o projeto, a escolha troca o projeto do pedido.
+    pub options: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
