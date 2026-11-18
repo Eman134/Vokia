@@ -275,6 +275,21 @@ enum Attempt {
     Minimal,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct Place {
+    dir: PathBuf,
+    item_id: Option<String>,
+}
+
+impl Place {
+    fn of(project: ProjectAccess<'_>, call: &AgentCall) -> Self {
+        Self {
+            dir: project.dir.to_path_buf(),
+            item_id: call.item_id.clone(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct AgentSession {
     pub(super) live: Option<LiveSession>,
@@ -285,6 +300,7 @@ pub(super) struct AgentSession {
     pub(super) last_used: Option<Instant>,
     pub(super) granted: Arc<StdMutex<HashSet<String>>>,
     pub(super) pid: Arc<AtomicU32>,
+    pub(super) place: Option<Place>,
 }
 
 impl AgentSession {
@@ -318,7 +334,8 @@ impl AgentSession {
         first: bool,
         console: &ConsoleSink<'_>,
     ) -> Result<Option<Reply>, FlowError> {
-        let mut next = self.first_attempt(store).await?;
+        let place = Place::of(project, call);
+        let mut next = self.first_attempt(store, &place).await?;
         while let Some(attempt) = next {
             match self
                 .attempt(
@@ -356,7 +373,18 @@ impl AgentSession {
     async fn first_attempt(
         &mut self,
         store: &SessionStore<'_>,
+        place: &Place,
     ) -> Result<Option<Attempt>, FlowError> {
+        // Sessão aberta em outro diretório ou de outro item não atende este pedido; o --resume só vale para o mesmo item.
+        if let Some(known) = self.place.replace(place.clone()) {
+            if known != *place {
+                self.close_live().await;
+                if known.item_id != place.item_id {
+                    self.session_id = None;
+                    store.clear()?;
+                }
+            }
+        }
         if self.live.is_none() {
             if self.session_id.is_none() {
                 self.session_id = store.load()?;

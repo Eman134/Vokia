@@ -21,3 +21,7 @@ pub(crate) fn pick(
         .chain((2..=max_instances).map(|n| replica_id(base, n as u32)))
         .find(|agent| !busy(agent))
 }
+
+#[cfg(test)]
+#[path = "../../tests/instances_tests.rs"]
+mod tests;

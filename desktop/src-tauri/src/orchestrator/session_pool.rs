@@ -214,3 +214,7 @@ impl<'a> ExchangeSessions<'a> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/session_pool_tests.rs"]
+mod tests;

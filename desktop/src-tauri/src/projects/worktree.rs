@@ -247,3 +247,7 @@ pub async fn remove(
     git(&git_path, project_dir, &["branch", "-D", branch]).await?;
     Ok(RemoveOutcome::Removed)
 }
+
+#[cfg(test)]
+#[path = "../../tests/worktree_tests.rs"]
+mod tests;

@@ -31,3 +31,7 @@ fn implementer_slots(snapshot: &OrchestrationSnapshot) -> i64 {
         })
         .sum()
 }
+
+#[cfg(test)]
+#[path = "../../tests/worktree_policy_tests.rs"]
+mod tests;
