@@ -11,8 +11,8 @@ import { agentCountLabel, CORNER_LABEL, EMPTY_CELL_LABEL, IN_PROGRESS_COLUMN, te
 const TEAM_COLUMN_PX = 150
 const LAYER_COLUMN_MIN_PX = 170
 
-defineProps<{ highlightedId: string | null }>()
-const emit = defineEmits<{ addAgent: [teamId: string, layerId: string] }>()
+defineProps<{ canPlaceExisting: boolean }>()
+const emit = defineEmits<{ placeExisting: [teamId: string, layerId: string] }>()
 
 const orchestration = useOrchestration()
 const roster = useRoster()
@@ -96,14 +96,13 @@ const gridStyle = computed(() => ({
               :key="agent.id"
               :agent="agent"
               :active-card="activeCardByAgent.get(agent.id)"
-              :aria-current="agent.id === highlightedId ? 'true' : undefined"
-              :class="agent.id === highlightedId ? 'ring-2 ring-accent' : ''"
             />
             <button
               v-if="cellAgents(team.id, layer.id).length === 0"
               type="button"
-              class="self-stretch rounded-card border border-dashed border-line py-3 text-center text-small text-muted focus:outline-2 focus:outline-solid focus:outline-accent"
-              @click="emit('addAgent', team.id, layer.id)"
+              :disabled="!canPlaceExisting"
+              class="self-stretch rounded-card border border-dashed border-line py-3 text-center text-small text-muted focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
+              @click="emit('placeExisting', team.id, layer.id)"
             >
               {{ EMPTY_CELL_LABEL }}
             </button>
