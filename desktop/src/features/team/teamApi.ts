@@ -14,10 +14,24 @@ const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
 const LIST_AGENTS_COMMAND = 'list_agents'
 const CREATE_AGENT_COMMAND = 'create_agent'
 const UPDATE_AGENT_COMMAND = 'update_agent'
+const LIST_INTERRUPTED_RUNS_COMMAND = 'list_interrupted_runs'
+const RESUME_INTERRUPTED_RUN_COMMAND = 'resume_interrupted_run'
+const DISCARD_INTERRUPTED_RUN_COMMAND = 'discard_interrupted_run'
 
 export interface AgentPause {
   projectId: number
   agent: Agent
+}
+
+export interface InterruptedRun {
+  id: number
+  projectId: number
+  agent: Agent
+  request: string
+  runId: number | null
+  itemId: string | null
+  startedAt: number
+  leader: boolean
 }
 
 export interface AgentProfile {
@@ -81,6 +95,18 @@ export function listAgentPauses(): Promise<AgentPause[]> {
 
 export function setAgentPaused(projectId: number, agent: Agent, paused: boolean): Promise<void> {
   return invoke<void>(SET_AGENT_PAUSED_COMMAND, { projectId, agent, paused })
+}
+
+export function listInterruptedRuns(): Promise<InterruptedRun[]> {
+  return invoke<InterruptedRun[]>(LIST_INTERRUPTED_RUNS_COMMAND)
+}
+
+export function resumeInterruptedRun(id: number): Promise<RequestOutcome> {
+  return invoke<RequestOutcome>(RESUME_INTERRUPTED_RUN_COMMAND, { id })
+}
+
+export function discardInterruptedRun(id: number): Promise<void> {
+  return invoke<void>(DISCARD_INTERRUPTED_RUN_COMMAND, { id })
 }
 
 export function listAgents(): Promise<TeamListing> {

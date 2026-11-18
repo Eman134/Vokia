@@ -3,7 +3,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::agents::{Agent, AgentError, AgentRegistry};
 use crate::claude::{self, CliProblem};
 use crate::console_log::ConsoleEntry;
-use crate::db::{AgentPause, DbState};
+use crate::db::{AgentPause, DbState, InterruptedRun};
 use crate::orchestrator::{self, RequestOutcome};
 use crate::permissions::PermissionError;
 use crate::session_key::SessionKey;
@@ -80,6 +80,30 @@ pub async fn answer_decision(
 pub fn list_agent_pauses(state: State<'_, DbState>) -> Result<Vec<AgentPause>, String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.agent_pauses().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_interrupted_runs(state: State<'_, DbState>) -> Result<Vec<InterruptedRun>, String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.interrupted_runs().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn resume_interrupted_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<RequestOutcome, String> {
+    orchestrator::resume_run(&app, &state, id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn discard_interrupted_run(state: State<'_, DbState>, id: i64) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.discard_interrupted_run(id)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

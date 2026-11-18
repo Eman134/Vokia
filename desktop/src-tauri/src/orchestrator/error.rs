@@ -37,6 +37,7 @@ pub enum FlowError {
     SessionStore(DbError),
     Settings(DbError),
     Orchestration(DbError),
+    Runs(DbError),
     Team(AgentError),
     Worktree(WorktreeError),
 }
@@ -94,6 +95,9 @@ impl fmt::Display for FlowError {
             }
             FlowError::Orchestration(error) => {
                 write!(f, "Não foi possível ler a orquestração: {error}")
+            }
+            FlowError::Runs(error) => {
+                write!(f, "Não foi possível atualizar os pedidos interrompidos: {error}")
             }
             FlowError::Team(error) => write!(f, "{error}"),
             FlowError::Worktree(error) => write!(f, "{error}"),

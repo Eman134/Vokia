@@ -26,6 +26,23 @@ const RENAME_LEGACY_AGENT_IDS: &str = "
     UPDATE orch_handoffs SET to_agent = 'ember' WHERE to_agent = 'iara';
 ";
 
+// Pedido em andamento de um app que fechou não tem como terminar: ao abrir, vira interrompido para o usuário decidir.
+const RUNS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS orch_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent TEXT NOT NULL,
+        request TEXT NOT NULL,
+        run_id INTEGER,
+        item_id TEXT,
+        state TEXT NOT NULL CHECK (state IN ('em_andamento','interrompido','retomado','concluido')),
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS orch_runs_by_project ON orch_runs(project_id, state);
+    UPDATE orch_runs SET state = 'interrompido' WHERE state = 'em_andamento';
+";
+
 const HAS_COLUMN: &str = "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2";
 
 // schema.sql só roda em banco novo; cada coluna nova passa por aqui em toda abertura e entra só se faltar.
@@ -64,6 +81,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     }
     let tx = conn.transaction()?;
     tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
+    tx.execute_batch(RUNS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

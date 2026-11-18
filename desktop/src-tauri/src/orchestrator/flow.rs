@@ -23,6 +23,7 @@ use super::error::{FlowError, RequestOutcome};
 use super::project_context::{load_project, project_context, project_dir, scan_structure};
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
+use super::runs::{begin_run, end_run};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext};
 use super::turns::{first_speaker, run_turns, with_cache, Exchange, USER_LABEL};
@@ -262,6 +263,12 @@ async fn run_flow(
     let mut current_run: Option<u64> = None;
     loop {
         set_running_item(state, &key, item_id.as_deref())?;
+        let journal_run = if parallel {
+            current_run.or(parallel_run)
+        } else {
+            current_run
+        };
+        let journal = begin_run(app, &key, &request, item_id.as_deref(), journal_run)?;
         let exchange = if parallel {
             run_parallel_item(
                 app,
@@ -297,6 +304,7 @@ async fn run_flow(
                 RequestOutcome::Failed
             }
         };
+        end_run(app, journal)?;
         if let Some(run_id) = current_run {
             emit(
                 app,

@@ -78,6 +78,7 @@ pub enum DbError {
     TeamNotFound(String),
     TeamHasAgents(String),
     RuleNotFound(i64),
+    RunNotInterrupted(i64),
     RuleDuplicated {
         from: String,
         to: String,
@@ -301,6 +302,9 @@ impl fmt::Display for DbError {
                 "O time {id} tem agentes posicionados: mova os agentes antes de excluí-lo."
             ),
             DbError::RuleNotFound(id) => write!(f, "A seta {id} não existe neste projeto."),
+            DbError::RunNotInterrupted(id) => {
+                write!(f, "O pedido {id} não está mais interrompido.")
+            }
             DbError::RuleDuplicated { from, to } => {
                 write!(f, "Já existe uma seta de {from} para {to}.")
             }

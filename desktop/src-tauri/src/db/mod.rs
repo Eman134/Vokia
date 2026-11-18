@@ -8,6 +8,7 @@ mod messages;
 mod migrations;
 mod orchestration;
 mod projects;
+mod runs;
 mod settings;
 
 pub use agent_sessions::AgentPause;
@@ -24,4 +25,5 @@ pub use orchestration::{
 };
 pub(crate) use orchestration::{REQUEST_KIND_VALUES, WHEN_EVENT_VALUES};
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
+pub use runs::{InterruptedRun, RunHandoff};
 pub use settings::{GRANT_SESSION, SETTING_PERMISSION_GRANT};
