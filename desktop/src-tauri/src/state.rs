@@ -54,6 +54,8 @@ pub struct RequestContext {
     pub channel_id: Option<i64>,
     // Pedido delegado em paralelo: roda uma vez na instância, sem tarefa do projeto.
     pub parallel: bool,
+    // Lote de delegações paralelas ao qual este pedido pertence (a junção espera todas).
+    pub batch: Option<u64>,
 }
 
 impl RequestContext {
@@ -66,6 +68,7 @@ impl RequestContext {
             item_id,
             channel_id,
             parallel: false,
+            batch: None,
         }
     }
 }
@@ -89,4 +92,24 @@ pub struct FlowQueue {
     // Item do turno em andamento de cada fluxo; sai junto com a chave em pending.
     pub running: HashMap<SessionKey, String>,
     pub waiting: HashMap<i64, VecDeque<WaitingDelegation>>,
+    pub batches: HashMap<u64, Batch>,
+    pub next_batch: u64,
+}
+
+// Um lote: as trocas paralelas de um turno do líder. A junção sai quando a última volta.
+pub struct Batch {
+    pub project_id: i64,
+    pub leader: Agent,
+    pub objective: String,
+    pub variables: Vec<crate::task::Variable>,
+    pub channel_id: Option<i64>,
+    pub item_id: Option<String>,
+    pub pending: usize,
+    pub results: Vec<(String, String)>,
+    // Agente base de cada delegação despachada (total do placar); instâncias que estão rodando e que já voltaram.
+    pub dispatched: Vec<crate::events::Agent>,
+    pub started: Vec<crate::events::Agent>,
+    pub returned: Vec<crate::events::Agent>,
+    // Contadores da tarefa do líder: a réplica confere política e limites contra eles.
+    pub counters: crate::orchestration::counters::TaskCounters,
 }

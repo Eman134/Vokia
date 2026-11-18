@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use serde::Serialize;
 
-use crate::agents::{replica_of, AgentRegistry};
+use crate::agents::{replica_of, Agent, AgentError, AgentRegistry};
 use crate::db::{
     Db, DbError, DbState, Handoff, Layer, LayerDraft, OrchestrationSettings, OrchestrationSnapshot,
     Placement, PlacementDraft, Rule, RuleDraft, Team, TeamDraft,
@@ -24,6 +24,20 @@ fn load_team_and_seed(
     db.seed_orchestration(project_id, &seed::build(&team))
         .map_err(|error| error.to_string())?;
     Ok(team)
+}
+
+// Líder fora do elenco é recusado antes da escrita; líder None é válido e limpa o líder do time.
+fn leader_in_cast(registry: &AgentRegistry, leader: Option<String>) -> Result<Option<String>, String> {
+    let Some(id) = leader else {
+        return Ok(None);
+    };
+    let team = registry.team().map_err(|error| error.to_string())?;
+    let in_cast = Agent::from_stored(&id).is_some_and(|agent| team.profile(&agent).is_some());
+    if in_cast {
+        Ok(Some(id))
+    } else {
+        Err(AgentError::UnknownAgent(id).to_string())
+    }
 }
 
 // Antes de cada escrita: semente se preciso, poda das posições de agentes fora do elenco, escrita e aviso.
@@ -121,9 +135,15 @@ pub fn save_team(
     registry: State<'_, AgentRegistry>,
     project_id: i64,
     draft: TeamDraft,
+    leader_agent: Option<String>,
 ) -> Result<Team, String> {
+    let leader = leader_in_cast(&registry, leader_agent)?;
     write(&app, &state, &registry, project_id, |db| {
-        db.save_team(project_id, &draft)
+        let team = db.save_team(project_id, &draft)?;
+        match leader.as_deref() {
+            Some(leader) => db.set_team_leader(project_id, &team.id, leader),
+            None => Ok(team),
+        }
     })
 }
 

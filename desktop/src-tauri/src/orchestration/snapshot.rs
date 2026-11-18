@@ -208,7 +208,14 @@ pub(crate) struct TeamOutlines {
     pub(crate) unassigned: Vec<String>,
 }
 
-// A tabela de times não tem campo de líder: o líder do time é o primeiro membro posicionado numa camada de tipo planejar.
+// Sem líder explícito no time, o líder é o primeiro membro posicionado numa camada de tipo planejar.
+// Líder explícito que saiu do elenco não vale: o time volta à camada planejar.
+fn explicit_leader(orch_team: &crate::db::Team, team: &Team) -> Option<String> {
+    let agent = Agent::from_stored(orch_team.leader_agent.as_deref()?)?;
+    team.profile(&agent)?;
+    Some(team.name_of(&agent).to_string())
+}
+
 pub(crate) fn team_outlines(snapshot: &OrchestrationSnapshot, team: &Team) -> TeamOutlines {
     let teams = snapshot
         .teams
@@ -237,10 +244,12 @@ pub(crate) fn team_outlines(snapshot: &OrchestrationSnapshot, team: &Team) -> Te
                     ))
                 })
                 .collect();
-            let leader = members
-                .iter()
-                .find(|(is_leader, _)| *is_leader)
-                .map(|(_, member)| member.name.clone());
+            let leader = explicit_leader(orch_team, team).or_else(|| {
+                members
+                    .iter()
+                    .find(|(is_leader, _)| *is_leader)
+                    .map(|(_, member)| member.name.clone())
+            });
             TeamOutline {
                 name: orch_team.name.clone(),
                 leader,

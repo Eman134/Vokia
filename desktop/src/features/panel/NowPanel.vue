@@ -10,6 +10,7 @@ import { PORTRAIT_SIZES } from '../team/portraitArt'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { useFeed } from '../team/useFeed'
+import BatchProgressList from '../orchestration/BatchProgressList.vue'
 import AgentNow from './AgentNow.vue'
 import InterruptedRuns from './InterruptedRuns.vue'
 import {
@@ -49,6 +50,7 @@ const workingRows = computed(() => rows.value.filter((row) => feed.activeAgents.
 <template>
   <div class="flex flex-col gap-2">
     <InterruptedRuns />
+    <BatchProgressList />
     <div class="flex flex-wrap gap-1.5">
       <UiChip
         :label="`${ALL_TAB_LABEL} ${feed.activeAgents.length}`"

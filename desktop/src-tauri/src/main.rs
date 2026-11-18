@@ -104,6 +104,12 @@ fn main() {
             app.manage(roles::RoleRegistry::load(&data_dir, &agents));
             app.manage(agents);
             app.manage(DbState::open(&data_dir));
+            {
+                let team = app.state::<agents::AgentRegistry>().team().map_err(|error| error.to_string())?;
+                if let Some(db) = app.state::<DbState>().db() {
+                    orchestration::seed::fill_missing_leaders(db, &team).map_err(|error| error.to_string())?;
+                }
+            }
             mcp::clear_stale_configs(&data_dir);
             app.manage(mcp::McpState::start(app.handle().clone()));
             shell::setup_tray(app)

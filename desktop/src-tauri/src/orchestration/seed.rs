@@ -1,5 +1,7 @@
 use crate::agents::{Agent, Team};
-use crate::db::{LayerDraft, OrchestrationSeed, OrchestrationSettings, PlacementDraft, TeamDraft};
+use crate::db::{
+    Db, DbError, LayerDraft, OrchestrationSeed, OrchestrationSettings, PlacementDraft, TeamDraft,
+};
 
 const TEAM_ID: &str = "time";
 const TEAM_NAME: &str = "Time";
@@ -36,6 +38,12 @@ pub(crate) fn build(team: &Team) -> OrchestrationSeed {
         },
         placements,
     }
+}
+
+// Roda a cada início: times sem líder gravado recebem o primeiro agente planejar do elenco.
+pub(crate) fn fill_missing_leaders(db: &Db, team: &Team) -> Result<(), DbError> {
+    let roster: Vec<String> = team.ids().map(|id| id.as_str().to_string()).collect();
+    db.fill_missing_team_leaders(&roster)
 }
 
 fn layer_of(agent: &Agent) -> &'static str {

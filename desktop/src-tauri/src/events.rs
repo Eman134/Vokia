@@ -217,4 +217,19 @@ pub enum VokiaEvent {
     OrchestrationChanged {
         project_id: i64,
     },
+    #[serde(rename_all = "camelCase")]
+    BatchProgress {
+        project_id: i64,
+        leader: Agent,
+        returned: usize,
+        total: usize,
+        running: Vec<Agent>,
+        done: bool,
+    },
+    #[serde(rename_all = "camelCase")]
+    AgentNamed {
+        project_id: i64,
+        agent: Agent,
+        name: String,
+    },
 }

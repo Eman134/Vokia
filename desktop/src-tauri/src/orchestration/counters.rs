@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::agents::Agent;
 
 // Vale só para uma tarefa: cada chamada de run_turns começa com contadores zerados.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct TaskCounters {
     turns: i64,
     last_speaker: Option<Agent>,

@@ -121,6 +121,7 @@ pub struct Team {
     pub id: String,
     pub name: String,
     pub position: i64,
+    pub leader_agent: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -242,7 +243,7 @@ pub struct OrchestrationSeed {
 const SETTINGS_COLUMNS: &str = "enforcement, leader_agent, step_mode, human_gate, max_parallel, \
     pair_turn_limit, task_turn_limit, worktree_policy";
 const LAYER_COLUMNS: &str = "id, name, description, position, kind, instructions";
-const TEAM_COLUMNS: &str = "id, name, position";
+const TEAM_COLUMNS: &str = "id, name, position, leader_agent";
 const PLACEMENT_COLUMNS: &str = "agent_id, team_id, layer_id, instructions, max_instances";
 const RULE_COLUMNS: &str =
     "id, from_layer, to_layer, when_event, action, kind, exec_mode, return_limit, position";
@@ -278,6 +279,7 @@ fn team_from_row(row: &Row<'_>) -> rusqlite::Result<Team> {
         id: row.get(0)?,
         name: row.get(1)?,
         position: row.get(2)?,
+        leader_agent: row.get(3)?,
     })
 }
 
@@ -734,6 +736,69 @@ impl Db {
             )?;
         }
         ensure_return_rules_backward(&tx, project_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_team_leader(
+        &self,
+        project_id: i64,
+        team_id: &str,
+        leader: &str,
+    ) -> Result<Team, DbError> {
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE orch_teams SET leader_agent = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, team_id, leader],
+        )?;
+        if changed == 0 {
+            return Err(DbError::TeamNotFound(team_id.to_string()));
+        }
+        fetch_team(&conn, project_id, team_id)
+    }
+
+    // Só preenche time sem líder: o líder já gravado nunca muda por aqui. O menor índice no elenco vence,
+    // a mesma ordem que o interpretador usava para escolher o líder pela camada planejar.
+    pub fn fill_missing_team_leaders(&self, roster: &[String]) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let candidates: Vec<(i64, String, String)> = {
+            let mut statement = tx.prepare(
+                "SELECT p.project_id, p.team_id, p.agent_id FROM orch_placements p \
+                 JOIN orch_layers l ON l.project_id = p.project_id AND l.id = p.layer_id \
+                 JOIN orch_teams t ON t.project_id = p.project_id AND t.id = p.team_id \
+                 WHERE t.leader_agent IS NULL AND l.kind = 'planejar'",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?;
+            rows.collect::<Result<_, _>>()?
+        };
+        let mut chosen: Vec<(i64, String, usize, String)> = Vec::new();
+        for (project_id, team_id, agent_id) in candidates {
+            let Some(rank) = roster.iter().position(|id| *id == agent_id) else {
+                continue;
+            };
+            match chosen
+                .iter_mut()
+                .find(|(project, team, _, _)| *project == project_id && *team == team_id)
+            {
+                Some(entry) => {
+                    if rank < entry.2 {
+                        entry.2 = rank;
+                        entry.3 = agent_id;
+                    }
+                }
+                None => chosen.push((project_id, team_id, rank, agent_id)),
+            }
+        }
+        for (project_id, team_id, _, agent_id) in chosen {
+            tx.execute(
+                "UPDATE orch_teams SET leader_agent = ?3 \
+                 WHERE project_id = ?1 AND id = ?2 AND leader_agent IS NULL",
+                params![project_id, team_id, agent_id],
+            )?;
+        }
         tx.commit()?;
         Ok(())
     }

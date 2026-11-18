@@ -8,10 +8,10 @@ use super::snapshot::{
 };
 
 pub(crate) const LIMIT_TITLE: &str = "Limite do mapa atingido";
-const REVIEW_BATCH_TITLE: &str = "Revisão do lote";
-const REVIEW_TASK_TITLE: &str = "Revisão da tarefa";
-const HUMAN_GATE_NEVER: &str = "nunca";
-const HUMAN_GATE_END: &str = "fim";
+pub(crate) const REVIEW_BATCH_TITLE: &str = "Revisão do lote";
+pub(crate) const REVIEW_TASK_TITLE: &str = "Revisão da tarefa";
+pub(crate) const HUMAN_GATE_NEVER: &str = "nunca";
+pub(crate) const HUMAN_GATE_END: &str = "fim";
 const DEFAULT_KIND: &str = "implementar";
 const EXEC_MODE_PARALLEL: &str = "paralelo";
 

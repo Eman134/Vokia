@@ -13,13 +13,13 @@ use crate::orchestration::policy::{self, Passage, Verdict};
 use crate::orchestration::snapshot::placement_of;
 use crate::orchestration::snapshot::ACTION_RETURN;
 use crate::session_key::SessionKey;
-use crate::state::{AppState, PendingDecision, RequestContext};
+use crate::state::{AppState, Batch, PendingDecision, RequestContext};
 use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{emit, emit_backlog_changed, emit_message, emit_state};
 use super::error::FlowError;
-use super::flow::{dispatch_request, stop_with_error};
+use super::flow::{announce_batch, dispatch_request, open_batch, seal_batch, stop_with_error};
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
     idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
@@ -283,15 +283,34 @@ pub(super) async fn run_turns(
         if !parallel_delegations.is_empty() {
             let snapshot = exchange.orchestration;
             let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
+            let batch = open_batch(
+                state,
+                Batch {
+                    project_id,
+                    leader: turn.speaker.clone(),
+                    objective: exchange.definition.objetivo.clone(),
+                    variables: exchange.definition.variables.clone(),
+                    channel_id: *channel_id,
+                    item_id: (*item_id).map(str::to_string),
+                    // Contagem do próprio líder enquanto despacha: uma troca que termina cedo não dispara a junção.
+                    pending: 1,
+                    results: Vec::new(),
+                    dispatched: Vec::new(),
+                    started: Vec::new(),
+                    returned: Vec::new(),
+                    counters: counters.task.clone(),
+                },
+            )?;
             for (helper, request) in parallel_delegations {
                 let max_instances = snapshot
                     .and_then(|snapshot| placement_of(snapshot, &helper))
                     .map_or(1, |placement| placement.max_instances);
-                let context = RequestContext::new(
+                let mut context = RequestContext::new(
                     exchange.run_id,
                     (*item_id).map(str::to_string),
                     *channel_id,
                 );
+                context.batch = Some(batch);
                 dispatch_request(
                     app,
                     state,
@@ -315,6 +334,8 @@ pub(super) async fn run_turns(
                     None,
                 )?;
             }
+            announce_batch(app, state, batch);
+            seal_batch(app, state, batch);
             if delegation.is_none() {
                 if let Some(text) = &feed {
                     say(
@@ -611,6 +632,46 @@ fn conclude(
 }
 
 // Quem decide fica Waiting até a resposta virar um novo pedido; quem delegou a ele volta a Idle.
+// Guarda a decisão pendente e avisa a tela; a resposta do usuário volta pelo pedido salvo aqui.
+pub(super) fn open_decision(
+    app: &AppHandle,
+    state: &AppState,
+    agent: &Agent,
+    project_id: i64,
+    item_id: Option<&str>,
+    request: &str,
+    decision: SlotDecision,
+) -> Result<(), FlowError> {
+    let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
+    state
+        .decisions
+        .lock()
+        .map_err(|_| FlowError::DecisionsPoisoned)?
+        .insert(
+            id,
+            PendingDecision {
+                agent: agent.clone(),
+                project_id,
+                title: decision.title.clone(),
+                request: request.to_string(),
+                item_id: item_id.map(str::to_string),
+            },
+        );
+    emit(
+        app,
+        VokiaEvent::Decision {
+            id,
+            agent: agent.clone(),
+            kind: decision.kind,
+            title: decision.title,
+            detail: decision.detail,
+            options: decision.options,
+            project_id: Some(project_id),
+            item_id: item_id.map(str::to_string),
+        },
+    )
+}
+
 fn raise_decision(
     exchange: &Exchange<'_>,
     transcript: &mut Vec<String>,
@@ -652,32 +713,18 @@ fn raise_decision(
             proposal,
         )?;
     }
-    let id = state.next_decision_id.fetch_add(1, Ordering::Relaxed);
-    state
-        .decisions
-        .lock()
-        .map_err(|_| FlowError::DecisionsPoisoned)?
-        .insert(
-            id,
-            PendingDecision {
-                agent: agent.clone(),
-                project_id,
-                title: title.clone(),
-                request: request.to_string(),
-                item_id: item_id.map(str::to_string),
-            },
-        );
-    emit(
+    open_decision(
         app,
-        VokiaEvent::Decision {
-            id,
-            agent: agent.clone(),
+        state,
+        &agent,
+        project_id,
+        *item_id,
+        request,
+        SlotDecision {
             kind,
             title,
             detail,
             options,
-            project_id: Some(project_id),
-            item_id: item_id.map(str::to_string),
         },
     )?;
     for requester in &turn.requesters {
@@ -723,7 +770,7 @@ fn labeled_request(request: &str, intent: &DelegationIntent) -> String {
     }
 }
 
-fn record_passage(
+pub(super) fn record_passage(
     app: &AppHandle,
     run_id: Option<u64>,
     project_id: i64,

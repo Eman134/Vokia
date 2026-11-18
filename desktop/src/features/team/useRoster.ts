@@ -40,13 +40,30 @@ export const useRoster = defineStore('roster', () => {
     return agents.value.find((agent) => agent.id === id)
   }
 
+  // Réplica não está no elenco: o nome de exibição (ex.: "Davi 2") chega do backend pelo evento agent-named.
+  const instanceNames = ref(new Map<Agent, string>())
+
+  function nameInstance(id: Agent, name: string): void {
+    instanceNames.value = new Map(instanceNames.value).set(id, name)
+  }
+
   function nameOf(id: Agent): string {
-    return profileOf(id)?.name ?? id
+    return profileOf(id)?.name ?? instanceNames.value.get(id) ?? id
   }
 
   function avatarOf(id: string): string {
     return profileOf(id)?.avatar ?? id.trim().toLowerCase()
   }
 
-  return { agents, presets, load, create, update, profileOf, nameOf, avatarOf }
+  return {
+    agents,
+    presets,
+    load,
+    create,
+    update,
+    profileOf,
+    nameOf,
+    nameInstance,
+    avatarOf,
+  }
 })

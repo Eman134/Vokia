@@ -2,6 +2,7 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
+import type { VokiaBatchProgress } from '../team/events'
 import * as orchestrationApi from './orchestrationApi'
 import type {
   OrchLayerDraft,
@@ -19,6 +20,19 @@ export const useOrchestration = defineStore('orchestration', () => {
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
   const loadError = ref<string | null>(null)
+  // Placar de cada lote aberto, por projeto e líder; o evento done tira o lote da lista.
+  const batches = ref(new Map<string, VokiaBatchProgress>())
+
+  function applyBatchProgress(event: VokiaBatchProgress): void {
+    const key = `${event.projectId}:${event.leader}`
+    const next = new Map(batches.value)
+    if (event.done) {
+      next.delete(key)
+    } else {
+      next.set(key, event)
+    }
+    batches.value = next
+  }
   const feed = useFeed()
   const projects = useProjects()
   // Projeto da carga em curso ou da última: o evento que chega durante a primeira carga também recarrega.
@@ -153,6 +167,8 @@ export const useOrchestration = defineStore('orchestration', () => {
     loadedProjectId,
     loading,
     loadError,
+    batches,
+    applyBatchProgress,
     clear,
     load,
     reload,

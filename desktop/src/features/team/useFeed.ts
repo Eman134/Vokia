@@ -165,8 +165,14 @@ export const useFeed = defineStore('feed', () => {
       case 'backlog-changed':
         void useBacklog().reloadAfterAgentChange(event.projectId)
         break
+      case 'agent-named':
+        roster.nameInstance(event.agent, event.name)
+        break
       case 'orchestration-changed':
         void useOrchestration().reload(event.projectId)
+        break
+      case 'batch-progress':
+        useOrchestration().applyBatchProgress(event)
         break
       case 'plan-usage':
         break

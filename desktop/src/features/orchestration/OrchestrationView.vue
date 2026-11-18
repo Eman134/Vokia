@@ -8,6 +8,7 @@ import type { Agent } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import AgentPanel from './AgentPanel.vue'
+import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
 import LayerPanel from './LayerPanel.vue'
 import OrchestrationPanel from './OrchestrationPanel.vue'
@@ -129,6 +130,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <section v-if="snapshot" class="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+    <BatchProgressList class="lg:col-span-2" />
     <div class="flex min-w-0 flex-col gap-4">
       <header class="flex items-center justify-between gap-3">
         <h2 class="text-control font-bold text-ink">{{ VIEW_COPY.flowTitle }}</h2>

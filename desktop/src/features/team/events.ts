@@ -181,6 +181,23 @@ export interface VokiaOrchestrationChanged {
   projectId: number
 }
 
+export interface VokiaBatchProgress {
+  type: 'batch-progress'
+  projectId: number
+  leader: Agent
+  returned: number
+  total: number
+  running: Agent[]
+  done: boolean
+}
+
+export interface VokiaAgentNamed {
+  type: 'agent-named'
+  projectId: number
+  agent: Agent
+  name: string
+}
+
 export interface VokiaAgentActivity {
   type: 'agent-activity'
   agent: Agent
@@ -203,6 +220,8 @@ export type VokiaEvent =
   | VokiaGoalState
   | VokiaBacklogChanged
   | VokiaOrchestrationChanged
+  | VokiaAgentNamed
+  | VokiaBatchProgress
 
 export interface CliProblem {
   reason: string
