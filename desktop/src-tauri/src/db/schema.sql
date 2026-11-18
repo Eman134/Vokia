@@ -178,7 +178,8 @@ CREATE TABLE IF NOT EXISTS orch_handoffs (
         item_id TEXT,
         return_count INTEGER NOT NULL CHECK (return_count >= 0),
         message_id INTEGER,
-        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        event TEXT
     );
 
 CREATE INDEX IF NOT EXISTS orch_handoffs_by_project ON orch_handoffs(project_id, id);

@@ -28,6 +28,14 @@ impl VariableEffects {
     }
 }
 
+// Tipo, evento e item que a ferramenta `delegate` informou junto do pedido.
+#[derive(Clone, Debug, Default)]
+pub struct DelegationIntent {
+    pub kind: Option<String>,
+    pub event: Option<String>,
+    pub item_id: Option<String>,
+}
+
 #[derive(Debug, Default)]
 pub struct SlotState {
     pub item_id: Option<String>,
@@ -38,6 +46,7 @@ pub struct SlotState {
     pub decision: Option<SlotDecision>,
     pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
+    pub delegation_intent: Option<DelegationIntent>,
     pub variables: VariableEffects,
 }
 
@@ -48,6 +57,7 @@ pub struct ExchangeOutcome {
     pub decision: Option<SlotDecision>,
     pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
+    pub delegation_intent: Option<DelegationIntent>,
     pub variables: VariableEffects,
 }
 
@@ -58,6 +68,7 @@ impl ExchangeOutcome {
         self.decision = other.decision.or(self.decision.take());
         self.proposal = other.proposal.or(self.proposal.take());
         self.delegation = other.delegation.or(self.delegation.take());
+        self.delegation_intent = other.delegation_intent.or(self.delegation_intent.take());
         self.variables.absorb(other.variables);
     }
 }
@@ -91,6 +102,7 @@ impl ExchangeSlot {
             decision: state.decision.take(),
             proposal: state.proposal.take(),
             delegation: state.delegation.take(),
+            delegation_intent: state.delegation_intent.take(),
             variables: std::mem::take(&mut state.variables),
         }
     }

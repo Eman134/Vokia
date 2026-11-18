@@ -162,6 +162,7 @@ pub struct Handoff {
     pub return_count: i64,
     pub message_id: Option<i64>,
     pub created_at: i64,
+    pub event: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -227,6 +228,7 @@ pub struct HandoffDraft {
     pub item_id: Option<String>,
     pub return_count: i64,
     pub message_id: Option<i64>,
+    pub event: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -245,7 +247,7 @@ const PLACEMENT_COLUMNS: &str = "agent_id, team_id, layer_id, instructions, max_
 const RULE_COLUMNS: &str =
     "id, from_layer, to_layer, when_event, action, kind, exec_mode, return_limit, position";
 const HANDOFF_COLUMNS: &str = "id, run_id, from_agent, to_agent, from_layer, to_layer, action, \
-    kind, item_id, return_count, message_id, created_at";
+    kind, item_id, return_count, message_id, created_at, event";
 
 fn settings_from_row(row: &Row<'_>) -> rusqlite::Result<OrchestrationSettings> {
     Ok(OrchestrationSettings {
@@ -317,6 +319,7 @@ fn handoff_from_row(row: &Row<'_>) -> rusqlite::Result<Handoff> {
         return_count: row.get(9)?,
         message_id: row.get(10)?,
         created_at: row.get(11)?,
+        event: row.get(12)?,
     })
 }
 
@@ -913,8 +916,8 @@ impl Db {
         ensure_project(&conn, project_id)?;
         conn.execute(
             "INSERT INTO orch_handoffs (project_id, run_id, from_agent, to_agent, from_layer, to_layer, \
-                action, kind, item_id, return_count, message_id) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                action, kind, item_id, return_count, message_id, event) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 project_id,
                 draft.run_id,
@@ -926,7 +929,8 @@ impl Db {
                 draft.kind,
                 draft.item_id,
                 draft.return_count,
-                draft.message_id
+                draft.message_id,
+                draft.event
             ],
         )?;
         Ok(())

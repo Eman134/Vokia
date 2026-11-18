@@ -15,7 +15,7 @@ use crate::state::AppState;
 use crate::task::{Change, VarValue};
 
 use super::registry::Binding;
-use super::slot::SlotDecision;
+use super::slot::{DelegationIntent, SlotDecision};
 
 const LIST_BACKLOG: &str = "list_backlog";
 const READ_CARD: &str = "read_card";
@@ -591,7 +591,13 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
     }
     let kind = optional_choice(args.kind.as_deref(), REQUEST_KIND_VALUES, KIND_INVALID)?;
     let event = optional_choice(args.event.as_deref(), WHEN_EVENT_VALUES, EVENT_INVALID)?;
-    check_item(app, binding.project_id, args.item_id.as_deref())?;
+    let item_id = args
+        .item_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string);
+    check_item(app, binding.project_id, item_id.as_deref())?;
     let snapshot = orchestration_snapshot(app, binding.project_id)?;
     check_intent(
         snapshot.as_ref(),
@@ -606,6 +612,11 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         return Err(DELEGATION_ALREADY_REGISTERED.to_string());
     }
     slot.delegation = Some((helper, request.to_string()));
+    slot.delegation_intent = Some(DelegationIntent {
+        kind: kind.map(str::to_string),
+        event: event.map(str::to_string),
+        item_id,
+    });
     Ok(DELEGATION_REGISTERED.to_string())
 }
 
@@ -640,7 +651,9 @@ fn check_item(app: &AppHandle, project_id: i64, item: Option<&str>) -> Result<()
     if backlog.items.iter().any(|candidate| candidate.id == item) {
         Ok(())
     } else {
-        Err(format!("O item {item} não existe no backlog deste projeto."))
+        Err(format!(
+            "O item {item} não existe no backlog deste projeto."
+        ))
     }
 }
 

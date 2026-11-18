@@ -7,7 +7,7 @@ use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, TurnActivity};
 use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
-use crate::mcp::{ExchangeOutcome, McpState, SlotDecision};
+use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::policy::{self, Passage, Verdict};
 use crate::orchestration::snapshot::ACTION_RETURN;
@@ -32,6 +32,13 @@ use super::text_fallback::{read_reply, TextContext, TextReply};
 pub(super) const NO_CONVERSATION: usize = 0;
 pub(super) const USER_LABEL: &str = "Usuário";
 const MOVEMENT_ERROR_PREFIX: &str = "Não foi possível registrar o movimento: ";
+const KIND_LABELS: &[(&str, &str)] = &[
+    ("planejar", "Pedido de plano"),
+    ("implementar", "Pedido de implementação"),
+    ("testar", "Pedido de testes"),
+    ("revisar", "Pedido de revisão"),
+    ("pesquisar", "Pedido de pesquisa"),
+];
 
 pub(super) struct Exchange<'a> {
     pub(super) app: &'a AppHandle,
@@ -113,6 +120,7 @@ pub(super) async fn run_turns(
             decision,
             mut proposal,
             delegation: registered_delegation,
+            delegation_intent,
             variables,
         } = outcome;
         let TextReply {
@@ -144,8 +152,17 @@ pub(super) async fn run_turns(
                 exchange, transcript, &turn, decision, shown, activity, proposal,
             );
         }
+        let intent = delegation_intent.filter(|_| registered_delegation.is_some());
         let delegation =
-            merged_delegation(registered_delegation, text_delegation, definition.alternate);
+            merged_delegation(registered_delegation, text_delegation, definition.alternate).map(
+                |(helper, request)| {
+                    let request = match &intent {
+                        Some(intent) => labeled_request(&request, intent),
+                        None => request,
+                    };
+                    (helper, request)
+                },
+            );
         let mut passage: Option<Passage> = None;
         let mut escalation: Option<String> = None;
         if rejected.is_empty() {
@@ -404,7 +421,11 @@ pub(super) async fn run_turns(
                     app,
                     exchange.run_id,
                     project_id,
-                    *item_id,
+                    intent
+                        .as_ref()
+                        .and_then(|intent| intent.item_id.as_deref())
+                        .or(*item_id),
+                    intent.as_ref().and_then(|intent| intent.event.as_deref()),
                     &turn.speaker,
                     helper,
                     passage,
@@ -636,11 +657,26 @@ fn escalate_limit(
 }
 
 // Falha de gravação vira aviso no feed e a troca segue (mesmo padrão de SessionStore::write).
+// O texto entregue ao destinatário leva o tipo do pedido e o item, quando a ferramenta os informou.
+fn labeled_request(request: &str, intent: &DelegationIntent) -> String {
+    let label = intent
+        .kind
+        .as_deref()
+        .and_then(|kind| KIND_LABELS.iter().find(|(name, _)| *name == kind))
+        .map(|(_, label)| *label);
+    match (label, intent.item_id.as_deref()) {
+        (None, _) => request.to_string(),
+        (Some(label), Some(item)) => format!("{label} de {item}: {request}"),
+        (Some(label), None) => format!("{label}: {request}"),
+    }
+}
+
 fn record_passage(
     app: &AppHandle,
     run_id: Option<u64>,
     project_id: i64,
     item_id: Option<&str>,
+    event: Option<&str>,
     from: &Agent,
     to: &Agent,
     passage: &Passage,
@@ -657,6 +693,7 @@ fn record_passage(
         item_id: item_id.map(str::to_string),
         return_count: passage.return_count,
         message_id: None,
+        event: event.map(str::to_string),
     };
     match state
         .require()
