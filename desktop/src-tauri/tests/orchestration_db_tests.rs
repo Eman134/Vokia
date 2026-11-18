@@ -123,6 +123,7 @@ fn handoff_draft(item: &str, action: &str) -> HandoffDraft {
         item_id: Some(item.to_string()),
         return_count: 0,
         message_id: None,
+        event: None,
     }
 }
 

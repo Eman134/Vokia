@@ -48,6 +48,7 @@ fn edit(color: &str) -> ProjectEdit {
         symbol: "folder".into(),
         description: String::new(),
         color: color.into(),
+        setup_command: None,
     }
 }
 

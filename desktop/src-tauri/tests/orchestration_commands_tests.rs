@@ -374,6 +374,7 @@ fn list_movements_devolve_os_20_mais_recentes_sem_semear_nem_emitir() {
                     item_id: Some(format!("item-{number}")),
                     return_count: 0,
                     message_id: None,
+                    event: None,
                 },
             )
             .unwrap();
