@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -15,6 +15,9 @@ import ChannelForm from '../channels/ChannelForm.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { useConversationTab } from './conversationTabs'
+import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
+import { useAgentCopies } from './useAgentCopies'
+import { useProjects } from '../projects/useProjects'
 import { trapFocus } from '../backlog/dialogFocus'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -44,6 +47,11 @@ const CHANNEL_CLASSES =
   'flex w-full cursor-pointer items-center rounded-control border px-3 py-1.5 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
 const DELETE_CHANNEL_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'
 const DELETE_CHANNEL_LABEL = 'Excluir canal'
+const COPY_CLASSES =
+  'flex w-full cursor-pointer flex-col gap-0.5 rounded-control border border-line px-2.5 py-1.5 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
+const COPY_SELECTED_CLASSES = 'outline-2 outline-solid outline-accent bg-accent-soft'
+const COPIES_LIST_LABEL = 'Cópias'
+const COPY_MARK_TEXT = 'Cópia'
 
 const connection = useConnection()
 const feed = useFeed()
@@ -52,6 +60,8 @@ const roster = useRoster()
 const control = useAgentControl()
 const conversationTab = useConversationTab()
 const channels = useChannels()
+const agentCopies = useAgentCopies()
+const projects = useProjects()
 const creating = ref(false)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
 const stripCollapsed = ref(true)
@@ -59,8 +69,25 @@ const channelError = ref<string | null>(null)
 const dialog = ref<HTMLElement>()
 const opener = ref<HTMLElement | null>(null)
 
+// Cópias surgem e somem com os turnos: recarrega quando o projeto ou o estado de algum agente muda.
+watch(
+  [() => projects.selected?.id, () => feed.states],
+  () => void agentCopies.load(),
+  { immediate: true, deep: true },
+)
+
 function presence(agent: Agent) {
   return presenceOf(feed.stateOf(agent), control.isPaused(agent))
+}
+
+// Só aparece com mais de uma instância; uma cópia sozinha não muda nada na lista.
+function copiesOf(agent: Agent): AgentCopy[] {
+  const copies = agentCopies.copiesOf(agent)
+  return copies.length > 1 ? copies : []
+}
+
+function copiesLabel(count: number): string {
+  return `${count} cópias`
 }
 
 function isShown(agent: Agent): boolean {
@@ -172,6 +199,9 @@ function closeChannelDialog(): void {
               </span>
               <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
             </span>
+            <span v-if="copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
+              {{ copiesLabel(copiesOf(agent.id).length) }}
+            </span>
           </button>
           <button
             type="button"
@@ -200,6 +230,29 @@ function closeChannelDialog(): void {
               <path :d="CONSOLE_GLYPH_PATH" />
             </svg>
           </button>
+          <ul
+            v-if="copiesOf(agent.id).length"
+            :aria-label="`${COPIES_LIST_LABEL} de ${agent.name}`"
+            class="mt-1 ml-5 flex flex-col gap-1"
+          >
+            <li v-for="copy in copiesOf(agent.id)" :key="copy.id">
+              <button
+                type="button"
+                :class="[COPY_CLASSES, agentCopies.selectedId === copy.id && COPY_SELECTED_CLASSES]"
+                :aria-pressed="agentCopies.selectedId === copy.id"
+                @click="agentCopies.select(copy.id)"
+              >
+                <span class="text-label font-semibold text-ink">{{ COPY_MARK_TEXT }} {{ copy.number }}</span>
+                <span v-if="copy.itemId" class="truncate text-tiny text-muted">
+                  {{ copy.itemId }}<template v-if="copy.itemTitle"> · {{ copy.itemTitle }}</template>
+                </span>
+                <span v-if="copy.worktreePath" class="truncate font-mono text-tiny text-muted">
+                  {{ worktreeFolder(copy.worktreePath) }}
+                </span>
+                <span v-else class="truncate text-tiny text-muted">{{ SAME_FOLDER_TEXT }}</span>
+              </button>
+            </li>
+          </ul>
         </li>
       </ul>
     </div>
