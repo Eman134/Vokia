@@ -20,6 +20,11 @@ export function findNamedAgent(text: string): Agent | null {
   return found?.agent ?? null
 }
 
+// O orquestrador não ocupa time nem camada: fica fora de qualquer lista de posicionamento ou de líder.
+export function placeableAgents(agents: readonly AgentProfile[]): AgentProfile[] {
+  return agents.filter((agent) => agent.id !== DEFAULT_RECIPIENT)
+}
+
 export function selectActiveAgents(agents: readonly AgentProfile[], states: Record<Agent, AgentState>): AgentProfile[] {
   return agents.filter((agent) => (states[agent.id] ?? 'idle') !== 'idle')
 }

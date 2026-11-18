@@ -296,7 +296,7 @@ pub(crate) fn event_phrase(event: &str) -> Option<&'static str> {
 pub(crate) fn leader_of(snapshot: Option<&OrchestrationSnapshot>) -> Agent {
     snapshot
         .and_then(|snapshot| Agent::from_stored(&snapshot.settings.leader_agent))
-        .unwrap_or_else(Agent::ember)
+        .unwrap_or_else(Agent::axiom)
 }
 
 fn phrase(table: &[(&'static str, &'static str)], key: &str) -> Option<&'static str> {

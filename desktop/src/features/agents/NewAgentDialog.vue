@@ -35,6 +35,12 @@ const previousFocus = document.activeElement instanceof HTMLElement ? document.a
 
 const usedAvatars = new Set(roster.agents.map((agent) => agent.avatar))
 const firstPreset = roster.presets[0]
+// O próprio agente em edição mantém o avatar dele; os demais aparecem como em uso.
+const avatarOwners = computed<Record<string, string>>(() =>
+  Object.fromEntries(
+    roster.agents.filter((agent) => agent.id !== props.agent?.id).map((agent) => [agent.avatar, agent.name]),
+  ),
+)
 
 const name = ref(props.agent?.name ?? '')
 const role = ref(props.agent?.role ?? '')
@@ -133,7 +139,7 @@ onMounted(focusName)
         </div>
         <div class="flex flex-col gap-1.5">
           <span :id="`${titleId}-avatar`" class="text-label font-medium text-muted">{{ AVATAR_LABEL }}</span>
-          <AvatarPicker v-model="avatar" :label-id="`${titleId}-avatar`" />
+          <AvatarPicker v-model="avatar" :label-id="`${titleId}-avatar`" :unavailable="avatarOwners" />
         </div>
         <div class="flex gap-3">
           <label class="flex flex-col gap-1.5">

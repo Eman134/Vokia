@@ -1200,7 +1200,7 @@ pub(super) fn stop_with_error(
     emit(app, VokiaEvent::Error { message })?;
     let agents = match app.state::<AgentRegistry>().team() {
         Ok(team) => team.ids().cloned().collect(),
-        Err(_) => vec![Agent::ember(), Agent::davi()],
+        Err(_) => vec![Agent::ember(), Agent::axiom(), Agent::vexa()],
     };
     for agent in agents {
         emit_state(app, project_id, agent, AgentState::Idle)?;

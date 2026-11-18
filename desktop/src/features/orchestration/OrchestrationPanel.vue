@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
+import { placeableAgents } from '../team/agents'
 import { useRoster } from '../team/useRoster'
 import CountStepper from './CountStepper.vue'
 import {
@@ -52,7 +53,7 @@ const leaderTitle = computed(() =>
   `${roster.nameOf(props.settings.leaderAgent)} ${VIEW_COPY.leaderTitle}`,
 )
 
-const agentOptions = computed(() => roster.agents.map((agent) => ({ label: agent.name, value: agent.id })))
+const agentOptions = computed(() => placeableAgents(roster.agents).map((agent) => ({ label: agent.name, value: agent.id })))
 const stepOptions = STEP_MODE_VALUES.map((value) => ({ label: STEP_MODE_LABELS[value], value }))
 const gateOptions = HUMAN_GATE_VALUES.map((value) => ({ label: HUMAN_GATE_LABELS[value], value }))
 const worktreeOptions = WORKTREE_POLICY_VALUES.map((value) => ({ label: WORKTREE_LABELS[value], value }))

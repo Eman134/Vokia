@@ -1,30 +1,53 @@
 use rusqlite::Connection;
 
+use crate::agents::AGENT_ID_RENAMES;
+
 const SCHEMA: &str = include_str!("schema.sql");
 
 // Versão gravada em schema_version para um banco novo criado a partir de schema.sql.
 const BASELINE_VERSION: i64 = 19;
 
-// Roda a cada abertura: só mexe em linhas que ainda guardam o id antigo, então repetir não muda nada.
-const RENAME_LEGACY_AGENT_IDS: &str = "
-    UPDATE messages SET from_agent = 'ember' WHERE from_agent = 'iara';
-    UPDATE messages SET to_agent = 'ember' WHERE to_agent = 'iara';
-    UPDATE agent_pauses SET agent = 'ember' WHERE agent = 'iara';
-    UPDATE agent_sessions SET agent = 'ember' WHERE agent = 'iara';
-    UPDATE item_plans SET agent = 'ember' WHERE agent = 'iara';
-    UPDATE backlog_items SET who = 'ember' WHERE who = 'iara';
-    UPDATE backlog_items SET \"by\" = 'ember' WHERE \"by\" = 'iara';
-    UPDATE backlog_items SET tasks = (
-        SELECT json_group_array(json(CASE WHEN json_extract(value, '$.who') = 'iara' THEN json_set(value, '$.who', 'ember') ELSE value END)) FROM json_each(backlog_items.tasks)
-    ) WHERE EXISTS (SELECT 1 FROM json_each(backlog_items.tasks) WHERE json_extract(value, '$.who') = 'iara');
-    UPDATE channels SET members = (
-        SELECT json_group_array(CASE WHEN value = 'iara' THEN 'ember' ELSE value END) FROM json_each(channels.members)
-    ) WHERE EXISTS (SELECT 1 FROM json_each(channels.members) WHERE value = 'iara');
-    UPDATE orch_settings SET leader_agent = 'ember' WHERE leader_agent = 'iara';
-    UPDATE orch_placements SET agent_id = 'ember' WHERE agent_id = 'iara';
-    UPDATE orch_handoffs SET from_agent = 'ember' WHERE from_agent = 'iara';
-    UPDATE orch_handoffs SET to_agent = 'ember' WHERE to_agent = 'iara';
+// Ember orquestra e não ocupa time nem camada: o que sobrou dele nos dados sai, e o líder volta ao padrão.
+const ORCHESTRATOR_OUT_OF_TEAMS_SQL: &str = "
+    DELETE FROM orch_placements WHERE agent_id = 'ember';
+    UPDATE orch_teams SET leader_agent = NULL WHERE leader_agent = 'ember';
+    UPDATE orch_settings SET leader_agent = 'axiom' WHERE leader_agent = 'ember';
 ";
+
+// Roda a cada abertura: só mexe em linhas que ainda guardam o id antigo, então repetir não muda nada.
+fn legacy_agent_sql() -> String {
+    let renames: String = AGENT_ID_RENAMES
+        .iter()
+        .map(|(old, new)| rename_agent_sql(old, new))
+        .collect();
+    renames + ORCHESTRATOR_OUT_OF_TEAMS_SQL
+}
+
+fn rename_agent_sql(old: &str, new: &str) -> String {
+    format!(
+        "
+    UPDATE messages SET from_agent = '{new}' WHERE from_agent = '{old}';
+    UPDATE messages SET to_agent = '{new}' WHERE to_agent = '{old}';
+    UPDATE agent_pauses SET agent = '{new}' WHERE agent = '{old}';
+    UPDATE agent_sessions SET agent = '{new}' WHERE agent = '{old}';
+    UPDATE item_plans SET agent = '{new}' WHERE agent = '{old}';
+    UPDATE orch_runs SET agent = '{new}' WHERE agent = '{old}';
+    UPDATE orch_settings SET leader_agent = '{new}' WHERE leader_agent = '{old}';
+    UPDATE orch_teams SET leader_agent = '{new}' WHERE leader_agent = '{old}';
+    UPDATE orch_placements SET agent_id = '{new}' WHERE agent_id = '{old}';
+    UPDATE orch_handoffs SET from_agent = '{new}' WHERE from_agent = '{old}';
+    UPDATE orch_handoffs SET to_agent = '{new}' WHERE to_agent = '{old}';
+    UPDATE backlog_items SET who = '{new}' WHERE who = '{old}';
+    UPDATE backlog_items SET \"by\" = '{new}' WHERE \"by\" = '{old}';
+    UPDATE backlog_items SET tasks = (
+        SELECT json_group_array(json(CASE WHEN json_extract(value, '$.who') = '{old}' THEN json_set(value, '$.who', '{new}') ELSE value END)) FROM json_each(backlog_items.tasks)
+    ) WHERE EXISTS (SELECT 1 FROM json_each(backlog_items.tasks) WHERE json_extract(value, '$.who') = '{old}');
+    UPDATE channels SET members = (
+        SELECT json_group_array(CASE WHEN value = '{old}' THEN '{new}' ELSE value END) FROM json_each(channels.members)
+    ) WHERE EXISTS (SELECT 1 FROM json_each(channels.members) WHERE value = '{old}');
+"
+    )
+}
 
 // Pedido em andamento de um app que fechou não tem como terminar: ao abrir, vira interrompido para o usuário decidir.
 const RUNS_SCHEMA: &str = "
@@ -99,7 +122,6 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         )));
     }
     let tx = conn.transaction()?;
-    tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
     tx.execute_batch(RUNS_SCHEMA)?;
     tx.execute_batch(PERMISSION_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
@@ -108,5 +130,6 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     ensure_column(&tx, "backlog_items", "worktree_path", "TEXT")?;
     ensure_column(&tx, "projects", "setup_command", "TEXT")?;
     ensure_column(&tx, "orch_teams", "leader_agent", "TEXT")?;
+    tx.execute_batch(&legacy_agent_sql())?;
     tx.commit()
 }

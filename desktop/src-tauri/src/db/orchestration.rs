@@ -1,6 +1,8 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 
+use crate::agents::Agent;
+
 use super::connection::Db;
 use super::error::DbError;
 
@@ -9,7 +11,12 @@ const VOCE_NODE: &str = "voce";
 const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 const MOVEMENTS_MIN_LIMIT: i64 = 1;
 
-pub(crate) const DEFAULT_LEADER_AGENT: &str = "ember";
+pub(crate) const DEFAULT_LEADER_AGENT: &str = "axiom";
+
+// Ember orquestra o programa inteiro: não conduz time nem ocupa posição de camada.
+fn is_orchestrator(agent_id: &str) -> bool {
+    agent_id == Agent::ember().as_str()
+}
 const DEFAULT_ENFORCEMENT: &str = "off";
 const DEFAULT_STEP_MODE: &str = "lotes";
 const DEFAULT_HUMAN_GATE: &str = "lote";
@@ -654,6 +661,9 @@ impl Db {
         check_bounds(&MAX_PARALLEL, settings.max_parallel)?;
         check_bounds(&PAIR_TURN_LIMIT, settings.pair_turn_limit)?;
         check_bounds(&TASK_TURN_LIMIT, settings.task_turn_limit)?;
+        if is_orchestrator(&settings.leader_agent) {
+            return Err(DbError::OrchestratorNotLeader);
+        }
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;
         upsert_settings(&conn, project_id, settings)
@@ -746,6 +756,9 @@ impl Db {
         team_id: &str,
         leader: &str,
     ) -> Result<Team, DbError> {
+        if is_orchestrator(leader) {
+            return Err(DbError::OrchestratorNotLeader);
+        }
         let conn = self.conn()?;
         let changed = conn.execute(
             "UPDATE orch_teams SET leader_agent = ?3 WHERE project_id = ?1 AND id = ?2",
@@ -854,6 +867,9 @@ impl Db {
         project_id: i64,
         draft: &PlacementDraft,
     ) -> Result<Placement, DbError> {
+        if is_orchestrator(&draft.agent_id) {
+            return Err(DbError::OrchestratorNotPlaceable);
+        }
         check_bounds(&MAX_INSTANCES, draft.max_instances)?;
         check_instructions(&draft.instructions)?;
         let mut conn = self.conn()?;

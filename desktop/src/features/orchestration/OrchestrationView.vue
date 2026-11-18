@@ -5,6 +5,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import NewLayerDialog from '../teammap/NewLayerDialog.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import type { Agent } from '../team/events'
+import { placeableAgents } from '../team/agents'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import AgentPanel from './AgentPanel.vue'
@@ -155,7 +156,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       />
 
       <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
-        <li v-for="agent in roster.agents" :key="agent.id">
+        <li v-for="agent in placeableAgents(roster.agents)" :key="agent.id">
           <button
             type="button"
             class="flex w-full min-w-0 items-center gap-2.5 rounded-control px-2.5 py-2 text-left"

@@ -77,6 +77,8 @@ pub enum DbError {
     TeamNameTaken(String),
     TeamNotFound(String),
     TeamHasAgents(String),
+    OrchestratorNotPlaceable,
+    OrchestratorNotLeader,
     RuleNotFound(i64),
     RunNotInterrupted(i64),
     RuleDuplicated {
@@ -301,6 +303,13 @@ impl fmt::Display for DbError {
                 f,
                 "O time {id} tem agentes posicionados: mova os agentes antes de excluí-lo."
             ),
+            DbError::OrchestratorNotPlaceable => write!(
+                f,
+                "O orquestrador geral não pode ser posicionado em time ou camada."
+            ),
+            DbError::OrchestratorNotLeader => {
+                write!(f, "O orquestrador geral não pode conduzir um time.")
+            }
             DbError::RuleNotFound(id) => write!(f, "A seta {id} não existe neste projeto."),
             DbError::RunNotInterrupted(id) => {
                 write!(f, "O pedido {id} não está mais interrompido.")

@@ -6,6 +6,7 @@ import OrchestrationView from '../orchestration/OrchestrationView.vue'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useProjects } from '../projects/useProjects'
 import type { AgentProfile } from '../team/teamApi'
+import { placeableAgents } from '../team/agents'
 import { useRoster } from '../team/useRoster'
 import FlowRules from './FlowRules.vue'
 import MovementList from './MovementList.vue'
@@ -45,7 +46,7 @@ const snapshot = computed(() => orchestration.snapshot)
 const projectId = computed(() => orchestration.loadedProjectId)
 const unplaced = computed<AgentProfile[]>(() => {
   const placed = new Set((snapshot.value?.placements ?? []).map((placement) => placement.agentId))
-  return roster.agents.filter((agent) => !placed.has(agent.id))
+  return placeableAgents(roster.agents).filter((agent) => !placed.has(agent.id))
 })
 
 type MapTab = 'teams' | 'orchestration'

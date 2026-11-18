@@ -24,8 +24,21 @@ const PREVIEW_PROFILE_ID = 'previa'
 const DEFAULT_SHAPE: AvatarShapeId = 'gota'
 const DEFAULT_EXPRESSION: AvatarExpression = 'feliz'
 
-defineProps<{ labelId: string }>()
+const props = withDefaults(defineProps<{ labelId: string; unavailable?: Readonly<Record<string, string>> }>(), {
+  unavailable: () => ({}),
+})
 const selected = defineModel<string>({ required: true })
+
+const IN_USE_TEXT = 'em uso por'
+
+function ownerOf(id: string): string | undefined {
+  return props.unavailable[id]
+}
+
+function labelOf(profile: { id: string; nome: string }): string {
+  const owner = ownerOf(profile.id)
+  return owner === undefined ? profile.nome : `${profile.nome}, ${IN_USE_TEXT} ${owner}`
+}
 
 const store = useAvatarProfiles()
 const group = ref<HTMLElement>()
@@ -63,8 +76,15 @@ watch(draftShape, () => {
 function moveAvatar(event: KeyboardEvent, step: number): void {
   event.preventDefault()
   const profiles = store.all
-  const index = profiles.findIndex((profile) => profile.id === selected.value)
-  const next = profiles[(index + step + profiles.length) % profiles.length]
+  let index = profiles.findIndex((profile) => profile.id === selected.value)
+  let next = profiles[index]
+  // Pula avatares em uso; a volta completa garante parar caso todos estejam indisponíveis.
+  for (let tries = 0; tries < profiles.length; tries++) {
+    index = (index + step + profiles.length) % profiles.length
+    next = profiles[index]
+    if (ownerOf(next.id) === undefined) break
+  }
+  if (ownerOf(next.id) !== undefined) return
   selected.value = next.id
   group.value?.querySelector<HTMLElement>(`[data-avatar="${next.id}"]`)?.focus()
 }
@@ -138,9 +158,11 @@ async function saveProfile(): Promise<void> {
         role="radio"
         :data-avatar="profile.id"
         :aria-checked="selected === profile.id"
-        :aria-label="profile.nome"
+        :aria-label="labelOf(profile)"
+        :title="ownerOf(profile.id) === undefined ? undefined : labelOf(profile)"
+        :disabled="ownerOf(profile.id) !== undefined"
         :tabindex="selected === profile.id ? 0 : -1"
-        class="rounded-control p-1 focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="rounded-control p-1 focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
         :class="selected === profile.id ? 'bg-accent-soft ring-2 ring-accent' : 'border border-line'"
         @click="selected = profile.id"
         @keydown.right="moveAvatar($event, 1)"

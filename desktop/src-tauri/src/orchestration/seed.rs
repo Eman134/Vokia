@@ -5,7 +5,7 @@ use crate::db::{
 
 const TEAM_ID: &str = "time";
 const TEAM_NAME: &str = "Time";
-const TEO_ID: &str = "teo";
+const SENTRY_ID: &str = "sentry";
 const LEADER_KIND: &str = "planejar";
 const IMPLEMENTATION_KIND: &str = "implementar";
 const REVIEW_KIND: &str = "revisar";
@@ -17,6 +17,7 @@ const PLACEMENT_MAX_INSTANCES: i64 = 1;
 pub(crate) fn build(team: &Team) -> OrchestrationSeed {
     let placements = team
         .ids()
+        .filter(|agent| *agent != &Agent::ember())
         .map(|agent| PlacementDraft {
             agent_id: agent.as_str().to_string(),
             team_id: TEAM_ID.to_string(),
@@ -47,9 +48,9 @@ pub(crate) fn fill_missing_leaders(db: &Db, team: &Team) -> Result<(), DbError> 
 }
 
 fn layer_of(agent: &Agent) -> &'static str {
-    if *agent == Agent::ember() {
+    if *agent == Agent::axiom() {
         LEADER_LAYER_ID
-    } else if agent.as_str() == TEO_ID {
+    } else if agent.as_str() == SENTRY_ID {
         REVIEW_LAYER_ID
     } else {
         IMPLEMENTATION_LAYER_ID

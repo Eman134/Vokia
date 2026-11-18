@@ -12,7 +12,8 @@ const NAME_MAX_CHARS: usize = 20;
 pub(crate) const ROLE_MIN_CHARS: usize = 2;
 pub(crate) const ROLE_MAX_CHARS: usize = 40;
 const MAX_AGENTS: usize = 12;
-const RESERVED_IDS: [&str; 4] = ["todos", "time", "user", "voce"];
+// Ids antigos ficam reservados: a rotina de renomeação dos dados roda a cada início e não pode alcançar um agente novo.
+const RESERVED_IDS: [&str; 8] = ["todos", "time", "user", "voce", "davi", "nina", "teo", "rui"];
 const AGENTS_FILE: &str = "agents.json";
 const AGENTS_FILE_TMP: &str = "agents.json.tmp";
 const FILE_VERSION: u32 = 1;
@@ -21,12 +22,22 @@ const CLAUDE_CLI: &str = "claude";
 const CLAUDE_CLI_LABEL: &str = "Claude Code";
 const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
 const EMBER: &str = "ember";
-const DAVI: &str = "davi";
+const AXIOM: &str = "axiom";
+const VEXA: &str = "vexa";
 
 const INITIAL_AGENTS: [(&str, &str, &str); 3] = [
-    ("Nina", "Dev backend", "vesper"),
-    ("Téo", "QA e revisão", "selene"),
-    ("Rui", "Pesquisador", "ambar-ouro"),
+    ("Kairo", "Backend Developer", "vesper"),
+    ("Sentry", "QA Engineer", "selene"),
+    ("Oracle", "Researcher", "ambar-ouro"),
+];
+
+// Id antigo → id novo, nos dados gravados. A mesma tabela alimenta a rotina de migração do banco.
+pub(crate) const AGENT_ID_RENAMES: [(&str, &str); 5] = [
+    ("iara", EMBER),
+    ("davi", VEXA),
+    ("nina", "kairo"),
+    ("teo", "sentry"),
+    ("rui", "oracle"),
 ];
 
 const ACCENTS: &[(char, char)] = &[
@@ -69,8 +80,12 @@ impl Agent {
         Agent(EMBER.to_string())
     }
 
-    pub fn davi() -> Agent {
-        Agent(DAVI.to_string())
+    pub fn axiom() -> Agent {
+        Agent(AXIOM.to_string())
+    }
+
+    pub fn vexa() -> Agent {
+        Agent(VEXA.to_string())
     }
 
     pub(crate) fn from_stored(id: &str) -> Option<Agent> {
@@ -140,6 +155,7 @@ pub enum AgentError {
     NameInUse(String),
     InvalidRole,
     InvalidAvatar(String),
+    AvatarInUse(String),
     UnknownCli(String),
     UnknownModel { cli: String, model: String },
     UnknownAgent(String),
@@ -166,6 +182,7 @@ impl Display for AgentError {
                 "Papel inválido: use de {ROLE_MIN_CHARS} a {ROLE_MAX_CHARS} caracteres, sem quebra de linha."
             ),
             AgentError::InvalidAvatar(id) => write!(f, "Avatar inválido: {id}."),
+            AgentError::AvatarInUse(name) => write!(f, "Esse avatar já é usado por {name}."),
             AgentError::UnknownCli(cli) => write!(f, "CLI desconhecida: {cli}."),
             AgentError::UnknownModel { cli, model } => {
                 write!(f, "O modelo {model} não existe para {cli}.")
@@ -199,8 +216,9 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
 
 fn builtins() -> Vec<AgentProfile> {
     vec![
-        builtin(Agent::ember(), "Ember", "Tech lead", "ember"),
-        builtin(Agent::davi(), "Davi", "Dev frontend", "lume"),
+        builtin(Agent::ember(), "Ember", "Orquestrador geral", "ember"),
+        builtin(Agent::axiom(), "Axiom", "Tech Lead", "quarzo"),
+        builtin(Agent::vexa(), "Vexa", "Frontend Developer", "lume"),
     ]
 }
 
@@ -324,6 +342,12 @@ fn validate(
     let avatar = draft.avatar.trim();
     if !is_avatar_id(avatar) {
         return Err(AgentError::InvalidAvatar(avatar.to_string()));
+    }
+    let avatar_owner = team
+        .iter()
+        .find(|profile| Some(&profile.id) != editing && profile.avatar == avatar);
+    if let Some(profile) = avatar_owner {
+        return Err(AgentError::AvatarInUse(profile.name.clone()));
     }
 
     let preset = presets()
@@ -514,7 +538,10 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
         ));
     }
     let mut loaded: Vec<AgentProfile> = Vec::new();
-    for profile in parsed.agents {
+    let mut renamed = false;
+    for stored in parsed.agents {
+        let profile = renamed_stored(stored.clone());
+        renamed |= profile.id != stored.id;
         let draft = AgentDraft {
             name: profile.name.clone(),
             role: profile.role.clone(),
@@ -532,7 +559,32 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<AgentProfile>, AgentError
         }
         loaded.push(validated);
     }
+    if renamed {
+        write_file(file, loaded.clone()).map_err(|detail| load_failed(file, detail))?;
+    }
     Ok(loaded)
+}
+
+// Perfis do elenco inicial gravados com o id antigo passam ao nome novo; o resto fica como está.
+fn renamed_stored(profile: AgentProfile) -> AgentProfile {
+    let Some((_, new_id)) = AGENT_ID_RENAMES
+        .iter()
+        .find(|(old_id, _)| *old_id == profile.id.as_str())
+    else {
+        return profile;
+    };
+    let Some((name, role, _)) = INITIAL_AGENTS
+        .iter()
+        .find(|(name, _, _)| name_key(name) == *new_id)
+    else {
+        return profile;
+    };
+    AgentProfile {
+        id: Agent(new_id.to_string()),
+        name: name.to_string(),
+        role: role.to_string(),
+        ..profile
+    }
 }
 
 fn write_file(file: &Path, agents: Vec<AgentProfile>) -> Result<(), String> {
