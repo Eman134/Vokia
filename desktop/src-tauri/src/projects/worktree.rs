@@ -1,8 +1,16 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex as StdMutex, PoisonError};
 use std::time::Duration;
 
+use tokio::sync::Mutex as AsyncMutex;
+
 use super::process::{run, tail, RunError, GIT_MISSING_MESSAGE, GIT_PROGRAM};
+
+// Uma trava por pasta de card: réplicas do mesmo card esperam uma só criação; cards diferentes não se bloqueiam.
+static ITEM_LOCKS: LazyLock<StdMutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 const BRANCH_PREFIX: &str = "vokia/";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(300);
@@ -181,7 +189,12 @@ pub async fn create(
     Ok(Worktree { branch, path })
 }
 
-// Mesmo card, mesma pasta: o worktree já existente é reaproveitado; senão é criado.
+fn item_lock(path: &Path) -> Arc<AsyncMutex<()>> {
+    let mut locks = ITEM_LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(locks.entry(path.to_path_buf()).or_default())
+}
+
+// Mesmo card, mesma pasta: a trava faz a segunda chamada esperar a primeira; depois reaproveita o worktree criado.
 pub async fn ensure(
     project_dir: &Path,
     worktrees_root: &Path,
@@ -190,6 +203,8 @@ pub async fn ensure(
 ) -> Result<Worktree, WorktreeError> {
     let name = safe_name(item_id);
     let path = worktrees_root.join(&name);
+    let lock = item_lock(&path);
+    let _guard = lock.lock().await;
     if path.is_dir() {
         return Ok(Worktree {
             branch: format!("{BRANCH_PREFIX}{name}"),
