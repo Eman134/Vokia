@@ -11,7 +11,9 @@ import {
   CONVERSATIONS_LABEL,
   DEFAULT_COLUMN,
   DELEGATE_LABEL,
+  isUnassigned,
   MAIN_ACTION,
+  UNASSIGNED_TEXT,
   MICRO_EXPLANATION,
   MICRO_SUMMARY,
   MODAL_STATE_CHIP,
@@ -24,6 +26,7 @@ import {
   READY_BLOCKED_HINT,
   READY_COLUMN,
   type BacklogColumn,
+  type BacklogItem,
   type BacklogTag,
   type TriageQuestion,
 } from './backlogTypes'
@@ -33,6 +36,7 @@ import { useBacklog } from './useBacklog'
 import { useItemQuestions } from './useItemQuestions'
 import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
+import { useTriage } from './useTriage'
 import { trapFocus } from './dialogFocus'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
@@ -47,11 +51,13 @@ const ARCHIVE_LABEL = 'Arquivar'
 const DELETE_LABEL = 'Remover'
 const DELETE_MESSAGE = 'Remove o card de vez. Não dá para desfazer.'
 const DELETE_CONFIRM_LABEL = 'Remover card'
+const NO_LEADER_TEXT = 'Sem responsável · nenhum líder configurado'
 
 const backlog = useBacklog()
 const itemQuestions = useItemQuestions()
 const itemPlan = useItemPlan()
 const runItem = useRunItem()
+const triage = useTriage()
 const roster = useRoster()
 const navigation = useNavigation()
 const leaderName = computed(() => agentName(DEFAULT_RECIPIENT))
@@ -80,10 +86,16 @@ const visibleMicro = computed(() => item.value?.micro?.filter((task) => isScript
 const microDone = computed(() => visibleMicro.value.filter((task) => task.status === 'feito').length)
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
 const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : item.value?.plan))
+function responsibleLabel(current: BacklogItem): string {
+  if (!isUnassigned(current)) return roster.nameOf(current.who)
+  return triage.isWithoutLeader(current.id) ? NO_LEADER_TEXT : UNASSIGNED_TEXT
+}
+
 const details = computed(() => {
   const current = item.value
   if (!current) return []
   const rows: [string, string | undefined][] = [
+    ['Responsável', responsibleLabel(current)],
     ['Tipo', current.type === 'feature' ? 'Feature' : 'Tarefa'],
     ['Aberto por', current.by],
     ['Origem', ORIGIN_LABEL[current.origin]],

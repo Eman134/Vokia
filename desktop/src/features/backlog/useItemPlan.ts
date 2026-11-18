@@ -9,6 +9,7 @@ import { useFeed } from '../team/useFeed'
 import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
 import { DECISION_QUESTION_PREFIX, DEFAULT_COLUMN, READY_COLUMN, type BacklogItem, type BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
+import { useTriage } from './useTriage'
 import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal } from './planProposal'
 
 export type PlanTab = 'vincular' | 'pedir'
@@ -67,6 +68,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const preferredTab = ref<PlanTab | null>(null)
   const feed = useFeed()
   const backlog = useBacklog()
+  const triage = useTriage()
   const projects = useProjects()
   const decisions = useDecisions()
 
@@ -189,6 +191,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   async function request(itemId: string, agent: Agent, depth: PlanDepth): Promise<void> {
     const item = backlog.items.find((current) => current.id === itemId)
     if (!item || isAgentAwaiting(agent)) return
+    void triage.requestTriage(item)
     await dispatch(item, agent, buildPlanPrompt(item, depth))
   }
 
@@ -238,6 +241,8 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (!plan) return
     states.value[itemId] = { state: 'vinculado', plan, agent: states.value[planId]?.agent }
     persist(itemId)
+    const item = backlog.items.find((current) => current.id === itemId)
+    if (item) void triage.requestTriage(item)
     if (plan.meta === REVIEWED_PLAN_META) promoteToReady(itemId)
   }
 

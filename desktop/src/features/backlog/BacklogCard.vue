@@ -5,7 +5,6 @@ import UiButton from '../../ui/UiButton.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import UserAvatar from '../profile/UserAvatar.vue'
-import { useUserProfile } from '../profile/useUserProfile'
 import {
   ACTION_ID,
   ACTION_TITLE,
@@ -19,7 +18,17 @@ import {
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import { tagColor, tagLabel, tagTextColor } from './tags'
-import { DEFAULT_COLUMN, READY_COLUMN, type BacklogCardAction, type BacklogColumn, type BacklogItem, type BacklogState, type BacklogTag } from './backlogTypes'
+import {
+  DEFAULT_COLUMN,
+  isUnassigned,
+  READY_COLUMN,
+  UNASSIGNED_TEXT,
+  type BacklogCardAction,
+  type BacklogColumn,
+  type BacklogItem,
+  type BacklogState,
+  type BacklogTag,
+} from './backlogTypes'
 
 const props = defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; planLine?: string }>()
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
@@ -27,19 +36,17 @@ const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
-const USER_OWNER = 'voce'
 const AVATAR_SIZE = 22
 const FEATURE_STACK_SHADOW =
   'shadow-[0_1px_2px_rgb(0_0_0/8%),4px_4px_0_-1px_var(--color-surface),4px_4px_0_0_var(--color-line),8px_8px_0_-1px_var(--color-surface),8px_8px_0_0_var(--color-line)]'
 
 const roster = useRoster()
-const userProfile = useUserProfile()
 
 const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
 )
 const isFeature = computed(() => props.item.type === 'feature')
-const ownerName = computed(() => (props.item.who === USER_OWNER ? userProfile.displayName : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
+const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
 const createdOn = computed(() => props.item.activity?.[0]?.at.split(',')[0])
 
 const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
@@ -155,7 +162,7 @@ function tagPillStyle(tag: BacklogTag) {
     </div>
 
     <footer class="flex items-center gap-2 pt-0.5">
-      <UserAvatar v-if="item.who === USER_OWNER" :size="AVATAR_SIZE" />
+      <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
       <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
       <span class="text-meta text-muted">{{ ownerName }}<template v-if="createdOn"> · {{ createdOn }}</template></span>
     </footer>

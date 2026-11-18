@@ -58,6 +58,10 @@ export interface BacklogLink {
 
 export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'Done']
 export const DEFAULT_COLUMN: BacklogColumn = 'Backlog'
+// O dono "voce" é o padrão de card criado pelo usuário; o backend só troca o responsável quando ele é esse.
+export const USER_OWNER = 'voce'
+export const UNASSIGNED_TEXT = 'Sem responsável'
+export const isUnassigned = (item: BacklogItem): boolean => item.who === USER_OWNER || item.who === ''
 export const AUTO_COLUMNS_HINT = 'In progress e In review andam sozinhos'
 export const READY_COLUMN: BacklogColumn = 'Ready'
 export const READY_BLOCKED_HINT = 'Ready só recebe item com plano revisado'
