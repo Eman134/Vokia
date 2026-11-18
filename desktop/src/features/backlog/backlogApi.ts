@@ -9,6 +9,8 @@ const CREATE_BACKLOG_ITEM_COMMAND = 'create_backlog_item'
 const CREATE_REQUEST_FROM_PROPOSAL_COMMAND = 'create_request_from_proposal'
 const MOVE_BACKLOG_ITEM_COMMAND = 'move_backlog_item'
 const SAVE_ITEM_PLAN_COMMAND = 'save_item_plan'
+const ARCHIVE_BACKLOG_ITEM_COMMAND = 'archive_backlog_item'
+const DELETE_BACKLOG_ITEM_COMMAND = 'delete_backlog_item'
 
 export const EMPTY_PLAN_STATE = 'vazio'
 
@@ -73,4 +75,12 @@ export function moveBacklogItem(projectId: number, id: string, column: BacklogCo
 
 export function saveItemPlan(projectId: number, itemId: string, plan: ItemPlanInput): Promise<void> {
   return invoke<void>(SAVE_ITEM_PLAN_COMMAND, { projectId, itemId, plan })
+}
+
+export function archiveBacklogItem(projectId: number, itemId: string): Promise<void> {
+  return invoke<void>(ARCHIVE_BACKLOG_ITEM_COMMAND, { projectId, itemId })
+}
+
+export function deleteBacklogItem(projectId: number, itemId: string): Promise<void> {
+  return invoke<void>(DELETE_BACKLOG_ITEM_COMMAND, { projectId, itemId })
 }

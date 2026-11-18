@@ -132,6 +132,48 @@ pub fn set_backlog_responsible(
     Ok(())
 }
 
+#[tauri::command]
+pub fn archive_backlog_item(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.archive_backlog_item(project_id, &item_id)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn restore_backlog_item(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.restore_backlog_item(project_id, &item_id)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_backlog_item(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    project_id: i64,
+    item_id: String,
+) -> Result<(), String> {
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.delete_backlog_item(project_id, &item_id)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
+}
+
 // A gravação já está no banco; falha ao avisar o front não vira erro para quem chamou.
 fn notify_backlog_changed(app: &AppHandle, project_id: i64) {
     let _ = emit_backlog_changed(app, project_id);

@@ -26,6 +26,19 @@ const RENAME_LEGACY_AGENT_IDS: &str = "
     UPDATE orch_handoffs SET to_agent = 'ember' WHERE to_agent = 'iara';
 ";
 
+const HAS_ARCHIVED_AT: &str =
+    "SELECT COUNT(*) FROM pragma_table_info('backlog_items') WHERE name = 'archived_at'";
+const ADD_ARCHIVED_AT: &str = "ALTER TABLE backlog_items ADD COLUMN archived_at TEXT";
+
+// schema.sql só roda em banco novo; este passo leva a coluna também aos bancos já existentes.
+fn ensure_archived_at(conn: &Connection) -> rusqlite::Result<()> {
+    let present: i64 = conn.query_row(HAS_ARCHIVED_AT, [], |row| row.get(0))?;
+    if present == 0 {
+        conn.execute_batch(ADD_ARCHIVED_AT)?;
+    }
+    Ok(())
+}
+
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")?;
     let current: i64 = conn.query_row(
@@ -48,5 +61,6 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     }
     let tx = conn.transaction()?;
     tx.execute_batch(RENAME_LEGACY_AGENT_IDS)?;
+    ensure_archived_at(&tx)?;
     tx.commit()
 }

@@ -10,7 +10,8 @@ use super::error::DbError;
 
 pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
 const DEFAULT_COLUMN: &str = "Backlog";
-pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", "In progress", "In review", "Done"];
+const IN_PROGRESS_COLUMN: &str = "In progress";
+pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", IN_PROGRESS_COLUMN, "In review", "Done"];
 const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
 const ITEM_TYPES: &[&str] = &["task", "feature"];
 const ITEM_STATES: &[&str] = &["vazio", "triagem", "gerando", "proposto", "vinculado"];
@@ -392,6 +393,63 @@ impl Db {
         conn.execute(
             "UPDATE backlog_items SET who = ?3 WHERE project_id = ?1 AND id = ?2",
             params![project_id, item_id, agent.as_str()],
+        )?;
+        Ok(())
+    }
+
+    pub fn archive_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET archived_at = ?3 WHERE project_id = ?1 AND id = ?2 AND archived_at IS NULL",
+            params![project_id, item_id, Local::now().to_rfc3339()],
+        )?;
+        if changed == 1 {
+            return Ok(());
+        }
+        ensure_item(&conn, project_id, item_id)?;
+        Err(DbError::BacklogItemArchived)
+    }
+
+    pub fn restore_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET archived_at = NULL WHERE project_id = ?1 AND id = ?2 AND archived_at IS NOT NULL",
+            params![project_id, item_id],
+        )?;
+        if changed == 1 {
+            return Ok(());
+        }
+        ensure_item(&conn, project_id, item_id)?;
+        Err(DbError::BacklogItemNotArchived)
+    }
+
+    pub fn delete_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let column: String = conn
+            .query_row(
+                "SELECT \"column\" FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+                params![project_id, item_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| DbError::BacklogItemNotFound(item_id.to_string()))?;
+        if column == IN_PROGRESS_COLUMN {
+            return Err(DbError::BacklogDeleteInProgress);
+        }
+        let has_plan: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM item_plans WHERE project_id = ?1 AND item_id = ?2)",
+            params![project_id, item_id],
+            |row| row.get(0),
+        )?;
+        if has_plan {
+            return Err(DbError::BacklogDeleteWithPlan);
+        }
+        conn.execute(
+            "DELETE FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id],
         )?;
         Ok(())
     }
@@ -967,7 +1025,7 @@ fn upsert_item(conn: &Connection, project_id: i64, item: &BacklogItem) -> Result
 
 fn read_items(conn: &Connection, project_id: i64) -> Result<Vec<BacklogItem>, DbError> {
     let mut statement = conn.prepare(&format!(
-        "SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 ORDER BY position"
+        "SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 AND archived_at IS NULL ORDER BY position"
     ))?;
     let rows = statement.query_map([project_id], read_item)?;
     rows.collect::<rusqlite::Result<Vec<BacklogItem>>>()

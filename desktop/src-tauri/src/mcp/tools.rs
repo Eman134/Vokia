@@ -23,6 +23,9 @@ const UPDATE_CARD: &str = "update_card";
 const BACKLOG_ADD_LABEL: &str = "backlog_add_label";
 const BACKLOG_REMOVE_LABEL: &str = "backlog_remove_label";
 const BACKLOG_SET_RESPONSIBLE: &str = "backlog_set_responsible";
+const BACKLOG_ARCHIVE_ITEM: &str = "backlog_archive_item";
+const BACKLOG_RESTORE_ITEM: &str = "backlog_restore_item";
+const BACKLOG_DELETE_ITEM: &str = "backlog_delete_item";
 const REQUEST_DECISION: &str = "request_decision";
 const PROPOSE_REQUEST: &str = "propose_request";
 const DELEGATE: &str = "delegate";
@@ -86,6 +89,11 @@ struct LabelArgs {
 struct ResponsibleArgs {
     item_id: String,
     agent: String,
+}
+
+#[derive(Deserialize)]
+struct ItemArgs {
+    item_id: String,
 }
 
 #[derive(Deserialize)]
@@ -216,6 +224,24 @@ pub fn definitions() -> Vec<Value> {
             &["item_id", "agent"],
         ),
         tool(
+            BACKLOG_ARCHIVE_ITEM,
+            "Arquiva um card do backlog: ele sai do quadro e das listagens, mas pode ser restaurado.",
+            json!({ "item_id": { "type": "string" } }),
+            &["item_id"],
+        ),
+        tool(
+            BACKLOG_RESTORE_ITEM,
+            "Restaura um card arquivado do backlog.",
+            json!({ "item_id": { "type": "string" } }),
+            &["item_id"],
+        ),
+        tool(
+            BACKLOG_DELETE_ITEM,
+            "Remove um card do backlog de vez. Não remove card em andamento nem card com plano.",
+            json!({ "item_id": { "type": "string" } }),
+            &["item_id"],
+        ),
+        tool(
             REQUEST_DECISION,
             "Pede uma decisão ao usuário e não espera a resposta: depois de chamar, termine a resposta.",
             json!({
@@ -299,6 +325,9 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         BACKLOG_SET_RESPONSIBLE => {
             parse(name, arguments).and_then(|args| set_backlog_responsible(app, binding, args))
         }
+        BACKLOG_ARCHIVE_ITEM => parse(name, arguments).and_then(|args| archive_backlog_item(app, binding, args)),
+        BACKLOG_RESTORE_ITEM => parse(name, arguments).and_then(|args| restore_backlog_item(app, binding, args)),
+        BACKLOG_DELETE_ITEM => parse(name, arguments).and_then(|args| delete_backlog_item(app, binding, args)),
         REQUEST_DECISION => parse(name, arguments).and_then(|args| request_decision(binding, args)),
         PROPOSE_REQUEST => parse(name, arguments).and_then(|args| propose_request(binding, args)),
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
@@ -693,6 +722,36 @@ fn set_backlog_responsible(app: &AppHandle, binding: &Binding, args: Responsible
         args.item_id,
         team.name_of(&agent)
     );
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn archive_backlog_item(app: &AppHandle, binding: &Binding, args: ItemArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.archive_backlog_item(binding.project_id, &args.item_id)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!("Card {} arquivado.", args.item_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn restore_backlog_item(app: &AppHandle, binding: &Binding, args: ItemArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.restore_backlog_item(binding.project_id, &args.item_id)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!("Card {} restaurado.", args.item_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn delete_backlog_item(app: &AppHandle, binding: &Binding, args: ItemArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.delete_backlog_item(binding.project_id, &args.item_id)
+        .map_err(|error| refusal_or_system(&error))?;
+    let message = format!("Card {} removido.", args.item_id);
     record_backlog_change(app, binding, vec![message.clone()]);
     Ok(message)
 }

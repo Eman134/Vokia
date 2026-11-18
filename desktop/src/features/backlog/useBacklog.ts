@@ -4,8 +4,10 @@ import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
 import type { VokiaMessage } from '../team/events'
 import {
+  archiveBacklogItem,
   createBacklogItem,
   createRequestFromProposal,
+  deleteBacklogItem,
   fetchBacklog,
   moveBacklogItem,
   saveBacklogItem,
@@ -227,6 +229,23 @@ export const useBacklog = defineStore('backlog', () => {
     enqueue(itemId, (projectId) => saveItemPlan(projectId, itemId, plan))
   }
 
+  // Tira o item da tela na hora; se a escrita falhar, a recarga do banco o devolve com o erro no feed.
+  function dropItem(id: string): void {
+    items.value = items.value.filter((item) => item.id !== id)
+  }
+
+  function archive(id: string): void {
+    if (!editable(id)) return
+    dropItem(id)
+    enqueue(id, (projectId) => archiveBacklogItem(projectId, id))
+  }
+
+  function remove(id: string): void {
+    if (!editable(id)) return
+    dropItem(id)
+    enqueue(id, (projectId) => deleteBacklogItem(projectId, id))
+  }
+
   function moveTo(id: string, column: BacklogColumn): void {
     const item = editable(id)
     if (!item || !MOVABLE_COLUMNS.includes(column) || column === (item.column ?? DEFAULT_COLUMN)) return
@@ -337,6 +356,8 @@ export const useBacklog = defineStore('backlog', () => {
     createFromProposal,
     proposalCreated,
     moveTo,
+    archive,
+    remove,
     addTags,
     removeTag,
     addActivity,

@@ -3,6 +3,7 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import { colorVar, DEFAULT_FEATURE_COLOR, FEATURE_COLOR, MICRO_STATUS_BADGE, ORIGIN_LABEL, STATE_BADGE } from './backlogLabels'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagColor, tagLabel, tagTextColor } from './tags'
 import {
@@ -42,6 +43,10 @@ const TAG_TINT_PERCENT = 13
 const MICRO_PORTRAIT_SIZE = 20
 const OTHER_INPUT_CLASSES = 'h-9 w-full rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint'
 const TRIAGE_PLAN_TEXT = 'Plano sai da triagem'
+const ARCHIVE_LABEL = 'Arquivar'
+const DELETE_LABEL = 'Remover'
+const DELETE_MESSAGE = 'Remove o card de vez. Não dá para desfazer.'
+const DELETE_CONFIRM_LABEL = 'Remover card'
 
 const backlog = useBacklog()
 const itemQuestions = useItemQuestions()
@@ -162,6 +167,18 @@ function closeModal(): void {
 function openConversations(): void {
   closeModal()
   navigation.goTo('conversas')
+}
+
+function archiveItem(): void {
+  const id = item.value!.id
+  closeModal()
+  backlog.archive(id)
+}
+
+function removeItem(): void {
+  const id = item.value!.id
+  closeModal()
+  backlog.remove(id)
 }
 
 watch(
@@ -385,6 +402,14 @@ watch(
               @press="void runItem.run(item.id, profile.id)"
             />
           </template>
+          <UiConfirm
+            :label="DELETE_LABEL"
+            :message="DELETE_MESSAGE"
+            :confirm-label="DELETE_CONFIRM_LABEL"
+            :busy="runItem.isRunning(item.id)"
+            @confirm="removeItem"
+          />
+          <UiButton variant="quiet" size="lg" @press="archiveItem">{{ ARCHIVE_LABEL }}</UiButton>
           <UiButton variant="quiet" size="lg" @press="openConversations">{{ CONVERSATIONS_LABEL }}</UiButton>
           <UiButton
             variant="primary"

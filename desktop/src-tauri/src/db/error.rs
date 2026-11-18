@@ -41,6 +41,10 @@ pub enum DbError {
     BacklogLabelNotFound(String),
     ResponsibleAlreadySet(String),
     ResponsibleOutsideTeam(String),
+    BacklogItemArchived,
+    BacklogItemNotArchived,
+    BacklogDeleteInProgress,
+    BacklogDeleteWithPlan,
     BacklogItemData { item_id: String, reason: String },
     MessageActivityData(String),
     MessageProposalData(String),
@@ -102,6 +106,10 @@ impl DbError {
                 | DbError::BacklogLabelNotFound(_)
                 | DbError::ResponsibleAlreadySet(_)
                 | DbError::ResponsibleOutsideTeam(_)
+                | DbError::BacklogItemArchived
+                | DbError::BacklogItemNotArchived
+                | DbError::BacklogDeleteInProgress
+                | DbError::BacklogDeleteWithPlan
         )
     }
 }
@@ -211,6 +219,15 @@ impl fmt::Display for DbError {
             DbError::ResponsibleOutsideTeam(agent) => {
                 write!(f, "O agente {agent} não faz parte do elenco.")
             }
+            DbError::BacklogItemArchived => write!(f, "O item já está arquivado."),
+            DbError::BacklogItemNotArchived => write!(f, "O item não está arquivado."),
+            DbError::BacklogDeleteInProgress => {
+                write!(f, "Um item em andamento não pode ser removido.")
+            }
+            DbError::BacklogDeleteWithPlan => write!(
+                f,
+                "O item tem plano; remova o plano antes de excluir o item."
+            ),
             DbError::BacklogItemData { item_id, reason } => write!(
                 f,
                 "Os dados do item {item_id} do backlog são inválidos: {reason}"
