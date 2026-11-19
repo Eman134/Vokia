@@ -23,7 +23,7 @@ const STEPS: readonly OnboardingStep[] = [
   { id: 'boas-vindas', view: BoasVindasStep, forwardLabel: 'Começar' },
   { id: 'nome', view: NomeStep, forwardLabel: 'Continuar' },
   { id: 'foto', view: FotoStep, forwardLabel: 'Continuar' },
-  { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir o mapa do time' },
+  { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir projetos' },
 ]
 // Último passo de perfil: é onde nome e foto são salvos juntos.
 const SAVE_STEP_ID: StepId = 'foto'
@@ -73,7 +73,7 @@ function back(): void {
 async function forward(): Promise<void> {
   if (current.value.id === SAVE_STEP_ID && !(await profileDraft.submit())) return
   if (index.value === LAST_INDEX) {
-    navigation.goTo('mapa')
+    navigation.goTo('projetos')
     return
   }
   index.value += 1
