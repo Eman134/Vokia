@@ -5,7 +5,7 @@ use super::tools::definitions;
 use crate::db::HandoffDraft;
 
 const GET_ORCHESTRATION_DESCRIPTION: &str =
-    "Lê os times, as camadas e as regras de passagem do projeto, com a posição de cada agente.";
+    "Lê os times, as camadas e as regras de passagem do Vokia, com a posição de cada agente.";
 const LIST_AGENTS_DESCRIPTION: &str = "Lista os agentes do elenco, com nome, papel e instruções.";
 const SAVE_ITEM_PLAN_DESCRIPTION: &str = "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id, name e meta.";
 const LIST_MOVEMENTS_DESCRIPTION: &str =
@@ -158,6 +158,7 @@ fn list_movements_devolve_as_passagens_gravadas_do_projeto_e_nao_as_de_outro() {
         return_count: 0,
         message_id: None,
         event: None,
+        edge_id: None,
     };
     world.db().record_handoff(project, &handoff("axiom", "vexa")).expect("passagem");
     world.db().record_handoff(other, &handoff("axiom", "kairo")).expect("passagem de outro projeto");

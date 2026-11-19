@@ -57,6 +57,8 @@ pub enum DecisionKind {
     Escolha,
     Pergunta,
     Revisao,
+    // Só o app abre (validação final do card): fora de ALL, para o agente não poder pedi-la.
+    Validacao,
 }
 
 impl DecisionKind {
@@ -73,6 +75,7 @@ impl DecisionKind {
             DecisionKind::Escolha => "escolha",
             DecisionKind::Pergunta => "pergunta",
             DecisionKind::Revisao => "revisao",
+            DecisionKind::Validacao => "validacao",
         }
     }
 
@@ -230,10 +233,7 @@ pub enum VokiaEvent {
     BacklogChanged {
         project_id: i64,
     },
-    #[serde(rename_all = "camelCase")]
-    OrchestrationChanged {
-        project_id: i64,
-    },
+    OrchestrationChanged,
     #[serde(rename_all = "camelCase")]
     BatchProgress {
         project_id: i64,

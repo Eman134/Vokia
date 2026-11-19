@@ -29,6 +29,7 @@ pub fn agent_console(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // argumentos do comando Tauri vêm do front um a um
 pub async fn send_request(
     app: AppHandle,
     state: State<'_, AppState>,

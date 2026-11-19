@@ -101,7 +101,16 @@ async fn run_step(
             Vec::new()
         };
         // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
-        maestro_role(&base, &tools, &project_choices(app)?, None)
+        let paused = paused_agents(app, key.project_id)?;
+        maestro_role(
+            &base,
+            &tools,
+            &project_choices(app)?,
+            None,
+            *orchestration,
+            team,
+            &paused,
+        )
     } else {
         base
     };
@@ -190,6 +199,16 @@ async fn run_step(
         activity: Some(reply.activity)
             .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
     })
+}
+
+// Banco ausente vira lista vazia, como nas demais leituras do prompt; só as pausas do projeto da troca contam.
+fn paused_agents(app: &AppHandle, project_id: i64) -> Result<Vec<Agent>, FlowError> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(Vec::new());
+    };
+    db.project_paused_agents(project_id)
+        .map_err(FlowError::Orchestration)
 }
 
 fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {

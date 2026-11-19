@@ -7,7 +7,7 @@ use crate::agents::Agent;
 pub(crate) struct TaskCounters {
     turns: i64,
     last_speaker: Option<Agent>,
-    passages: HashMap<(Agent, Agent), i64>,
+    passages: HashMap<i64, i64>,
     returns: HashMap<(Agent, Agent), i64>,
 }
 
@@ -25,27 +25,23 @@ impl TaskCounters {
         self.last_speaker.as_ref()
     }
 
-    pub(crate) fn passages(&self, from: &Agent, to: &Agent) -> i64 {
-        count(&self.passages, from, to)
+    // Passagens já entregues numa ligação do fluxo (por id da ligação) nesta tarefa.
+    pub(crate) fn passages(&self, edge_id: i64) -> i64 {
+        self.passages.get(&edge_id).copied().unwrap_or(0)
     }
 
     pub(crate) fn returns(&self, from: &Agent, to: &Agent) -> i64 {
-        count(&self.returns, from, to)
+        self.returns
+            .get(&(from.clone(), to.clone()))
+            .copied()
+            .unwrap_or(0)
     }
 
-    pub(crate) fn register_passage(&mut self, from: &Agent, to: &Agent) {
-        increment(&mut self.passages, from, to);
+    pub(crate) fn register_passage(&mut self, edge_id: i64) {
+        *self.passages.entry(edge_id).or_insert(0) += 1;
     }
 
     pub(crate) fn register_return(&mut self, from: &Agent, to: &Agent) {
-        increment(&mut self.returns, from, to);
+        *self.returns.entry((from.clone(), to.clone())).or_insert(0) += 1;
     }
-}
-
-fn count(map: &HashMap<(Agent, Agent), i64>, from: &Agent, to: &Agent) -> i64 {
-    map.get(&(from.clone(), to.clone())).copied().unwrap_or(0)
-}
-
-fn increment(map: &mut HashMap<(Agent, Agent), i64>, from: &Agent, to: &Agent) {
-    *map.entry((from.clone(), to.clone())).or_insert(0) += 1;
 }

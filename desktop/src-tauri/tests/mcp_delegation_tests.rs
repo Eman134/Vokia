@@ -182,95 +182,79 @@ fn absorb_fica_com_a_delegacao_mais_recente() {
 mod map_rules {
     use super::super::backlog_tests::World;
     use super::*;
-    use crate::db::{
-        LayerDraft, OrchestrationSettings, PlacementDraft, RuleDraft, TeamDraft,
-    };
+    use crate::db::{LayerDraft, OrchestrationSettings, PlacementDraft, TeamDraft};
 
-    const SEQUENTIAL: &str = "sequencia";
-    const PARALLEL: &str = "paralelo";
+    const SEQUENTIAL: &str = "sincrona";
     const EVENT_NOT_ALLOWED: &str = "O evento testes_falharam não é permitido de Axiom para Vexa.";
 
-    fn layer(world: &World, project: i64, name: &str, kind: &str) -> String {
+    fn layer(world: &World, name: &str, kind: &str) -> String {
         world
             .db()
-            .save_layer(
-                project,
-                &LayerDraft {
-                    id: None,
-                    name: name.to_string(),
-                    description: String::new(),
-                    kind: kind.to_string(),
-                    instructions: String::new(),
-                },
-            )
+            .save_layer(&LayerDraft {
+                id: None,
+                name: name.to_string(),
+                description: String::new(),
+                kind: kind.to_string(),
+                instructions: String::new(),
+            })
             .expect("camada")
             .id
     }
 
-    fn place(world: &World, project: i64, team: &str, agent: &str, layer: &str) {
+    fn place(world: &World, team: &str, agent: &str, layer: &str) {
         world
             .db()
-            .place_agent(
-                project,
-                &PlacementDraft {
-                    agent_id: agent.to_string(),
-                    team_id: team.to_string(),
-                    layer_id: layer.to_string(),
-                    instructions: String::new(),
-                    max_instances: 1,
-                },
-            )
+            .place_agent(&PlacementDraft {
+                agent_id: agent.to_string(),
+                team_id: team.to_string(),
+                layer_id: layer.to_string(),
+                instructions: String::new(),
+                max_instances: 1,
+                pos_x: None,
+                pos_y: None,
+                criteria: String::new(),
+                max_worktrees: None,
+            })
             .expect("posição");
     }
 
-    // Axiom (planejar) → Vexa (implementar) é a única seta, e só no evento plano_aprovado; Sentry (revisar) não tem seta de entrada.
-    fn enforced_map(world: &World, project: i64, exec_mode: &str) {
+    // Axiom → Vexa é a única ligação, e só no evento plano_aprovado; Sentry não tem ligação de entrada.
+    fn enforced_map(world: &World, sync_mode: &str) {
         let db = world.db();
-        db.save_settings(
-            project,
-            &OrchestrationSettings {
-                enforcement: "on".to_string(),
-                ..OrchestrationSettings::default()
-            },
-        )
+        db.save_settings(&OrchestrationSettings {
+            enforcement: "on".to_string(),
+            ..OrchestrationSettings::default()
+        })
         .expect("configuração");
         let team = db
-            .save_team(
-                project,
-                &TeamDraft {
-                    id: None,
-                    name: "Time".to_string(),
-                },
-            )
+            .save_team(&TeamDraft {
+                id: None,
+                name: "Time".to_string(),
+                instructions: None,
+            })
             .expect("time")
             .id;
-        let lead = layer(world, project, "Liderança", "planejar");
-        let build = layer(world, project, "Implementação", "implementar");
-        let review = layer(world, project, "Revisão", "revisar");
-        place(world, project, &team, "axiom", &lead);
-        place(world, project, &team, "vexa", &build);
-        place(world, project, &team, "sentry", &review);
-        db.save_rule(
-            project,
-            &RuleDraft {
-                id: None,
-                from_layer: lead,
-                to_layer: build,
-                when_event: "plano_aprovado".to_string(),
-                action: "delegar".to_string(),
-                kind: "implementar".to_string(),
-                exec_mode: exec_mode.to_string(),
-                return_limit: 1,
-            },
-        )
-        .expect("regra");
+        let lead = layer(world, "Liderança", "planejar");
+        let build = layer(world, "Implementação", "implementar");
+        let review = layer(world, "Revisão", "revisar");
+        place(world, &team, "axiom", &lead);
+        place(world, &team, "vexa", &build);
+        place(world, &team, "sentry", &review);
+        db.conn()
+            .expect("conexão")
+            .execute(
+                "INSERT INTO orch_flow_edges (team_id, from_node, to_node, sync_mode, when_event, action, kind, position) \
+                 VALUES (?1, 'axiom', 'vexa', ?2, 'plano_aprovado', 'delegar', 'implementar', 0)",
+                rusqlite::params![team, sync_mode],
+            )
+            .expect("ligação");
     }
 
     #[test]
     fn destino_sem_regra_a_partir_da_camada_e_recusado_e_nada_e_gravado() {
         let world = world();
         let project = world.project("a");
-        enforced_map(&world, project, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         let axiom = world.leader(project);
 
         axiom.slot.begin(None, None);
@@ -284,7 +268,7 @@ mod map_rules {
         assert!(outcome.is_error);
         assert_eq!(
             outcome.text,
-            "Sentry não é um destino permitido para a camada Liderança. Destinos permitidos: Vexa."
+            "Sentry não é um destino permitido para Axiom. Destinos permitidos: Vexa."
         );
         assert!(collected.delegation.is_none());
     }
@@ -293,7 +277,7 @@ mod map_rules {
     fn evento_fora_do_par_e_recusado_e_nada_e_gravado() {
         let world = world();
         let project = world.project("a");
-        enforced_map(&world, project, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         let axiom = world.leader(project);
 
         axiom.slot.begin(None, None);
@@ -313,7 +297,7 @@ mod map_rules {
     fn evento_do_par_e_aceito_e_a_delegacao_e_registrada() {
         let world = world();
         let project = world.project("a");
-        enforced_map(&world, project, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         let axiom = world.leader(project);
 
         axiom.slot.begin(None, None);
@@ -335,7 +319,7 @@ mod map_rules {
     fn tipo_diferente_do_da_seta_e_recusado_e_nada_e_gravado() {
         let world = world();
         let project = world.project("a");
-        enforced_map(&world, project, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         let axiom = world.leader(project);
 
         axiom.slot.begin(None, None);
@@ -358,41 +342,25 @@ mod map_rules {
     fn segunda_delegacao_ao_mesmo_par_sem_execucao_paralela_e_recusada() {
         let world = world();
         let project = world.project("a");
-        enforced_map(&world, project, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         let axiom = world.leader(project);
 
         axiom.slot.begin(None, None);
-        world.call(&axiom, "delegate", json!({ "agent": "Vexa", "request": "Um" }));
-        let second = world.call(&axiom, "delegate", json!({ "agent": "Vexa", "request": "Dois" }));
+        world.call(
+            &axiom,
+            "delegate",
+            json!({ "agent": "Vexa", "request": "Um" }),
+        );
+        let second = world.call(
+            &axiom,
+            "delegate",
+            json!({ "agent": "Vexa", "request": "Dois" }),
+        );
         let collected = axiom.slot.end();
 
         assert!(second.is_error);
         assert_eq!(second.text, ALREADY);
         assert_eq!(request_of(&collected.delegation), Some("Um"));
-        assert!(collected.parallel_delegations.is_empty());
-    }
-
-    #[test]
-    fn par_com_execucao_paralela_aceita_varias_delegacoes_na_mesma_resposta() {
-        let world = world();
-        let project = world.project("a");
-        enforced_map(&world, project, PARALLEL);
-        let axiom = world.leader(project);
-
-        axiom.slot.begin(None, None);
-        let first = world.call(&axiom, "delegate", json!({ "agent": "Vexa", "request": "Um" }));
-        let second = world.call(&axiom, "delegate", json!({ "agent": "Vexa", "request": "Dois" }));
-        let collected = axiom.slot.end();
-
-        assert!(!first.is_error && !second.is_error, "{} {}", first.text, second.text);
-        assert_eq!(
-            collected.parallel_delegations,
-            vec![
-                (agent("vexa"), "Um".to_string()),
-                (agent("vexa"), "Dois".to_string())
-            ]
-        );
-        assert!(collected.delegation.is_none());
     }
 
     #[test]
@@ -400,7 +368,7 @@ mod map_rules {
         let world = world();
         let mine = world.project("minha");
         let other = world.project("outra");
-        enforced_map(&world, mine, SEQUENTIAL);
+        enforced_map(&world, SEQUENTIAL);
         // Ids são sequenciais por projeto: o segundo card de "outra" não existe em "minha", que só terá um.
         let other_leader = world.leader(other);
         world.create(&other_leader, "Primeiro alheio");

@@ -25,6 +25,10 @@ fn placement(agent: &str, layer: &str, max_instances: i64) -> Placement {
         layer_id: layer.to_string(),
         instructions: String::new(),
         max_instances,
+        pos_x: 0.0,
+        pos_y: 0.0,
+        criteria: String::new(),
+        max_worktrees: None,
     }
 }
 
@@ -49,7 +53,8 @@ fn snapshot_with(implementer_instances: &[i64]) -> OrchestrationSnapshot {
         ],
         teams: Vec::new(),
         placements,
-        rules: Vec::new(),
+        edges: Vec::new(),
+        gateways: Vec::new(),
     }
 }
 

@@ -36,7 +36,7 @@ fn run_select() -> String {
     format!(
         "SELECT r.id, r.project_id, r.agent, r.request, r.run_id, r.item_id, r.started_at, \
          r.agent = COALESCE(s.leader_agent, '{DEFAULT_LEADER_AGENT}') \
-         FROM orch_runs r LEFT JOIN orch_settings s ON s.project_id = r.project_id"
+         FROM orch_runs r LEFT JOIN orch_settings s ON 1 = 1"
     )
 }
 

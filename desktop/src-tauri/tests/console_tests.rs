@@ -3,7 +3,7 @@ use serde_json::json;
 use super::*;
 
 fn parse(lines: &[serde_json::Value]) -> Vec<(ConsoleKind, String)> {
-    let mut parser = ConsoleParser::default();
+    let mut parser = ConsoleParser;
     lines
         .iter()
         .flat_map(|line| parser.lines(line.to_string().as_bytes()))

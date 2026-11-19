@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use super::*;
 use crate::agents::{AgentDraft, AgentError, AgentRegistry};
-use crate::db::NewProject;
 use crate::db::{Db, DbError, OrchestrationSettings};
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
@@ -61,21 +60,8 @@ fn draft(name: &str) -> AgentDraft {
     }
 }
 
-fn project(db: &Db, name: &str) -> i64 {
-    db.insert_project(&NewProject {
-        name,
-        symbol: "folder",
-        description: "",
-        path: &format!("C:/projetos/{name}"),
-        origin_kind: "folder",
-        origin_repo: None,
-    })
-    .unwrap()
-    .id
-}
-
-fn placement_layers(db: &Db, project: i64) -> Vec<(String, String)> {
-    db.orchestration(project)
+fn placement_layers(db: &Db) -> Vec<(String, String)> {
+    db.orchestration()
         .unwrap()
         .placements
         .into_iter()
@@ -159,13 +145,12 @@ fn semente_sem_sentry_no_elenco_nao_posiciona_sentry_e_deixa_revisao_sem_agente(
     let dir = TempDir::new();
     let leader = Agent::axiom();
     let db = Db::open(&dir.0).unwrap();
-    let project = project(&db, "alfa");
 
-    db.seed_orchestration(project, &build(&team_without(&dir, "sentry")))
+    db.seed_orchestration(&build(&team_without(&dir, "sentry")))
         .unwrap();
 
     assert_eq!(
-        placement_layers(&db, project),
+        placement_layers(&db),
         sorted_pairs(vec![
             pair("vexa", "implementacao"),
             pair(leader.as_str(), "lideranca"),
@@ -173,27 +158,26 @@ fn semente_sem_sentry_no_elenco_nao_posiciona_sentry_e_deixa_revisao_sem_agente(
             pair("oracle", "implementacao"),
         ])
     );
-    assert_eq!(db.orchestration(project).unwrap().layers.len(), 3);
+    assert_eq!(db.orchestration().unwrap().layers.len(), 3);
 }
 
 #[test]
 fn semente_gravada_duas_vezes_no_mesmo_projeto_nao_duplica_nada() {
     let dir = TempDir::new();
     let db = Db::open(&dir.0).unwrap();
-    let project = project(&db, "alfa");
     let seed = build(&full_team(&dir));
 
-    let first = db.seed_orchestration(project, &seed).unwrap();
-    let second = db.seed_orchestration(project, &seed).unwrap();
+    let first = db.seed_orchestration(&seed).unwrap();
+    let second = db.seed_orchestration(&seed).unwrap();
 
-    let snapshot = db.orchestration(project).unwrap();
+    let snapshot = db.orchestration().unwrap();
     assert_eq!((first, second), (true, false));
     assert_eq!(
         (
             snapshot.layers.len(),
             snapshot.teams.len(),
             snapshot.placements.len(),
-            snapshot.rules.len()
+            snapshot.edges.len()
         ),
         (3, 1, 5, 0)
     );
@@ -203,18 +187,15 @@ fn semente_gravada_duas_vezes_no_mesmo_projeto_nao_duplica_nada() {
 fn semente_nao_roda_em_projeto_que_ja_tem_linha_de_configuracao() {
     let dir = TempDir::new();
     let db = Db::open(&dir.0).unwrap();
-    let project = project(&db, "alfa");
     let custom = OrchestrationSettings {
         enforcement: "on".to_string(),
         ..OrchestrationSettings::default()
     };
-    db.save_settings(project, &custom).unwrap();
+    db.save_settings(&custom).unwrap();
 
-    let wrote = db
-        .seed_orchestration(project, &build(&full_team(&dir)))
-        .unwrap();
+    let wrote = db.seed_orchestration(&build(&full_team(&dir))).unwrap();
 
-    let snapshot = db.orchestration(project).unwrap();
+    let snapshot = db.orchestration().unwrap();
     assert!(!wrote);
     assert_eq!(snapshot.settings, custom);
     assert!(
@@ -226,33 +207,35 @@ fn semente_nao_roda_em_projeto_que_ja_tem_linha_de_configuracao() {
 fn duas_threads_semeando_o_mesmo_projeto_gravam_uma_unica_vez() {
     let dir = TempDir::new();
     let db = Arc::new(Db::open(&dir.0).unwrap());
-    let project = project(&db, "alfa");
     let seed = Arc::new(build(&full_team(&dir)));
 
     let handles: Vec<_> = (0..2)
         .map(|_| {
             let (db, seed) = (db.clone(), seed.clone());
-            std::thread::spawn(move || db.seed_orchestration(project, &seed).unwrap())
+            std::thread::spawn(move || db.seed_orchestration(&seed).unwrap())
         })
         .collect();
     let mut wrote: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
     wrote.sort();
 
     assert_eq!(wrote, vec![false, true]);
-    assert_eq!(db.orchestration(project).unwrap().layers.len(), 3);
+    assert_eq!(db.orchestration().unwrap().layers.len(), 3);
     assert_eq!(table_rows(&db, "orch_placements"), 5);
 }
 
 #[test]
-fn semente_em_projeto_inexistente_falha_e_nao_grava_nada() {
+fn semente_com_instrucoes_do_time_acima_do_limite_falha_e_nao_grava_nada() {
     let dir = TempDir::new();
     let db = Db::open(&dir.0).unwrap();
-    let seed = build(&full_team(&dir));
+    let mut seed = build(&full_team(&dir));
+    seed.team.instructions = Some("x".repeat(4001));
 
-    let error = db.seed_orchestration(999, &seed).unwrap_err();
+    let error = db.seed_orchestration(&seed).unwrap_err();
 
-    assert!(matches!(error, DbError::ProjectNotFound(999)));
-    assert_eq!(error.to_string(), "O projeto 999 não existe.");
+    assert!(matches!(
+        error,
+        DbError::OrchestrationInstructionsTooLong { max: 4000 }
+    ));
     for table in [
         "orch_settings",
         "orch_layers",
@@ -267,11 +250,10 @@ fn semente_em_projeto_inexistente_falha_e_nao_grava_nada() {
 fn semente_que_falha_no_meio_desfaz_tudo_inclusive_a_linha_de_configuracao() {
     let dir = TempDir::new();
     let db = Db::open(&dir.0).unwrap();
-    let project = project(&db, "alfa");
     let mut seed = build(&full_team(&dir));
     seed.placements[0].layer_id = "inexistente".to_string();
 
-    let error = db.seed_orchestration(project, &seed).unwrap_err();
+    let error = db.seed_orchestration(&seed).unwrap_err();
 
     assert_eq!(
         error.to_string(),
@@ -285,23 +267,20 @@ fn semente_que_falha_no_meio_desfaz_tudo_inclusive_a_linha_de_configuracao() {
     ] {
         assert_eq!(table_rows(&db, table), 0, "{table}");
     }
-    assert!(db
-        .seed_orchestration(project, &build(&full_team(&dir)))
-        .unwrap());
+    assert!(db.seed_orchestration(&build(&full_team(&dir))).unwrap());
 }
 
 #[test]
 fn agente_novo_criado_depois_da_semente_fica_sem_posicao_ate_alguem_posicionar() {
     let dir = TempDir::new();
     let db = Db::open(&dir.0).unwrap();
-    let project = project(&db, "alfa");
     let registry = AgentRegistry::load(&dir.0);
-    db.seed_orchestration(project, &build(&registry.team().unwrap()))
+    db.seed_orchestration(&build(&registry.team().unwrap()))
         .unwrap();
 
     registry.create(&draft("Lia")).unwrap();
 
-    let ids: Vec<String> = placement_layers(&db, project)
+    let ids: Vec<String> = placement_layers(&db)
         .into_iter()
         .map(|(agent, _)| agent)
         .collect();

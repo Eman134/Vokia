@@ -65,6 +65,7 @@ fn main() {
             commands::backlog::create_backlog_item,
             commands::backlog::create_request_from_proposal,
             commands::backlog::move_backlog_item,
+            commands::backlog::return_task,
             commands::backlog::save_item_plan,
             commands::backlog::add_backlog_label,
             commands::backlog::remove_backlog_label,
@@ -92,10 +93,10 @@ fn main() {
             commands::orchestration::delete_team,
             commands::orchestration::place_agent,
             commands::orchestration::unplace_agent,
-            commands::orchestration::save_rule,
-            commands::orchestration::delete_rule,
+            commands::orchestration::save_team_flow,
+            commands::orchestration::set_final_validation,
             commands::orchestration::save_orchestration_settings,
-            commands::orchestration::list_movements,
+            commands::orchestration::list_agent_activity,
             commands::orchestration::list_agent_copies
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())

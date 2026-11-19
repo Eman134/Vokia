@@ -154,7 +154,7 @@ impl LiveSession {
             .await
             .map_err(|error| ClaudeError::SessionClosed(error.to_string()))?;
         let mut accumulator = StreamAccumulator::default();
-        let mut console = ConsoleParser::default();
+        let mut console = ConsoleParser;
         let mut activity = ActivityParser::new(Instant::now());
         loop {
             // O limite vale entre linhas: a espera pela decisão do usuário não conta, e um agente que segue produzindo não estoura.

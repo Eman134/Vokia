@@ -5,6 +5,7 @@ use rusqlite::ErrorCode;
 use serde::Serialize;
 
 use super::backlog::BACKLOG_LABEL_MAX_CHARS;
+use super::orchestration::FlowProblem;
 
 #[derive(Debug)]
 pub enum DbError {
@@ -78,17 +79,12 @@ pub enum DbError {
     TeamNameTaken(String),
     TeamNotFound(String),
     OrchestratorNotPlaceable,
+    FlowNodeOutsideTeam(String),
+    ReturnMotiveRequired,
+    InvalidClosedBy(String),
+    FlowInvalid(Vec<FlowProblem>),
     OrchestratorNotLeader,
-    RuleNotFound(i64),
     RunNotInterrupted(i64),
-    RuleDuplicated {
-        from: String,
-        to: String,
-    },
-    RuleSelfLoop,
-    RuleEscalateTarget,
-    RuleVoceNeedsEscalate,
-    RuleReturnNotBackward,
 }
 
 impl DbError {
@@ -100,6 +96,8 @@ impl DbError {
                 | DbError::DuplicateCardTitle(_)
                 | DbError::InvalidBacklogColumn(_)
                 | DbError::AgentForbiddenColumn(_)
+                | DbError::ReturnMotiveRequired
+                | DbError::InvalidClosedBy(_)
                 | DbError::CardClosed(_)
                 | DbError::CardNotOwned(_)
                 | DbError::CardInReady(_)
@@ -303,6 +301,23 @@ impl fmt::Display for DbError {
                 )
             }
             DbError::TeamNotFound(id) => write!(f, "O time {id} não existe neste projeto."),
+            DbError::FlowInvalid(problems) => {
+                let messages: Vec<&str> = problems
+                    .iter()
+                    .map(|problem| problem.message.as_str())
+                    .collect();
+                f.write_str(&messages.join(" "))
+            }
+            DbError::ReturnMotiveRequired => write!(f, "Informe o motivo da devolução."),
+            DbError::InvalidClosedBy(closer) => {
+                write!(
+                    f,
+                    "Quem concluiu o card precisa ser usuario ou automatico, não {closer}."
+                )
+            }
+            DbError::FlowNodeOutsideTeam(agent) => {
+                write!(f, "O agente {agent} não está posicionado neste time.")
+            }
             DbError::OrchestratorNotPlaceable => write!(
                 f,
                 "O orquestrador geral não pode ser posicionado em time ou camada."
@@ -310,24 +325,8 @@ impl fmt::Display for DbError {
             DbError::OrchestratorNotLeader => {
                 write!(f, "O orquestrador geral não pode conduzir um time.")
             }
-            DbError::RuleNotFound(id) => write!(f, "A seta {id} não existe neste projeto."),
             DbError::RunNotInterrupted(id) => {
                 write!(f, "O pedido {id} não está mais interrompido.")
-            }
-            DbError::RuleDuplicated { from, to } => {
-                write!(f, "Já existe uma seta de {from} para {to}.")
-            }
-            DbError::RuleSelfLoop => {
-                write!(f, "Uma camada não pode enviar trabalho para ela mesma.")
-            }
-            DbError::RuleEscalateTarget => {
-                write!(f, "A regra escalar só pode apontar para Você.")
-            }
-            DbError::RuleVoceNeedsEscalate => {
-                write!(f, "Você só recebe trabalho pela regra escalar.")
-            }
-            DbError::RuleReturnNotBackward => {
-                write!(f, "Devolver só vai para uma camada anterior.")
             }
         }
     }

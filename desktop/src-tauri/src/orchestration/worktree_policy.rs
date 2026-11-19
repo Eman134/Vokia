@@ -6,7 +6,11 @@ const IMPLEMENT_KIND: &str = "implementar";
 const PARALLEL_MIN_IMPLEMENTERS: i64 = 2;
 
 // Pedido sem card (conversa) roda sempre na pasta do projeto; com card, a política decide.
-pub(crate) fn should_use(policy: &str, snapshot: &OrchestrationSnapshot, item_id: Option<&str>) -> bool {
+pub(crate) fn should_use(
+    policy: &str,
+    snapshot: &OrchestrationSnapshot,
+    item_id: Option<&str>,
+) -> bool {
     if item_id.is_none() {
         return false;
     }
@@ -14,6 +18,24 @@ pub(crate) fn should_use(policy: &str, snapshot: &OrchestrationSnapshot, item_id
         POLICY_ALWAYS => true,
         POLICY_PARALLEL => implementer_slots(snapshot) >= PARALLEL_MIN_IMPLEMENTERS,
         _ => false,
+    }
+}
+
+// Máximo de worktrees que o líder do time pode ter em uso (todos os projetos); None = sem limite próprio.
+// Só vale para quem lidera o time: o campo de um agente comum é ignorado.
+pub(crate) fn leader_limit(snapshot: &OrchestrationSnapshot, leader: &str) -> Option<i64> {
+    let placement = snapshot
+        .placements
+        .iter()
+        .find(|placement| placement.agent_id == leader)?;
+    let leads = snapshot
+        .teams
+        .iter()
+        .any(|team| team.id == placement.team_id && team.leader_agent.as_deref() == Some(leader));
+    if leads {
+        placement.max_worktrees
+    } else {
+        None
     }
 }
 

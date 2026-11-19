@@ -11,7 +11,9 @@ use std::path::Path;
 
 use tauri::AppHandle;
 
-pub use registry::{Binding, RandomnessUnavailable, Token};
+pub use registry::{Binding, RandomnessUnavailable};
+#[cfg(test)]
+pub use registry::Token;
 pub use server::{McpConfigFile, McpServer, McpSession};
 pub use slot::{DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
 pub(crate) use tools::definitions as tool_definitions;
@@ -62,9 +64,6 @@ impl McpState {
         self.0.as_ref().ok()
     }
 
-    pub fn problem(&self) -> Option<&McpError> {
-        self.0.as_ref().err()
-    }
 }
 
 #[cfg(test)]

@@ -77,6 +77,15 @@ impl Db {
         .collect()
     }
 
+    pub fn project_paused_agents(&self, project_id: i64) -> Result<Vec<Agent>, DbError> {
+        Ok(self
+            .agent_pauses()?
+            .into_iter()
+            .filter(|pause| pause.project_id == project_id)
+            .map(|pause| pause.agent)
+            .collect())
+    }
+
     pub fn set_agent_paused(
         &self,
         project_id: i64,

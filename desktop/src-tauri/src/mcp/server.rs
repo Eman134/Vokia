@@ -111,10 +111,12 @@ impl McpServer {
         }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
     pub fn register(&self, binding: Binding) -> Result<Token, RandomnessUnavailable> {
         self.shared.sessions.register(binding)
     }
 
+    #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
     pub fn revoke(&self, token: &Token) {
         self.shared.sessions.revoke(token);
     }

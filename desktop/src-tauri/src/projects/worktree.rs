@@ -31,6 +31,7 @@ pub enum WorktreeError {
     Io(String),
     SetupFailed { path: PathBuf, output: String },
     SetupTimedOut(PathBuf),
+    #[cfg_attr(not(test), allow(dead_code))] // construído só por remove, usado só nos testes
     UncommittedChanges(PathBuf),
 }
 
@@ -73,10 +74,12 @@ impl fmt::Display for WorktreeError {
 }
 
 pub struct Worktree {
+    #[cfg_attr(not(test), allow(dead_code))] // lido só nos testes
     pub branch: String,
     pub path: PathBuf,
 }
 
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub enum RemoveOutcome {
     Removed,
     BranchKept { branch: String, commits: u32 },
@@ -215,6 +218,7 @@ pub async fn ensure(
 }
 
 // Trabalho não commitado nunca é removido aqui: o erro devolve a decisão a quem pediu.
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub async fn remove(
     project_dir: &Path,
     worktree_path: &Path,

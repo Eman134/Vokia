@@ -249,18 +249,18 @@ fn list_backlog_lista_do_mais_novo_para_o_mais_antigo_e_filtra_por_coluna() {
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": second, "column": "Done" }),
+        json!({ "id": second, "column": "In review" }),
     );
 
     let all = world.call(&axiom, "list_backlog", json!({}));
-    let done = world.call(&axiom, "list_backlog", json!({ "column": "done" }));
+    let done = world.call(&axiom, "list_backlog", json!({ "column": "in review" }));
     let ready = world.call(&axiom, "list_backlog", json!({ "column": "Ready" }));
 
     assert_eq!(
         all.text,
-        "item-2 | Segundo | Done | axiom | agente\nitem-1 | Primeiro | Backlog | axiom | agente"
+        "item-2 | Segundo | In review | axiom | agente\nitem-1 | Primeiro | Backlog | axiom | agente"
     );
-    assert_eq!(done.text, "item-2 | Segundo | Done | axiom | agente");
+    assert_eq!(done.text, "item-2 | Segundo | In review | axiom | agente");
     assert_eq!((ready.is_error, ready.text.as_str()), (false, NO_CARDS));
 }
 
@@ -285,11 +285,10 @@ fn recusas_do_banco_voltam_como_is_error_com_a_frase_e_nada_e_gravado() {
     let own = world.create(&axiom, "Da Axiom");
     let foreign = world.create(&vexa, "Do Vexa");
     let closed = world.create(&axiom, "Fechado");
-    world.call(
-        &axiom,
-        "move_card",
-        json!({ "id": closed, "column": "Done" }),
-    );
+    world
+        .db()
+        .move_backlog_item(project, &closed, "Done")
+        .unwrap();
     let before = world.cards(project).len();
 
     let cases = [
@@ -308,7 +307,7 @@ fn recusas_do_banco_voltam_como_is_error_com_a_frase_e_nada_e_gravado() {
         (
             "id inexistente",
             "move_card",
-            json!({ "id": "item-999", "column": "Done" }),
+            json!({ "id": "item-999", "column": "In review" }),
             "O item item-999 não existe no backlog deste projeto.".to_string(),
         ),
         (
@@ -530,7 +529,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
         .iter()
         .map(|column| column.as_str().unwrap())
         .collect();
-    assert_eq!(columns, ["Backlog", "In progress", "In review", "Done"]);
+    assert_eq!(columns, ["Backlog", "In progress", "In review"]);
     assert_eq!(
         world.server.tool_names(),
         [
@@ -587,7 +586,7 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "item-1", "column": "Done" }),
+        json!({ "id": "item-1", "column": "In review" }),
     );
     std::thread::sleep(std::time::Duration::from_millis(300));
 
@@ -595,7 +594,7 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     assert!(slot.changed);
     assert_eq!(
         slot.confirmations,
-        ["Card item-1 criado: Um.", "Card item-1 movido para Done."]
+        ["Card item-1 criado: Um.", "Card item-1 movido para In review."]
     );
     let seen: Vec<Value> = events.lock().unwrap().clone();
     let backlog: Vec<&Value> = seen

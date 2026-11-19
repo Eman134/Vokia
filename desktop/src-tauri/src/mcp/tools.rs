@@ -2,16 +2,17 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use crate::agents::AgentRegistry;
+use crate::agents::{Agent, AgentRegistry, Team};
 use crate::commands::channels::post_agent_message;
 use crate::commands::orchestration::{read_movements, read_orchestration};
 use crate::db::{
-    board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, DbError, DbState,
-    ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMN, BACKLOG_LABEL_MAX_CHARS,
+    board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, CardResponsible, DbError,
+    DbState, ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
     BOARD_COLUMNS, REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
-use crate::orchestration::policy::{check_intent, parallel_pair};
+use crate::orchestration::policy::check_intent;
+use crate::orchestration::snapshot::{find_team, team_leader, team_leaders, TeamLeader};
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
 use crate::state::AppState;
 use crate::task::{Change, VarValue};
@@ -114,6 +115,7 @@ struct ReadArgs {
 struct CreateArgs {
     title: String,
     description: Option<String>,
+    team: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -177,7 +179,7 @@ pub fn definitions() -> Vec<Value> {
     let movable: Vec<&str> = BOARD_COLUMNS
         .iter()
         .copied()
-        .filter(|column| *column != AGENT_FORBIDDEN_COLUMN)
+        .filter(|column| !AGENT_FORBIDDEN_COLUMNS.contains(column))
         .collect();
     let decision_kinds = decision_kind_names();
     vec![
@@ -199,6 +201,7 @@ pub fn definitions() -> Vec<Value> {
             json!({
                 "title": { "type": "string", "maxLength": MAX_TITLE_CHARS },
                 "description": { "type": "string" },
+                "team": { "type": "string", "description": "Id ou nome do time responsável; só o Ember usa, e o líder disponível do time passa a ser o responsável do card." },
             }),
             &["title"],
         ),
@@ -317,7 +320,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             GET_ORCHESTRATION,
-            "Lê os times, as camadas e as regras de passagem do projeto, com a posição de cada agente.",
+            "Lê os times, as camadas e as regras de passagem do Vokia, com a posição de cada agente.",
             json!({}),
             &[],
         ),
@@ -407,7 +410,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         DELEGATE => parse(name, arguments).and_then(|args| delegate(app, binding, args)),
         GET_VARIABLES => get_variables(app, binding),
         SET_VARIABLE => parse(name, arguments).and_then(|args| set_variable(app, binding, args)),
-        GET_ORCHESTRATION => get_orchestration(app, binding),
+        GET_ORCHESTRATION => get_orchestration(app),
         LIST_AGENTS => list_agents(app),
         SAVE_ITEM_PLAN => parse(name, arguments).and_then(|args| save_item_plan(app, binding, args)),
         LIST_MOVEMENTS => list_movements(app, binding),
@@ -519,14 +522,156 @@ fn ensure_title_length(title: &str) -> Result<(), String> {
 
 fn create_card(app: &AppHandle, binding: &Binding, args: CreateArgs) -> ToolText {
     ensure_title_length(&args.title)?;
+    let responsible = if binding.agent == Agent::ember() {
+        ember_card_responsible(app, binding.project_id, args.team.as_deref())?
+    } else {
+        None
+    };
     apply(
         app,
         binding,
         CardOperation::Create {
             title: args.title,
             description: args.description,
+            responsible,
         },
     )
+}
+
+fn leaders_text(leaders: &[TeamLeader], team: &Team) -> String {
+    leaders
+        .iter()
+        .map(|entry| {
+            format!(
+                "{} (líder {})",
+                entry.team_name,
+                team.name_of(&entry.leader)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn leaders_or_none(context: &LeaderContext) -> String {
+    let leaders = context.leaders();
+    if leaders.is_empty() {
+        "nenhum".to_string()
+    } else {
+        leaders_text(&leaders, &context.team)
+    }
+}
+
+// Sem nenhum time com líder disponível o Ember cria o card para si, como antes dos times.
+fn ember_card_responsible(
+    app: &AppHandle,
+    project_id: i64,
+    requested: Option<&str>,
+) -> Result<Option<CardResponsible>, String> {
+    let Some(context) = LeaderContext::load(app, project_id)? else {
+        return Ok(None);
+    };
+    let requested = requested.map(str::trim).filter(|team| !team.is_empty());
+    let Some(requested) = requested else {
+        if context.leaders().is_empty() {
+            return Ok(None);
+        }
+        return Err(format!(
+            "Informe o time do card no campo team. Times com líder disponível: {}.",
+            leaders_or_none(&context)
+        ));
+    };
+    let Some(orch_team) = find_team(&context.snapshot, requested) else {
+        let teams: Vec<String> = context
+            .snapshot
+            .teams
+            .iter()
+            .map(|team| format!("{} ({})", team.id, team.name))
+            .collect();
+        return Err(format!(
+            "Não existe o time {requested}. Times: {}.",
+            teams.join(", ")
+        ));
+    };
+    let Some(entry) = team_leader(&context.snapshot, orch_team, &context.team, &context.paused)
+    else {
+        return Err(format!(
+            "O time {} não tem líder disponível. Times com líder disponível: {}.",
+            orch_team.name,
+            leaders_or_none(&context)
+        ));
+    };
+    Ok(Some(CardResponsible {
+        leader_name: context.team.name_of(&entry.leader).to_string(),
+        team_name: entry.team_name,
+        leader: entry.leader,
+    }))
+}
+
+// Mapa global, elenco e pausas do projeto da troca: tudo o que a regra de líder disponível lê.
+struct LeaderContext {
+    snapshot: OrchestrationSnapshot,
+    team: Team,
+    paused: Vec<Agent>,
+}
+
+impl LeaderContext {
+    // Sem banco ou sem times cadastrados não há líder a exigir.
+    fn load(app: &AppHandle, project_id: i64) -> Result<Option<Self>, String> {
+        let Some(snapshot) = orchestration_snapshot(app)? else {
+            return Ok(None);
+        };
+        if snapshot.teams.is_empty() {
+            return Ok(None);
+        }
+        let team = app
+            .state::<AgentRegistry>()
+            .team()
+            .map_err(|_| SYSTEM_FAILURE.to_string())?;
+        let state = app.state::<DbState>();
+        let db = state.require().map_err(|_| SYSTEM_FAILURE.to_string())?;
+        let paused = db
+            .project_paused_agents(project_id)
+            .map_err(|_| SYSTEM_FAILURE.to_string())?;
+        Ok(Some(Self {
+            snapshot,
+            team,
+            paused,
+        }))
+    }
+
+    fn leaders(&self) -> Vec<TeamLeader> {
+        team_leaders(&self.snapshot, &self.team, &self.paused)
+    }
+}
+
+// O Ember só delega a líderes; o card sem responsável de verdade passa ao líder escolhido.
+fn ember_delegation_to_leader(
+    app: &AppHandle,
+    binding: &Binding,
+    helper: &Agent,
+    item_id: Option<&str>,
+) -> Result<(), String> {
+    let Some(context) = LeaderContext::load(app, binding.project_id)? else {
+        return Ok(());
+    };
+    let leaders = context.leaders();
+    if leaders.is_empty() {
+        return Ok(());
+    }
+    if !leaders.iter().any(|entry| entry.leader == *helper) {
+        return Err(format!(
+            "{} não é líder de time. Delegue ao líder do time: {}.",
+            context.team.name_of(helper),
+            leaders_text(&leaders, &context.team)
+        ));
+    }
+    let Some(item) = item_id else {
+        return Ok(());
+    };
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.set_backlog_responsible(binding.project_id, item, helper, &context.team)
+        .map_err(|error| refusal_or_system(&error))
 }
 
 fn update_card(app: &AppHandle, binding: &Binding, args: UpdateArgs) -> ToolText {
@@ -671,7 +816,10 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         .filter(|item| !item.is_empty())
         .map(str::to_string);
     check_item(app, binding.project_id, item_id.as_deref())?;
-    let snapshot = orchestration_snapshot(app, binding.project_id)?;
+    if binding.agent == Agent::ember() {
+        ember_delegation_to_leader(app, binding, &helper, item_id.as_deref())?;
+    }
+    let snapshot = orchestration_snapshot(app)?;
     check_intent(
         snapshot.as_ref(),
         &team,
@@ -681,11 +829,6 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         event,
     )?;
     let mut slot = binding.slot.lock();
-    if parallel_pair(snapshot.as_ref(), &binding.agent, &helper) {
-        slot.parallel_delegations
-            .push((helper, request.to_string()));
-        return Ok(DELEGATION_REGISTERED.to_string());
-    }
     if slot.delegation.is_some() {
         return Err(DELEGATION_ALREADY_REGISTERED.to_string());
     }
@@ -735,15 +878,12 @@ fn check_item(app: &AppHandle, project_id: i64, item: Option<&str>) -> Result<()
     }
 }
 
-fn orchestration_snapshot(
-    app: &AppHandle,
-    project_id: i64,
-) -> Result<Option<OrchestrationSnapshot>, String> {
+fn orchestration_snapshot(app: &AppHandle) -> Result<Option<OrchestrationSnapshot>, String> {
     let state = app.state::<DbState>();
     let Some(db) = state.db() else {
         return Ok(None);
     };
-    db.orchestration(project_id)
+    db.orchestration()
         .map(Some)
         .map_err(|_| SYSTEM_FAILURE.to_string())
 }
@@ -804,11 +944,11 @@ fn to_json(value: &impl serde::Serialize) -> ToolText {
     serde_json::to_string(value).map_err(|_| SYSTEM_FAILURE.to_string())
 }
 
-fn get_orchestration(app: &AppHandle, binding: &Binding) -> ToolText {
+fn get_orchestration(app: &AppHandle) -> ToolText {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
     let registry = app.state::<AgentRegistry>();
-    let snapshot = read_orchestration(db, &registry, binding.project_id)
+    let snapshot = read_orchestration(db, &registry)
         .map_err(|_| SYSTEM_FAILURE.to_string())?;
     to_json(&snapshot)
 }

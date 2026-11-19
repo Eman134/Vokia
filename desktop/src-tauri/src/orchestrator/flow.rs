@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
@@ -7,16 +7,16 @@ use tauri::{AppHandle, Manager};
 use crate::agents::replica_of;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
-use crate::db::{DbState, OrchestrationSnapshot};
+use crate::db::{DbError, DbState, FlowEdge, OrchestrationSnapshot, GATEWAY_PARALLEL, LINK_FLOW};
 use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
 use crate::mcp::{McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::instances;
 use crate::orchestration::policy::{
-    self, placed_participants, Verdict, HUMAN_GATE_END, HUMAN_GATE_NEVER, REVIEW_BATCH_TITLE,
-    REVIEW_TASK_TITLE,
+    self, placed_participants, Passage, Verdict, HUMAN_GATE_END, HUMAN_GATE_NEVER,
+    REVIEW_BATCH_TITLE, REVIEW_TASK_TITLE,
 };
-use crate::orchestration::worktree_policy::should_use;
+use crate::orchestration::worktree_policy::{leader_limit, should_use};
 use crate::projects::worktree;
 use crate::session_key::SessionKey;
 use crate::state::{
@@ -28,7 +28,9 @@ use crate::task::{
 
 use super::agent_session::ask_step;
 use super::archive::archive_task;
-use super::emit::{emit, emit_backlog_changed, emit_message, emit_state, report_limits};
+use super::emit::{
+    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis, report_limits,
+};
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
     load_project, project_context, project_dir, project_id_from_choice, scan_structure,
@@ -39,9 +41,11 @@ use super::runs::{begin_run, end_run, pause_run};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext};
 use super::turns::{
-    first_speaker, open_decision, record_passage, run_turns, with_cache, Exchange, USER_LABEL,
+    count_passage, edge_passages, first_speaker, open_decision, record_passage, run_turns,
+    with_cache, Exchange, USER_LABEL,
 };
-use crate::orchestration::snapshot::{placement_of, ACTION_RETURN};
+use super::validation::{self, VALIDATION_RETURN};
+use crate::orchestration::snapshot::{flow_target, leader_of, node_id, placement_of};
 use crate::task::Change;
 
 // Sem configuração de gate, a junção segue o padrão do projeto: revisão a cada lote.
@@ -51,6 +55,28 @@ pub async fn handle_request(
     app: &AppHandle,
     state: &AppState,
     request: &str,
+    recipient: Agent,
+    project_id: i64,
+    context: RequestContext,
+) -> Result<RequestOutcome, FlowError> {
+    handle_request_from(
+        app,
+        state,
+        request,
+        Speaker::User,
+        recipient,
+        project_id,
+        context,
+    )
+    .await
+}
+
+// O pedido pode vir de quem não é o usuário (o líder devolvendo uma task reprovada pela validação automática).
+pub(super) async fn handle_request_from(
+    app: &AppHandle,
+    state: &AppState,
+    request: &str,
+    from: Speaker,
     recipient: Agent,
     project_id: i64,
     context: RequestContext,
@@ -70,7 +96,7 @@ pub async fn handle_request(
     emit_message(
         app,
         project_id,
-        Speaker::User,
+        from,
         Speaker::from(recipient.clone()),
         request,
         context.channel_id,
@@ -99,6 +125,9 @@ pub async fn answer_decision(
         .map_err(|_| FlowError::DecisionsPoisoned)?
         .remove(&id)
         .ok_or(FlowError::UnknownDecision)?;
+    if decision.kind == DecisionKind::Validacao {
+        return answer_validation(app, state, &decision, answer).await;
+    }
     let text = format!(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
@@ -111,6 +140,26 @@ pub async fn answer_decision(
     handle_request(app, state, &text, decision.agent, project_id, context)
         .await
         .map(|_| ())
+}
+
+// Validação final: "Concluir" fecha o card sem falar com agente; "Devolver: <motivo>" volta a task ao líder.
+async fn answer_validation(
+    app: &AppHandle,
+    state: &AppState,
+    decision: &PendingDecision,
+    answer: &str,
+) -> Result<(), FlowError> {
+    let item_id = decision
+        .item_id
+        .as_deref()
+        .ok_or(FlowError::UnknownDecision)?;
+    match answer.strip_prefix(VALIDATION_RETURN) {
+        Some(rest) => {
+            let motive = rest.trim_start_matches(':');
+            validation::return_task(app, state, decision.project_id, item_id, motive).await
+        }
+        None => validation::conclude_card(app, decision.project_id, item_id),
+    }
 }
 
 // Escolha de projeto feita pelo Ember, pelo id do rótulo. O card de origem pertence ao projeto original e não vai junto.
@@ -139,22 +188,116 @@ pub(super) fn dispatch_request(
     max_instances: i64,
     max_parallel: i64,
 ) -> Result<(), FlowError> {
-    let key_of = |agent: &Agent| SessionKey {
-        project_id,
-        agent: agent.clone(),
-    };
     let parallel = RequestContext {
         parallel: true,
         ..context
     };
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     // Conta a troca no lote antes de qualquer caminho (inicia, fila ou espera), para a junção não sair cedo.
     if let Some(batch) = parallel.batch {
+        let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
         if let Some(open) = flow.batches.get_mut(&batch) {
             open.pending += 1;
             open.dispatched.push(base.clone());
         }
     }
+    start_dispatch(
+        app,
+        state,
+        project_id,
+        base,
+        request,
+        parallel,
+        max_instances,
+        max_parallel,
+        true,
+    )
+}
+
+// Card que ainda não tem worktree e cujo líder já usa o máximo dele: o pedido espera.
+struct WorktreeWait {
+    leader: String,
+    item_id: String,
+    max: i64,
+}
+
+fn worktree_wait(
+    app: &AppHandle,
+    project_id: i64,
+    context: &RequestContext,
+) -> Result<Option<WorktreeWait>, FlowError> {
+    let Some(item_id) = context.item_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(snapshot) = load_orchestration(app)? else {
+        return Ok(None);
+    };
+    if !should_use(&snapshot.settings.worktree_policy, &snapshot, Some(item_id)) {
+        return Ok(None);
+    }
+    let db_state = app.state::<DbState>();
+    let Some(db) = db_state.db() else {
+        return Ok(None);
+    };
+    let card = match db.read_card(project_id, item_id) {
+        Ok(card) => card,
+        Err(DbError::BacklogItemNotFound(_)) => return Ok(None),
+        Err(error) => return Err(FlowError::Orchestration(error)),
+    };
+    if card.worktree_path.is_some() {
+        return Ok(None);
+    }
+    let Some(max) = leader_limit(&snapshot, &card.who) else {
+        return Ok(None);
+    };
+    let in_use = db
+        .count_team_worktrees(&card.who)
+        .map_err(FlowError::Orchestration)?;
+    Ok((in_use >= max).then(|| WorktreeWait {
+        leader: card.who,
+        item_id: item_id.to_string(),
+        max,
+    }))
+}
+
+// Segue o despacho já contado no lote; `announce` avisa o líder só na primeira espera por worktree.
+#[allow(clippy::too_many_arguments)]
+fn start_dispatch(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    base: &Agent,
+    request: &str,
+    parallel: RequestContext,
+    max_instances: i64,
+    max_parallel: i64,
+    announce: bool,
+) -> Result<(), FlowError> {
+    let key_of = |agent: &Agent| SessionKey {
+        project_id,
+        agent: agent.clone(),
+    };
+    if let Some(wait) = worktree_wait(app, project_id, &parallel)? {
+        if announce {
+            if let Some(leader) = Agent::from_stored(&wait.leader) {
+                let text = format!(
+                    "Aguardando worktree livre para {} (limite {}).",
+                    wait.item_id, wait.max
+                );
+                emit_feed_note(app, project_id, Speaker::from(leader), &text, now_millis()?)?;
+            }
+        }
+        let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+        flow.waiting
+            .entry(project_id)
+            .or_default()
+            .push_back(WaitingDelegation {
+                base: base.clone(),
+                text: request.to_string(),
+                context: parallel,
+            });
+        return Ok(());
+    }
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let Some(agent) = instances::pick(base, max_instances, |agent| {
         flow.pending.contains_key(&key_of(agent))
     }) else {
@@ -330,7 +473,36 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
         None,
         None,
     )?;
-    let snapshot = load_orchestration(app, batch.project_id)?;
+    let snapshot = load_orchestration(app)?;
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(FlowError::Team)?;
+    if let Some(target) = snapshot
+        .as_ref()
+        .and_then(|snapshot| join_target(snapshot, &team, &batch))
+    {
+        let max_instances = snapshot
+            .as_ref()
+            .and_then(|snapshot| placement_of(snapshot, &target))
+            .map_or(1, |placement| placement.max_instances);
+        let max_parallel = snapshot
+            .as_ref()
+            .map_or(1, |snapshot| snapshot.settings.max_parallel);
+        let context = RequestContext::new(None, batch.item_id.clone(), batch.channel_id);
+        count_branch(state, batch.project_id, batch.item_id.as_deref())?;
+        dispatch_request(
+            app,
+            state,
+            batch.project_id,
+            &target,
+            &format!("Resultados dos ramos:\n\n{text}"),
+            context,
+            max_instances,
+            max_parallel,
+        )?;
+        return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
+    }
     let gate = snapshot.as_ref().map_or(HUMAN_GATE_LOTE, |snapshot| {
         snapshot.settings.human_gate.as_str()
     });
@@ -357,6 +529,42 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
         },
     )?;
     emit_state(app, batch.project_id, batch.leader, AgentState::Waiting)
+}
+
+// Gateway paralelo de junção (2 ou mais entradas, uma saída) cujas entradas vêm todas dos ramos do lote: o destino da
+// saída recebe os resultados quando o último ramo volta.
+fn join_target(snapshot: &OrchestrationSnapshot, team: &Team, batch: &Batch) -> Option<Agent> {
+    let branches: HashSet<&str> = batch.dispatched.iter().map(node_id).collect();
+    let flow_edges = |from: bool, gateway: &str| -> Vec<&FlowEdge> {
+        snapshot
+            .edges
+            .iter()
+            .filter(|edge| {
+                edge.link == LINK_FLOW
+                    && if from {
+                        edge.from_node == gateway
+                    } else {
+                        edge.to_node == gateway
+                    }
+            })
+            .collect()
+    };
+    snapshot
+        .gateways
+        .iter()
+        .filter(|gateway| gateway.kind == GATEWAY_PARALLEL)
+        .find_map(|gateway| {
+            let entries = flow_edges(false, &gateway.id);
+            let exits = flow_edges(true, &gateway.id);
+            let from_branches = entries.len() >= 2
+                && entries
+                    .iter()
+                    .all(|edge| branches.contains(edge.from_node.as_str()));
+            match exits.as_slice() {
+                [exit] if from_branches => flow_target(team, &exit.to_node).cloned(),
+                _ => None,
+            }
+        })
 }
 
 fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: RequestContext) {
@@ -412,6 +620,100 @@ fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, Flow
     Ok(next)
 }
 
+// O card chegou ao fim do fluxo por este agente; a validação final espera o último ramo terminar.
+pub(super) fn mark_flow_end(
+    state: &AppState,
+    project_id: i64,
+    item_id: &str,
+    speaker: &Agent,
+) -> Result<(), FlowError> {
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    flow.ended
+        .insert((project_id, item_id.to_string()), speaker.clone());
+    Ok(())
+}
+
+// Cada troca com card é um ramo dele; a primeira registra o ramo principal.
+fn register_main_branch(
+    state: &AppState,
+    project_id: i64,
+    item_id: Option<&str>,
+) -> Result<(), FlowError> {
+    let Some(item) = item_id else {
+        return Ok(());
+    };
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    flow.open_branches
+        .entry((project_id, item.to_string()))
+        .or_insert(1);
+    Ok(())
+}
+
+// Um ramo novo do card: linha assíncrona, saída de gateway paralelo ou a entrega da junção.
+pub(super) fn count_branch(
+    state: &AppState,
+    project_id: i64,
+    item_id: Option<&str>,
+) -> Result<(), FlowError> {
+    let Some(item) = item_id else {
+        return Ok(());
+    };
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    *flow
+        .open_branches
+        .entry((project_id, item.to_string()))
+        .or_insert(0) += 1;
+    Ok(())
+}
+
+// O ramo terminou (concluído ou não). Sem chegar ao fim, o líder fica sabendo; o card só segue quando nenhum ramo resta.
+async fn release_branch(
+    app: &AppHandle,
+    state: &AppState,
+    team: &Team,
+    key: &SessionKey,
+    item_id: Option<&str>,
+    stopped: Option<String>,
+) {
+    let Some(item) = item_id else {
+        return;
+    };
+    if let Some(reason) = stopped {
+        let leader = load_orchestration(app)
+            .ok()
+            .flatten()
+            .map_or_else(|| leader_of(None), |snapshot| leader_of(Some(&snapshot)));
+        let text = format!(
+            "Ramo {} de {item} parou: {reason}.",
+            team.name_of(&base_agent(&key.agent))
+        );
+        if let Ok(time) = now_millis() {
+            let _ = emit_feed_note(app, key.project_id, Speaker::from(leader), &text, time);
+        }
+    }
+    let ended = {
+        let Ok(mut flow) = state.flow.lock() else {
+            return;
+        };
+        let branch = (key.project_id, item.to_string());
+        let open = flow.open_branches.get(&branch).copied().unwrap_or(0);
+        if open > 1 {
+            flow.open_branches.insert(branch, open - 1);
+            return;
+        }
+        flow.open_branches.remove(&branch);
+        flow.ended.remove(&branch)
+    };
+    // Sem ramo aberto: só o card que chegou ao fim do fluxo vai para a validação final.
+    if let Some(speaker) = ended {
+        if let Err(error) =
+            validation::on_flow_end(app, state, team, key.project_id, item, &speaker).await
+        {
+            let _ = report_failure(app, key.project_id, &error);
+        }
+    }
+}
+
 fn set_running_item(
     state: &AppState,
     key: &SessionKey,
@@ -426,24 +728,32 @@ fn set_running_item(
 }
 
 pub(crate) struct ActiveInstance {
+    pub(crate) project_id: i64,
     pub(crate) agent: Agent,
     pub(crate) item_id: Option<String>,
 }
 
-// Fluxos em andamento do projeto; réplicas são as que têm sufixo -<n> no id.
-pub(crate) fn active_instances(
-    state: &AppState,
-    project_id: i64,
-) -> Result<Vec<ActiveInstance>, FlowError> {
+// Fluxos em andamento em todos os projetos; réplicas são as que têm sufixo -<n> no id.
+pub(crate) fn all_active_instances(state: &AppState) -> Result<Vec<ActiveInstance>, FlowError> {
     let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     Ok(flow
         .pending
         .keys()
-        .filter(|key| key.project_id == project_id)
         .map(|key| ActiveInstance {
+            project_id: key.project_id,
             agent: key.agent.clone(),
             item_id: flow.running.get(key).cloned(),
         })
+        .collect())
+}
+
+pub(crate) fn active_instances(
+    state: &AppState,
+    project_id: i64,
+) -> Result<Vec<ActiveInstance>, FlowError> {
+    Ok(all_active_instances(state)?
+        .into_iter()
+        .filter(|instance| instance.project_id == project_id)
         .collect())
 }
 
@@ -468,6 +778,7 @@ async fn run_flow(
     let mut current_run: Option<u64> = None;
     loop {
         set_running_item(state, &key, item_id.as_deref())?;
+        register_main_branch(state, key.project_id, item_id.as_deref())?;
         let journal_run = if parallel {
             current_run.or(parallel_run)
         } else {
@@ -512,6 +823,11 @@ async fn run_flow(
             )
             .await
         };
+        let stopped = match &exchange {
+            Ok(TaskOutcome::Finished) => None,
+            Ok(_) => Some("a troca terminou sem concluir".to_string()),
+            Err(error) => Some(error.to_string()),
+        };
         let (this, limit) = match exchange {
             Ok(TaskOutcome::Finished) => (RequestOutcome::Finished, None),
             Ok(_) => (RequestOutcome::Failed, None),
@@ -538,6 +854,7 @@ async fn run_flow(
             )?;
         }
         first.get_or_insert(this);
+        release_branch(app, state, team, &key, item_id.as_deref(), stopped).await;
         match next_job(state, key.clone())? {
             Some(job) => {
                 request = job.text;
@@ -556,6 +873,7 @@ async fn run_flow(
 }
 
 // As sessões do projeto ficam reservadas até o fim da mensagem; a ordem fixa evita impasse entre fluxos.
+#[allow(clippy::too_many_arguments)] // contexto da troca repassado ao laço de turnos
 async fn run_exchange(
     app: &AppHandle,
     state: &AppState,
@@ -648,7 +966,7 @@ async fn run_parallel_item(
     let project = load_project(app, key.project_id)?;
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
-    let orchestration = load_orchestration(app, key.project_id)?;
+    let orchestration = load_orchestration(app)?;
     let working = working_dir(
         app,
         key.project_id,
@@ -782,9 +1100,9 @@ async fn answer_once(
     }
     let delegations: Vec<(Agent, String)> = reply
         .outcome
-        .parallel_delegations
+        .delegation
+        .or(read.delegation)
         .into_iter()
-        .chain(reply.outcome.delegation.or(read.delegation))
         .collect();
     let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
     for (helper, request) in delegations {
@@ -799,64 +1117,39 @@ async fn answer_once(
         let verdict = batch
             .and_then(|id| {
                 with_batch(exchange.state, id, |open| {
-                    policy::check(snapshot, team, &base, &helper, &open.counters)
+                    let passed =
+                        edge_passages(exchange.app, project_id, exchange.item_id, &open.counters);
+                    policy::check(
+                        snapshot,
+                        team,
+                        &base,
+                        &helper,
+                        &open.counters,
+                        &passed,
+                        None,
+                    )
                 })
             })
             .unwrap_or_else(|| {
-                policy::check(snapshot, team, &base, &helper, &TaskCounters::default())
+                let counters = TaskCounters::default();
+                let passed = edge_passages(exchange.app, project_id, exchange.item_id, &counters);
+                policy::check(snapshot, team, &base, &helper, &counters, &passed, None)
             });
-        match verdict {
+        let deliveries: Vec<(Agent, Passage)> = match verdict {
             Verdict::Deliver(passage) => {
-                if let Some(id) = batch {
-                    with_batch(exchange.state, id, |open| {
-                        open.counters.register_passage(&base, &helper);
-                        if passage.action == ACTION_RETURN {
-                            open.counters.register_return(&base, &helper);
-                        }
-                    });
-                }
-                record_passage(
-                    exchange.app,
-                    exchange.run_id,
-                    project_id,
-                    exchange.item_id,
-                    None,
-                    &agent,
-                    &helper,
-                    &passage,
-                )?;
-                let max_instances = snapshot
-                    .and_then(|snapshot| placement_of(snapshot, &helper))
-                    .map_or(1, |placement| placement.max_instances);
-                let mut context = RequestContext::new(
-                    exchange.run_id,
-                    exchange.item_id.map(str::to_string),
-                    exchange.channel_id,
-                );
-                context.batch = batch;
-                dispatch_request(
-                    exchange.app,
-                    exchange.state,
-                    project_id,
-                    &helper,
-                    &request,
-                    context,
-                    max_instances,
-                    max_parallel,
-                )?;
-                emit_message(
-                    exchange.app,
-                    project_id,
-                    Speaker::from(agent.clone()),
-                    Speaker::from(helper),
-                    &request,
-                    exchange.channel_id,
-                    None,
-                    None,
-                )?;
+                let target = passage
+                    .routed
+                    .as_ref()
+                    .map_or_else(|| helper.clone(), |routed| routed.to.clone());
+                vec![(target, passage)]
             }
+            Verdict::Fork(branches) => branches
+                .into_iter()
+                .filter_map(|branch| Some((branch.routed.as_ref()?.to.clone(), branch)))
+                .collect(),
             Verdict::Refuse(motive) => {
                 notes.push(format!("Delegação para {name} recusada: {motive}"));
+                continue;
             }
             Verdict::Escalate(motive) => {
                 open_decision(
@@ -868,7 +1161,55 @@ async fn answer_once(
                     exchange.request,
                     limit_decision(motive),
                 )?;
+                continue;
             }
+        };
+        for (target, passage) in deliveries {
+            if let Some(id) = batch {
+                with_batch(exchange.state, id, |open| {
+                    count_passage(&mut open.counters, &base, &target, &passage);
+                });
+            }
+            record_passage(
+                exchange.app,
+                exchange.run_id,
+                project_id,
+                exchange.item_id,
+                None,
+                &agent,
+                &target,
+                &passage,
+            )?;
+            let max_instances = snapshot
+                .and_then(|snapshot| placement_of(snapshot, &target))
+                .map_or(1, |placement| placement.max_instances);
+            let mut context = RequestContext::new(
+                exchange.run_id,
+                exchange.item_id.map(str::to_string),
+                exchange.channel_id,
+            );
+            context.batch = batch;
+            count_branch(exchange.state, project_id, exchange.item_id)?;
+            dispatch_request(
+                exchange.app,
+                exchange.state,
+                project_id,
+                &target,
+                &request,
+                context,
+                max_instances,
+                max_parallel,
+            )?;
+            emit_message(
+                exchange.app,
+                project_id,
+                Speaker::from(agent.clone()),
+                Speaker::from(target),
+                &request,
+                exchange.channel_id,
+                None,
+                None,
+            )?;
         }
     }
     let mut parts = vec![shown];
@@ -915,9 +1256,10 @@ fn parallel_definition(
     }
 }
 
-// Ao fim de um fluxo, as delegações que esperavam o teto entram enquanto houver vaga.
+// Ao fim de um fluxo, as delegações que esperavam o teto (ou worktree livre) entram enquanto houver vaga.
+// Cada espera é tentada uma vez por chamada: a que continua bloqueada volta ao fim da fila.
 fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
-    let snapshot = match load_orchestration(app, project_id) {
+    let snapshot = match load_orchestration(app) {
         Ok(snapshot) => snapshot,
         Err(error) => {
             let _ = report_failure(app, project_id, &error);
@@ -927,7 +1269,16 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
     let max_parallel = snapshot
         .as_ref()
         .map_or(1, |snapshot| snapshot.settings.max_parallel);
-    while has_room(state, project_id, max_parallel) {
+    let queued = state
+        .flow
+        .lock()
+        .ok()
+        .and_then(|flow| flow.waiting.get(&project_id).map(VecDeque::len))
+        .unwrap_or(0);
+    for _ in 0..queued {
+        if !has_room(state, project_id, max_parallel) {
+            return;
+        }
         let Some(waiting) = take_waiting(state, project_id) else {
             return;
         };
@@ -935,7 +1286,7 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
             .as_ref()
             .and_then(|snapshot| placement_of(snapshot, &waiting.base))
             .map_or(1, |placement| placement.max_instances);
-        if let Err(error) = dispatch_request(
+        if let Err(error) = start_dispatch(
             app,
             state,
             project_id,
@@ -944,10 +1295,29 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
             waiting.context,
             max_instances,
             max_parallel,
+            false,
         ) {
             let _ = report_failure(app, project_id, &error);
             return;
         }
+    }
+}
+
+// Um card saiu de In progress, possivelmente em outro projeto: toda fila de espera tenta de novo.
+pub(super) fn drain_all_waiting(app: &AppHandle, state: &AppState) {
+    let projects: Vec<i64> = state
+        .flow
+        .lock()
+        .map(|flow| {
+            flow.waiting
+                .iter()
+                .filter(|(_, queue)| !queue.is_empty())
+                .map(|(project_id, _)| *project_id)
+                .collect()
+        })
+        .unwrap_or_default();
+    for project_id in projects {
+        drain_waiting(app, state, project_id);
     }
 }
 
@@ -969,15 +1339,14 @@ fn take_waiting(state: &AppState, project_id: i64) -> Option<WaitingDelegation> 
 }
 
 // Banco ausente vira None (prompt de antes); erro de leitura do banco interrompe a troca.
-fn load_orchestration(
+pub(super) fn load_orchestration(
     app: &AppHandle,
-    project_id: i64,
 ) -> Result<Option<OrchestrationSnapshot>, FlowError> {
     let state = app.state::<DbState>();
     let Some(db) = state.db() else {
         return Ok(None);
     };
-    db.orchestration(project_id)
+    db.orchestration()
         .map(Some)
         .map_err(FlowError::Orchestration)
 }
@@ -1005,7 +1374,7 @@ async fn exchange_turns(
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
-    let orchestration = load_orchestration(app, key.project_id)?;
+    let orchestration = load_orchestration(app)?;
     let working = working_dir(
         app,
         key.project_id,

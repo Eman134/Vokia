@@ -8,6 +8,8 @@ use crate::db::DbState;
 use crate::events::{AgentState, RequestProposal, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 
 use super::error::FlowError;
+use super::flow::drain_all_waiting;
+use crate::state::AppState;
 
 const PERCENT_SCALE: f64 = 100.0;
 
@@ -56,6 +58,7 @@ pub(crate) fn emit_feed_note(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // cada argumento é um campo do evento de mensagem
 pub(crate) fn emit_message(
     app: &AppHandle,
     project_id: i64,
@@ -95,8 +98,13 @@ pub(crate) fn emit_message(
     )
 }
 
+// Um card pode ter saído de In progress: as delegações que esperavam worktree livre tentam de novo.
 pub(crate) fn emit_backlog_changed(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
-    emit(app, VokiaEvent::BacklogChanged { project_id })
+    emit(app, VokiaEvent::BacklogChanged { project_id })?;
+    if let Some(state) = app.try_state::<AppState>() {
+        drain_all_waiting(app, &state);
+    }
+    Ok(())
 }
 
 pub(super) fn emit_state(

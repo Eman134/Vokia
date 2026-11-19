@@ -15,13 +15,18 @@ const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
 const MAESTRO_EXTRA_LABEL: &str = "Instruções extras do agente:";
 const MAESTRO_COMMANDS_LABEL: &str = "Comandos disponíveis:";
 const NO_PROJECT_TEXT: &str = "nenhum";
+const CRITERIA_LABEL: &str = "Para concluir sua etapa:";
+const MAESTRO_TEAMS_LABEL: &str = "Times do Vokia:";
+const MAESTRO_TEAM_RULE: &str = "Escolha sempre um time para o pedido: prefira as instruções do time e, quando ele não tem instruções, decida pela composição. Ao criar uma task, crie-a com o time escolhido e delegue o trabalho ao líder desse time. Não delegue a um time sem líder disponível. Se a dúvida entre times for real, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português e options com os nomes dos times.";
+const NO_AVAILABLE_LEADER: &str = "sem líder disponível";
+const NO_TEAM_MEMBERS: &str = "nenhum agente posicionado";
 
 use super::project_context::{ProjectChoices, PROJECT_RULE};
 use super::turns::NO_CONVERSATION;
 
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Variáveis da tarefa são compartilhadas por padrão e todos os agentes podem ler e alterar. Use `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
-const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto, escreva uma linha por operação: #card criar <título>|<descrição> ou #card mover <id>|<coluna>. As colunas são Backlog, In progress, In review e Done; nunca use Ready. Mova só cards seus ou o card do pedido atual; Done não volta. Não repita um card que já existe e não misture linhas #card com #decisao. O app confirma cada operação na conversa.";
+const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto, escreva uma linha por operação: #card criar <título>|<descrição> ou #card mover <id>|<coluna>. As colunas são Backlog, In progress e In review; nunca use Ready nem Done: quem conclui a task é o usuário ou a validação final. Mova só cards seus ou o card do pedido atual. Não repita um card que já existe e não misture linhas #card com #decisao. O app confirma cada operação na conversa.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta set_variable (name, op, value) por variável alterada; use op append para listas; variáveis da tarefa são compartilhadas por padrão e todos podem ler e alterar, então use share false só para rascunho pessoal; get_variables para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request.";
 const TOOLS_RULE: &str =
@@ -91,7 +96,7 @@ fn team_map_text(team: &Team, orchestration: Option<&OrchestrationSnapshot>) -> 
     let Some(snapshot) = orchestration else {
         return roster_text(team);
     };
-    let outlines = team_outlines(snapshot, team);
+    let outlines = team_outlines(snapshot, team, &[]);
     if outlines.teams.is_empty() {
         return roster_text(team);
     }
@@ -108,6 +113,12 @@ fn team_map_text(team: &Team, orchestration: Option<&OrchestrationSnapshot>) -> 
 
 fn team_text(team: &TeamOutline) -> String {
     let leader = team.leader.as_deref().unwrap_or(NO_LEADER);
+    if let Some(instructions) = &team.instructions {
+        return format!(
+            "{} (líder: {leader}; instruções: {instructions})",
+            team.name
+        );
+    }
     let members: Vec<String> = team
         .members
         .iter()
@@ -119,6 +130,57 @@ fn team_text(team: &TeamOutline) -> String {
         join_items(&members)
     };
     format!("{} (líder: {leader}; agentes: {members})", team.name)
+}
+
+// Sem times cadastrados a seção não existe e o Ember segue só com a regra de projeto.
+fn maestro_teams_text(
+    orchestration: Option<&OrchestrationSnapshot>,
+    team: &Team,
+    paused: &[Agent],
+) -> Option<String> {
+    let outlines = team_outlines(orchestration?, team, paused);
+    if outlines.teams.is_empty() {
+        return None;
+    }
+    let lines: Vec<String> = outlines.teams.iter().map(maestro_team_line).collect();
+    Some(format!(
+        "{MAESTRO_TEAMS_LABEL}
+{}
+{MAESTRO_TEAM_RULE}",
+        lines.join(
+            "
+"
+        )
+    ))
+}
+
+fn maestro_team_line(team: &TeamOutline) -> String {
+    let leader = team.leader.as_deref().unwrap_or(NO_AVAILABLE_LEADER);
+    let description = match &team.instructions {
+        Some(instructions) => format!("Instruções: {instructions}"),
+        None => {
+            let members: Vec<String> = team
+                .members
+                .iter()
+                .map(|member| {
+                    format!(
+                        "{} ({}; camada {}, {})",
+                        member.name, member.role, member.layer, member.layer_kind
+                    )
+                })
+                .collect();
+            let members = if members.is_empty() {
+                NO_TEAM_MEMBERS.to_string()
+            } else {
+                join_items(&members)
+            };
+            format!("Composição: {members}")
+        }
+    };
+    format!(
+        "- {} ({}) | líder: {leader} | {description}",
+        team.id, team.name
+    )
 }
 
 fn roster_text(team: &Team) -> String {
@@ -246,6 +308,9 @@ pub(super) fn maestro_role(
     tools: &[Value],
     choices: &ProjectChoices,
     extra: Option<&str>,
+    orchestration: Option<&OrchestrationSnapshot>,
+    team: &Team,
+    paused: &[Agent],
 ) -> String {
     let pinned = choices.pinned.as_deref().unwrap_or(NO_PROJECT_TEXT);
     let labels = if choices.labels.is_empty() {
@@ -259,7 +324,11 @@ pub(super) fn maestro_role(
         .filter(|text| !text.is_empty())
         .map(|text| format!(" {MAESTRO_EXTRA_LABEL} {text}"))
         .unwrap_or_default();
-    let head = format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{extra}");
+    let teams = maestro_teams_text(orchestration, team, paused)
+        .map(|text| format!(" {text}"))
+        .unwrap_or_default();
+    let head =
+        format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}");
     let commands: Vec<String> = tools.iter().filter_map(command_line).collect();
     if commands.is_empty() {
         return head;
@@ -324,6 +393,9 @@ fn layer_sections(layer: Option<&LayerContext>) -> String {
             "{AGENT_INSTRUCTIONS_LABEL}: {}",
             layer.agent_instructions
         ));
+    }
+    if !layer.agent_criteria.is_empty() {
+        sections.push(format!("{CRITERIA_LABEL} {}", layer.agent_criteria));
     }
     if let Some(rules) = &layer.map_rules {
         sections.push(rules.clone());

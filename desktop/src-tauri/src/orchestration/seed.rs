@@ -24,6 +24,10 @@ pub(crate) fn build(team: &Team) -> OrchestrationSeed {
             layer_id: layer_of(agent).to_string(),
             instructions: String::new(),
             max_instances: PLACEMENT_MAX_INSTANCES,
+            pos_x: None,
+            pos_y: None,
+            criteria: String::new(),
+            max_worktrees: None,
         })
         .collect();
     OrchestrationSeed {
@@ -36,6 +40,7 @@ pub(crate) fn build(team: &Team) -> OrchestrationSeed {
         team: TeamDraft {
             id: None,
             name: TEAM_NAME.to_string(),
+            instructions: None,
         },
         placements,
     }

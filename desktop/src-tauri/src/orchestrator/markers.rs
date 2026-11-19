@@ -122,7 +122,7 @@ pub(super) fn find_delegation(reply: &str, from: &Agent, team: &Team) -> Option<
     reply
         .lines()
         .filter_map(|line| delegation_request(line, from, team))
-        .last()
+        .next_back()
         .map(|(agent, request)| (agent, request.to_string()))
 }
 
@@ -162,6 +162,7 @@ fn create_operation(args: &str) -> Result<CardOperation, String> {
     Ok(CardOperation::Create {
         title: title.to_string(),
         description: (!description.is_empty()).then(|| description.to_string()),
+        responsible: None,
     })
 }
 

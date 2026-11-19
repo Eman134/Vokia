@@ -66,6 +66,7 @@ fn create(title: &str) -> CardOperation {
     CardOperation::Create {
         title: title.to_string(),
         description: None,
+        responsible: None,
     }
 }
 
@@ -122,6 +123,7 @@ fn criar_grava_card_do_agente_em_backlog_com_atividade_e_origem() {
             &[CardOperation::Create {
                 title: "Revisar login".to_string(),
                 description: Some("Checar o token".to_string()),
+                responsible: None,
             }],
         )
         .unwrap();
@@ -201,7 +203,7 @@ fn mover_id_inexistente_e_recusado_e_nada_e_gravado() {
     let project_id = project(&db, "a");
 
     let error =
-        refused(db.apply_card_operations(project_id, &vexa(), &[move_to("item-99", "Done")]));
+        refused(db.apply_card_operations(project_id, &vexa(), &[move_to("item-99", "In review")]));
 
     assert!(
         matches!(&error, DbError::BacklogItemNotFound(id) if id == "item-99"),
@@ -232,8 +234,7 @@ fn titulo_duplicado_ignora_caixa_e_espacos_e_so_libera_com_o_card_em_done() {
     assert!(error.is_card_refusal());
     assert_eq!(titles(&db, project_id), vec!["Revisar login"]);
 
-    db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "Done")])
-        .unwrap();
+    db.move_backlog_item(project_id, &id, "Done").unwrap();
     db.apply_card_operations(project_id, &vexa(), &[create("Revisar login")])
         .unwrap();
 
@@ -265,7 +266,7 @@ fn criar_valido_mais_mover_invalido_na_mesma_resposta_nao_grava_nenhum_dos_dois(
     let error = refused(db.apply_card_operations(
         project_id,
         &vexa(),
-        &[create("Valido"), move_to("item-99", "Done")],
+        &[create("Valido"), move_to("item-99", "In review")],
     ));
 
     assert!(
@@ -308,8 +309,7 @@ fn card_em_done_nao_sai_e_mover_para_a_coluna_atual_nao_muda_nem_registra_ativid
     assert_eq!(same[0].outcome, CardOutcome::Unchanged);
     assert_eq!(activity_count(&db, project_id, &id), 1);
 
-    db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "Done")])
-        .unwrap();
+    db.move_backlog_item(project_id, &id, "Done").unwrap();
     let error =
         refused(db.apply_card_operations(project_id, &vexa(), &[move_to(&id, "In progress")]));
 
@@ -356,7 +356,8 @@ fn coluna_inexistente_e_card_de_outro_projeto_sao_recusados() {
         .clone();
 
     let column = refused(db.apply_card_operations(first, &vexa(), &[move_to(&id, "Review")]));
-    let other_project = refused(db.apply_card_operations(second, &vexa(), &[move_to(&id, "Done")]));
+    let other_project =
+        refused(db.apply_card_operations(second, &vexa(), &[move_to(&id, "In review")]));
 
     assert!(
         matches!(column, DbError::InvalidBacklogColumn(_)),

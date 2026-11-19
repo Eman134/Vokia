@@ -5,7 +5,8 @@ use crate::db::{
     AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardResult, DbState, ItemPlanInput,
     NewCard,
 };
-use crate::orchestrator::emit_backlog_changed;
+use crate::orchestrator::{self, emit_backlog_changed};
+use crate::state::AppState;
 
 const MISSING_RESULT: &str = "O banco não devolveu o card criado.";
 
@@ -64,6 +65,7 @@ pub fn create_request_from_proposal(
     let operation = CardOperation::Create {
         title,
         description: detail,
+        responsible: None,
     };
     db.apply_card_operations(project_id, &actor, &[operation])
         .map_err(|error| error.to_string())?
@@ -73,6 +75,7 @@ pub fn create_request_from_proposal(
 
 #[tauri::command]
 pub fn move_backlog_item(
+    app: AppHandle,
     state: State<'_, DbState>,
     project_id: i64,
     id: String,
@@ -80,7 +83,9 @@ pub fn move_backlog_item(
 ) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.move_backlog_item(project_id, &id, &column)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -188,5 +193,19 @@ pub fn save_item_plan(
 ) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.save_item_plan(project_id, &item_id, &plan)
+        .map_err(|error| error.to_string())
+}
+
+// Devolve a task concluída ao líder: o motivo é obrigatório e o card volta a In progress.
+#[tauri::command]
+pub async fn return_task(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_id: i64,
+    item_id: String,
+    motive: String,
+) -> Result<(), String> {
+    orchestrator::return_task(&app, &state, project_id, &item_id, &motive)
+        .await
         .map_err(|error| error.to_string())
 }

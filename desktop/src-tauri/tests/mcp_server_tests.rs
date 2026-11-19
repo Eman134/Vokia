@@ -1,13 +1,10 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::time::Duration;
 
 use serde_json::{json, Value};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::support::*;
 use super::*;
-use crate::events::Agent;
 
 const OVER_LIMIT_BYTES: usize = 64 * 1024 + 1;
 const PARSE_ERROR: i64 = -32700;

@@ -73,16 +73,15 @@ impl World {
         self.events.lock().unwrap().clone()
     }
 
-    fn get(&self, project: i64) -> Result<OrchestrationSnapshot, String> {
-        get_orchestration(self.app.state(), self.app.state(), project)
+    fn get(&self) -> Result<OrchestrationSnapshot, String> {
+        get_orchestration(self.app.state(), self.app.state())
     }
 
-    fn save_layer(&self, project: i64, name: &str, kind: &str) -> Result<Layer, String> {
+    fn save_layer(&self, name: &str, kind: &str) -> Result<Layer, String> {
         save_layer(
             self.app.handle().clone(),
             self.app.state(),
             self.app.state(),
-            project,
             LayerDraft {
                 id: None,
                 name: name.to_string(),
@@ -92,29 +91,10 @@ impl World {
             },
         )
     }
-
-    fn save_rule(&self, project: i64, from: &str, to: &str, action: &str) -> Result<Rule, String> {
-        save_rule(
-            self.app.handle().clone(),
-            self.app.state(),
-            self.app.state(),
-            project,
-            RuleDraft {
-                id: None,
-                from_layer: from.to_string(),
-                to_layer: to.to_string(),
-                when_event: "tarefa_concluida".to_string(),
-                action: action.to_string(),
-                kind: "revisar".to_string(),
-                exec_mode: "sequencia".to_string(),
-                return_limit: 2,
-            },
-        )
-    }
 }
 
-fn changed(project: i64) -> Value {
-    json!({ "type": "orchestration-changed", "projectId": project })
+fn changed() -> Value {
+    json!({ "type": "orchestration-changed" })
 }
 
 fn layer_ids(snapshot: &OrchestrationSnapshot) -> Vec<&str> {
@@ -143,17 +123,20 @@ fn orphan() -> PlacementDraft {
         layer_id: "implementacao".to_string(),
         instructions: String::new(),
         max_instances: 1,
+        pos_x: None,
+        pos_y: None,
+        criteria: String::new(),
+        max_worktrees: None,
     }
 }
 
 #[test]
 fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
     let world = world();
-    let project = world.project("alfa");
 
     let leader = Agent::axiom();
-    let first = world.get(project).unwrap();
-    let second = world.get(project).unwrap();
+    let first = world.get().unwrap();
+    let second = world.get().unwrap();
 
     assert_eq!(
         layer_ids(&first),
@@ -170,7 +153,7 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
             ("sentry", "revisao"),
         ])
     );
-    assert!(first.rules.is_empty());
+    assert!(first.edges.is_empty());
     assert_eq!(first.settings, OrchestrationSettings::default());
     assert_eq!(
         serde_json::to_value(&first).unwrap(),
@@ -182,13 +165,12 @@ fn primeira_leitura_semeia_e_a_segunda_devolve_o_mesmo_sem_emitir_evento() {
 #[test]
 fn projeto_com_configuracao_e_sem_camadas_nao_recebe_a_semente_de_volta() {
     let world = world();
-    let project = world.project("alfa");
     world
         .db()
-        .save_settings(project, &OrchestrationSettings::default())
+        .save_settings(&OrchestrationSettings::default())
         .unwrap();
 
-    let snapshot = world.get(project).unwrap();
+    let snapshot = world.get().unwrap();
 
     assert!(snapshot.layers.is_empty());
     assert!(snapshot.teams.is_empty());
@@ -198,77 +180,52 @@ fn projeto_com_configuracao_e_sem_camadas_nao_recebe_a_semente_de_volta() {
 #[test]
 fn projeto_sem_camadas_apos_semear_aceita_criar_camada_nova_do_zero() {
     let world = world();
-    let project = world.project("alfa");
     world
         .db()
-        .save_settings(project, &OrchestrationSettings::default())
+        .save_settings(&OrchestrationSettings::default())
         .unwrap();
 
-    let layer = world.save_layer(project, "Pesquisa", "pesquisar").unwrap();
+    let layer = world.save_layer("Pesquisa", "pesquisar").unwrap();
 
     assert_eq!((layer.id.as_str(), layer.position), ("pesquisa", 0));
-    assert_eq!(layer_ids(&world.get(project).unwrap()), vec!["pesquisa"]);
+    assert_eq!(layer_ids(&world.get().unwrap()), vec!["pesquisa"]);
 }
 
 #[test]
-fn cada_escrita_bem_sucedida_emite_um_unico_evento_com_o_projeto_certo() {
+fn cada_escrita_bem_sucedida_emite_um_unico_evento_sem_projeto() {
     let world = world();
-    let project = world.project("alfa");
-    let other = world.project("beta");
 
-    world.save_layer(project, "Pesquisa", "pesquisar").unwrap();
-    world.save_layer(other, "Pesquisa", "pesquisar").unwrap();
-    world
-        .save_rule(project, "lideranca", "pesquisa", "delegar")
-        .unwrap();
+    world.save_layer("Pesquisa", "pesquisar").unwrap();
+    world.save_layer("Extra", "livre").unwrap();
+    world.save_layer("Terceira", "livre").unwrap();
 
-    assert_eq!(
-        world.events(),
-        vec![changed(project), changed(other), changed(project)]
-    );
+    assert_eq!(world.events(), vec![changed(), changed(), changed()]);
 }
 
 #[test]
 fn escrita_recusada_pelo_banco_devolve_a_frase_em_portugues_e_nao_emite_evento() {
     let world = world();
-    let project = world.project("alfa");
-    world
-        .save_rule(project, "lideranca", "implementacao", "delegar")
-        .unwrap();
+    world.save_layer("Pesquisa", "pesquisar").unwrap();
     let before = world.events().len();
 
-    let duplicated = world.save_rule(project, "lideranca", "implementacao", "delegar");
-    let self_loop = world.save_rule(project, "revisao", "revisao", "delegar");
-    let bad_kind = world.save_layer(project, "Nova", "magia");
-    let missing = world.save_layer(999, "Nova", "livre");
+    let bad_kind = world.save_layer("Nova", "magia");
 
-    assert_eq!(
-        duplicated.unwrap_err(),
-        "Já existe uma seta de lideranca para implementacao."
-    );
-    assert_eq!(
-        self_loop.unwrap_err(),
-        "Uma camada não pode enviar trabalho para ela mesma."
-    );
     assert_eq!(
         bad_kind.unwrap_err(),
         "O campo kind da orquestração não aceita o valor \"magia\"."
     );
-    assert_eq!(missing.unwrap_err(), "O projeto 999 não existe.");
     assert_eq!(world.events().len(), before);
 }
 
 #[test]
 fn comandos_de_escrita_recusam_faixas_invalidas_com_a_frase_do_banco() {
     let world = world();
-    let project = world.project("alfa");
-    world.get(project).unwrap();
+    world.get().unwrap();
 
     let too_many = place_agent(
         world.app.handle().clone(),
         world.app.state(),
         world.app.state(),
-        project,
         PlacementDraft {
             max_instances: 5,
             ..orphan()
@@ -278,7 +235,6 @@ fn comandos_de_escrita_recusam_faixas_invalidas_com_a_frase_do_banco() {
         world.app.handle().clone(),
         world.app.state(),
         world.app.state(),
-        project,
         OrchestrationSettings {
             max_parallel: 9,
             ..OrchestrationSettings::default()
@@ -294,32 +250,31 @@ fn comandos_de_escrita_recusam_faixas_invalidas_com_a_frase_do_banco() {
         "O campo max_parallel da orquestração deve ficar entre 1 e 8."
     );
     assert_eq!(
-        world.get(project).unwrap().settings,
+        world.get().unwrap().settings,
         OrchestrationSettings::default()
     );
 }
 
 #[test]
-fn leitura_de_projeto_inexistente_devolve_a_frase_e_nao_grava_semente() {
+fn leitura_sem_nenhum_projeto_cadastrado_semeia_e_devolve_a_orquestracao_global() {
     let world = world();
 
-    let error = world.get(999).unwrap_err();
+    let snapshot = world.get().unwrap();
 
-    assert_eq!(error, "O projeto 999 não existe.");
+    assert_eq!(snapshot.placements.len(), 5);
     assert!(world.events().is_empty());
 }
 
 #[test]
 fn posicao_de_agente_fora_do_elenco_some_da_leitura_e_e_apagada_na_escrita_seguinte() {
     let world = world();
-    let project = world.project("alfa");
-    world.get(project).unwrap();
-    world.db().place_agent(project, &orphan()).unwrap();
+    world.get().unwrap();
+    world.db().place_agent(&orphan()).unwrap();
 
-    let read = world.get(project).unwrap();
-    let still_stored = world.db().orchestration(project).unwrap();
-    world.save_layer(project, "Pesquisa", "pesquisar").unwrap();
-    let after_write = world.db().orchestration(project).unwrap();
+    let read = world.get().unwrap();
+    let still_stored = world.db().orchestration().unwrap();
+    world.save_layer("Pesquisa", "pesquisar").unwrap();
+    let after_write = world.db().orchestration().unwrap();
 
     assert!(!placed(&read).iter().any(|(agent, _)| *agent == "fantasma"));
     assert!(placed(&still_stored)
@@ -334,8 +289,7 @@ fn posicao_de_agente_fora_do_elenco_some_da_leitura_e_e_apagada_na_escrita_segui
 #[test]
 fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
     let world = world();
-    let project = world.project("alfa");
-    world.get(project).unwrap();
+    world.get().unwrap();
 
     world
         .app
@@ -349,7 +303,7 @@ fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
         })
         .unwrap();
 
-    let snapshot = world.get(project).unwrap();
+    let snapshot = world.get().unwrap();
     assert_eq!(snapshot.placements.len(), 5);
     assert!(!placed(&snapshot).iter().any(|(agent, _)| *agent == "lia"));
 }
@@ -375,20 +329,21 @@ fn list_movements_devolve_os_20_mais_recentes_sem_semear_nem_emitir() {
                     return_count: 0,
                     message_id: None,
                     event: None,
+                    edge_id: None,
                 },
             )
             .unwrap();
     }
 
-    let moves = list_movements(world.app.state(), project).unwrap();
+    let moves = read_movements(world.db(), project).unwrap();
 
     assert_eq!(moves.len(), 20);
     assert_eq!(moves[0].item_id.as_deref(), Some("item-25"));
     assert_eq!(moves[19].item_id.as_deref(), Some("item-6"));
-    assert!(world.db().orchestration(project).unwrap().layers.is_empty());
+    assert!(world.db().orchestration().unwrap().layers.is_empty());
     assert!(world.events().is_empty());
     assert_eq!(
-        list_movements(world.app.state(), 999).unwrap_err(),
+        read_movements(world.db(), 999).unwrap_err(),
         "O projeto 999 não existe."
     );
 }
@@ -403,7 +358,6 @@ fn elenco_que_nao_carrega_faz_o_comando_falhar_sem_semente_sem_poda_e_sem_evento
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("agents.json"), "{ isto não é json").unwrap();
     let world = world_in(dir);
-    let project = world.project("alfa");
     let expected = world
         .app
         .state::<AgentRegistry>()
@@ -412,12 +366,12 @@ fn elenco_que_nao_carrega_faz_o_comando_falhar_sem_semente_sem_poda_e_sem_evento
         .unwrap()
         .to_string();
 
-    let read = world.get(project);
-    let write = world.save_layer(project, "Pesquisa", "pesquisar");
+    let read = world.get();
+    let write = world.save_layer("Pesquisa", "pesquisar");
 
     assert_eq!(read.unwrap_err(), expected);
     assert_eq!(write.unwrap_err(), expected);
-    let snapshot = world.db().orchestration(project).unwrap();
+    let snapshot = world.db().orchestration().unwrap();
     assert!(snapshot.layers.is_empty() && snapshot.teams.is_empty());
     assert!(world.events().is_empty());
 }

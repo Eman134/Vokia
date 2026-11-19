@@ -47,7 +47,6 @@ pub struct SlotState {
     pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
     pub delegation_intent: Option<DelegationIntent>,
-    pub parallel_delegations: Vec<(Agent, String)>,
     pub variables: VariableEffects,
 }
 
@@ -59,7 +58,6 @@ pub struct ExchangeOutcome {
     pub proposal: Option<RequestProposal>,
     pub delegation: Option<(Agent, String)>,
     pub delegation_intent: Option<DelegationIntent>,
-    pub parallel_delegations: Vec<(Agent, String)>,
     pub variables: VariableEffects,
 }
 
@@ -71,7 +69,6 @@ impl ExchangeOutcome {
         self.proposal = other.proposal.or(self.proposal.take());
         self.delegation = other.delegation.or(self.delegation.take());
         self.delegation_intent = other.delegation_intent.or(self.delegation_intent.take());
-        self.parallel_delegations.extend(other.parallel_delegations);
         self.variables.absorb(other.variables);
     }
 }
@@ -106,7 +103,6 @@ impl ExchangeSlot {
             proposal: state.proposal.take(),
             delegation: state.delegation.take(),
             delegation_intent: state.delegation_intent.take(),
-            parallel_delegations: std::mem::take(&mut state.parallel_delegations),
             variables: std::mem::take(&mut state.variables),
         }
     }

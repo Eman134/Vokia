@@ -59,9 +59,9 @@ pub(super) fn hand_over_cards(
 fn refuse_if_positioned(tx: &Connection, agent: &Agent, agent_name: &str) -> Result<(), DbError> {
     let mut statement = tx.prepare(
         "SELECT t.name, l.name FROM orch_placements p \
-         JOIN orch_teams t ON t.project_id = p.project_id AND t.id = p.team_id \
-         JOIN orch_layers l ON l.project_id = p.project_id AND l.id = p.layer_id \
-         WHERE p.agent_id = ?1 ORDER BY p.project_id",
+         JOIN orch_teams t ON t.id = p.team_id \
+         JOIN orch_layers l ON l.id = p.layer_id \
+         WHERE p.agent_id = ?1 ORDER BY t.position, l.position",
     )?;
     let positions: Vec<String> = statement
         .query_map([agent.as_str()], |row| {

@@ -29,6 +29,7 @@ impl Db {
         Ok(())
     }
 
+#[allow(clippy::too_many_arguments)] // cada argumento é uma coluna da mensagem
     pub fn insert_message(
         &self,
         project_id: i64,

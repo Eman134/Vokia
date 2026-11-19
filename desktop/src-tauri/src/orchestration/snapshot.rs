@@ -1,11 +1,15 @@
 use crate::agents::{join_items, replica_of, Agent, Team};
-use crate::db::{Layer, OrchestrationSnapshot, Placement, Rule};
+use crate::db::{
+    FlowEdge, FlowGateway, Layer, OrchestrationSnapshot, Placement, FLOW_START, GATEWAY_PARALLEL,
+    LINK_COMMUNICATION, LINK_FLOW,
+};
 
 const ENFORCEMENT_ON: &str = "on";
 const LEADER_LAYER_KIND: &str = "planejar";
 pub(crate) const ACTION_DELEGATE: &str = "delegar";
 pub(crate) const ACTION_RETURN: &str = "devolver";
 pub(crate) const ACTION_ESCALATE: &str = "escalar";
+pub(crate) const ACTION_CONSULT: &str = "consultar";
 const NO_DESTINATION_ROSTER: &str = "Time desta sessão: nenhum agente para passar trabalho.";
 const NO_OUTGOING_RULES: &str =
     "Você não passa trabalho a ninguém: termine a resposta quando concluir.";
@@ -30,6 +34,7 @@ pub(crate) struct LayerContext {
     pub(crate) layer_name: String,
     pub(crate) layer_instructions: String,
     pub(crate) agent_instructions: String,
+    pub(crate) agent_criteria: String,
     pub(crate) map_rules: Option<String>,
 }
 
@@ -59,7 +64,7 @@ pub(crate) fn agent_prompt(
     };
     let enforced = snapshot.settings.enforcement == ENFORCEMENT_ON;
     let destinations = if enforced {
-        delegation_targets(snapshot, team, agent, &layer.id)
+        delegation_targets(snapshot, team, agent)
     } else {
         Vec::new()
     };
@@ -70,13 +75,14 @@ pub(crate) fn agent_prompt(
     } else {
         team.roster_line_among(&destinations)
     };
-    let map_rules = enforced.then(|| map_rules_text(snapshot, team, agent, layer));
+    let map_rules = enforced.then(|| map_rules_text(snapshot, team, agent, &placement.team_id));
     AgentPrompt {
         roster,
         layer: Some(LayerContext {
             layer_name: layer.name.clone(),
             layer_instructions: layer.instructions.trim().to_string(),
             agent_instructions: placement.instructions.trim().to_string(),
+            agent_criteria: placement.criteria.trim().to_string(),
             map_rules,
         }),
     }
@@ -89,51 +95,129 @@ fn without_layer(team: &Team) -> AgentPrompt {
     }
 }
 
-fn agents_in_layer(snapshot: &OrchestrationSnapshot, team: &Team, layer_id: &str) -> Vec<Agent> {
-    team.ids()
-        .filter(|id| {
-            snapshot.placements.iter().any(|placement| {
-                placement.agent_id == id.as_str() && placement.layer_id == layer_id
-            })
+// Id do nó do agente no fluxo: a réplica usa o nó do agente base.
+pub(crate) fn node_id(agent: &Agent) -> &str {
+    replica_of(agent.as_str()).map_or(agent.as_str(), |(base, _)| base)
+}
+
+pub(crate) fn flow_target<'a>(team: &'a Team, node: &str) -> Option<&'a Agent> {
+    team.ids().find(|id| id.as_str() == node)
+}
+
+// Ligações de fluxo que saem do agente, na ordem em que foram desenhadas, dentro do time dele.
+pub(crate) fn outgoing_edges<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    agent: &Agent,
+) -> impl Iterator<Item = &'a FlowEdge> {
+    let team_id = placement_of(snapshot, agent).map(|placement| placement.team_id.as_str());
+    let node = node_id(agent).to_string();
+    snapshot.edges.iter().filter(move |edge| {
+        Some(edge.team_id.as_str()) == team_id && edge.link == LINK_FLOW && edge.from_node == node
+    })
+}
+
+// Gateway para o qual a ligação aponta, com as ligações de saída dele; None se ela aponta para um agente ou o fim.
+pub(crate) fn gateway_exits<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    entry: &FlowEdge,
+) -> Option<(&'a FlowGateway, Vec<&'a FlowEdge>)> {
+    let gateway = snapshot
+        .gateways
+        .iter()
+        .find(|gateway| gateway.team_id == entry.team_id && gateway.id == entry.to_node)?;
+    let exits = snapshot
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.team_id == gateway.team_id
+                && edge.link == LINK_FLOW
+                && edge.from_node == gateway.id
         })
-        .cloned()
-        .collect()
+        .collect();
+    Some((gateway, exits))
 }
 
 pub(crate) fn delegation_targets(
     snapshot: &OrchestrationSnapshot,
     team: &Team,
     agent: &Agent,
-    from_layer: &str,
 ) -> Vec<Agent> {
     let mut targets: Vec<Agent> = Vec::new();
-    let outgoing = snapshot.rules.iter().filter(|rule| {
-        rule.from_layer == from_layer
-            && (rule.action == ACTION_DELEGATE || rule.action == ACTION_RETURN)
-    });
-    for rule in outgoing {
-        for target in agents_in_layer(snapshot, team, &rule.to_layer) {
-            if target != *agent && !targets.contains(&target) {
-                targets.push(target);
+    let delegating = outgoing_edges(snapshot, agent)
+        .filter(|edge| edge.action == ACTION_DELEGATE || edge.action == ACTION_RETURN);
+    for edge in delegating {
+        let destinations: Vec<&str> = match gateway_exits(snapshot, edge) {
+            Some((_, exits)) => exits.iter().map(|exit| exit.to_node.as_str()).collect(),
+            None => vec![edge.to_node.as_str()],
+        };
+        for node in destinations {
+            if let Some(target) = flow_target(team, node) {
+                if target != agent && !targets.contains(target) {
+                    targets.push(target.clone());
+                }
             }
         }
     }
+    for partner in communication_partners(snapshot, team, agent) {
+        if !targets.contains(&partner) {
+            targets.push(partner);
+        }
+    }
     targets
+}
+
+// Quem pode ser consultado pelo agente (e consultá-lo): a ligação de comunicação não tem direção.
+fn communication_partners(
+    snapshot: &OrchestrationSnapshot,
+    team: &Team,
+    agent: &Agent,
+) -> Vec<Agent> {
+    let Some(placement) = placement_of(snapshot, agent) else {
+        return Vec::new();
+    };
+    let node = node_id(agent);
+    snapshot
+        .edges
+        .iter()
+        .filter(|edge| edge.team_id == placement.team_id && edge.link == LINK_COMMUNICATION)
+        .filter_map(
+            |edge| match (edge.from_node == node, edge.to_node == node) {
+                (true, _) => flow_target(team, &edge.to_node),
+                (_, true) => flow_target(team, &edge.from_node),
+                _ => None,
+            },
+        )
+        .cloned()
+        .collect()
 }
 
 fn map_rules_text(
     snapshot: &OrchestrationSnapshot,
     team: &Team,
     agent: &Agent,
-    layer: &Layer,
+    team_id: &str,
 ) -> String {
-    let sentences: Vec<String> = snapshot
-        .rules
-        .iter()
-        .filter(|rule| rule.from_layer == layer.id)
-        .filter_map(|rule| rule_sentence(snapshot, team, agent, rule))
+    let consultations = communication_partners(snapshot, team, agent)
+        .into_iter()
+        .map(|partner| {
+            format!(
+                "Consulte {} quando precisar de uma pesquisa: a consulta não muda a etapa.",
+                team.name_of(&partner)
+            )
+        });
+    let sentences: Vec<String> = outgoing_edges(snapshot, agent)
+        .filter_map(|edge| edge_sentence(snapshot, team, edge))
+        .chain(consultations)
         .collect();
-    let header = format!("Regras do mapa: você é da camada {}.", layer.name);
+    let team_name = snapshot
+        .teams
+        .iter()
+        .find(|orch_team| orch_team.id == team_id)
+        .map_or(team_id, |orch_team| orch_team.name.as_str());
+    let role = team
+        .profile(agent)
+        .map_or("", |profile| profile.role.as_str());
+    let header = format!("Regras do fluxo do time {team_name}: você é {role}.");
     if sentences.is_empty() {
         format!("{header} {NO_OUTGOING_RULES}")
     } else {
@@ -141,64 +225,83 @@ fn map_rules_text(
     }
 }
 
-// Seta sem agente no destino (ou com evento/tipo fora da tabela) não gera frase.
-fn rule_sentence(
-    snapshot: &OrchestrationSnapshot,
+// Ligação sem agente no destino (gateway, por exemplo) ou com evento/tipo fora da tabela não gera frase.
+// Ligação que entra num gateway: o agente delega a qualquer destino das saídas e o app escolhe o caminho.
+fn gateway_sentence(
     team: &Team,
-    agent: &Agent,
-    rule: &Rule,
+    entry: &FlowEdge,
+    gateway_kind: &str,
+    exits: &[&FlowEdge],
+    event: &str,
 ) -> Option<String> {
-    let event = phrase(EVENT_PHRASES, &rule.when_event)?;
-    match rule.action.as_str() {
-        ACTION_DELEGATE => {
-            let names = destination_names(snapshot, team, agent, &rule.to_layer);
-            if names.is_empty() {
-                return None;
-            }
-            let kind = phrase(KIND_PHRASES, &rule.kind)?;
-            Some(format!(
-                "Passe trabalho a {} quando {event}, como pedido de {kind}.",
-                join_items(&names)
-            ))
-        }
-        ACTION_RETURN => {
-            let names = destination_names(snapshot, team, agent, &rule.to_layer);
-            if names.is_empty() {
-                return None;
-            }
-            Some(format!(
-                "Devolva a {} quando {event}, até {} vezes.",
-                join_items(&names),
-                rule.return_limit
-            ))
-        }
-        ACTION_ESCALATE => Some(format!(
+    let kind = phrase(KIND_PHRASES, &entry.kind)?;
+    let destinations: Vec<(&str, &str)> = exits
+        .iter()
+        .filter_map(|exit| {
+            let name = team.name_of(flow_target(team, &exit.to_node)?);
+            Some((name, phrase(EVENT_PHRASES, &exit.when_event)?))
+        })
+        .collect();
+    if destinations.is_empty() {
+        return None;
+    }
+    if gateway_kind == GATEWAY_PARALLEL {
+        let names: Vec<String> = destinations
+            .iter()
+            .map(|(name, _)| name.to_string())
+            .collect();
+        return Some(format!(
+            "Quando {event}, passe trabalho a {} ao mesmo tempo, como pedido de {kind}: uma só delegação vai a todos.",
+            join_items(&names)
+        ));
+    }
+    let paths: Vec<String> = destinations
+        .iter()
+        .map(|(name, when)| format!("{name} quando {when}"))
+        .collect();
+    Some(format!(
+        "Quando {event}, passe trabalho por um dos caminhos, informando o evento ao delegar: {}.",
+        join_items(&paths)
+    ))
+}
+
+fn edge_sentence(snapshot: &OrchestrationSnapshot, team: &Team, edge: &FlowEdge) -> Option<String> {
+    let event = phrase(EVENT_PHRASES, &edge.when_event)?;
+    if edge.action == ACTION_ESCALATE {
+        return Some(format!(
             "Quando {event}, termine a resposta sem delegar: o usuário revisa."
+        ));
+    }
+    if let Some((gateway, exits)) = gateway_exits(snapshot, edge) {
+        return gateway_sentence(team, edge, &gateway.kind, &exits, event);
+    }
+    let name = team.name_of(flow_target(team, &edge.to_node)?);
+    match edge.action.as_str() {
+        ACTION_DELEGATE => {
+            let kind = phrase(KIND_PHRASES, &edge.kind)?;
+            Some(format!(
+                "Passe trabalho a {name} quando {event}, como pedido de {kind}."
+            ))
+        }
+        ACTION_RETURN => Some(format!(
+            "Devolva a {name} quando {event}, até {} vezes.",
+            edge.turn_limit.unwrap_or(snapshot.settings.pair_turn_limit)
         )),
         _ => None,
     }
 }
 
-fn destination_names(
-    snapshot: &OrchestrationSnapshot,
-    team: &Team,
-    agent: &Agent,
-    layer_id: &str,
-) -> Vec<String> {
-    agents_in_layer(snapshot, team, layer_id)
-        .iter()
-        .filter(|target| *target != agent)
-        .map(|target| team.name_of(target).to_string())
-        .collect()
-}
-
 pub(crate) struct MemberOutline {
     pub(crate) name: String,
+    pub(crate) role: String,
     pub(crate) layer: String,
+    pub(crate) layer_kind: String,
 }
 
 pub(crate) struct TeamOutline {
+    pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) instructions: Option<String>,
     pub(crate) leader: Option<String>,
     pub(crate) members: Vec<MemberOutline>,
 }
@@ -208,52 +311,123 @@ pub(crate) struct TeamOutlines {
     pub(crate) unassigned: Vec<String>,
 }
 
-// Sem líder explícito no time, o líder é o primeiro membro posicionado numa camada de tipo planejar.
-// Líder explícito que saiu do elenco não vale: o time volta à camada planejar.
-fn explicit_leader(orch_team: &crate::db::Team, team: &Team) -> Option<String> {
-    let agent = Agent::from_stored(orch_team.leader_agent.as_deref()?)?;
-    team.profile(&agent)?;
-    Some(team.name_of(&agent).to_string())
+// Líder do time, nesta ordem: o destino da ligação de início (ou o líder gravado, sem ela) se está no elenco e não pausado; senão o primeiro membro, na ordem
+// do elenco, numa camada de tipo planejar e não pausado. Ember orquestra e nunca lidera; pausado é indisponível.
+pub(crate) fn available_leader(
+    snapshot: &OrchestrationSnapshot,
+    orch_team: &crate::db::Team,
+    team: &Team,
+    paused: &[Agent],
+) -> Option<Agent> {
+    let usable = |agent: &Agent| *agent != Agent::ember() && !paused.contains(agent);
+    let start_destination = snapshot
+        .edges
+        .iter()
+        .find(|edge| edge.team_id == orch_team.id && edge.from_node == FLOW_START)
+        .map(|edge| edge.to_node.as_str());
+    let explicit = start_destination
+        .or(orch_team.leader_agent.as_deref())
+        .and_then(Agent::from_stored)
+        .filter(|agent| team.profile(agent).is_some() && usable(agent));
+    explicit.or_else(|| {
+        team.ids()
+            .find(|agent| {
+                usable(agent)
+                    && placement_of(snapshot, agent).is_some_and(|placement| {
+                        placement.team_id == orch_team.id
+                            && layer_of(snapshot, &placement.layer_id)
+                                .is_some_and(|layer| layer.kind == LEADER_LAYER_KIND)
+                    })
+            })
+            .cloned()
+    })
 }
 
-pub(crate) fn team_outlines(snapshot: &OrchestrationSnapshot, team: &Team) -> TeamOutlines {
+pub(crate) struct TeamLeader {
+    pub(crate) team_name: String,
+    pub(crate) leader: Agent,
+}
+
+// Id ou nome exato do time, sem diferença de maiúsculas.
+pub(crate) fn find_team<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    key: &str,
+) -> Option<&'a crate::db::Team> {
+    let key = key.trim().to_lowercase();
+    snapshot
+        .teams
+        .iter()
+        .find(|team| team.id.to_lowercase() == key || team.name.to_lowercase() == key)
+}
+
+pub(crate) fn team_leader(
+    snapshot: &OrchestrationSnapshot,
+    orch_team: &crate::db::Team,
+    team: &Team,
+    paused: &[Agent],
+) -> Option<TeamLeader> {
+    available_leader(snapshot, orch_team, team, paused).map(|leader| TeamLeader {
+        team_name: orch_team.name.clone(),
+        leader,
+    })
+}
+
+// Só os times que têm líder disponível, na ordem do mapa.
+pub(crate) fn team_leaders(
+    snapshot: &OrchestrationSnapshot,
+    team: &Team,
+    paused: &[Agent],
+) -> Vec<TeamLeader> {
+    snapshot
+        .teams
+        .iter()
+        .filter_map(|orch_team| team_leader(snapshot, orch_team, team, paused))
+        .collect()
+}
+
+fn layer_of<'a>(snapshot: &'a OrchestrationSnapshot, layer_id: &str) -> Option<&'a Layer> {
+    snapshot.layers.iter().find(|layer| layer.id == layer_id)
+}
+
+pub(crate) fn team_outlines(
+    snapshot: &OrchestrationSnapshot,
+    team: &Team,
+    paused: &[Agent],
+) -> TeamOutlines {
     let teams = snapshot
         .teams
         .iter()
         .map(|orch_team| {
-            let members: Vec<(bool, MemberOutline)> = team
+            let members = team
                 .ids()
                 .filter_map(|agent| {
                     let placement = placement_of(snapshot, agent)?;
                     if placement.team_id != orch_team.id {
                         return None;
                     }
-                    let layer = snapshot
-                        .layers
-                        .iter()
-                        .find(|layer| layer.id == placement.layer_id);
-                    let is_leader = layer.is_some_and(|layer| layer.kind == LEADER_LAYER_KIND);
-                    let layer_name = layer
-                        .map_or_else(|| placement.layer_id.clone(), |layer| layer.name.clone());
-                    Some((
-                        is_leader,
-                        MemberOutline {
-                            name: team.name_of(agent).to_string(),
-                            layer: layer_name,
-                        },
-                    ))
+                    let layer = layer_of(snapshot, &placement.layer_id);
+                    Some(MemberOutline {
+                        name: team.name_of(agent).to_string(),
+                        role: team
+                            .profile(agent)
+                            .map(|profile| profile.role.clone())
+                            .unwrap_or_default(),
+                        layer: layer
+                            .map_or_else(|| placement.layer_id.clone(), |layer| layer.name.clone()),
+                        layer_kind: layer.map(|layer| layer.kind.clone()).unwrap_or_default(),
+                    })
                 })
                 .collect();
-            let leader = explicit_leader(orch_team, team).or_else(|| {
-                members
-                    .iter()
-                    .find(|(is_leader, _)| *is_leader)
-                    .map(|(_, member)| member.name.clone())
-            });
+            let instructions = Some(orch_team.instructions.trim())
+                .filter(|text| !text.is_empty())
+                .map(str::to_string);
             TeamOutline {
+                id: orch_team.id.clone(),
                 name: orch_team.name.clone(),
-                leader,
-                members: members.into_iter().map(|(_, member)| member).collect(),
+                instructions,
+                leader: available_leader(snapshot, orch_team, team, paused)
+                    .map(|leader| team.name_of(&leader).to_string()),
+                members,
             }
         })
         .collect();

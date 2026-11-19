@@ -42,6 +42,7 @@ impl AppState {
 pub struct PendingDecision {
     pub agent: Agent,
     pub project_id: i64,
+    pub kind: crate::events::DecisionKind,
     pub title: String,
     pub request: String,
     pub item_id: Option<String>,
@@ -96,6 +97,10 @@ pub struct FlowQueue {
     pub waiting: HashMap<i64, VecDeque<WaitingDelegation>>,
     pub batches: HashMap<u64, Batch>,
     pub next_batch: u64,
+    // Ramos abertos de cada card (por projeto): o principal, as linhas assíncronas e as saídas de gateway paralelo.
+    pub open_branches: HashMap<(i64, String), u32>,
+    // Card que chegou ao fim do fluxo, com o agente que chegou: a validação final roda quando o último ramo termina.
+    pub ended: HashMap<(i64, String), crate::events::Agent>,
 }
 
 // Um lote: as trocas paralelas de um turno do líder. A junção sai quando a última volta.

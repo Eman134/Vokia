@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::*;
+use crate::db::backlog::NewCard;
 use crate::db::projects::NewProject;
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
@@ -41,33 +42,25 @@ impl TempDb {
             .id
     }
 
-    fn layer(&self, project: i64, name: &str) -> Layer {
+    fn layer(&self, name: &str) -> Layer {
         self.db
-            .save_layer(project, &layer_draft(name))
+            .save_layer(&layer_draft(name))
             .expect("a camada deveria ser salva")
     }
 
-    fn team(&self, project: i64, name: &str) -> Team {
+    fn team(&self, name: &str) -> Team {
         self.db
-            .save_team(
-                project,
-                &TeamDraft {
-                    id: None,
-                    name: name.to_string(),
-                },
-            )
+            .save_team(&TeamDraft {
+                id: None,
+                name: name.to_string(),
+                instructions: None,
+            })
             .expect("o time deveria ser salvo")
     }
 
-    fn rule(&self, project: i64, from: &str, to: &str, action: &str) -> Rule {
+    fn place(&self, agent: &str, team: &str, layer: &str) -> Placement {
         self.db
-            .save_rule(project, &rule_draft(from, to, action))
-            .expect("a seta deveria ser salva")
-    }
-
-    fn place(&self, project: i64, agent: &str, team: &str, layer: &str) -> Placement {
-        self.db
-            .place_agent(project, &placement_draft(agent, team, layer))
+            .place_agent(&placement_draft(agent, team, layer))
             .expect("o agente deveria ser posicionado")
     }
 }
@@ -88,19 +81,6 @@ fn layer_draft(name: &str) -> LayerDraft {
     }
 }
 
-fn rule_draft(from: &str, to: &str, action: &str) -> RuleDraft {
-    RuleDraft {
-        id: None,
-        from_layer: from.to_string(),
-        to_layer: to.to_string(),
-        when_event: "tarefa_concluida".to_string(),
-        action: action.to_string(),
-        kind: "revisar".to_string(),
-        exec_mode: "sequencia".to_string(),
-        return_limit: 2,
-    }
-}
-
 fn placement_draft(agent: &str, team: &str, layer: &str) -> PlacementDraft {
     PlacementDraft {
         agent_id: agent.to_string(),
@@ -108,6 +88,10 @@ fn placement_draft(agent: &str, team: &str, layer: &str) -> PlacementDraft {
         layer_id: layer.to_string(),
         instructions: String::new(),
         max_instances: 1,
+        pos_x: None,
+        pos_y: None,
+        criteria: String::new(),
+        max_worktrees: None,
     }
 }
 
@@ -124,11 +108,12 @@ fn handoff_draft(item: &str, action: &str) -> HandoffDraft {
         return_count: 0,
         message_id: None,
         event: None,
+        edge_id: None,
     }
 }
 
-fn layer_order(db: &Db, project: i64) -> Vec<String> {
-    db.orchestration(project)
+fn layer_order(db: &Db) -> Vec<String> {
+    db.orchestration()
         .unwrap()
         .layers
         .into_iter()
@@ -146,9 +131,8 @@ fn message_of<T>(result: Result<T, DbError>) -> String {
 #[test]
 fn projeto_novo_le_o_snapshot_com_os_valores_iniciais_e_sem_nada_cadastrado() {
     let t = TempDb::open();
-    let project = t.project("alfa");
 
-    let snapshot = t.db.orchestration(project).unwrap();
+    let snapshot = t.db.orchestration().unwrap();
 
     assert_eq!(
         snapshot.settings,
@@ -166,35 +150,15 @@ fn projeto_novo_le_o_snapshot_com_os_valores_iniciais_e_sem_nada_cadastrado() {
     assert!(snapshot.layers.is_empty());
     assert!(snapshot.teams.is_empty());
     assert!(snapshot.placements.is_empty());
-    assert!(snapshot.rules.is_empty());
+    assert!(snapshot.edges.is_empty());
 }
 
 #[test]
-fn projeto_inexistente_e_recusado_em_toda_leitura_e_escrita() {
+fn projeto_inexistente_e_recusado_nos_movimentos_que_sao_por_projeto() {
     let t = TempDb::open();
     let missing = 999;
     let expected = "O projeto 999 não existe.";
 
-    assert_eq!(message_of(t.db.orchestration(missing)), expected);
-    assert_eq!(
-        message_of(t.db.save_settings(missing, &OrchestrationSettings::default())),
-        expected
-    );
-    assert_eq!(
-        message_of(t.db.save_layer(missing, &layer_draft("Revisão"))),
-        expected
-    );
-    assert_eq!(
-        message_of(t.db.save_team(
-            missing,
-            &TeamDraft {
-                id: None,
-                name: "Time".into()
-            }
-        )),
-        expected
-    );
-    assert_eq!(message_of(t.db.delete_layer(missing, "revisao")), expected);
     assert_eq!(message_of(t.db.list_movements(missing, 5)), expected);
     assert_eq!(
         message_of(t.db.record_handoff(missing, &handoff_draft("item-1", "delegar"))),
@@ -205,32 +169,28 @@ fn projeto_inexistente_e_recusado_em_toda_leitura_e_escrita() {
 #[test]
 fn nomes_que_dao_o_mesmo_slug_nao_criam_duas_camadas() {
     let t = TempDb::open();
-    let project = t.project("alfa");
 
-    let first = t.layer(project, "Revisão");
-    let error = message_of(t.db.save_layer(project, &layer_draft("revisao")));
+    let first = t.layer("Revisão");
+    let error = message_of(t.db.save_layer(&layer_draft("revisao")));
 
     assert_eq!(first.id, "revisao");
     assert_eq!(
         error,
         "Já existe uma camada com o identificador revisao neste projeto."
     );
-    assert_eq!(layer_order(&t.db, project), vec!["revisao"]);
+    assert_eq!(layer_order(&t.db), vec!["revisao"]);
 }
 
 #[test]
 fn nomes_que_dao_o_mesmo_slug_nao_criam_dois_times() {
     let t = TempDb::open();
-    let project = t.project("alfa");
 
-    t.team(project, "Qualidade Técnica");
-    let error = message_of(t.db.save_team(
-        project,
-        &TeamDraft {
-            id: None,
-            name: "qualidade  tecnica".to_string(),
-        },
-    ));
+    t.team("Qualidade Técnica");
+    let error = message_of(t.db.save_team(&TeamDraft {
+        id: None,
+        name: "qualidade  tecnica".to_string(),
+        instructions: None,
+    }));
 
     assert_eq!(
         error,
@@ -241,9 +201,8 @@ fn nomes_que_dao_o_mesmo_slug_nao_criam_dois_times() {
 #[test]
 fn camada_chamada_voce_e_recusada_porque_voce_e_o_no_virtual() {
     let t = TempDb::open();
-    let project = t.project("alfa");
 
-    let error = message_of(t.db.save_layer(project, &layer_draft("Você")));
+    let error = message_of(t.db.save_layer(&layer_draft("Você")));
 
     assert_eq!(
         error,
@@ -254,39 +213,29 @@ fn camada_chamada_voce_e_recusada_porque_voce_e_o_no_virtual() {
 #[test]
 fn camada_nova_vai_para_o_fim_e_editar_por_id_preserva_posicao_e_id() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
+    t.layer("Liderança");
+    t.layer("Implementação");
 
     let edited =
-        t.db.save_layer(
-            project,
-            &LayerDraft {
-                id: Some("lideranca".to_string()),
-                name: "Liderança do time".to_string(),
-                description: "conduz".to_string(),
-                kind: "planejar".to_string(),
-                instructions: "planeje".to_string(),
-            },
-        )
+        t.db.save_layer(&LayerDraft {
+            id: Some("lideranca".to_string()),
+            name: "Liderança do time".to_string(),
+            description: "conduz".to_string(),
+            kind: "planejar".to_string(),
+            instructions: "planeje".to_string(),
+        })
         .unwrap();
 
     assert_eq!(
         (edited.id.as_str(), edited.position, edited.kind.as_str()),
         ("lideranca", 0, "planejar")
     );
+    assert_eq!(layer_order(&t.db), vec!["lideranca", "implementacao"]);
     assert_eq!(
-        layer_order(&t.db, project),
-        vec!["lideranca", "implementacao"]
-    );
-    assert_eq!(
-        message_of(t.db.save_layer(
-            project,
-            &LayerDraft {
-                id: Some("nao-existe".to_string()),
-                ..layer_draft("X")
-            }
-        )),
+        message_of(t.db.save_layer(&LayerDraft {
+            id: Some("nao-existe".to_string()),
+            ..layer_draft("X")
+        })),
         "A camada nao-existe não existe neste projeto."
     );
 }
@@ -294,66 +243,49 @@ fn camada_nova_vai_para_o_fim_e_editar_por_id_preserva_posicao_e_id() {
 #[test]
 fn instrucoes_de_4001_caracteres_sao_recusadas_e_4000_passam_na_camada_e_no_agente() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    let team = t.team(project, "Time");
-    let layer = t.layer(project, "Implementação");
+    let team = t.team("Time");
+    let layer = t.layer("Implementação");
     let at_limit = "é".repeat(4000);
     let over_limit = "é".repeat(4001);
     let expected = "As instruções aceitam até 4000 caracteres.";
 
     let saved =
-        t.db.save_layer(
-            project,
-            &LayerDraft {
-                instructions: at_limit.clone(),
-                ..layer_draft("Revisão")
-            },
-        )
+        t.db.save_layer(&LayerDraft {
+            instructions: at_limit.clone(),
+            ..layer_draft("Revisão")
+        })
         .unwrap();
     let placed =
-        t.db.place_agent(
-            project,
-            &PlacementDraft {
-                instructions: at_limit.clone(),
-                ..placement_draft("vexa", &team.id, &layer.id)
-            },
-        )
+        t.db.place_agent(&PlacementDraft {
+            instructions: at_limit.clone(),
+            ..placement_draft("vexa", &team.id, &layer.id)
+        })
         .unwrap();
 
     assert_eq!(saved.instructions, at_limit);
     assert_eq!(placed.instructions, at_limit);
     assert_eq!(
-        message_of(t.db.save_layer(
-            project,
-            &LayerDraft {
-                instructions: over_limit.clone(),
-                ..layer_draft("Pesquisa")
-            }
-        )),
+        message_of(t.db.save_layer(&LayerDraft {
+            instructions: over_limit.clone(),
+            ..layer_draft("Pesquisa")
+        })),
         expected
     );
     assert_eq!(
-        message_of(t.db.place_agent(
-            project,
-            &PlacementDraft {
-                instructions: over_limit,
-                ..placement_draft("oracle", &team.id, &layer.id)
-            }
-        )),
+        message_of(t.db.place_agent(&PlacementDraft {
+            instructions: over_limit,
+            ..placement_draft("oracle", &team.id, &layer.id)
+        })),
         expected
     );
-    assert_eq!(
-        layer_order(&t.db, project),
-        vec!["implementacao", "revisao"]
-    );
+    assert_eq!(layer_order(&t.db), vec!["implementacao", "revisao"]);
 }
 
 #[test]
 fn max_instances_0_e_5_sao_recusados_e_1_e_4_passam() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    let team = t.team(project, "Time");
-    let layer = t.layer(project, "Implementação");
+    let team = t.team("Time");
+    let layer = t.layer("Implementação");
     let expected = "O campo max_instances da orquestração deve ficar entre 1 e 4.";
 
     for instances in [0, 5] {
@@ -362,7 +294,7 @@ fn max_instances_0_e_5_sao_recusados_e_1_e_4_passam() {
             ..placement_draft("vexa", &team.id, &layer.id)
         };
         assert_eq!(
-            message_of(t.db.place_agent(project, &draft)),
+            message_of(t.db.place_agent(&draft)),
             expected,
             "com {instances}"
         );
@@ -372,27 +304,23 @@ fn max_instances_0_e_5_sao_recusados_e_1_e_4_passam() {
             max_instances: instances,
             ..placement_draft("vexa", &team.id, &layer.id)
         };
-        assert_eq!(
-            t.db.place_agent(project, &draft).unwrap().max_instances,
-            instances
-        );
+        assert_eq!(t.db.place_agent(&draft).unwrap().max_instances, instances);
     }
-    assert_eq!(t.db.orchestration(project).unwrap().placements.len(), 1);
+    assert_eq!(t.db.orchestration().unwrap().placements.len(), 1);
 }
 
 #[test]
 fn agente_posicionado_duas_vezes_continua_com_uma_so_posicao_a_ultima() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    let web = t.team(project, "Web");
-    let api = t.team(project, "API");
-    let build = t.layer(project, "Implementação");
-    let review = t.layer(project, "Revisão");
+    let web = t.team("Web");
+    let api = t.team("API");
+    let build = t.layer("Implementação");
+    let review = t.layer("Revisão");
 
-    t.place(project, "vexa", &web.id, &build.id);
-    let moved = t.place(project, "vexa", &api.id, &review.id);
+    t.place("vexa", &web.id, &build.id);
+    let moved = t.place("vexa", &api.id, &review.id);
 
-    let placements = t.db.orchestration(project).unwrap().placements;
+    let placements = t.db.orchestration().unwrap().placements;
     assert_eq!(placements.len(), 1);
     assert_eq!(
         (
@@ -406,352 +334,124 @@ fn agente_posicionado_duas_vezes_continua_com_uma_so_posicao_a_ultima() {
 }
 
 #[test]
-fn agente_so_e_posicionado_em_time_e_camada_que_existem_no_projeto() {
+fn agente_so_e_posicionado_em_time_e_camada_que_existem() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    let other = t.project("beta");
-    let team = t.team(project, "Time");
-    let layer = t.layer(project, "Implementação");
-    let foreign_layer = t.layer(other, "Externa");
+    let team = t.team("Time");
+    let layer = t.layer("Implementação");
 
     assert_eq!(
-        message_of(t.db.place_agent(project, &placement_draft("vexa", "fantasma", &layer.id))),
+        message_of(t.db.place_agent(&placement_draft("vexa", "fantasma", &layer.id))),
         "O time fantasma não existe neste projeto."
     );
     assert_eq!(
-        message_of(t.db.place_agent(
-            project,
-            &placement_draft("vexa", &team.id, &foreign_layer.id)
-        )),
-        "A camada externa não existe neste projeto."
+        message_of(t.db.place_agent(&placement_draft("vexa", &team.id, "fantasma"))),
+        "A camada fantasma não existe neste projeto."
     );
-    assert!(t.db.orchestration(project).unwrap().placements.is_empty());
+    assert!(t.db.orchestration().unwrap().placements.is_empty());
 }
 
 #[test]
 fn apagar_camada_com_agente_posicionado_e_recusado_e_nada_muda() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    let team = t.team(project, "Time");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.rule(project, "lideranca", "implementacao", "delegar");
-    t.place(project, "vexa", &team.id, "implementacao");
+    let team = t.team("Time");
+    t.layer("Liderança");
+    t.layer("Implementação");
+    t.place("vexa", &team.id, "implementacao");
 
-    let error = message_of(t.db.delete_layer(project, "implementacao"));
+    let error = message_of(t.db.delete_layer("implementacao"));
 
     assert_eq!(
         error,
         "A camada implementacao tem agentes posicionados: mova os agentes antes de excluí-la."
     );
-    let snapshot = t.db.orchestration(project).unwrap();
+    let snapshot = t.db.orchestration().unwrap();
     assert_eq!(snapshot.layers.len(), 2);
-    assert_eq!(snapshot.rules.len(), 1);
 }
 
 #[test]
-fn apagar_camada_vazia_apaga_as_setas_que_saem_e_as_que_chegam_nela() {
+fn apagar_time_com_agente_passa_os_cards_ao_sucessor_e_apaga_as_posicoes() {
     let t = TempDb::open();
     let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    t.rule(project, "lideranca", "implementacao", "delegar");
-    t.rule(project, "implementacao", "revisao", "delegar");
-    t.rule(project, "implementacao", "voce", "escalar");
-    t.rule(project, "revisao", "implementacao", "devolver");
-    let survivor = t.rule(project, "lideranca", "revisao", "delegar");
-
-    t.db.delete_layer(project, "implementacao").unwrap();
-
-    let snapshot = t.db.orchestration(project).unwrap();
-    assert_eq!(layer_order(&t.db, project), vec!["lideranca", "revisao"]);
-    assert_eq!(snapshot.rules.len(), 1);
-    assert_eq!(snapshot.rules[0].id, survivor.id);
-    assert_eq!(
-        message_of(t.db.delete_layer(project, "implementacao")),
-        "A camada implementacao não existe neste projeto."
-    );
-}
-
-#[test]
-fn apagar_time_com_agente_e_recusado_e_sem_agente_passa() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    let team = t.team(project, "Time");
-    let layer = t.layer(project, "Implementação");
-    t.place(project, "vexa", &team.id, &layer.id);
-
-    assert_eq!(
-        message_of(t.db.delete_team(project, &team.id)),
-        "O time time tem agentes posicionados: mova os agentes antes de excluí-lo."
-    );
-
-    let empty = t.team(project, "Vazio");
-    t.db.delete_team(project, &empty.id).unwrap();
-    let teams: Vec<String> =
-        t.db.orchestration(project)
-            .unwrap()
-            .teams
-            .into_iter()
-            .map(|team| team.id)
-            .collect();
-    assert_eq!(teams, vec!["time"]);
-}
-
-#[test]
-fn seta_duplicada_no_mesmo_par_e_recusada_mesmo_com_outra_acao() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    t.rule(project, "implementacao", "revisao", "delegar");
-
-    let error =
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "revisao", "delegar")));
-
-    assert_eq!(error, "Já existe uma seta de implementacao para revisao.");
-    assert_eq!(t.db.orchestration(project).unwrap().rules.len(), 1);
-}
-
-#[test]
-fn par_inverso_nao_e_duplicata_e_editar_a_propria_seta_nao_conflita_consigo() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    let forward = t.rule(project, "implementacao", "revisao", "delegar");
-    t.rule(project, "revisao", "implementacao", "devolver");
-
-    let edited =
-        t.db.save_rule(
+    let team = t.team("Time");
+    let layer = t.layer("Implementação");
+    t.place("vexa", &team.id, &layer.id);
+    let card =
+        t.db.create_card(
             project,
-            &RuleDraft {
-                id: Some(forward.id),
-                exec_mode: "paralelo".to_string(),
-                ..rule_draft("implementacao", "revisao", "delegar")
+            &NewCard {
+                title: "Ajustar login".to_string(),
+                description: None,
+                origin: "usuario".to_string(),
+                links: Vec::new(),
             },
         )
         .unwrap();
+    t.db.conn()
+        .unwrap()
+        .execute(
+            "UPDATE backlog_items SET who = 'vexa' WHERE id = ?1",
+            [&card.id],
+        )
+        .unwrap();
 
+    let notes =
+        t.db.delete_team(
+            &team.id,
+            &Agent::ember(),
+            "Ember",
+            |_| "Vexa".to_string(),
+            1,
+        )
+        .unwrap();
+
+    let owner: String =
+        t.db.conn()
+            .unwrap()
+            .query_row(
+                "SELECT who FROM backlog_items WHERE id = ?1",
+                [&card.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+    assert_eq!(owner, "ember");
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].project_id, project);
     assert_eq!(
-        (edited.id, edited.exec_mode.as_str()),
-        (forward.id, "paralelo")
+        notes[0].text,
+        format!("Ember assumiu o card {} de Vexa", card.id)
     );
-    assert_eq!(t.db.orchestration(project).unwrap().rules.len(), 2);
+    let snapshot = t.db.orchestration().unwrap();
+    assert!(snapshot.placements.is_empty());
+    assert!(snapshot.teams.is_empty());
+    assert_eq!(layer_order(&t.db), vec!["implementacao"]);
 }
 
 #[test]
-fn editar_seta_para_um_par_ja_ocupado_e_recusado() {
+fn apagar_time_inexistente_e_recusado() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    t.rule(project, "lideranca", "implementacao", "delegar");
-    let other = t.rule(project, "lideranca", "revisao", "delegar");
-
-    let error = message_of(t.db.save_rule(
-        project,
-        &RuleDraft {
-            id: Some(other.id),
-            ..rule_draft("lideranca", "implementacao", "delegar")
-        },
-    ));
-
-    assert_eq!(error, "Já existe uma seta de lideranca para implementacao.");
-}
-
-#[test]
-fn seta_de_uma_camada_para_ela_mesma_e_recusada() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-
-    let error = message_of(t.db.save_rule(
-        project,
-        &rule_draft("implementacao", "implementacao", "delegar"),
-    ));
-
-    assert_eq!(error, "Uma camada não pode enviar trabalho para ela mesma.");
-    assert!(t.db.orchestration(project).unwrap().rules.is_empty());
-}
-
-#[test]
-fn escalar_so_aponta_para_voce_e_voce_so_recebe_por_escalar() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
 
     assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "revisao", "escalar"))),
-        "A regra escalar só pode apontar para Você."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "voce", "delegar"))),
-        "Você só recebe trabalho pela regra escalar."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "voce", "devolver"))),
-        "Você só recebe trabalho pela regra escalar."
-    );
-    let escalate = t.rule(project, "implementacao", "voce", "escalar");
-    assert_eq!(escalate.to_layer, "voce");
-    assert_eq!(t.db.orchestration(project).unwrap().rules.len(), 1);
-}
-
-#[test]
-fn seta_com_camada_de_origem_ou_destino_inexistente_e_recusada() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-
-    assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("fantasma", "implementacao", "delegar"))),
-        "A camada fantasma não existe neste projeto."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "fantasma", "delegar"))),
-        "A camada fantasma não existe neste projeto."
+        message_of(t.db.delete_team("fantasma", &Agent::ember(), "Ember", |_| String::new(), 1)),
+        "O time fantasma não existe neste projeto."
     );
 }
 
 #[test]
-fn devolver_para_camada_posterior_e_recusado_e_para_anterior_passa() {
+fn reordenar_camadas_grava_a_nova_ordem() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
+    t.layer("Liderança");
+    t.layer("Implementação");
+    t.layer("Revisão");
 
-    assert_eq!(
-        message_of(t.db.save_rule(project, &rule_draft("implementacao", "revisao", "devolver"))),
-        "Devolver só vai para uma camada anterior."
-    );
-    let back = t.rule(project, "revisao", "implementacao", "devolver");
-    assert_eq!(
-        (back.from_layer.as_str(), back.to_layer.as_str()),
-        ("revisao", "implementacao")
-    );
-}
-
-#[test]
-fn return_limit_0_e_6_sao_recusados_e_1_e_5_passam() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    let expected = "O campo return_limit da orquestração deve ficar entre 1 e 5.";
-
-    for limit in [0, 6] {
-        let draft = RuleDraft {
-            return_limit: limit,
-            ..rule_draft("revisao", "implementacao", "devolver")
-        };
-        assert_eq!(
-            message_of(t.db.save_rule(project, &draft)),
-            expected,
-            "com {limit}"
-        );
-    }
-    for limit in [1, 5] {
-        let draft = RuleDraft {
-            id: None,
-            return_limit: limit,
-            ..rule_draft("implementacao", "revisao", "delegar")
-        };
-        let saved = t.db.save_rule(project, &draft).unwrap();
-        assert_eq!(saved.return_limit, limit);
-        t.db.delete_rule(project, saved.id).unwrap();
-    }
-}
-
-#[test]
-fn seta_com_valor_fora_dos_enums_e_recusada_com_o_campo_no_erro() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-
-    let bad_event = RuleDraft {
-        when_event: "sempre".to_string(),
-        ..rule_draft("implementacao", "revisao", "delegar")
-    };
-    let bad_action = rule_draft("implementacao", "revisao", "mandar");
-    let bad_kind = RuleDraft {
-        kind: "livre".to_string(),
-        ..rule_draft("implementacao", "revisao", "delegar")
-    };
-    let bad_mode = RuleDraft {
-        exec_mode: "turbo".to_string(),
-        ..rule_draft("implementacao", "revisao", "delegar")
-    };
-
-    assert_eq!(
-        message_of(t.db.save_rule(project, &bad_event)),
-        "O campo when_event da orquestração não aceita o valor \"sempre\"."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &bad_action)),
-        "O campo action da orquestração não aceita o valor \"mandar\"."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &bad_kind)),
-        "O campo kind da orquestração não aceita o valor \"livre\"."
-    );
-    assert_eq!(
-        message_of(t.db.save_rule(project, &bad_mode)),
-        "O campo exec_mode da orquestração não aceita o valor \"turbo\"."
-    );
-    assert!(t.db.orchestration(project).unwrap().rules.is_empty());
-}
-
-#[test]
-fn reordenar_camadas_que_deixa_devolucao_apontando_para_frente_e_recusado_e_desfeito() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    t.rule(project, "revisao", "implementacao", "devolver");
-
-    let error = message_of(t.db.reorder_layers(
-        project,
-        &[
-            "revisao".to_string(),
-            "implementacao".to_string(),
-            "lideranca".to_string(),
-        ],
-    ));
-
-    assert_eq!(error, "Devolver só vai para uma camada anterior.");
-    assert_eq!(
-        layer_order(&t.db, project),
-        vec!["lideranca", "implementacao", "revisao"]
-    );
-}
-
-#[test]
-fn reordenar_camadas_sem_quebrar_devolucao_grava_a_nova_ordem() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-    t.rule(project, "revisao", "implementacao", "devolver");
-
-    t.db.reorder_layers(
-        project,
-        &[
-            "implementacao".to_string(),
-            "revisao".to_string(),
-            "lideranca".to_string(),
-        ],
-    )
+    t.db.reorder_layers(&[
+        "implementacao".to_string(),
+        "revisao".to_string(),
+        "lideranca".to_string(),
+    ])
     .unwrap();
 
     assert_eq!(
-        layer_order(&t.db, project),
+        layer_order(&t.db),
         vec!["implementacao", "revisao", "lideranca"]
     );
 }
@@ -759,27 +459,21 @@ fn reordenar_camadas_sem_quebrar_devolucao_grava_a_nova_ordem() {
 #[test]
 fn reordenar_exige_cada_camada_do_projeto_uma_unica_vez() {
     let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
+    t.layer("Liderança");
+    t.layer("Implementação");
     let expected = "A nova ordem precisa listar cada camada do projeto uma única vez.";
 
-    let missing = message_of(t.db.reorder_layers(project, &["lideranca".to_string()]));
-    let repeated = message_of(
-        t.db.reorder_layers(project, &["lideranca".to_string(), "lideranca".to_string()]),
-    );
-    let unknown = message_of(
-        t.db.reorder_layers(project, &["lideranca".to_string(), "fantasma".to_string()]),
-    );
+    let missing = message_of(t.db.reorder_layers(&["lideranca".to_string()]));
+    let repeated =
+        message_of(t.db.reorder_layers(&["lideranca".to_string(), "lideranca".to_string()]));
+    let unknown =
+        message_of(t.db.reorder_layers(&["lideranca".to_string(), "fantasma".to_string()]));
 
     assert_eq!(
         (missing.as_str(), repeated.as_str(), unknown.as_str()),
         (expected, expected, expected)
     );
-    assert_eq!(
-        layer_order(&t.db, project),
-        vec!["lideranca", "implementacao"]
-    );
+    assert_eq!(layer_order(&t.db), vec!["lideranca", "implementacao"]);
 }
 
 #[test]
@@ -866,7 +560,6 @@ fn registro_de_movimento_recusa_acao_tipo_e_contagem_invalidos() {
 #[test]
 fn configuracao_fora_das_faixas_e_recusada_e_dentro_das_faixas_e_gravada() {
     let t = TempDb::open();
-    let project = t.project("alfa");
     let base = OrchestrationSettings::default();
     let out_of_range = [
         (
@@ -927,21 +620,18 @@ fn configuracao_fora_das_faixas_e_recusada_e_dentro_das_faixas_e_gravada() {
 
     for (settings, field, min, max) in out_of_range {
         assert_eq!(
-            message_of(t.db.save_settings(project, &settings)),
+            message_of(t.db.save_settings(&settings)),
             format!("O campo {field} da orquestração deve ficar entre {min} e {max}.")
         );
     }
     assert_eq!(
-        message_of(t.db.save_settings(
-            project,
-            &OrchestrationSettings {
-                human_gate: "talvez".to_string(),
-                ..base.clone()
-            }
-        )),
+        message_of(t.db.save_settings(&OrchestrationSettings {
+            human_gate: "talvez".to_string(),
+            ..base.clone()
+        })),
         "O campo human_gate da orquestração não aceita o valor \"talvez\"."
     );
-    assert_eq!(t.db.orchestration(project).unwrap().settings, base);
+    assert_eq!(t.db.orchestration().unwrap().settings, base);
 
     let edge = OrchestrationSettings {
         enforcement: "on".to_string(),
@@ -953,73 +643,71 @@ fn configuracao_fora_das_faixas_e_recusada_e_dentro_das_faixas_e_gravada() {
         task_turn_limit: 200,
         worktree_policy: "sempre".to_string(),
     };
-    t.db.save_settings(project, &edge).unwrap();
-    t.db.save_settings(project, &edge).unwrap();
-    assert_eq!(t.db.orchestration(project).unwrap().settings, edge);
+    t.db.save_settings(&edge).unwrap();
+    t.db.save_settings(&edge).unwrap();
+    assert_eq!(t.db.orchestration().unwrap().settings, edge);
 }
 
 #[test]
-fn orquestracao_de_um_projeto_nao_aparece_no_outro() {
+fn orquestracao_e_a_mesma_nos_dois_projetos_e_os_movimentos_ficam_separados() {
+    let t = TempDb::open();
+    let alfa = t.project("alfa");
+    let beta = t.project("beta");
+    t.layer("Implementação");
+    t.team("Time");
+    t.db.record_handoff(alfa, &handoff_draft("item-1", "delegar"))
+        .unwrap();
+    t.db.record_handoff(beta, &handoff_draft("item-2", "delegar"))
+        .unwrap();
+
+    let snapshot = t.db.orchestration().unwrap();
+    let items_of = |project: i64| -> Vec<Option<String>> {
+        t.db.list_movements(project, 10)
+            .unwrap()
+            .into_iter()
+            .map(|movement| movement.item_id)
+            .collect()
+    };
+
+    assert_eq!(layer_order(&t.db), vec!["implementacao"]);
+    assert_eq!(snapshot.teams.len(), 1);
+    assert_eq!(items_of(alfa), vec![Some("item-1".to_string())]);
+    assert_eq!(items_of(beta), vec![Some("item-2".to_string())]);
+}
+
+#[test]
+fn apagar_o_projeto_apaga_movimentos_e_pedidos_dele_e_mantem_a_orquestracao() {
     let t = TempDb::open();
     let project = t.project("alfa");
     let other = t.project("beta");
-    t.layer(project, "Implementação");
-    t.team(project, "Time");
-
-    let snapshot = t.db.orchestration(other).unwrap();
-
-    assert!(snapshot.layers.is_empty() && snapshot.teams.is_empty());
-    t.layer(other, "Implementação");
-    assert_eq!(layer_order(&t.db, other), vec!["implementacao"]);
-}
-
-#[test]
-fn apagar_o_projeto_apaga_camadas_times_setas_e_movimentos() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    let team = t.team(project, "Time");
-    t.layer(project, "Liderança");
-    t.layer(project, "Implementação");
-    t.rule(project, "lideranca", "implementacao", "delegar");
-    t.place(project, "vexa", &team.id, "implementacao");
-    t.db.record_handoff(project, &handoff_draft("item-1", "delegar"))
-        .unwrap();
+    let team = t.team("Time");
+    t.layer("Liderança");
+    t.layer("Implementação");
+    t.place("vexa", &team.id, "implementacao");
+    for id in [project, other] {
+        t.db.record_handoff(id, &handoff_draft("item-1", "delegar"))
+            .unwrap();
+        t.db.start_run(id, "vexa", "implementar", None, None, 1)
+            .unwrap();
+    }
 
     t.db.delete_project(project).unwrap();
 
-    let conn = t.db.conn().unwrap();
-    for table in [
-        "orch_layers",
-        "orch_teams",
-        "orch_placements",
-        "orch_rules",
-        "orch_handoffs",
-    ] {
-        let rows: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(rows, 0, "{table} deveria estar vazia");
-    }
-}
-
-#[test]
-fn banco_recusa_seta_escalar_para_camada_comum_mesmo_fora_da_api() {
-    let t = TempDb::open();
-    let project = t.project("alfa");
-    t.layer(project, "Implementação");
-    t.layer(project, "Revisão");
-
-    let conn = t.db.conn().unwrap();
-    let inserted = conn.execute(
-        "INSERT INTO orch_rules (project_id, from_layer, to_layer, when_event, action, kind, exec_mode, return_limit, position) \
-         VALUES (?1, 'implementacao', 'revisao', 'tarefa_concluida', 'escalar', 'revisar', 'sequencia', 2, 0)",
-        [project],
-    );
-
-    assert!(
-        inserted.is_err(),
-        "o CHECK do banco deveria recusar escalar para camada comum"
-    );
+    let count = |table: &str, project_id: i64| -> i64 {
+        t.db.conn()
+            .unwrap()
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE project_id = ?1"),
+                [project_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(count("orch_handoffs", project), 0);
+    assert_eq!(count("orch_runs", project), 0);
+    assert_eq!(count("orch_handoffs", other), 1);
+    assert_eq!(count("orch_runs", other), 1);
+    let snapshot = t.db.orchestration().unwrap();
+    assert_eq!(layer_order(&t.db), vec!["lideranca", "implementacao"]);
+    assert_eq!((snapshot.teams.len(), snapshot.placements.len()), (1, 1));
 }

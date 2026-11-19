@@ -84,6 +84,11 @@ impl SessionPool {
         end_slots(self.matching(|key| key.project_id == project_id)).await;
     }
 
+    // O mapa da orquestração é global: qualquer sessão, de qualquer projeto, guarda o prompt antigo.
+    pub(crate) async fn close_everything(&self) {
+        end_slots(self.matching(|_| true)).await;
+    }
+
     // Instrução extra mudou: a sessão do agente e as das réplicas (<base>-<n>), em todos os projetos,
     // fecham no fim da troca em curso e reabrem com o prompt novo.
     pub(crate) async fn retire_agent(&self, agent: &Agent) {

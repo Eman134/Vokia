@@ -11,6 +11,7 @@ use super::error::DbError;
 pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
 const DEFAULT_COLUMN: &str = "Backlog";
 const IN_PROGRESS_COLUMN: &str = "In progress";
+const IN_REVIEW_COLUMN: &str = "In review";
 pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", IN_PROGRESS_COLUMN, "In review", "Done"];
 const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
 const ITEM_TYPES: &[&str] = &["task", "feature"];
@@ -32,7 +33,12 @@ const ORIGIN_CONVERSATION: &str = "conversa";
 const ORIGIN_AGENT: &str = "agente";
 const ORIGINS: &[&str] = &[ORIGIN_USER, ORIGIN_CONVERSATION, ORIGIN_AGENT];
 const DONE_COLUMN: &str = "Done";
-pub const AGENT_FORBIDDEN_COLUMN: &str = "Ready";
+const READY_COLUMN: &str = "Ready";
+// Done é do usuário ou da validação final: o agente não move o card para lá nem para Ready.
+pub const AGENT_FORBIDDEN_COLUMNS: &[&str] = &[READY_COLUMN, DONE_COLUMN];
+const CLOSED_BY_USER: &str = "usuario";
+const CLOSED_BY_AUTOMATIC: &str = "automatico";
+const CLOSERS: &[&str] = &[CLOSED_BY_USER, CLOSED_BY_AUTOMATIC];
 const USER_OWNER: &str = "voce";
 const USER_CARD_TYPE: &str = "feature";
 const AGENT_CARD_TYPE: &str = "task";
@@ -44,7 +50,8 @@ const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
 
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
-    questions, links, activity, children_total, children_done, origin, branch, worktree_path";
+    questions, links, activity, children_total, children_done, origin, branch, worktree_path, \
+    closed_by, auto_attempts";
 
 const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
@@ -187,6 +194,11 @@ pub struct BacklogItem {
     pub origin: String,
     pub branch: Option<String>,
     pub worktree_path: Option<String>,
+    // Quem concluiu o card (usuario ou automatico) e quantas devoluções da validação automática ele já teve.
+    #[serde(default)]
+    pub closed_by: Option<String>,
+    #[serde(default)]
+    pub auto_attempts: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ItemError>,
 }
@@ -251,10 +263,18 @@ pub struct AgentActor {
     pub current_card: Option<String>,
 }
 
+// Líder que assume o card criado pelo orquestrador; o autor continua sendo quem criou.
+pub struct CardResponsible {
+    pub leader: Agent,
+    pub team_name: String,
+    pub leader_name: String,
+}
+
 pub enum CardOperation {
     Create {
         title: String,
         description: Option<String>,
+        responsible: Option<CardResponsible>,
     },
     Move {
         id: String,
@@ -335,12 +355,107 @@ impl Db {
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;
         let changed = conn.execute(
-            "UPDATE backlog_items SET \"column\" = ?3 WHERE project_id = ?1 AND id = ?2",
-            params![project_id, id, column],
+            "UPDATE backlog_items SET \"column\" = ?3, \
+                closed_by = CASE WHEN ?3 = ?4 THEN ?5 ELSE NULL END \
+             WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id, column, DONE_COLUMN, CLOSED_BY_USER],
         )?;
         if changed == 0 {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
+        Ok(())
+    }
+
+    // Worktrees em uso por um líder, em todos os projetos: cards dele em In progress que já têm worktree.
+    pub fn count_team_worktrees(&self, leader: &str) -> Result<i64, DbError> {
+        let conn = self.conn()?;
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM backlog_items \
+             WHERE who = ?1 AND \"column\" = ?2 AND worktree_path IS NOT NULL AND archived_at IS NULL",
+            params![leader, IN_PROGRESS_COLUMN],
+            |row| row.get(0),
+        )?)
+    }
+
+    // Card passa para In progress ou In review por ação do app (fim do fluxo, devolução); Done só por close_card.
+    pub fn advance_card(&self, project_id: i64, id: &str, column: &str) -> Result<(), DbError> {
+        if column != IN_PROGRESS_COLUMN && column != IN_REVIEW_COLUMN {
+            return Err(DbError::ColumnNotMovable(column.to_string()));
+        }
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET \"column\" = ?3, \
+                cycle_started_at = CASE WHEN ?3 = ?4 THEN CAST(unixepoch('subsec') * 1000 AS INTEGER) \
+                    ELSE cycle_started_at END \
+             WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id, column, IN_PROGRESS_COLUMN],
+        )?;
+        if changed == 0 {
+            return Err(DbError::BacklogItemNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    // Conclui o card: Done com quem concluiu (o usuário, ou a validação automática).
+    pub fn close_card(&self, project_id: i64, id: &str, closed_by: &str) -> Result<(), DbError> {
+        if !CLOSERS.contains(&closed_by) {
+            return Err(DbError::InvalidClosedBy(closed_by.to_string()));
+        }
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET \"column\" = ?3, closed_by = ?4 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id, DONE_COLUMN, closed_by],
+        )?;
+        if changed == 0 {
+            return Err(DbError::BacklogItemNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    // Reabre o card devolvido pelo usuário: volta a In progress, sem quem concluiu e com as tentativas zeradas.
+    pub fn reopen_card(&self, project_id: i64, id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET \"column\" = ?3, closed_by = NULL, auto_attempts = 0, \
+                cycle_started_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) \
+             WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id, IN_PROGRESS_COLUMN],
+        )?;
+        if changed == 0 {
+            return Err(DbError::BacklogItemNotFound(id.to_string()));
+        }
+        Ok(())
+    }
+
+    pub fn bump_auto_attempts(&self, project_id: i64, id: &str) -> Result<i64, DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        conn.query_row(
+            "UPDATE backlog_items SET auto_attempts = auto_attempts + 1 \
+             WHERE project_id = ?1 AND id = ?2 RETURNING auto_attempts",
+            params![project_id, id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or_else(|| DbError::BacklogItemNotFound(id.to_string()))
+    }
+
+    pub fn add_card_activity(&self, project_id: i64, id: &str, text: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let mut card = find_card(&conn, project_id, id)?;
+        card.activity.push(activity_entry(
+            &card.id,
+            card.activity.len() + 1,
+            text.to_string(),
+        ));
+        conn.execute(
+            "UPDATE backlog_items SET activity = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id, to_json(id, "activity", &card.activity)?],
+        )?;
         Ok(())
     }
 
@@ -389,7 +504,8 @@ impl Db {
         ensure_project(&conn, project_id)?;
         let item = find_card(&conn, project_id, item_id)?;
         validate_item(&item)?;
-        if item.who != USER_OWNER && item.who != agent.as_str() {
+        let unassigned = item.who == USER_OWNER || item.who == Agent::ember().as_str();
+        if !unassigned && item.who != agent.as_str() {
             return Err(DbError::ResponsibleAlreadySet(item.who));
         }
         conn.execute(
@@ -495,9 +611,18 @@ impl Db {
         let mut results = Vec::with_capacity(operations.len());
         for operation in operations {
             let result = match operation {
-                CardOperation::Create { title, description } => {
-                    create_agent_card(&tx, project_id, actor, title, description.as_deref())?
-                }
+                CardOperation::Create {
+                    title,
+                    description,
+                    responsible,
+                } => create_agent_card(
+                    &tx,
+                    project_id,
+                    actor,
+                    title,
+                    description.as_deref(),
+                    responsible.as_ref(),
+                )?,
                 CardOperation::Move { id, column } => {
                     move_agent_card(&tx, project_id, actor, id, column)?
                 }
@@ -768,6 +893,8 @@ fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
         origin: draft.origin.to_string(),
         branch: None,
         worktree_path: None,
+        closed_by: None,
+        auto_attempts: 0,
     }
 }
 
@@ -815,21 +942,31 @@ fn create_agent_card(
     actor: &AgentActor,
     title: &str,
     description: Option<&str>,
+    responsible: Option<&CardResponsible>,
 ) -> Result<CardResult, DbError> {
     let title = normalized_title(title)?;
     ensure_title_free(conn, project_id, &title)?;
     let (id, position) = next_card_id(conn, project_id)?;
+    let (owner, created) = match responsible {
+        Some(responsible) => (
+            responsible.leader.as_str(),
+            format!(
+                "{} criou o card para o time {} (líder {}).",
+                actor.name, responsible.team_name, responsible.leader_name
+            ),
+        ),
+        None => (
+            actor.id.as_str(),
+            format!("{} criou o card na conversa.", actor.name),
+        ),
+    };
     let draft = CardDraft {
         title: title.clone(),
         kind: AGENT_CARD_TYPE,
-        owner: actor.id.as_str(),
+        owner,
         description: normalized_description(description),
         origin: ORIGIN_AGENT,
-        activity: vec![activity_entry(
-            &id,
-            1,
-            format!("{} criou o card na conversa.", actor.name),
-        )],
+        activity: vec![activity_entry(&id, 1, created)],
         links: Vec::new(),
     };
     insert_card(conn, project_id, &fresh_card(&id, draft), position)?;
@@ -849,7 +986,7 @@ fn move_agent_card(
     requested_column: &str,
 ) -> Result<CardResult, DbError> {
     let column = board_column(requested_column)?;
-    if column == AGENT_FORBIDDEN_COLUMN {
+    if AGENT_FORBIDDEN_COLUMNS.contains(&column) {
         return Err(DbError::AgentForbiddenColumn(column.to_string()));
     }
     let mut card = find_card(conn, project_id, id)?;
@@ -871,12 +1008,16 @@ fn move_agent_card(
     card.activity
         .push(activity_entry(&card.id, card.activity.len() + 1, text));
     conn.execute(
-        "UPDATE backlog_items SET \"column\" = ?3, activity = ?4 WHERE project_id = ?1 AND id = ?2",
+        "UPDATE backlog_items SET \"column\" = ?3, activity = ?4, \
+            cycle_started_at = CASE WHEN ?3 = ?5 THEN CAST(unixepoch('subsec') * 1000 AS INTEGER) \
+                ELSE cycle_started_at END \
+         WHERE project_id = ?1 AND id = ?2",
         params![
             project_id,
             card.id,
             column,
             to_json(&card.id, "activity", &card.activity)?,
+            IN_PROGRESS_COLUMN,
         ],
     )?;
     Ok(CardResult {
@@ -919,7 +1060,7 @@ fn update_agent_card(
         .column
         .clone()
         .unwrap_or_else(|| DEFAULT_COLUMN.to_string());
-    if current == AGENT_FORBIDDEN_COLUMN {
+    if current == READY_COLUMN {
         return Err(DbError::CardInReady(card.id));
     }
     ensure_agent_can_change(&card, &current, actor)?;
@@ -1075,6 +1216,8 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
         origin: origin_from_row(row)?,
         branch: row.get("branch")?,
         worktree_path: row.get("worktree_path")?,
+        closed_by: row.get("closed_by")?,
+        auto_attempts: row.get("auto_attempts")?,
         is_new: None,
         column: BOARD_COLUMNS.contains(&column.as_str()).then_some(column),
         priority: None,
@@ -1131,6 +1274,8 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         origin: row.get("origin")?,
         branch: row.get("branch")?,
         worktree_path: row.get("worktree_path")?,
+        closed_by: row.get("closed_by")?,
+        auto_attempts: row.get("auto_attempts")?,
         error: None,
         id,
     };
