@@ -19,6 +19,8 @@ const TASKS_CREATED_VERB = 'Tarefas criadas'
 const TASK_UPDATE_VERBS: Partial<Record<string, string>> = { completed: 'Concluiu tarefa' }
 const TASK_UPDATE_FALLBACK_VERB = 'Atualizou tarefa'
 const STARTED_VERB = 'Iniciou tarefa'
+const TASK_STARTED_VERB = 'Task iniciada'
+const TASK_STARTED_ID = 'task-started'
 export type CardTitleOf = (cardId: string) => string | undefined
 
 type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'agent' | 'tool'
@@ -247,6 +249,18 @@ function startedRow(tool: ToolActivity, detail: StartedDetail, titleOf: CardTitl
   const title = titleOf(detail.cardId)
   if (tool.status !== 'ok' || title === undefined) return []
   return [{ id: tool.callId, icon: ROW_ICON[tool.category], verb: STARTED_VERB, text: title, failed: false }]
+}
+
+// O prompt inteiro fica na lista expansível; a linha mostra só o título da task.
+export function taskStartedRow(title: string, prompt: string): ActivityRowModel {
+  return {
+    id: TASK_STARTED_ID,
+    icon: 'command',
+    verb: TASK_STARTED_VERB,
+    chip: { label: title, title, icon: 'generic' },
+    items: prompt.split('\n').filter((line) => line.trim() !== ''),
+    failed: false,
+  }
 }
 
 export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf): ActivityRowModel[] {

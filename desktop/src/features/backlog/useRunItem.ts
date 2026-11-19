@@ -56,6 +56,12 @@ export function buildRunPrompt(item: BacklogItem, planText: string): string {
   return sections.join('\n\n')
 }
 
+const RUN_HEADER = new RegExp(`^${RUN_TITLE_PREFIX} "(.*)"\\.$`)
+
+export function runTitleOf(text: string): string | undefined {
+  return RUN_HEADER.exec(text.split('\n', 1)[0] ?? '')?.[1]
+}
+
 // Só o app escreve estas notas ao rodar um card; o que o agente move com #card tem outra atividade por último.
 function isOwnRun(item: BacklogItem): boolean {
   const last = item.activity?.at(-1)?.text

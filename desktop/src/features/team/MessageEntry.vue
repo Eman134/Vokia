@@ -1,23 +1,34 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
 import type { AgentProfile } from './teamApi'
 import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
+import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
+import { taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UserAvatar from '../profile/UserAvatar.vue'
 import { useUserProfile } from '../profile/useUserProfile'
 import { useBacklog } from '../backlog/useBacklog'
+import { runTitleOf } from '../backlog/useRunItem'
 import UiButton from '../../ui/UiButton.vue'
 
-defineProps<{ entry: FeedEntry }>()
+const props = defineProps<{ entry: FeedEntry }>()
 
 const roster = useRoster()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
+
+const runCard = computed(() => {
+  const { entry } = props
+  if (entry.type !== 'message' || entry.from !== 'user') return null
+  const title = runTitleOf(entry.text)
+  return title === undefined ? null : taskStartedRow(title, entry.text)
+})
 
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
@@ -57,7 +68,10 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-caption text-muted">
       Para {{ speakerName(entry.to) }}
     </span>
-    <div class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
+    <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
+      <ActivityRow :row="runCard" />
+    </ul>
+    <div v-else class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
       <MarkdownText :text="entry.text" />
     </div>
     <div class="flex flex-wrap items-center justify-end gap-1.5 text-caption text-muted">
