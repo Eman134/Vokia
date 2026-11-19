@@ -1,26 +1,14 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useProjects } from '../projects/useProjects'
-import type { Agent } from '../team/events'
 import { useFeed } from '../team/useFeed'
 import type { VokiaBatchProgress } from '../team/events'
 import * as orchestrationApi from './orchestrationApi'
-import type {
-  OrchLayerDraft,
-  OrchMovement,
-  OrchPlacementDraft,
-  OrchRuleDraft,
-  OrchTeamDraft,
-  OrchestrationSettings,
-  OrchestrationSnapshot,
-} from './orchestrationTypes'
+import type { OrchPlacementDraft, OrchTeamDraft, OrchestrationSnapshot } from './orchestrationTypes'
 
 export const useOrchestration = defineStore('orchestration', () => {
   const snapshot = ref<OrchestrationSnapshot | null>(null)
-  const movements = ref<OrchMovement[]>([])
   const loadedProjectId = ref<number | null>(null)
-  const loading = ref(false)
-  const loadError = ref<string | null>(null)
   // Placar de cada lote aberto, por projeto e líder; o evento done tira o lote da lista.
   const batches = ref(new Map<string, VokiaBatchProgress>())
 
@@ -50,31 +38,19 @@ export const useOrchestration = defineStore('orchestration', () => {
 
   function resetLoaded(): void {
     snapshot.value = null
-    movements.value = []
     loadedProjectId.value = null
   }
 
-  // Snapshot e movimentos entram juntos: se um dos dois falhar, nenhum entra e o estado não fica misturado.
   async function fetchAll(projectId: number, seq: number): Promise<boolean> {
     try {
-      const [nextSnapshot, nextMovements] = await Promise.all([
-        orchestrationApi.fetchOrchestration(projectId),
-        orchestrationApi.fetchMovements(projectId),
-      ])
+      const nextSnapshot = await orchestrationApi.fetchOrchestration(projectId)
       if (seq !== loadSeq) return false
       snapshot.value = nextSnapshot
-      movements.value = nextMovements
       loadedProjectId.value = projectId
-      loadError.value = null
       return true
     } catch (error) {
-      if (seq === loadSeq) {
-        loadError.value = errorMessage(error)
-        reportError(error)
-      }
+      if (seq === loadSeq) reportError(error)
       return false
-    } finally {
-      if (seq === loadSeq) loading.value = false
     }
   }
 
@@ -82,8 +58,6 @@ export const useOrchestration = defineStore('orchestration', () => {
     const seq = (loadSeq += 1)
     requestedProjectId = projectId
     resetLoaded()
-    loadError.value = null
-    loading.value = true
     return fetchAll(projectId, seq)
   }
 
@@ -91,8 +65,6 @@ export const useOrchestration = defineStore('orchestration', () => {
     loadSeq += 1
     requestedProjectId = null
     resetLoaded()
-    loading.value = false
-    loadError.value = null
   }
 
   // Recarrega sem limpar a tela; resposta de carga anterior é descartada pela sequência.
@@ -114,16 +86,8 @@ export const useOrchestration = defineStore('orchestration', () => {
     }
   }
 
-  function saveLayer(draft: OrchLayerDraft): Promise<boolean> {
-    return write((projectId) => orchestrationApi.saveLayer(projectId, draft))
-  }
-
-  function deleteLayer(id: string): Promise<boolean> {
-    return write((projectId) => orchestrationApi.deleteLayer(projectId, id))
-  }
-
-  function reorderLayers(ids: string[]): Promise<boolean> {
-    return write((projectId) => orchestrationApi.reorderLayers(projectId, ids))
+  function placeAgent(draft: OrchPlacementDraft): Promise<boolean> {
+    return write((projectId) => orchestrationApi.placeAgent(projectId, draft))
   }
 
   function saveTeam(draft: OrchTeamDraft): Promise<boolean> {
@@ -132,26 +96,6 @@ export const useOrchestration = defineStore('orchestration', () => {
 
   function deleteTeam(id: string): Promise<boolean> {
     return write((projectId) => orchestrationApi.deleteTeam(projectId, id))
-  }
-
-  function placeAgent(draft: OrchPlacementDraft): Promise<boolean> {
-    return write((projectId) => orchestrationApi.placeAgent(projectId, draft))
-  }
-
-  function unplaceAgent(agentId: Agent): Promise<boolean> {
-    return write((projectId) => orchestrationApi.unplaceAgent(projectId, agentId))
-  }
-
-  function saveRule(draft: OrchRuleDraft): Promise<boolean> {
-    return write((projectId) => orchestrationApi.saveRule(projectId, draft))
-  }
-
-  function deleteRule(id: number): Promise<boolean> {
-    return write((projectId) => orchestrationApi.deleteRule(projectId, id))
-  }
-
-  function saveSettings(settings: OrchestrationSettings): Promise<boolean> {
-    return write((projectId) => orchestrationApi.saveOrchestrationSettings(projectId, settings))
   }
 
   watch(
@@ -168,24 +112,14 @@ export const useOrchestration = defineStore('orchestration', () => {
 
   return {
     snapshot,
-    movements,
     loadedProjectId,
-    loading,
-    loadError,
     batches,
     applyBatchProgress,
     clear,
     load,
     reload,
-    saveLayer,
-    deleteLayer,
-    reorderLayers,
+    placeAgent,
     saveTeam,
     deleteTeam,
-    placeAgent,
-    unplaceAgent,
-    saveRule,
-    deleteRule,
-    saveSettings,
   }
 })

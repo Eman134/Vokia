@@ -6,17 +6,18 @@ import { LAYER_LABEL, TEAM_LABEL } from '../agents/agentFormCopy'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import type { AgentProfile } from '../team/teamApi'
 import CountStepper from './CountStepper.vue'
+import {
+  DEFAULT_INSTANCES,
+  INSTANCES_MAX,
+  INSTANCES_MIN,
+  INSTRUCTIONS_MAX_CHARS,
+  TEXTAREA_CLASSES,
+} from './orchestrationForm'
 import { VIEW_COPY } from './orchestrationLabels'
 import type { OrchLayer, OrchPlacement, OrchTeam } from './orchestrationTypes'
 import { useOrchestration } from './useOrchestration'
 
-const INSTRUCTIONS_MAX_CHARS = 4000
-const INSTANCES_MIN = 1
-const INSTANCES_MAX = 4
-const DEFAULT_INSTANCES = 1
 const PORTRAIT_SIZE = 36
-const TEXTAREA_CLASSES =
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
 
 const props = defineProps<{
   agent: AgentProfile

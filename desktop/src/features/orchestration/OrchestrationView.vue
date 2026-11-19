@@ -2,193 +2,353 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
-import NewLayerDialog from '../teammap/NewLayerDialog.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
-import type { Agent } from '../team/events'
 import { placeableAgents } from '../team/agents'
+import type { Agent } from '../team/events'
 import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import AgentPanel from './AgentPanel.vue'
 import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
-import LayerPanel from './LayerPanel.vue'
-import OrchestrationPanel from './OrchestrationPanel.vue'
-import RulePanel from './RulePanel.vue'
+import FlowNodePanel from './FlowNodePanel.vue'
+import { lineKey, type FlowEdge, type LineKind } from './flowGraph'
 import { VIEW_COPY } from './orchestrationLabels'
-import type { OrchRule, OrchestrationSnapshot } from './orchestrationTypes'
+import type { OrchestrationSnapshot } from './orchestrationTypes'
+import { useFlowDraft, type AlignAxis, type AlignMode, type FlowNodeConfig } from './useFlowDraft'
 import { useOrchestration } from './useOrchestration'
 
-const PORTRAIT_SIZE = 28
+const CHIP_PORTRAIT_SIZE = 24
+const DRAG_THRESHOLD_PX = 4
+const DROP_ZONE_SELECTOR = '[data-flow-canvas]'
+const GHOST_OFFSET_PX = 12
+const GHOST_PORTRAIT_SIZE = 28
+const ALIGN_ICON_SIZE = 16
+const ALIGN_ACTIONS: readonly { mode: AlignMode; axis: AlignAxis; label: string; path: string }[] = [
+  { mode: 'center', axis: 'vertical', label: VIEW_COPY.alignCenterVertical, path: 'M12 2v20M7 6h10v4H7zM9 14h6v4H9z' },
+  { mode: 'center', axis: 'horizontal', label: VIEW_COPY.alignCenterHorizontal, path: 'M2 12h20M6 7v10h4V7zM14 9v6h4V9z' },
+  { mode: 'border', axis: 'vertical', label: VIEW_COPY.alignBorderVertical, path: 'M4 2v20M8 6h10v4H8zM8 14h6v4H8z' },
+  { mode: 'border', axis: 'horizontal', label: VIEW_COPY.alignBorderHorizontal, path: 'M2 4h20M6 8h4v10H6zM14 8h4v6h-4z' },
+]
 
-type Selection = { kind: 'rule'; id: number } | { kind: 'layer'; id: string } | { kind: 'agent'; id: Agent }
+type Selection = { kind: 'node'; id: Agent } | { kind: 'agent'; id: Agent } | { kind: 'line'; key: string }
+
+interface AgentDrag {
+  agent: Agent
+  startX: number
+  startY: number
+  x: number
+  y: number
+  movable: boolean
+  dragging: boolean
+}
+
+const props = defineProps<{ teamId: string }>()
 
 const orchestration = useOrchestration()
 const roster = useRoster()
+const {
+  agents: flowAgents,
+  positions,
+  endpoints,
+  completed,
+  curves,
+  addAgent,
+  moveAgents,
+  moveEndpoint,
+  link,
+  unlink,
+  removeAgent,
+  setKind,
+  setCurve,
+  setLeader,
+  alignAgents,
+  configOf,
+  setConfig,
+} = useFlowDraft(props.teamId)
 
+const flowRef = ref<InstanceType<typeof FlowDiagram> | null>(null)
 const selection = ref<Selection | null>(null)
-const creating = ref(false)
-const pendingRuleId = ref<number | null>(null)
-const layerDialogOpen = ref(false)
+const groupSelection = ref<Agent[]>([])
+const agentDrag = ref<AgentDrag | null>(null)
 
+// O Ember é o orquestrador: fica no início e no fim do fluxo, não no elenco que se arrasta.
+const elencoAgents = computed(() => placeableAgents(roster.agents))
 const snapshot = computed<OrchestrationSnapshot | null>(() => orchestration.snapshot)
 const layers = computed(() => snapshot.value?.layers ?? [])
-const rules = computed(() => snapshot.value?.rules ?? [])
-const orderedLayerIds = computed(() =>
-  [...layers.value].sort((a, b) => a.position - b.position).map((layer) => layer.id),
-)
 
-const selectedRule = computed<OrchRule | null>(() =>
-  selection.value?.kind === 'rule' ? (rules.value.find((rule) => rule.id === selection.value?.id) ?? null) : null,
-)
-const selectedLayer = computed(() =>
-  selection.value?.kind === 'layer' ? (layers.value.find((layer) => layer.id === selection.value?.id) ?? null) : null,
-)
+const selectedNode = computed<Agent | null>(() => (selection.value?.kind === 'node' ? selection.value.id : null))
+const selectedLineKey = computed<string | null>(() => (selection.value?.kind === 'line' ? selection.value.key : null))
 const selectedAgent = computed<AgentProfile | null>(() =>
   selection.value?.kind === 'agent' ? (roster.profileOf(selection.value.id) ?? null) : null,
 )
-const selectedRuleId = computed(() => (selection.value?.kind === 'rule' ? selection.value.id : null))
-const selectedLayerId = computed(() => (selection.value?.kind === 'layer' ? selection.value.id : null))
+// Painel só existe com algo selecionado; no celular ele se sobrepõe ao canvas em vez de empurrar a página.
+const panelOpen = computed(() => selectedNode.value !== null || (selectedAgent.value !== null && snapshot.value !== null))
 
 function placementOf(agentId: Agent) {
   return snapshot.value?.placements.find((placement) => placement.agentId === agentId)
 }
 
-function placementLabel(agentId: Agent): string {
-  const placement = placementOf(agentId)
-  if (!placement) return VIEW_COPY.unplaced
-  const team = snapshot.value?.teams.find((candidate) => candidate.id === placement.teamId)?.name ?? ''
-  const layer = layers.value.find((candidate) => candidate.id === placement.layerId)?.name ?? ''
-  return `${team} · ${layer}`
-}
-
 function clearSelection(): void {
   selection.value = null
-  creating.value = false
-}
-
-function selectRule(id: number): void {
-  creating.value = false
-  selection.value = { kind: 'rule', id }
-}
-
-function selectLayer(id: string): void {
-  creating.value = false
-  selection.value = { kind: 'layer', id }
+  groupSelection.value = []
 }
 
 function selectAgent(id: Agent): void {
-  creating.value = false
   selection.value = { kind: 'agent', id }
 }
 
-function openNewArrow(): void {
+function selectLine(key: string): void {
+  selection.value = { kind: 'line', key }
+  groupSelection.value = []
+}
+
+// Linha recém-criada já fica selecionada: a barra com síncrona ou assíncrona aparece na hora.
+function onLink(from: Agent, to: Agent): void {
+  link(from, to)
+  selectLine(lineKey({ from, to }))
+}
+
+// Shift acrescenta ou tira o nó do grupo; sem Shift, o nó clicado vira a seleção única.
+function onFlowSelect(agent: Agent, additive: boolean): void {
+  selection.value = { kind: 'node', id: agent }
+  if (!additive) {
+    groupSelection.value = [agent]
+    return
+  }
+  groupSelection.value = groupSelection.value.includes(agent)
+    ? groupSelection.value.filter((member) => member !== agent)
+    : [...groupSelection.value, agent]
+}
+
+function removeEdge(edge: FlowEdge): void {
+  unlink(edge.from, edge.to)
+  clearSelection()
+}
+
+// Remove o agente do fluxo; as setas ligadas a ele saem e as automáticas são recalculadas.
+function removeFromFlow(agent: Agent): void {
+  removeAgent(agent)
+  clearSelection()
+}
+
+function setEdgeKind(edge: FlowEdge, kind: LineKind): void {
+  setKind(edge.from, edge.to, kind)
+}
+
+function updateSelectedConfig(patch: Partial<FlowNodeConfig>): void {
+  if (selectedNode.value !== null) setConfig(selectedNode.value, patch)
+}
+
+function makeSelectedLeader(): void {
+  if (selectedNode.value !== null) setLeader(selectedNode.value)
+}
+
+// Clique sem arrasto abre o agente; arrastar até a área do fluxo adiciona o agente onde foi solto.
+// Quem já está no fluxo não arrasta: continua clicável, para abrir o agente.
+function startAgentDrag(agent: Agent, event: PointerEvent): void {
+  agentDrag.value = {
+    agent,
+    startX: event.clientX,
+    startY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    movable: !flowAgents.value.includes(agent),
+    dragging: false,
+  }
+  window.addEventListener('pointermove', onAgentDragMove)
+  window.addEventListener('pointerup', onAgentDragEnd)
+  window.addEventListener('pointercancel', stopAgentDrag)
+}
+
+function onAgentDragMove(event: PointerEvent): void {
+  const current = agentDrag.value
+  if (!current) return
+  const moved = Math.hypot(event.clientX - current.startX, event.clientY - current.startY) > DRAG_THRESHOLD_PX
+  agentDrag.value = { ...current, x: event.clientX, y: event.clientY, dragging: current.dragging || (current.movable && moved) }
+}
+
+function onAgentDragEnd(event: PointerEvent): void {
+  const current = agentDrag.value
+  stopAgentDrag()
+  if (!current) return
+  if (!current.dragging) {
+    selectAgent(current.agent)
+    return
+  }
+  const dropZone = document.elementFromPoint(event.clientX, event.clientY)?.closest(DROP_ZONE_SELECTOR)
+  if (!dropZone) return
+  const point = flowRef.value?.toCanvasPoint(event.clientX, event.clientY)
+  if (point) addAgent(current.agent, point)
+}
+
+function stopAgentDrag(): void {
+  window.removeEventListener('pointermove', onAgentDragMove)
+  window.removeEventListener('pointerup', onAgentDragEnd)
+  window.removeEventListener('pointercancel', stopAgentDrag)
+  agentDrag.value = null
+}
+
+// Cinza: já está no fluxo, ou está sendo arrastado para o fluxo. Ao soltar ou cancelar o arrasto, volta ao normal.
+function isChipGreyed(agent: Agent): boolean {
+  return flowAgents.value.includes(agent) || (agentDrag.value?.dragging === true && agentDrag.value.agent === agent)
+}
+
+function organize(mode: AlignMode, axis: AlignAxis): void {
+  alignAgents(mode, axis, groupSelection.value)
+}
+
+// Seleção por quadrado: os nós dentro dele viram o grupo; o nó de configuração sai.
+function onMarquee(agents: Agent[]): void {
   selection.value = null
-  creating.value = true
+  groupSelection.value = agents
 }
 
-function onRuleCreated(rule: OrchRule): void {
-  if (rules.value.some((candidate) => candidate.id === rule.id)) {
-    selectRule(rule.id)
-    return
-  }
-  pendingRuleId.value = rule.id
-}
-
-// Seleção só vale enquanto o item existe no snapshot; outra janela pode removê-lo.
 watch(snapshot, (next) => {
-  if (next === null) {
-    pendingRuleId.value = null
-    clearSelection()
-    return
-  }
-  if (pendingRuleId.value !== null && next.rules.some((rule) => rule.id === pendingRuleId.value)) {
-    selectRule(pendingRuleId.value)
-    pendingRuleId.value = null
-  }
-  if (selection.value?.kind === 'rule' && selectedRule.value === null) selection.value = null
-  if (selection.value?.kind === 'layer' && selectedLayer.value === null) selection.value = null
+  if (next === null) clearSelection()
 })
 
-watch(
-  () => orchestration.loadedProjectId,
-  () => {
-    pendingRuleId.value = null
-    clearSelection()
-  },
-)
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
 
+// Delete ou Backspace tiram o nó selecionado do fluxo, exceto quando o foco está num campo de texto.
 function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape') return
-  if (creating.value || selection.value !== null) {
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedNode.value === null || isTypingTarget(event.target)) return
     event.preventDefault()
-    clearSelection()
+    removeFromFlow(selectedNode.value)
+    return
   }
+  if (event.key !== 'Escape' || (selection.value === null && groupSelection.value.length === 0)) return
+  event.preventDefault()
+  clearSelection()
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  stopAgentDrag()
+})
 </script>
 
 <template>
-  <section v-if="snapshot" class="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]">
+  <section
+    class="relative grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-5"
+    :class="panelOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]' : 'lg:grid-cols-[minmax(0,1fr)]'"
+  >
     <BatchProgressList class="lg:col-span-2" />
-    <div class="flex min-w-0 flex-col gap-4">
-      <header class="flex items-center justify-between gap-3">
-        <h2 class="text-control font-bold text-ink">{{ VIEW_COPY.flowTitle }}</h2>
-        <UiButton v-if="layers.length > 0" variant="primary" size="sm" @press="openNewArrow()">
-          {{ VIEW_COPY.addArrow }}
-        </UiButton>
-      </header>
+    <div class="row-start-2 flex min-h-0 min-w-0 flex-col gap-4">
+      <section class="flex flex-col gap-2">
+        <h3 class="text-label font-medium text-muted">{{ VIEW_COPY.agentsTitle }}</h3>
+        <UiEmpty v-if="elencoAgents.length === 0" :title="VIEW_COPY.noAgents" />
+        <ul v-else class="m-0 flex list-none flex-wrap gap-2 p-0">
+          <li v-for="agent in elencoAgents" :key="agent.id">
+            <button
+              type="button"
+              class="group flex touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
+              :class="isChipGreyed(agent.id) ? 'cursor-default opacity-40' : 'cursor-grab'"
+              :aria-label="agent.name"
+              :aria-pressed="selection?.kind === 'agent' && selection.id === agent.id"
+              @pointerdown="startAgentDrag(agent.id, $event)"
+              @keydown.enter="selectAgent(agent.id)"
+            >
+              <svg
+                class="shrink-0 cursor-grab text-faint group-hover:text-ink"
+                width="10"
+                height="16"
+                viewBox="0 0 10 16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <circle cx="2.5" cy="3" r="1.3" />
+                <circle cx="7.5" cy="3" r="1.3" />
+                <circle cx="2.5" cy="8" r="1.3" />
+                <circle cx="7.5" cy="8" r="1.3" />
+                <circle cx="2.5" cy="13" r="1.3" />
+                <circle cx="7.5" cy="13" r="1.3" />
+              </svg>
+              <AgentPortrait :who="agent.id" :size="CHIP_PORTRAIT_SIZE" />
+              <span class="text-control font-semibold text-ink">{{ agent.name }}</span>
+            </button>
+          </li>
+        </ul>
+      </section>
 
-      <div v-if="layers.length === 0" class="flex flex-col items-center gap-3">
-        <UiEmpty :title="VIEW_COPY.noLayersTitle" />
-        <UiButton variant="primary" size="lg" @press="layerDialogOpen = true">{{ VIEW_COPY.createLayer }}</UiButton>
-      </div>
-      <FlowDiagram
-        v-else
-        :layers="layers"
-        :rules="rules"
-        :human-gate="snapshot.settings.humanGate"
-        :selected-rule-id="selectedRuleId"
-        :selected-layer-id="selectedLayerId"
-        @select-rule="selectRule"
-        @select-layer="selectLayer"
-      />
-
-      <ul class="m-0 flex list-none flex-col gap-1.5 p-0">
-        <li v-for="agent in placeableAgents(roster.agents)" :key="agent.id">
-          <button
-            type="button"
-            class="flex w-full min-w-0 items-center gap-2.5 rounded-control px-2.5 py-2 text-left"
-            :class="selection?.kind === 'agent' && selection.id === agent.id ? 'bg-accent-soft' : ''"
-            @click="selectAgent(agent.id)"
+      <div
+        v-if="groupSelection.length >= 1"
+        role="group"
+        :aria-label="VIEW_COPY.organize"
+        class="flex flex-wrap items-center gap-1"
+      >
+        <UiButton
+          v-for="action in ALIGN_ACTIONS"
+          :key="`${action.mode}-${action.axis}`"
+          variant="quiet"
+          size="sm"
+          :disabled="groupSelection.length < 2"
+          :aria-label="action.label"
+          :title="action.label"
+          @press="organize(action.mode, action.axis)"
+        >
+          <svg
+            :width="ALIGN_ICON_SIZE"
+            :height="ALIGN_ICON_SIZE"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZE" />
-            <span class="truncate text-control font-semibold text-ink">{{ agent.name }}</span>
-            <span class="ml-auto truncate text-small text-muted">{{ placementLabel(agent.id) }}</span>
-          </button>
-        </li>
-      </ul>
+            <path :d="action.path" />
+          </svg>
+        </UiButton>
+      </div>
+
+      <FlowDiagram
+        ref="flowRef"
+        class="min-h-0 flex-1"
+        :agents="flowAgents"
+        :positions="positions"
+        :endpoints="endpoints"
+        :links="completed"
+        :curves="curves"
+        :selected-agent="selectedNode"
+        :group-selected="groupSelection"
+        :selected-line="selectedLineKey"
+        :config-of="configOf"
+        @select="onFlowSelect"
+        @move-nodes="moveAgents"
+        @move-endpoint="moveEndpoint"
+        @marquee="onMarquee"
+        @clear-selection="clearSelection"
+        @link="onLink"
+        @select-line="selectLine"
+        @bend="setCurve"
+        @set-kind="setEdgeKind"
+        @unlink="removeEdge"
+      />
     </div>
 
-    <aside class="min-w-0">
-      <RulePanel
-        v-if="creating || selectedRule"
-        :key="creating ? 'new-arrow' : `rule-${selectedRule?.id}`"
-        :rule="selectedRule"
-        :layers="layers"
+    <aside
+      v-if="panelOpen"
+      class="absolute inset-x-0 bottom-0 z-20 max-h-[60%] min-w-0 overflow-y-auto lg:relative lg:inset-auto lg:z-auto lg:col-start-2 lg:row-start-2 lg:max-h-full"
+    >
+      <FlowNodePanel
+        v-if="selectedNode"
+        :key="selectedNode"
+        :agent="selectedNode"
+        :is-leader="completed.startAgent === selectedNode"
+        :config="configOf(selectedNode)"
         @close="clearSelection()"
-        @created="onRuleCreated"
-      />
-      <LayerPanel
-        v-else-if="selectedLayer"
-        :key="selectedLayer.id"
-        :layer="selectedLayer"
-        :ordered-ids="orderedLayerIds"
-        @close="clearSelection()"
+        @update="updateSelectedConfig"
+        @set-leader="makeSelectedLeader"
+        @remove="removeFromFlow(selectedNode)"
       />
       <AgentPanel
-        v-else-if="selectedAgent"
+        v-else-if="selectedAgent && snapshot"
         :key="selectedAgent.id"
         :agent="selectedAgent"
         :placement="placementOf(selectedAgent.id)"
@@ -196,13 +356,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         :layers="layers"
         @close="clearSelection()"
       />
-      <OrchestrationPanel v-else :settings="snapshot.settings" :layers="layers" :rules="rules" />
     </aside>
 
-    <NewLayerDialog
-      v-if="layerDialogOpen && orchestration.loadedProjectId !== null"
-      :project-id="orchestration.loadedProjectId"
-      @close="layerDialogOpen = false"
-    />
+    <div
+      v-if="agentDrag?.dragging"
+      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5"
+      :style="{ left: `${agentDrag.x + GHOST_OFFSET_PX}px`, top: `${agentDrag.y + GHOST_OFFSET_PX}px` }"
+    >
+      <AgentPortrait :who="agentDrag.agent" :size="GHOST_PORTRAIT_SIZE" />
+      <span class="text-control font-semibold text-ink">{{ roster.nameOf(agentDrag.agent) }}</span>
+    </div>
   </section>
 </template>

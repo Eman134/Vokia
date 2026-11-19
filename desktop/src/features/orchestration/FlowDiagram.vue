@@ -1,183 +1,681 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { LAYER_KIND_LABELS, VIEW_COPY } from './orchestrationLabels'
-import { arrowLabel, rulePhrase } from './ruleText'
-import { VOCE_NODE, type HumanGate, type OrchLayer, type OrchRule } from './orchestrationTypes'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import UiButton from '../../ui/UiButton.vue'
+import AgentPortrait from '../team/AgentPortrait.vue'
+import { DEFAULT_RECIPIENT } from '../team/agents'
+import type { Agent } from '../team/events'
+import { useRoster } from '../team/useRoster'
+import { VIEW_COPY } from './orchestrationLabels'
+import {
+  CANVAS_AREA,
+  FLOW_GEOMETRY,
+  PORT_SIDES,
+  ZOOM_MIN,
+  ZOOM_STEP,
+  agentAt,
+  agentsInside,
+  arcPath,
+  bendFromHandle,
+  borderPoint,
+  canvasLayout,
+  clampView,
+  contentFitsView,
+  frameContent,
+  lineKey,
+  portAt,
+  snapPoint,
+  visibleSize,
+  zoomAt,
+  type CompletedFlow,
+  type FlowEdge,
+  type FlowEndpoints,
+  type FlowPoint,
+  type FlowView,
+  type LineKind,
+  type PortSide,
+} from './flowGraph'
+import type { FlowNodeConfig } from './useFlowDraft'
 
-const COLUMN_WIDTH = 180
-const NODE_WIDTH = 140
-const NODE_HEIGHT = 56
+const ARROWHEAD_ID = 'flow-arrowhead'
+const SHADOW_ID = 'flow-soft-shadow'
+const DOT_BACKGROUND_CLASSES =
+  'pointer-events-none absolute inset-0 bg-[radial-gradient(var(--color-dot)_1.2px,transparent_1.2px)] bg-[length:18px_18px] [mask-image:radial-gradient(ellipse_at_center,black_55%,transparent_100%)]'
+const ARROW_WIDTH = 1.5
+const ARROW_SELECTED_WIDTH = 2.5
+const ARROW_HIT_WIDTH = 14
+const ASYNC_DASH = '6 4'
+const AUTOMATIC_DASH = '1.5 4'
+const LEGEND_SAMPLE_WIDTH = 28
+const LEGEND_SAMPLE_Y = 4
+const LEADER_STROKE_WIDTH = 2
+const PREVIEW_DASH = '6 5'
+const HANDLE_RADIUS = 6
+const TOOLBAR_HEIGHT = 24
+const TOOLBAR_GAP = 6
+const TOOLBAR_OFFSET = 22
+const TOOLBAR_WIDTHS = { sync: 76, async: 86, remove: 84 } as const
+const PORT_RADIUS = 5
+const PORT_STROKE_WIDTH = 1.5
 const NODE_RADIUS = 14
-const MARGIN = 24
-const ARC_BASE_HEIGHT = 36
-const ARC_HEIGHT_PER_SKIPPED_COLUMN = 24
-const ARC_LABEL_SPACE = 24
-const ARC_LABEL_GAP = 6
-const ARC_LABEL_BELOW_OFFSET = 16
-const ARC_HIT_WIDTH = 14
-const ARC_WIDTH = 1.5
-const ARC_SELECTED_WIDTH = 2.5
-const DASH_PATTERN = '6 5'
-const ARROWHEAD_ID = 'orch-arrowhead'
-const NODE_TITLE_OFFSET = 22
-const NODE_SUBTITLE_OFFSET = 40
+const DRAG_THRESHOLD_PX = 4
+const PORTRAIT_SIZE = 28
+const PORTRAIT_INSET = 10
+const TEXT_X_OFFSET = 46
+const NAME_DY = 26
+const ROLE_DY = 41
+const SUMMARY_DY = 62
+const SUMMARY_ICON_SIZE = 14
+const WORKTREES_OFFSET = 90
+const LEADER_PILL_WIDTH = 48
+const LEADER_PILL_HEIGHT = 18
+const LEADER_PILL_RADIUS = 9
+const LEADER_PILL_OFFSET = 9
+const END_INNER_RADIUS = 5
+const EMBER_ICON_SIZE = 20
+const EMBER_ICON_GAP = 2
+const ENDPOINT_LABEL_GAP = 6
+// Estado vazio: cartão-guia abaixo do início, onde o primeiro agente vai entrar.
+const EMPTY_ICON_RADIUS = 12
+const EMPTY_ICON_ARM = 6
+const EMPTY_ICON_DY = 30
+const EMPTY_TITLE_DY = 62
+const EMPTY_STEP_DYS = [86, 104] as const
+const EMPTY_STEPS = [VIEW_COPY.emptyFlowStepOne, VIEW_COPY.emptyFlowStepTwo] as const
+const LEGEND_SAMPLES = [
+  { label: VIEW_COPY.lineSync, dash: undefined },
+  { label: VIEW_COPY.lineAsync, dash: ASYNC_DASH },
+  { label: VIEW_COPY.lineAuto, dash: AUTOMATIC_DASH },
+] as const
+const MARQUEE_DASH = '4 3'
+const MARQUEE_OPACITY = 0.12
+const INSTANCES_ICON = 'M1.5 4h7v7h-7zM4.5 1.5h8v8'
+const WORKTREES_ICON = 'M3.5 1.5v11M10.5 1.5v3.5c0 2-7 1.5-7 4.5'
+const PAN_BUTTON = 1
+const PRIMARY_BUTTON = 0
+const TWO_FINGERS = 2
 
 const props = defineProps<{
-  layers: OrchLayer[]
-  rules: OrchRule[]
-  humanGate: HumanGate
-  selectedRuleId: number | null
-  selectedLayerId: string | null
+  agents: Agent[]
+  positions: ReadonlyMap<Agent, FlowPoint>
+  endpoints: FlowEndpoints
+  links: CompletedFlow
+  curves: ReadonlyMap<string, number>
+  selectedAgent: Agent | null
+  groupSelected: readonly Agent[]
+  selectedLine: string | null
+  configOf: (agent: Agent) => FlowNodeConfig
 }>()
-const emit = defineEmits<{ selectRule: [id: number]; selectLayer: [id: string] }>()
+const emit = defineEmits<{
+  select: [agent: Agent, additive: boolean]
+  moveNodes: [agents: Agent[], dx: number, dy: number]
+  moveEndpoint: [which: 'start' | 'end', point: FlowPoint]
+  marquee: [agents: Agent[]]
+  clearSelection: []
+  link: [from: Agent, to: Agent]
+  selectLine: [key: string]
+  bend: [key: string, offset: number]
+  setKind: [edge: FlowEdge, kind: LineKind]
+  unlink: [edge: FlowEdge]
+}>()
 
-interface Node {
+interface LinkDrag {
+  from: Agent
+  start: FlowPoint
+  pointer: FlowPoint
+}
+interface Line {
   key: string
-  column: number
-  title: string
-  subtitle: string
-  selected: boolean
-  isYou: boolean
-}
-
-interface Arc {
-  rule: OrchRule
   d: string
-  labelX: number
-  labelY: number
-  label: string
-  phrase: string
-  dashed: boolean
-  selected: boolean
-  height: number
-  fromColumn: number
-  toColumn: number
+  middle: FlowPoint
+  start: FlowPoint
+  end: FlowPoint
+  edge: FlowEdge | null
+  dash: string | undefined
 }
-
-const sortedLayers = computed(() => [...props.layers].sort((a, b) => a.position - b.position))
-const youColumn = computed(() => sortedLayers.value.length)
-const columnById = computed(() => new Map(sortedLayers.value.map((layer, index) => [layer.id, index])))
-
-function columnOf(nodeId: string): number | undefined {
-  return nodeId === VOCE_NODE ? youColumn.value : columnById.value.get(nodeId)
-}
-
-const youSubtitle = computed(() =>
-  props.humanGate === 'nunca' ? VIEW_COPY.autoMerge : VIEW_COPY.approvesMerge,
-)
-
-const nodes = computed<Node[]>(() => [
-  ...sortedLayers.value.map((layer, column) => ({
-    key: layer.id,
-    column,
-    title: layer.name,
-    subtitle: LAYER_KIND_LABELS[layer.kind],
-    selected: props.selectedLayerId === layer.id,
-    isYou: false,
-  })),
-  {
-    key: VOCE_NODE,
-    column: youColumn.value,
-    title: VIEW_COPY.you,
-    subtitle: youSubtitle.value,
-    selected: false,
-    isYou: true,
-  },
-])
-
-interface PlacedArc {
-  rule: OrchRule
-  fromColumn: number
-  toColumn: number
-  height: number
-  right: boolean
-}
-
-const placedArcs = computed<PlacedArc[]>(() =>
-  props.rules.flatMap((rule) => {
-    const fromColumn = columnOf(rule.fromLayer)
-    const toColumn = columnOf(rule.toLayer)
-    if (fromColumn === undefined || toColumn === undefined) return []
-    const skipped = Math.abs(toColumn - fromColumn) - 1
-    return [
-      {
-        rule,
-        fromColumn,
-        toColumn,
-        height: ARC_BASE_HEIGHT + ARC_HEIGHT_PER_SKIPPED_COLUMN * skipped,
-        right: toColumn > fromColumn,
-      },
-    ]
-  }),
-)
-
-const upSpace = computed(() => {
-  const heights = placedArcs.value.filter((arc) => arc.right).map((arc) => arc.height)
-  return (heights.length > 0 ? Math.max(...heights) : 0) + ARC_LABEL_SPACE
-})
-const downSpace = computed(() => {
-  const heights = placedArcs.value.filter((arc) => !arc.right).map((arc) => arc.height)
-  return (heights.length > 0 ? Math.max(...heights) : 0) + ARC_LABEL_SPACE
-})
-
-const nodeTop = computed(() => MARGIN + upSpace.value)
-const nodeBottom = computed(() => nodeTop.value + NODE_HEIGHT)
-const width = computed(() => (youColumn.value + 1) * COLUMN_WIDTH + 2 * MARGIN)
-const height = computed(() => nodeBottom.value + downSpace.value + MARGIN)
-
-function nodeLeft(column: number): number {
-  return MARGIN + column * COLUMN_WIDTH + (COLUMN_WIDTH - NODE_WIDTH) / 2
-}
-
-function nodeCenter(column: number): number {
-  return nodeLeft(column) + NODE_WIDTH / 2
-}
-
-const arcs = computed<Arc[]>(() =>
-  placedArcs.value.map(({ rule, fromColumn, toColumn, height: arcHeight, right }) => {
-    const x1 = nodeCenter(fromColumn)
-    const x2 = nodeCenter(toColumn)
-    const edgeY = right ? nodeTop.value : nodeBottom.value
-    const controlY = right ? edgeY - 2 * arcHeight : edgeY + 2 * arcHeight
-    const apexY = right ? edgeY - arcHeight : edgeY + arcHeight
-    const labelY = right ? apexY - ARC_LABEL_GAP : apexY + ARC_LABEL_BELOW_OFFSET
-    return {
-      rule,
-      d: `M ${x1} ${edgeY} Q ${(x1 + x2) / 2} ${controlY} ${x2} ${edgeY}`,
-      labelX: (x1 + x2) / 2,
-      labelY,
-      label: arrowLabel(rule),
-      phrase: rulePhrase(rule, sortedLayers.value),
-      dashed: rule.action === 'escalar',
-      selected: props.selectedRuleId === rule.id,
-      height: arcHeight,
-      fromColumn,
-      toColumn,
+type PointerAction =
+  | { kind: 'node'; agent: Agent; offset: FlowPoint; moved: boolean; additive: boolean; clientX: number; clientY: number }
+  | { kind: 'endpoint'; which: 'start' | 'end'; offset: FlowPoint; moved: boolean; clientX: number; clientY: number }
+  | { kind: 'curve'; key: string; start: FlowPoint; end: FlowPoint }
+  | { kind: 'marquee'; start: FlowPoint; additive: boolean; moved: boolean; clientX: number; clientY: number }
+  | {
+      kind: 'pan'
+      touch: boolean
+      moved: boolean
+      startX: number
+      startY: number
+      lastX: number
+      lastY: number
     }
-  }),
-)
 
-function selectNodeFromKey(node: Node, event: KeyboardEvent): void {
-  if (node.isYou) return
-  event.preventDefault()
-  emit('selectLayer', node.key)
+const roster = useRoster()
+const svgRef = ref<SVGSVGElement | null>(null)
+const containerRef = ref<HTMLDivElement | null>(null)
+const view = ref<FlowView>({ zoom: ZOOM_MIN, x: 0, y: 0 })
+const linkDrag = ref<LinkDrag | null>(null)
+const marqueeRect = ref<{ from: FlowPoint; to: FlowPoint } | null>(null)
+const hoveredAgent = ref<Agent | null>(null)
+// Ao sair do nó o ponteiro cruza a borda antes de chegar à bolinha: a saída espera um pouco para não desmontá-la.
+const HOVER_LINGER_MS = 300
+let hoverTimer: ReturnType<typeof setTimeout> | null = null
+
+function enterAgent(agent: Agent): void {
+  cancelHoverClear()
+  hoveredAgent.value = agent
 }
 
-function selectArcFromKey(arc: Arc, event: KeyboardEvent): void {
-  event.preventDefault()
-  emit('selectRule', arc.rule.id)
+function leaveAgent(agent: Agent): void {
+  cancelHoverClear()
+  hoverTimer = setTimeout(() => {
+    hoverTimer = null
+    if (hoveredAgent.value === agent) hoveredAgent.value = null
+  }, HOVER_LINGER_MS)
 }
+
+function cancelHoverClear(): void {
+  if (hoverTimer === null) return
+  clearTimeout(hoverTimer)
+  hoverTimer = null
+}
+const hoveredEndpoint = ref<'start' | 'end' | null>(null)
+// Fora do ref: o arraste muda a posição a cada movimento e não precisa de reatividade própria.
+let action: PointerAction | null = null
+let spacePressed = false
+const touchPoints = new Map<number, FlowPoint>()
+// Enquadramento só acompanha a largura do container e só enquanto o usuário não mexeu na visão.
+let zoomTouched = false
+let lastWidth = 0
+
+// Proporção do container: a janela de visão tem a mesma proporção, então o desenho cobre a tela inteira.
+const aspect = ref(1)
+
+// Mudança de altura (ex.: a barra de Organizar aparecendo) não reenquadra; adicionar ou mover nós também não.
+const resizeObserver = new ResizeObserver(([entry]) => {
+  if (!entry) return
+  const { width, height } = entry.contentRect
+  aspect.value = height > 0 ? width / height : 1
+  if (zoomTouched || width === lastWidth) return
+  lastWidth = width
+  view.value = frameContent(layout.value, aspect.value)
+})
+
+const viewSize = computed(() => visibleSize(view.value.zoom))
+const viewWidth = computed(() => viewSize.value * aspect.value)
+const viewBox = computed(() => `${view.value.x} ${view.value.y} ${viewWidth.value} ${viewSize.value}`)
+const layout = computed(() => canvasLayout(props.agents, props.positions, props.endpoints))
+const emptyBox = computed(() => layout.value.emptyBox)
+const placementOf = computed(() => new Map(layout.value.nodes.map((node) => [node.agent, node])))
+const linkPreviewPath = computed(() => (linkDrag.value ? linePath(linkDrag.value.start, linkDrag.value.pointer) : ''))
+const marqueeBox = computed(() => {
+  const rect = marqueeRect.value
+  if (!rect) return null
+  return {
+    x: Math.min(rect.from.x, rect.to.x),
+    y: Math.min(rect.from.y, rect.to.y),
+    width: Math.abs(rect.to.x - rect.from.x),
+    height: Math.abs(rect.to.y - rect.from.y),
+  }
+})
+
+// Todas as linhas do desenho: manuais (tipo e remoção), automáticas (início, fim e ligações sem conexão).
+const lines = computed<Line[]>(() => {
+  const result: Line[] = []
+  const add = (key: string, from: FlowPoint, to: FlowPoint, edge: FlowEdge | null, dash: string | undefined) => {
+    const arc = arcPath(from, to, props.curves.get(key))
+    result.push({ key, d: arc.d, middle: arc.middle, start: from, end: to, edge, dash })
+  }
+  for (const edge of props.links.manualEdges) {
+    const source = placementOf.value.get(edge.from)
+    const target = placementOf.value.get(edge.to)
+    if (!source || !target) continue
+    add(lineKey(edge), borderPoint(source, target), borderPoint(target, source), edge, edge.kind === 'async' ? ASYNC_DASH : undefined)
+  }
+  const { start, end } = layout.value
+  const radius = FLOW_GEOMETRY.endpointRadius
+  const startPlacement = props.links.startAgent ? placementOf.value.get(props.links.startAgent) : undefined
+  if (startPlacement) {
+    const origin = { x: start.x, y: start.y + radius }
+    add('inicio', origin, borderPoint(startPlacement, origin), null, AUTOMATIC_DASH)
+  }
+  for (const link of props.links.automaticEdges) {
+    const source = placementOf.value.get(link.from)
+    const target = placementOf.value.get(link.to)
+    if (!source || !target) continue
+    add(lineKey(link), borderPoint(source, target), borderPoint(target, source), null, AUTOMATIC_DASH)
+  }
+  for (const agent of props.links.endAgents) {
+    const placement = placementOf.value.get(agent)
+    if (!placement) continue
+    const target = { x: end.x, y: end.y - radius }
+    add(`fim:${agent}`, borderPoint(placement, target), target, null, AUTOMATIC_DASH)
+  }
+  return result
+})
+
+// Barra da linha selecionada: tipo (síncrona ou assíncrona) e remoção. Só para linhas manuais.
+const toolbar = computed(() => {
+  const line = lines.value.find((candidate) => candidate.key === props.selectedLine)
+  if (!line?.edge) return null
+  const edge = line.edge
+  const keys = ['sync', 'async', 'remove'] as const
+  const totalWidth = keys.reduce((sum, key) => sum + TOOLBAR_WIDTHS[key], 0) + TOOLBAR_GAP * (keys.length - 1)
+  let x = line.middle.x - totalWidth / 2
+  const buttons = keys.map((key) => {
+    const button = { key, x, width: TOOLBAR_WIDTHS[key], active: key !== 'remove' && edge.kind === key }
+    x += TOOLBAR_WIDTHS[key] + TOOLBAR_GAP
+    return button
+  })
+  return { edge, y: line.middle.y + TOOLBAR_OFFSET, buttons }
+})
+
+const TOOLBAR_LABELS = {
+  sync: VIEW_COPY.lineSync,
+  async: VIEW_COPY.lineAsync,
+  remove: VIEW_COPY.removeArrow,
+} as const
+
+function linePath(from: FlowPoint, to: FlowPoint): string {
+  return `M ${from.x} ${from.y} L ${to.x} ${to.y}`
+}
+
+function isLeader(agent: Agent): boolean {
+  return props.links.startAgent === agent
+}
+
+function isHighlighted(agent: Agent): boolean {
+  return props.selectedAgent === agent || props.groupSelected.includes(agent)
+}
+
+// Bolinhas de conexão só aparecem com o mouse sobre o agente ou depois de clicar nele.
+// Enquanto a ligação é arrastada, as bolinhas do nó de origem ficam: o ponteiro sai do nó no meio do arraste.
+function showPorts(agent: Agent): boolean {
+  return hoveredAgent.value === agent || isHighlighted(agent) || linkDrag.value?.from === agent
+}
+
+function isLineSelected(line: Line): boolean {
+  return props.selectedLine === line.key
+}
+
+function nodeLeft(x: number): number {
+  return x - FLOW_GEOMETRY.nodeWidth / 2
+}
+
+function nodeTop(y: number): number {
+  return y - FLOW_GEOMETRY.nodeHeight / 2
+}
+
+function roleOf(agent: Agent): string {
+  return roster.profileOf(agent)?.role ?? ''
+}
+
+function worktreesLabel(agent: Agent): string {
+  return String(props.configOf(agent).worktrees)
+}
+
+// Coordenadas do desenho (já descontando zoom e pan): o getScreenCTM leva o viewBox em conta.
+function canvasPoint(clientX: number, clientY: number): FlowPoint | null {
+  const svg = svgRef.value
+  const matrix = svg?.getScreenCTM()
+  if (!svg || !matrix) return null
+  const point = svg.createSVGPoint()
+  point.x = clientX
+  point.y = clientY
+  const local = point.matrixTransform(matrix.inverse())
+  return { x: local.x, y: local.y }
+}
+
+function startLink(from: Agent, side: PortSide, event: PointerEvent): void {
+  const origin = placementOf.value.get(from)
+  if (!origin) return
+  event.preventDefault()
+  event.stopPropagation()
+  const start = portAt(origin, side)
+  linkDrag.value = { from, start, pointer: start }
+  window.addEventListener('pointermove', onLinkMove)
+  window.addEventListener('pointerup', onLinkEnd)
+  window.addEventListener('pointercancel', stopLink)
+}
+
+function onLinkMove(event: PointerEvent): void {
+  const point = canvasPoint(event.clientX, event.clientY)
+  if (linkDrag.value && point) linkDrag.value = { ...linkDrag.value, pointer: point }
+}
+
+function onLinkEnd(event: PointerEvent): void {
+  const current = linkDrag.value
+  const point = canvasPoint(event.clientX, event.clientY)
+  stopLink()
+  if (!current || !point) return
+  const target = agentAt(layout.value.nodes, point)
+  if (target !== null) emit('link', current.from, target)
+}
+
+function stopLink(): void {
+  window.removeEventListener('pointermove', onLinkMove)
+  window.removeEventListener('pointerup', onLinkEnd)
+  window.removeEventListener('pointercancel', stopLink)
+  linkDrag.value = null
+}
+
+function beginAction(next: PointerAction): void {
+  action = next
+  window.addEventListener('pointermove', onActionMove)
+  window.addEventListener('pointerup', onActionEnd)
+  window.addEventListener('pointercancel', stopAction)
+}
+
+function startNodeDrag(agent: Agent, event: PointerEvent): void {
+  if (event.button !== PRIMARY_BUTTON) return
+  const world = canvasPoint(event.clientX, event.clientY)
+  const center = props.positions.get(agent)
+  if (!world || !center) return
+  beginAction({
+    kind: 'node',
+    agent,
+    offset: { x: world.x - center.x, y: world.y - center.y },
+    moved: false,
+    additive: event.shiftKey,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  })
+}
+
+function startEndpointDrag(which: 'start' | 'end', event: PointerEvent): void {
+  if (event.button !== PRIMARY_BUTTON) return
+  const world = canvasPoint(event.clientX, event.clientY)
+  const center = layout.value[which]
+  if (!world) return
+  beginAction({
+    kind: 'endpoint',
+    which,
+    offset: { x: world.x - center.x, y: world.y - center.y },
+    moved: false,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  })
+}
+
+// A bolinha do meio de uma linha selecionada muda a curvatura arrastando.
+function startCurveDrag(line: Line, event: PointerEvent): void {
+  if (event.button !== PRIMARY_BUTTON) return
+  event.stopPropagation()
+  beginAction({ kind: 'curve', key: line.key, start: line.start, end: line.end })
+}
+
+function beginMarquee(event: PointerEvent): void {
+  const world = canvasPoint(event.clientX, event.clientY)
+  if (!world) return
+  beginAction({
+    kind: 'marquee',
+    start: world,
+    additive: event.shiftKey,
+    moved: false,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  })
+}
+
+function beginPan(event: PointerEvent): void {
+  beginAction({
+    kind: 'pan',
+    touch: false,
+    moved: false,
+    startX: event.clientX,
+    startY: event.clientY,
+    lastX: event.clientX,
+    lastY: event.clientY,
+  })
+}
+
+// Dois dedos sobre o fundo viram pan pelo ponto médio; um dedo faz o quadrado de seleção.
+function beginTouchPan(): void {
+  const middle = touchMiddle()
+  if (!middle) return
+  marqueeRect.value = null
+  beginAction({
+    kind: 'pan',
+    touch: true,
+    moved: true,
+    startX: middle.x,
+    startY: middle.y,
+    lastX: middle.x,
+    lastY: middle.y,
+  })
+}
+
+function touchMiddle(): FlowPoint | null {
+  const points = [...touchPoints.values()]
+  if (points.length === 0) return null
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  }
+}
+
+// Sobre o fundo: arrastar faz o quadrado de seleção (Shift soma ao grupo); espaço + arrasto, botão do meio e
+// dois dedos movem a visão.
+function onBackgroundDown(event: PointerEvent): void {
+  if (event.button === PAN_BUTTON) {
+    event.preventDefault()
+    beginPan(event)
+    return
+  }
+  if (event.pointerType === 'touch') {
+    touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (touchPoints.size >= TWO_FINGERS) beginTouchPan()
+    else beginMarquee(event)
+    return
+  }
+  if (event.button !== PRIMARY_BUTTON) return
+  if (spacePressed) beginPan(event)
+  else beginMarquee(event)
+}
+
+function onActionMove(event: PointerEvent): void {
+  const current = action
+  if (!current) return
+  if (current.kind === 'pan') {
+    const point = current.touch ? touchMiddle() : { x: event.clientX, y: event.clientY }
+    if (!point) return
+    if (!current.moved && Math.hypot(point.x - current.startX, point.y - current.startY) <= DRAG_THRESHOLD_PX) return
+    current.moved = true
+    panBy(point.x - current.lastX, point.y - current.lastY)
+    current.lastX = point.x
+    current.lastY = point.y
+    return
+  }
+  if (current.kind === 'curve') {
+    const world = canvasPoint(event.clientX, event.clientY)
+    if (world) emit('bend', current.key, bendFromHandle(current.start, current.end, world))
+    return
+  }
+  if (!current.moved && Math.hypot(event.clientX - current.clientX, event.clientY - current.clientY) <= DRAG_THRESHOLD_PX) return
+  current.moved = true
+  const world = canvasPoint(event.clientX, event.clientY)
+  if (!world) return
+  if (current.kind === 'marquee') {
+    marqueeRect.value = { from: current.start, to: world }
+    return
+  }
+  if (current.kind === 'endpoint') {
+    emit('moveEndpoint', current.which, { x: world.x - current.offset.x, y: world.y - current.offset.y })
+    return
+  }
+  moveDraggedNode(current, world, event.shiftKey)
+}
+
+// Arrasta o nó; se ele estiver no grupo selecionado, o grupo inteiro anda com o mesmo deslocamento.
+function moveDraggedNode(current: Extract<PointerAction, { kind: 'node' }>, world: FlowPoint, snap: boolean): void {
+  let target = { x: world.x - current.offset.x, y: world.y - current.offset.y }
+  if (snap) {
+    const others = layout.value.nodes.filter((node) => node.agent !== current.agent)
+    target = snapPoint(target, others)
+  }
+  const at = props.positions.get(current.agent)
+  if (!at) return
+  const dx = target.x - at.x
+  const dy = target.y - at.y
+  if (dx === 0 && dy === 0) return
+  const group = props.groupSelected.includes(current.agent) ? [...props.groupSelected] : [current.agent]
+  emit('moveNodes', group, dx, dy)
+}
+
+// Deslocamento da visão em unidades do desenho: 1px de tela vale viewSize/largura do svg.
+function panBy(clientDx: number, clientDy: number): void {
+  const svg = svgRef.value
+  if (!svg) return
+  const rect = svg.getBoundingClientRect()
+  zoomTouched = true
+  view.value = clampView(
+    {
+      zoom: view.value.zoom,
+      x: view.value.x - clientDx / (rect.width / viewWidth.value),
+      y: view.value.y - clientDy / (rect.height / viewSize.value),
+    },
+    aspect.value,
+  )
+}
+
+function onActionEnd(event: PointerEvent): void {
+  const current = action
+  stopAction()
+  if (!current) return
+  if (current.kind !== 'pan') keepContentInView()
+  if (current.kind === 'node' && !current.moved) {
+    emit('select', current.agent, current.additive)
+    return
+  }
+  if (current.kind === 'pan') return
+  if (current.kind !== 'marquee') return
+  const world = canvasPoint(event.clientX, event.clientY)
+  marqueeRect.value = null
+  if (!current.moved) {
+    if (!current.additive) emit('clearSelection')
+    return
+  }
+  if (world) emit('marquee', agentsInside(layout.value.nodes, current.start, world))
+}
+
+function stopAction(): void {
+  window.removeEventListener('pointermove', onActionMove)
+  window.removeEventListener('pointerup', onActionEnd)
+  window.removeEventListener('pointercancel', stopAction)
+  action = null
+  marqueeRect.value = null
+}
+
+// Zoom com a roda, ancorado no cursor; dentro da faixa de zoom da área fixa.
+function onWheel(event: WheelEvent): void {
+  event.preventDefault()
+  const anchor = canvasPoint(event.clientX, event.clientY)
+  if (!anchor) return
+  zoomTouched = true
+  view.value = zoomAt(view.value, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, anchor, aspect.value)
+}
+
+function zoomFromCentre(factor: number): void {
+  const current = view.value
+  zoomTouched = true
+  view.value = zoomAt(
+    current,
+    factor,
+    { x: current.x + viewWidth.value / 2, y: current.y + viewSize.value / 2 },
+    aspect.value,
+  )
+}
+
+// Volta a enquadrar nós, início e fim, como no zoom inicial.
+function recentre(): void {
+  zoomTouched = false
+  view.value = frameContent(layout.value, aspect.value)
+}
+
+// Só reenquadra fora do arraste: durante o gesto a visão fica parada, e ao soltar ou adicionar agente ela acompanha o desenho.
+function keepContentInView(): void {
+  if (!contentFitsView(layout.value, view.value, aspect.value)) view.value = frameContent(layout.value, aspect.value)
+}
+
+watch(layout, () => {
+  if (action === null) keepContentInView()
+})
+
+function onToolbar(edge: FlowEdge, key: 'sync' | 'async' | 'remove'): void {
+  if (key === 'remove') emit('unlink', edge)
+  else emit('setKind', edge, key)
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+// Espaço segurado vira pan; a tecla não rola a página nem ativa botões enquanto o canvas está em foco.
+function onSpaceDown(event: KeyboardEvent): void {
+  if (event.code !== 'Space' || isTypingTarget(event.target)) return
+  event.preventDefault()
+  spacePressed = true
+}
+
+function onSpaceUp(event: KeyboardEvent): void {
+  if (event.code === 'Space') spacePressed = false
+}
+
+function trackTouch(event: PointerEvent): void {
+  if (event.pointerType !== 'touch') return
+  if (event.type === 'pointerup' || event.type === 'pointercancel') {
+    touchPoints.delete(event.pointerId)
+    return
+  }
+  if (touchPoints.has(event.pointerId)) touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY })
+}
+
+function toCanvasPoint(clientX: number, clientY: number): FlowPoint | null {
+  return canvasPoint(clientX, clientY)
+}
+
+defineExpose({ toCanvasPoint })
+
+onMounted(() => {
+  if (containerRef.value) resizeObserver.observe(containerRef.value)
+  window.addEventListener('keydown', onSpaceDown)
+  window.addEventListener('keyup', onSpaceUp)
+  window.addEventListener('pointermove', trackTouch)
+  window.addEventListener('pointerup', trackTouch)
+  window.addEventListener('pointercancel', trackTouch)
+})
+onUnmounted(() => {
+  cancelHoverClear()
+  resizeObserver.disconnect()
+  stopLink()
+  stopAction()
+  window.removeEventListener('keydown', onSpaceDown)
+  window.removeEventListener('keyup', onSpaceUp)
+  window.removeEventListener('pointermove', trackTouch)
+  window.removeEventListener('pointerup', trackTouch)
+  window.removeEventListener('pointercancel', trackTouch)
+})
 </script>
 
 <template>
-  <div class="overflow-x-auto">
+  <div data-flow-canvas class="flex min-h-0 w-full flex-col gap-2">
+  <div ref="containerRef" class="relative min-h-0 w-full flex-1">
+    <div aria-hidden="true" :class="DOT_BACKGROUND_CLASSES" />
+    <div class="absolute right-2 top-2 z-10 flex gap-1">
+      <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.zoomIn" @press="zoomFromCentre(ZOOM_STEP)">+</UiButton>
+      <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.zoomOut" @press="zoomFromCentre(1 / ZOOM_STEP)">−</UiButton>
+      <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.recenter" :title="VIEW_COPY.recenter" @press="recentre()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+        </svg>
+      </UiButton>
+    </div>
     <svg
-      :width="width"
-      :height="height"
-      :viewBox="`0 0 ${width} ${height}`"
+      ref="svgRef"
+      :viewBox="viewBox"
       role="group"
       :aria-label="VIEW_COPY.flowTitle"
-      class="block"
+      class="absolute inset-0 h-full w-full touch-none select-none"
+      @wheel="onWheel"
     >
       <defs>
         <marker
@@ -189,78 +687,316 @@ function selectArcFromKey(arc: Arc, event: KeyboardEvent): void {
           markerHeight="7"
           orient="auto-start-reverse"
         >
-          <path d="M0 0 L10 5 L0 10 z" class="fill-muted" />
+          <path d="M0 0 L10 5 L0 10 z" class="fill-accent" />
         </marker>
+        <filter :id="SHADOW_ID" x="-30%" y="-30%" width="160%" height="170%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.16" />
+        </filter>
       </defs>
 
-      <g v-for="arc in arcs" :key="arc.rule.id">
+      <rect
+        :x="0"
+        :y="0"
+        :width="CANVAS_AREA"
+        :height="CANVAS_AREA"
+        fill="transparent"
+        class="cursor-default"
+        @pointerdown="onBackgroundDown"
+      />
+
+      <g
+        role="img"
+        :aria-label="VIEW_COPY.flowStart"
+        class="cursor-grab"
+        @pointerdown="startEndpointDrag('start', $event)"
+        @pointerenter="hoveredEndpoint = 'start'"
+        @pointerleave="hoveredEndpoint = hoveredEndpoint === 'start' ? null : hoveredEndpoint"
+      >
+        <title>{{ VIEW_COPY.flowStart }}</title>
+        <circle :cx="layout.start.x" :cy="layout.start.y" :r="FLOW_GEOMETRY.endpointRadius" class="fill-ink" :filter="`url(#${SHADOW_ID})`" />
+        <foreignObject
+          :x="layout.start.x + FLOW_GEOMETRY.endpointRadius + EMBER_ICON_GAP"
+          :y="layout.start.y - EMBER_ICON_SIZE / 2"
+          :width="EMBER_ICON_SIZE"
+          :height="EMBER_ICON_SIZE"
+        >
+          <AgentPortrait :who="DEFAULT_RECIPIENT" :size="EMBER_ICON_SIZE" />
+        </foreignObject>
+        <text
+          v-if="hoveredEndpoint === 'start'"
+          :x="layout.start.x - FLOW_GEOMETRY.endpointRadius - ENDPOINT_LABEL_GAP"
+          :y="layout.start.y + 4"
+          text-anchor="end"
+          class="fill-ink text-small pointer-events-none"
+        >
+          {{ VIEW_COPY.flowStart }}
+        </text>
+      </g>
+      <g
+        role="img"
+        :aria-label="VIEW_COPY.flowEnd"
+        class="cursor-grab"
+        @pointerdown="startEndpointDrag('end', $event)"
+        @pointerenter="hoveredEndpoint = 'end'"
+        @pointerleave="hoveredEndpoint = hoveredEndpoint === 'end' ? null : hoveredEndpoint"
+      >
+        <title>{{ VIEW_COPY.flowEnd }}</title>
+        <circle
+          :cx="layout.end.x"
+          :cy="layout.end.y"
+          :r="FLOW_GEOMETRY.endpointRadius"
+          class="fill-surface stroke-ink"
+          stroke-width="2"
+          :filter="`url(#${SHADOW_ID})`"
+        />
+        <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" class="fill-ink" />
+        <foreignObject
+          :x="layout.end.x + FLOW_GEOMETRY.endpointRadius + EMBER_ICON_GAP"
+          :y="layout.end.y - EMBER_ICON_SIZE / 2"
+          :width="EMBER_ICON_SIZE"
+          :height="EMBER_ICON_SIZE"
+        >
+          <AgentPortrait :who="DEFAULT_RECIPIENT" :size="EMBER_ICON_SIZE" />
+        </foreignObject>
+        <text
+          v-if="hoveredEndpoint === 'end'"
+          :x="layout.end.x - FLOW_GEOMETRY.endpointRadius - ENDPOINT_LABEL_GAP"
+          :y="layout.end.y + 4"
+          text-anchor="end"
+          class="fill-ink text-small pointer-events-none"
+        >
+          {{ VIEW_COPY.flowEnd }}
+        </text>
+      </g>
+
+      <g v-if="emptyBox" role="img" :aria-label="VIEW_COPY.emptyFlowTitle">
+        <path
+          :d="linePath({ x: layout.start.x, y: layout.start.y + FLOW_GEOMETRY.endpointRadius }, { x: layout.start.x, y: emptyBox.top })"
+          fill="none"
+          :stroke-width="ARROW_WIDTH"
+          :marker-end="`url(#${ARROWHEAD_ID})`"
+          class="stroke-muted"
+        />
+        <path
+          :d="linePath({ x: layout.start.x, y: emptyBox.top + emptyBox.height }, { x: layout.end.x, y: layout.end.y - FLOW_GEOMETRY.endpointRadius })"
+          fill="none"
+          :stroke-width="ARROW_WIDTH"
+          :marker-end="`url(#${ARROWHEAD_ID})`"
+          class="stroke-muted"
+        />
+        <rect
+          :x="emptyBox.left"
+          :y="emptyBox.top"
+          :width="emptyBox.width"
+          :height="emptyBox.height"
+          :rx="NODE_RADIUS"
+          class="fill-surface stroke-line"
+          stroke-width="1.5"
+          :filter="`url(#${SHADOW_ID})`"
+        />
+        <circle :cx="layout.start.x" :cy="emptyBox.top + EMPTY_ICON_DY" :r="EMPTY_ICON_RADIUS" fill="none" class="stroke-muted" stroke-width="1.5" />
+        <path
+          :d="`M ${layout.start.x} ${emptyBox.top + EMPTY_ICON_DY - EMPTY_ICON_ARM} V ${emptyBox.top + EMPTY_ICON_DY + EMPTY_ICON_ARM} M ${layout.start.x - EMPTY_ICON_ARM} ${emptyBox.top + EMPTY_ICON_DY} H ${layout.start.x + EMPTY_ICON_ARM}`"
+          fill="none"
+          class="stroke-muted"
+          stroke-width="1.5"
+          stroke-linecap="round"
+        />
+        <text :x="layout.start.x" :y="emptyBox.top + EMPTY_TITLE_DY" text-anchor="middle" class="fill-ink text-control font-semibold">
+          {{ VIEW_COPY.emptyFlowTitle }}
+        </text>
+        <text
+          v-for="(step, index) in EMPTY_STEPS"
+          :key="step"
+          :x="layout.start.x"
+          :y="emptyBox.top + EMPTY_STEP_DYS[index]"
+          text-anchor="middle"
+          class="fill-muted text-small"
+        >
+          {{ index + 1 }}. {{ step }}
+        </text>
+      </g>
+
+      <g v-for="line in lines" :key="line.key">
+        <path
+          :d="line.d"
+          fill="none"
+          :stroke-width="ARROW_HIT_WIDTH"
+          class="cursor-pointer stroke-line opacity-0"
+          @click="emit('selectLine', line.key)"
+        />
+        <path
+          :d="line.d"
+          fill="none"
+          :stroke-width="isLineSelected(line) ? ARROW_SELECTED_WIDTH : ARROW_WIDTH"
+          :stroke-dasharray="line.dash"
+          :marker-end="`url(#${ARROWHEAD_ID})`"
+          :class="isLineSelected(line) ? 'stroke-accent' : 'stroke-accent/60'"
+          pointer-events="none"
+        />
+        <circle
+          v-if="isLineSelected(line)"
+          :cx="line.middle.x"
+          :cy="line.middle.y"
+          :r="HANDLE_RADIUS"
+          class="cursor-move fill-surface stroke-accent"
+          stroke-width="1.5"
+          @pointerdown="startCurveDrag(line, $event)"
+        />
+      </g>
+
+      <g v-if="toolbar">
         <g
+          v-for="button in toolbar.buttons"
+          :key="button.key"
           role="button"
           tabindex="0"
-          :aria-label="arc.phrase"
+          :aria-label="TOOLBAR_LABELS[button.key]"
           class="cursor-pointer outline-none focus-visible:opacity-80"
-          @click="emit('selectRule', arc.rule.id)"
-          @keydown.enter="selectArcFromKey(arc, $event)"
-          @keydown.space="selectArcFromKey(arc, $event)"
+          @click="onToolbar(toolbar.edge, button.key)"
+          @keydown.enter.prevent="onToolbar(toolbar.edge, button.key)"
+          @keydown.space.prevent="onToolbar(toolbar.edge, button.key)"
         >
-          <path :d="arc.d" fill="none" :stroke-width="ARC_HIT_WIDTH" class="stroke-line opacity-0" />
-          <path
-            :d="arc.d"
-            fill="none"
-            :stroke-width="arc.selected ? ARC_SELECTED_WIDTH : ARC_WIDTH"
-            :stroke-dasharray="arc.dashed ? DASH_PATTERN : undefined"
-            :marker-end="`url(#${ARROWHEAD_ID})`"
-            :class="arc.selected ? 'stroke-accent' : 'stroke-muted'"
+          <rect
+            :x="button.x"
+            :y="toolbar.y"
+            :width="button.width"
+            :height="TOOLBAR_HEIGHT"
+            :rx="TOOLBAR_HEIGHT / 2"
+            :class="button.active ? 'fill-accent' : 'fill-surface stroke-line'"
+            stroke-width="1.5"
           />
           <text
-            :x="arc.labelX"
-            :y="arc.labelY"
+            :x="button.x + button.width / 2"
+            :y="toolbar.y + TOOLBAR_HEIGHT / 2 + 4"
             text-anchor="middle"
-            class="text-small"
-            :class="arc.selected ? 'fill-accent font-semibold' : 'fill-muted'"
+            :class="button.active ? 'fill-surface text-small font-semibold' : 'fill-ink text-small'"
           >
-            {{ arc.label }}
+            {{ TOOLBAR_LABELS[button.key] }}
           </text>
         </g>
       </g>
 
+      <path
+        v-if="linkDrag"
+        :d="linkPreviewPath"
+        fill="none"
+        :stroke-width="ARROW_WIDTH"
+        :stroke-dasharray="PREVIEW_DASH"
+        :marker-end="`url(#${ARROWHEAD_ID})`"
+        class="stroke-accent"
+        pointer-events="none"
+      />
+
+      <rect
+        v-if="marqueeBox"
+        :x="marqueeBox.x"
+        :y="marqueeBox.y"
+        :width="marqueeBox.width"
+        :height="marqueeBox.height"
+        :fill-opacity="MARQUEE_OPACITY"
+        :stroke-dasharray="MARQUEE_DASH"
+        class="fill-accent stroke-accent"
+        pointer-events="none"
+      />
+
       <g
-        v-for="node in nodes"
-        :key="node.key"
-        :role="node.isYou ? 'img' : 'button'"
-        :tabindex="node.isYou ? undefined : 0"
-        :class="node.isYou ? '' : 'cursor-pointer outline-none focus-visible:opacity-80'"
-        @click="node.isYou ? undefined : emit('selectLayer', node.key)"
-        @keydown.enter="selectNodeFromKey(node, $event)"
-        @keydown.space="selectNodeFromKey(node, $event)"
+        v-for="node in layout.nodes"
+        :key="node.agent"
+        role="button"
+        tabindex="0"
+        :aria-label="roster.nameOf(node.agent)"
+        class="cursor-grab outline-none focus-visible:opacity-80"
+        @pointerdown="startNodeDrag(node.agent, $event)"
+        @pointerenter="enterAgent(node.agent)"
+        @pointerleave="leaveAgent(node.agent)"
+        @keydown.enter.prevent="emit('select', node.agent, false)"
+        @keydown.space.prevent="emit('select', node.agent, false)"
       >
         <rect
-          :x="nodeLeft(node.column)"
-          :y="nodeTop"
-          :width="NODE_WIDTH"
-          :height="NODE_HEIGHT"
+          :x="nodeLeft(node.x)"
+          :y="nodeTop(node.y)"
+          :width="FLOW_GEOMETRY.nodeWidth"
+          :height="FLOW_GEOMETRY.nodeHeight"
           :rx="NODE_RADIUS"
           class="fill-surface"
-          :class="node.selected ? 'stroke-accent' : 'stroke-line'"
-          stroke-width="1.5"
+          :class="isHighlighted(node.agent) || isLeader(node.agent) ? 'stroke-accent' : 'stroke-line'"
+          :stroke-width="isLeader(node.agent) ? LEADER_STROKE_WIDTH : 1.5"
+          :filter="`url(#${SHADOW_ID})`"
         />
-        <text
-          :x="nodeCenter(node.column)"
-          :y="nodeTop + NODE_TITLE_OFFSET"
-          text-anchor="middle"
-          class="fill-ink text-control font-semibold"
+        <foreignObject
+          :x="nodeLeft(node.x) + PORTRAIT_INSET"
+          :y="nodeTop(node.y) + (FLOW_GEOMETRY.nodeHeight - PORTRAIT_SIZE) / 2"
+          :width="PORTRAIT_SIZE"
+          :height="PORTRAIT_SIZE"
         >
-          {{ node.title }}
+          <AgentPortrait :who="node.agent" :size="PORTRAIT_SIZE" />
+        </foreignObject>
+        <text :x="nodeLeft(node.x) + TEXT_X_OFFSET" :y="nodeTop(node.y) + NAME_DY" class="fill-ink text-control font-semibold">
+          {{ roster.nameOf(node.agent) }}
         </text>
-        <text
-          :x="nodeCenter(node.column)"
-          :y="nodeTop + NODE_SUBTITLE_OFFSET"
-          text-anchor="middle"
-          class="fill-muted text-small"
+        <text :x="nodeLeft(node.x) + TEXT_X_OFFSET" :y="nodeTop(node.y) + ROLE_DY" class="fill-muted text-small">
+          {{ roleOf(node.agent) }}
+        </text>
+        <g :transform="`translate(${nodeLeft(node.x) + TEXT_X_OFFSET} ${nodeTop(node.y) + SUMMARY_DY - SUMMARY_ICON_SIZE / 2 - 1})`">
+          <path :d="INSTANCES_ICON" fill="none" class="stroke-muted" stroke-width="1.2" />
+          <text x="18" y="10.5" class="fill-ink font-mono text-tiny">{{ configOf(node.agent).instances }}</text>
+        </g>
+        <g
+          v-if="isLeader(node.agent)"
+          :transform="`translate(${nodeLeft(node.x) + TEXT_X_OFFSET + WORKTREES_OFFSET} ${nodeTop(node.y) + SUMMARY_DY - SUMMARY_ICON_SIZE / 2 - 1})`"
         >
-          {{ node.subtitle }}
-        </text>
+          <path :d="WORKTREES_ICON" fill="none" class="stroke-muted" stroke-width="1.2" />
+          <text x="18" y="10.5" class="fill-ink font-mono text-tiny">{{ worktreesLabel(node.agent) }}</text>
+        </g>
+        <g v-if="isLeader(node.agent)">
+          <rect
+            :x="nodeLeft(node.x) + FLOW_GEOMETRY.nodeWidth - LEADER_PILL_WIDTH + LEADER_PILL_OFFSET / 2"
+            :y="nodeTop(node.y) - LEADER_PILL_OFFSET"
+            :width="LEADER_PILL_WIDTH"
+            :height="LEADER_PILL_HEIGHT"
+            :rx="LEADER_PILL_RADIUS"
+            class="fill-accent"
+          />
+          <text
+            :x="nodeLeft(node.x) + FLOW_GEOMETRY.nodeWidth - LEADER_PILL_WIDTH / 2 + LEADER_PILL_OFFSET / 2"
+            :y="nodeTop(node.y) - LEADER_PILL_OFFSET + LEADER_PILL_HEIGHT / 2 + 4"
+            text-anchor="middle"
+            class="fill-surface text-tiny font-semibold"
+          >
+            {{ VIEW_COPY.leaderBadge }}
+          </text>
+        </g>
+        <template v-if="showPorts(node.agent)">
+          <circle
+            v-for="side in PORT_SIDES"
+            :key="side"
+            :cx="portAt(node, side).x"
+            :cy="portAt(node, side).y"
+            :r="PORT_RADIUS"
+            :stroke-width="PORT_STROKE_WIDTH"
+            class="cursor-crosshair fill-surface stroke-accent"
+            @pointerdown="startLink(node.agent, side, $event)"
+          />
+        </template>
       </g>
     </svg>
+  </div>
+  <ul :aria-label="VIEW_COPY.lineLegend" class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 px-1 text-tiny text-muted">
+    <li v-for="sample in LEGEND_SAMPLES" :key="sample.label" class="flex items-center gap-2">
+      <svg :width="LEGEND_SAMPLE_WIDTH" height="8" aria-hidden="true">
+        <line
+          x1="0"
+          :y1="LEGEND_SAMPLE_Y"
+          :x2="LEGEND_SAMPLE_WIDTH"
+          :y2="LEGEND_SAMPLE_Y"
+          :stroke-dasharray="sample.dash"
+          stroke-width="1.5"
+          class="stroke-accent"
+        />
+      </svg>
+      {{ sample.label }}
+    </li>
+  </ul>
   </div>
 </template>

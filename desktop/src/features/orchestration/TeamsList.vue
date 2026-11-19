@@ -1,0 +1,157 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import UiButton from '../../ui/UiButton.vue'
+import UiEmpty from '../../ui/UiEmpty.vue'
+import AgentPortrait from '../team/AgentPortrait.vue'
+import type { Agent } from '../team/events'
+import { useRoster } from '../team/useRoster'
+import { VIEW_COPY } from './orchestrationLabels'
+import type { OrchTeam } from './orchestrationTypes'
+import TeamDeleteDialog from './TeamDeleteDialog.vue'
+import TeamFlowThumb from './TeamFlowThumb.vue'
+import TeamNameDialog from './TeamNameDialog.vue'
+import { forgetFlowDraft, peekFlowDraft } from './useFlowDraft'
+import { useOrchestration } from './useOrchestration'
+
+const ELLIPSIS_PATHS = ['M8 3h.01', 'M8 8h.01', 'M8 13h.01']
+const AVATAR_SIZE = 24
+
+type Dialog = { kind: 'name'; teamId: string | null; initialName: string } | { kind: 'delete'; team: OrchTeam }
+
+const emit = defineEmits<{ open: [teamId: string] }>()
+
+const orchestration = useOrchestration()
+const roster = useRoster()
+const teams = computed<OrchTeam[]>(() => orchestration.snapshot?.teams ?? [])
+// Os agentes do card são os nós do fluxo do time, não o elenco inteiro do time.
+function flowAgentsOf(teamId: string): Agent[] {
+  return peekFlowDraft(teamId)?.agents.value ?? []
+}
+
+const dialog = ref<Dialog | null>(null)
+const openMenuId = ref<string | null>(null)
+
+function toggleMenu(teamId: string): void {
+  openMenuId.value = openMenuId.value === teamId ? null : teamId
+}
+
+function openCreate(): void {
+  dialog.value = { kind: 'name', teamId: null, initialName: '' }
+}
+
+function openRename(team: OrchTeam): void {
+  openMenuId.value = null
+  dialog.value = { kind: 'name', teamId: team.id, initialName: team.name }
+}
+
+function openDelete(team: OrchTeam): void {
+  openMenuId.value = null
+  dialog.value = { kind: 'delete', team }
+}
+
+async function saveName(name: string): Promise<void> {
+  if (dialog.value?.kind !== 'name') return
+  if (await orchestration.saveTeam({ id: dialog.value.teamId, name })) dialog.value = null
+}
+
+// Única porta de exclusão: só o modal de confirmação chama esta função.
+async function confirmDelete(): Promise<void> {
+  if (dialog.value?.kind !== 'delete') return
+  const { id } = dialog.value.team
+  if (await orchestration.deleteTeam(id)) {
+    forgetFlowDraft(id)
+    dialog.value = null
+  }
+}
+
+function leaderLabel(agent: Agent | null): string {
+  return agent === null ? VIEW_COPY.noLeader : `${VIEW_COPY.leaderBadge}: ${roster.nameOf(agent)}`
+}
+
+function agentCountLabel(count: number): string {
+  return `${count} ${count === 1 ? VIEW_COPY.agentSingular : VIEW_COPY.agentPlural}`
+}
+
+function onPointerDown(event: PointerEvent): void {
+  if (openMenuId.value === null) return
+  if (event.target instanceof Element && event.target.closest('[data-team-menu]')) return
+  openMenuId.value = null
+}
+
+onMounted(() => window.addEventListener('pointerdown', onPointerDown))
+onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
+</script>
+
+<template>
+  <section class="flex min-h-0 min-w-0 flex-col gap-4">
+    <div class="flex justify-end">
+      <UiButton variant="primary" size="lg" @press="openCreate">{{ VIEW_COPY.newTeam }}</UiButton>
+    </div>
+
+    <UiEmpty v-if="teams.length === 0" :title="VIEW_COPY.noTeams" />
+    <ul v-else class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
+      <li v-for="team in teams" :key="team.id" class="flex min-w-0 flex-col rounded-card border border-line bg-surface">
+        <div class="flex min-w-0 items-center gap-2 px-4 pt-4">
+          <button type="button" class="min-w-0 flex-1 cursor-pointer truncate text-left text-control font-semibold text-ink" @click="emit('open', team.id)">
+            {{ team.name }}
+          </button>
+          <div class="relative shrink-0" data-team-menu>
+          <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.teamMenu" :title="VIEW_COPY.teamMenu" @press="toggleMenu(team.id)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path v-for="path in ELLIPSIS_PATHS" :key="path" :d="path" />
+            </svg>
+          </UiButton>
+          <div
+            v-if="openMenuId === team.id"
+            role="menu"
+            class="absolute right-0 top-full z-20 mt-1 flex min-w-40 flex-col gap-0.5 rounded-control border border-line bg-surface p-1 shadow-float"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              class="cursor-pointer rounded-control px-3 py-2 text-left text-control text-ink hover:bg-hover"
+              @click="openRename(team)"
+            >
+              {{ VIEW_COPY.renameTeam }}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="cursor-pointer rounded-control px-3 py-2 text-left text-control text-danger hover:bg-hover"
+              @click="openDelete(team)"
+            >
+              {{ VIEW_COPY.removeTeam }}
+            </button>
+          </div>
+          </div>
+        </div>
+        <button type="button" class="flex min-w-0 cursor-pointer flex-col gap-3 p-4 text-left" @click="emit('open', team.id)">
+          <TeamFlowThumb :draft="peekFlowDraft(team.id)" />
+          <span class="flex flex-wrap gap-x-3 gap-y-1 text-small text-muted">
+            <span>{{ leaderLabel(team.leaderAgent) }}</span>
+            <span>{{ agentCountLabel(flowAgentsOf(team.id).length) }}</span>
+          </span>
+          <span class="flex flex-wrap gap-1">
+            <span v-for="agent in flowAgentsOf(team.id)" :key="agent" :title="roster.nameOf(agent)" class="inline-flex">
+              <AgentPortrait :who="agent" :size="AVATAR_SIZE" />
+            </span>
+          </span>
+        </button>
+      </li>
+    </ul>
+
+    <TeamNameDialog
+      v-if="dialog?.kind === 'name'"
+      :title="dialog.teamId === null ? VIEW_COPY.newTeam : VIEW_COPY.renameTeamTitle"
+      :initial-name="dialog.initialName"
+      @save="saveName"
+      @cancel="dialog = null"
+    />
+    <TeamDeleteDialog
+      v-else-if="dialog?.kind === 'delete'"
+      :team-name="dialog.team.name"
+      @confirm="confirmDelete"
+      @cancel="dialog = null"
+    />
+  </section>
+</template>

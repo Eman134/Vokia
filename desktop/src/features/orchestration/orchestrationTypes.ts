@@ -34,19 +34,6 @@ export type OrchAction = (typeof ORCH_ACTION_VALUES)[number]
 export const EXEC_MODE_VALUES = ['sequencia', 'paralelo'] as const
 export type ExecMode = (typeof EXEC_MODE_VALUES)[number]
 
-// "Então" do formulário: junta ação e tipo de pedido (ver ruleText.ts).
-export const THEN_CHOICE_VALUES = [
-  'delegar',
-  'pedir_revisao',
-  'pesquisar_antes',
-  'devolver',
-  'chamar_voce',
-] as const
-export type ThenChoice = (typeof THEN_CHOICE_VALUES)[number]
-
-// Destino virtual "Você" da regra escalar; não é camada.
-export const VOCE_NODE = 'voce'
-
 export interface OrchestrationSettings {
   enforcement: Enforcement
   leaderAgent: Agent
@@ -71,6 +58,7 @@ export interface OrchTeam {
   id: string
   name: string
   position: number
+  leaderAgent: Agent | null
 }
 
 export interface OrchPlacement {
@@ -93,35 +81,12 @@ export interface OrchRule {
   position: number
 }
 
-export interface OrchMovement {
-  id: number
-  runId: number | null
-  fromAgent: Agent
-  toAgent: Agent
-  fromLayer: string | null
-  toLayer: string | null
-  action: OrchAction
-  kind: RequestKind
-  itemId: string | null
-  returnCount: number
-  messageId: number | null
-  createdAt: number
-}
-
 export interface OrchestrationSnapshot {
   settings: OrchestrationSettings
   layers: OrchLayer[]
   teams: OrchTeam[]
   placements: OrchPlacement[]
   rules: OrchRule[]
-}
-
-export interface OrchLayerDraft {
-  id: string | null
-  name: string
-  description: string
-  kind: LayerKind
-  instructions: string
 }
 
 export interface OrchTeamDraft {
@@ -135,15 +100,4 @@ export interface OrchPlacementDraft {
   layerId: string
   instructions: string
   maxInstances: number
-}
-
-export interface OrchRuleDraft {
-  id: number | null
-  fromLayer: string
-  toLayer: string
-  whenEvent: WhenEvent
-  action: OrchAction
-  kind: RequestKind
-  execMode: ExecMode
-  returnLimit: number
 }

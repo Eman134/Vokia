@@ -24,10 +24,6 @@ export const PAGE_ACTIONS: Record<RailPage, PageAction[]> = {
     { id: 'nova-conversa', label: 'Nova conversa' },
     { id: 'pausar-todos', label: 'Pausar todos' },
   ],
-  plano: [
-    { id: 'revisar-lote', label: 'Revisar lote' },
-    { id: 'pausar-plano', label: 'Pausar plano' },
-  ],
   canvas: [
     { id: 'novo-artefato', label: 'Novo artefato' },
     { id: 'gerar-cards', label: 'Gerar cards' },

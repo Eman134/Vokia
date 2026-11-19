@@ -1,3 +1,5 @@
+import { PROJECT_ICONS } from '../features/projects/projectIcons'
+
 export type RailPage =
   | 'projetos'
   | 'agentes'
@@ -6,7 +8,6 @@ export type RailPage =
   | 'mapa'
   | 'backlog'
   | 'conversas'
-  | 'plano'
   | 'canvas'
   | 'diff'
   | 'memoria'
@@ -25,10 +26,9 @@ export const PAGE_LABELS: Record<AppPage, string> = {
   agentes: 'Agentes e camadas',
   estatisticas: 'Estatísticas',
   skills: 'Skills',
-  mapa: 'Mapa do time',
+  mapa: 'Fluxo de Orquestração',
   backlog: 'Tasks',
   conversas: 'Conversas',
-  plano: 'Plano',
   canvas: 'Artefatos',
   diff: 'Diff e revisão',
   memoria: 'Memória e grafo',
@@ -65,14 +65,14 @@ export const WORKSPACE_ITEMS: readonly RailItem[] = [
     label: PAGE_LABELS.skills,
     path: 'M9 1.5L3.5 9h4L6.5 14.5 12.5 6.5h-4z',
   },
-]
-
-export const PROJECT_TOOLS: readonly RailItem[] = [
   {
     page: 'mapa',
     label: PAGE_LABELS.mapa,
-    path: 'M1.5 3.5h13v9h-13zM1.5 6.5h13M5.5 3.5v9M10 3.5v9',
+    path: PROJECT_ICONS.diagram.path,
   },
+]
+
+export const PROJECT_TOOLS: readonly RailItem[] = [
   {
     page: 'backlog',
     label: PAGE_LABELS.backlog,
@@ -82,11 +82,6 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
     page: 'conversas',
     label: PAGE_LABELS.conversas,
     path: 'M1.5 3h8.5v6H5l-3.5 2.5zM12 6h2.5v6.5L12 11H7.5V9',
-  },
-  {
-    page: 'plano',
-    label: PAGE_LABELS.plano,
-    path: 'M3 3h2M3 8h2M3 13h2M7.5 3h6M7.5 8h6M7.5 13h6',
   },
   {
     page: 'canvas',
