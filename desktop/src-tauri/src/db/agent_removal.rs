@@ -29,17 +29,31 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(DbError::from)?;
         refuse_if_positioned(&tx, agent, agent_name)?;
-        let cards = reassign_cards(&tx, agent, successor)?;
-        let mut notes = Vec::with_capacity(cards.len());
-        for (project_id, card_id) in cards {
-            let text = format!("{successor_name} assumiu o card {card_id} de {agent_name}");
-            insert_feed_note(&tx, project_id, successor, &text, time)?;
-            notes.push(FeedNote { project_id, text });
-        }
+        let notes = hand_over_cards(&tx, None, agent, agent_name, successor, successor_name, time)?;
         remove_from_registry()?;
         tx.commit().map_err(DbError::from)?;
         Ok(notes)
     }
+}
+
+// `project_id` limita a troca a um projeto; sem ele vale para todos.
+pub(super) fn hand_over_cards(
+    tx: &Connection,
+    project_id: Option<i64>,
+    agent: &Agent,
+    agent_name: &str,
+    successor: &Agent,
+    successor_name: &str,
+    time: u64,
+) -> Result<Vec<FeedNote>, DbError> {
+    let cards = reassign_cards(tx, project_id, agent, successor)?;
+    let mut notes = Vec::with_capacity(cards.len());
+    for (project_id, card_id) in cards {
+        let text = format!("{successor_name} assumiu o card {card_id} de {agent_name}");
+        insert_feed_note(tx, project_id, successor, &text, time)?;
+        notes.push(FeedNote { project_id, text });
+    }
+    Ok(notes)
 }
 
 fn refuse_if_positioned(tx: &Connection, agent: &Agent, agent_name: &str) -> Result<(), DbError> {
@@ -88,16 +102,23 @@ fn refuse_if_positioned(tx: &Connection, agent: &Agent, agent_name: &str) -> Res
 }
 
 // Devolve (projeto, card) de cada card que mudou de dono, inclusive os em andamento.
-fn reassign_cards(tx: &Connection, agent: &Agent, successor: &Agent) -> Result<Vec<(i64, String)>, DbError> {
+fn reassign_cards(
+    tx: &Connection,
+    project_id: Option<i64>,
+    agent: &Agent,
+    successor: &Agent,
+) -> Result<Vec<(i64, String)>, DbError> {
     let mut statement = tx.prepare(
-        "SELECT project_id, id FROM backlog_items WHERE who = ?1 ORDER BY project_id, position",
+        "SELECT project_id, id FROM backlog_items WHERE who = ?1 AND (?2 IS NULL OR project_id = ?2)          ORDER BY project_id, position",
     )?;
     let cards: Vec<(i64, String)> = statement
-        .query_map([agent.as_str()], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .query_map(params![agent.as_str(), project_id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?
         .collect::<rusqlite::Result<_>>()?;
     tx.execute(
-        "UPDATE backlog_items SET who = ?2 WHERE who = ?1",
-        params![agent.as_str(), successor.as_str()],
+        "UPDATE backlog_items SET who = ?3 WHERE who = ?1 AND (?2 IS NULL OR project_id = ?2)",
+        params![agent.as_str(), project_id, successor.as_str()],
     )?;
     Ok(cards)
 }

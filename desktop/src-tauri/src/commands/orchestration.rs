@@ -9,7 +9,7 @@ use crate::db::{
     Db, DbError, DbState, Handoff, Layer, LayerDraft, OrchestrationSettings, OrchestrationSnapshot,
     Placement, PlacementDraft, Rule, RuleDraft, Team, TeamDraft,
 };
-use crate::events::{VokiaEvent, EVENT_NAME};
+use crate::events::{Speaker, VokiaEvent, EVENT_NAME};
 use crate::orchestrator;
 use crate::orchestration::seed;
 use crate::state::AppState;
@@ -157,6 +157,7 @@ pub fn save_team(
     })
 }
 
+// Os agentes do time ficam sem posição; o Ember assume os cards deles, com aviso no feed.
 #[tauri::command]
 pub fn delete_team(
     app: AppHandle,
@@ -165,9 +166,32 @@ pub fn delete_team(
     project_id: i64,
     id: String,
 ) -> Result<(), String> {
-    write(&app, &state, &registry, project_id, |db| {
-        db.delete_team(project_id, &id)
-    })
+    let cast = registry.team().map_err(|error| error.to_string())?;
+    let successor = Agent::ember();
+    let successor_name = cast.name_of(&successor).to_string();
+    let time = orchestrator::now_millis().map_err(|error| error.to_string())?;
+    let notes = write(&app, &state, &registry, project_id, |db| {
+        db.delete_team(
+            project_id,
+            &id,
+            &successor,
+            &successor_name,
+            |agent| cast.name_of(agent).to_string(),
+            time,
+        )
+    })?;
+    for note in notes {
+        // A troca já está gravada; falha ao avisar o feed não vira erro para quem removeu.
+        let _ = orchestrator::emit_feed_note(
+            &app,
+            note.project_id,
+            Speaker::Agent(successor.clone()),
+            &note.text,
+            time,
+        );
+        let _ = orchestrator::emit_backlog_changed(&app, note.project_id);
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -77,7 +77,6 @@ pub enum DbError {
     LayerOrderInvalid,
     TeamNameTaken(String),
     TeamNotFound(String),
-    TeamHasAgents(String),
     OrchestratorNotPlaceable,
     OrchestratorNotLeader,
     RuleNotFound(i64),
@@ -304,10 +303,6 @@ impl fmt::Display for DbError {
                 )
             }
             DbError::TeamNotFound(id) => write!(f, "O time {id} não existe neste projeto."),
-            DbError::TeamHasAgents(id) => write!(
-                f,
-                "O time {id} tem agentes posicionados: mova os agentes antes de excluí-lo."
-            ),
             DbError::OrchestratorNotPlaceable => write!(
                 f,
                 "O orquestrador geral não pode ser posicionado em time ou camada."

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::Agent;
 
+use super::agent_removal::{hand_over_cards, FeedNote};
 use super::connection::Db;
 use super::error::DbError;
 
@@ -839,26 +840,55 @@ impl Db {
         Ok(team)
     }
 
-    pub fn delete_team(&self, project_id: i64, id: &str) -> Result<(), DbError> {
+    // Os agentes do time ficam sem posição (continuam no elenco) e seus cards passam ao sucessor,
+    // tudo na mesma transação que remove o time e, com ele, o líder do time.
+    pub fn delete_team(
+        &self,
+        project_id: i64,
+        id: &str,
+        successor: &Agent,
+        successor_name: &str,
+        agent_name: impl Fn(&Agent) -> String,
+        time: u64,
+    ) -> Result<Vec<FeedNote>, DbError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
         if !team_exists(&tx, project_id, id)? {
             return Err(DbError::TeamNotFound(id.to_string()));
         }
-        if row_exists(
-            &tx,
-            "SELECT 1 FROM orch_placements WHERE project_id = ?1 AND team_id = ?2",
-            params![project_id, id],
-        )? {
-            return Err(DbError::TeamHasAgents(id.to_string()));
+        let mut statement = tx.prepare(
+            "SELECT agent_id FROM orch_placements WHERE project_id = ?1 AND team_id = ?2 ORDER BY agent_id",
+        )?;
+        let placed: Vec<String> = statement
+            .query_map(params![project_id, id], |row| row.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(statement);
+        let mut notes = Vec::new();
+        for stored in placed {
+            let Some(agent) = Agent::from_stored(&stored) else {
+                continue;
+            };
+            notes.extend(hand_over_cards(
+                &tx,
+                Some(project_id),
+                &agent,
+                &agent_name(&agent),
+                successor,
+                successor_name,
+                time,
+            )?);
         }
+        tx.execute(
+            "DELETE FROM orch_placements WHERE project_id = ?1 AND team_id = ?2",
+            params![project_id, id],
+        )?;
         tx.execute(
             "DELETE FROM orch_teams WHERE project_id = ?1 AND id = ?2",
             params![project_id, id],
         )?;
         tx.commit()?;
-        Ok(())
+        Ok(notes)
     }
 
     // Uma posição por agente: posicionar de novo move o agente em vez de criar outra.
