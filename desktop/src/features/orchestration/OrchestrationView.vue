@@ -269,12 +269,10 @@ function onLink(from: Agent, to: Agent): void {
 }
 
 // Comunicação é só entre agentes da mesma linha (altura parecida); em linhas diferentes a ligação é cancelada com a dica.
-function onLinkCommunication(from: Agent, to: Agent): void {
+function onLinkCommunication(from: Agent, to: Agent, fromY: number, toY: number): void {
   const fromAgent = flowAgents.value.includes(from)
   const toAgent = flowAgents.value.includes(to)
-  const fromY = positions.get(from)?.y
-  const toY = positions.get(to)?.y
-  const sameRow = fromAgent && toAgent && fromY !== undefined && toY !== undefined && Math.abs(fromY - toY) <= SAME_LEVEL_TOLERANCE
+  const sameRow = fromAgent && toAgent && Math.abs(fromY - toY) <= SAME_LEVEL_TOLERANCE
   if (!sameRow) {
     hint.value = VIEW_COPY.communicationHint
     if (hintTimer !== null) clearTimeout(hintTimer)

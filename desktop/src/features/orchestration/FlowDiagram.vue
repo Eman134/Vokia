@@ -126,7 +126,8 @@ const emit = defineEmits<{
   marquee: [agents: Agent[]]
   clearSelection: []
   link: [from: Agent, to: Agent]
-  linkCommunication: [from: Agent, to: Agent]
+  // As alturas são as do desenho (posição automática inclusa), não só as gravadas.
+  linkCommunication: [from: Agent, to: Agent, fromY: number, toY: number]
   selectLine: [key: string]
   selectEndpoint: [which: 'start' | 'end']
   bend: [key: string, offset: number]
@@ -427,7 +428,9 @@ function onLinkEnd(event: PointerEvent): void {
     return
   }
   if (current.communication) {
-    if (target !== null) emit('linkCommunication', current.from, target)
+    const fromCenter = nodeCenter(current.from)
+    const toCenter = target === null ? undefined : nodeCenter(target)
+    if (target !== null && fromCenter && toCenter) emit('linkCommunication', current.from, target, fromCenter.y, toCenter.y)
     return
   }
   if (target !== null) emit('link', current.from, target)
