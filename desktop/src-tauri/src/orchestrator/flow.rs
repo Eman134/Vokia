@@ -495,8 +495,11 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
     let join = snapshot
         .as_ref()
         .and_then(|snapshot| join_target(snapshot, &team, &batch));
-    // A junção sai para o fim: os ramos já marcaram o fim do card e a validação final abre quando o último termina.
-    if matches!(join, Some(JoinExit::End)) && batch.item_id.is_some() {
+    // A junção sai para o fim: os ramos paralelos não passam pelo laço de turnos (que marca o fim), então a junção
+    // marca; a validação final abre em release_branch, quando o último ramo do card termina.
+    if let (Some(JoinExit::End), Some(item)) = (&join, batch.item_id.as_deref()) {
+        let last = batch.returned.last().unwrap_or(&batch.leader);
+        mark_flow_end(state, batch.project_id, item, last)?;
         return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
     }
     if let Some(JoinExit::Agent(target)) = join {
