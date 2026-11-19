@@ -4,6 +4,7 @@ import UiBadge from '../../ui/UiBadge.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
 import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
+import { useBacklog } from '../backlog/useBacklog'
 import type { ParsedProposal } from '../backlog/planProposal'
 import PlanStageRow from './PlanStageRow.vue'
 import { planProgress } from './planProgress'
@@ -12,6 +13,7 @@ const WRAP_CLASSES = 'wrap-break-word'
 const SECTION_CLASSES = 'flex min-w-0 flex-col gap-3'
 const SECTION_TITLE_CLASSES = 'text-small font-semibold text-muted'
 const STAGE_MARK_CLASSES = 'grid size-5.5 flex-none place-items-center rounded-full border-[1.5px] border-line text-tiny font-bold text-muted'
+const CRITERION_CLASSES = 'flex cursor-pointer items-start gap-2.5 text-control text-ink'
 const TASK_SEPARATOR = ';'
 
 const props = defineProps<{
@@ -20,6 +22,8 @@ const props = defineProps<{
   state: BacklogState
   stages: BacklogItem[]
 }>()
+
+const backlog = useBacklog()
 
 const progress = computed(() => planProgress(props.stages))
 
@@ -53,10 +57,11 @@ function tasksOf(lot: ParsedProposal['lots'][number]): string[] {
     <section aria-label="Etapas" :class="SECTION_CLASSES">
       <h4 :class="SECTION_TITLE_CLASSES">Etapas</h4>
       <div v-if="stages.length" class="flex flex-col gap-3">
-        <PlanStageRow v-for="stage in stages" :key="stage.id" :stage="stage" />
+        <PlanStageRow v-for="stage in stages" :key="stage.id" :stage="stage" :parent-title="item.title" />
       </div>
       <ol v-else class="flex flex-col gap-3">
         <li v-for="lot in proposal.lots" :key="lot.n" class="flex min-w-0 flex-col gap-2 rounded-control-lg border border-line p-3.5">
+          <p class="truncate text-meta text-muted">↳ {{ item.title }}</p>
           <div class="flex min-w-0 items-start gap-2.5">
             <span :class="STAGE_MARK_CLASSES">{{ lot.n }}</span>
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -71,6 +76,23 @@ function tasksOf(lot: ParsedProposal['lots'][number]): string[] {
           </ul>
         </li>
       </ol>
+    </section>
+
+    <section v-if="item.criteria?.length" aria-label="Critérios" :class="SECTION_CLASSES">
+      <h4 :class="SECTION_TITLE_CLASSES">Critérios</h4>
+      <ul class="flex flex-col gap-2">
+        <li v-for="criterion in item.criteria" :key="criterion.id">
+          <label :class="CRITERION_CLASSES">
+            <input
+              type="checkbox"
+              :checked="criterion.done"
+              class="mt-1 size-4 flex-none"
+              @change="backlog.toggleCriterion(item.id, criterion.id)"
+            />
+            <span :class="['min-w-0 flex-1', WRAP_CLASSES, criterion.done && 'text-muted line-through']">{{ criterion.text }}</span>
+          </label>
+        </li>
+      </ul>
     </section>
 
     <section v-if="proposal.risk" aria-label="Riscos" :class="SECTION_CLASSES">
