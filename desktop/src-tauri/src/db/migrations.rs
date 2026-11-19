@@ -153,20 +153,15 @@ const FLOW_START_FROM_LEADERS_SQL: &str = "
           AND EXISTS (SELECT 1 FROM orch_placements p WHERE p.team_id = t.id AND p.agent_id = t.leader_agent);
 ";
 
-// Grade da tela: y por ordem da camada (120 + 110 por camada) e x espalhado em 0..640 entre os agentes do time na camada.
+// Grade da tela: y por ordem da camada (120 + 150 por camada) e x em passos de 268 a partir de 300 entre os agentes do time na camada.
 const FLOW_POSITIONS_SQL: &str = "
     UPDATE orch_placements SET
-        pos_y = 120.0 + 110.0 * (
+        pos_y = 120.0 + 150.0 * (
             SELECT COUNT(*) FROM orch_layers own, orch_layers other
             WHERE own.id = orch_placements.layer_id
               AND (other.position < own.position OR (other.position = own.position AND other.id < own.id))),
-        pos_x = 640.0 * (
-            (SELECT COUNT(*) FROM orch_placements p WHERE p.team_id = orch_placements.team_id
-                AND p.layer_id = orch_placements.layer_id AND p.agent_id < orch_placements.agent_id) + 1
-        ) / (
-            (SELECT COUNT(*) FROM orch_placements p WHERE p.team_id = orch_placements.team_id
-                AND p.layer_id = orch_placements.layer_id) + 1
-        );
+        pos_x = MIN(300.0 + 268.0 * (SELECT COUNT(*) FROM orch_placements p WHERE p.team_id = orch_placements.team_id
+                AND p.layer_id = orch_placements.layer_id AND p.agent_id < orch_placements.agent_id), 1484.0);
 ";
 
 const HAS_COLUMN: &str = "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2";

@@ -26,8 +26,13 @@ const START_EDGE_EVENT: &str = "plano_aprovado";
 const START_EDGE_KIND: &str = "planejar";
 // Mesmas medidas da grade da tela (CANVAS_AREA e posição inicial de cada camada); a migração repete os números em SQL.
 const FLOW_CANVAS_SIZE: f64 = 1600.0;
+const FLOW_GRID_ORIGIN_X: f64 = 300.0;
 const FLOW_GRID_ORIGIN_Y: f64 = 120.0;
-const FLOW_GRID_ROW_STEP: f64 = 110.0;
+// Passo da grade: cartão (168 x 76) mais folga para os conectores laterais e a linha entre eles.
+const FLOW_GRID_COLUMN_STEP: f64 = 268.0;
+const FLOW_GRID_ROW_STEP: f64 = 150.0;
+// Último centro de cartão que ainda cabe na área: margem (32) mais meia largura do cartão (84).
+const FLOW_GRID_MAX_X: f64 = FLOW_CANVAS_SIZE - 32.0 - 84.0;
 
 pub(crate) const DEFAULT_LEADER_AGENT: &str = "axiom";
 
@@ -779,7 +784,8 @@ fn check_canvas(field: &'static str, value: f64) -> Result<(), DbError> {
     }
 }
 
-// Posição da grade para quem entra sem posição: y pela ordem da camada, x espalhado entre os agentes do time na camada.
+// Posição da grade para quem entra sem posição: y pela ordem da camada, x à direita do último agente do time na camada
+// (quem já está posicionado não se move).
 fn grid_position(conn: &Connection, draft: &PlacementDraft) -> Result<(f64, f64), DbError> {
     let layers_before: i64 = conn.query_row(
         "SELECT COUNT(*) FROM orch_layers own, orch_layers other WHERE own.id = ?1 \
@@ -787,14 +793,15 @@ fn grid_position(conn: &Connection, draft: &PlacementDraft) -> Result<(f64, f64)
         params![draft.layer_id],
         |row| row.get(0),
     )?;
-    let peers: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM orch_placements WHERE team_id = ?1 AND layer_id = ?2 AND agent_id <> ?3",
+    let last_peer_x: Option<f64> = conn.query_row(
+        "SELECT MAX(pos_x) FROM orch_placements WHERE team_id = ?1 AND layer_id = ?2 AND agent_id <> ?3",
         params![draft.team_id, draft.layer_id, draft.agent_id],
         |row| row.get(0),
     )?;
-    let in_layer = (peers + 1) as f64;
     Ok((
-        FLOW_CANVAS_SIZE * in_layer / (in_layer + 1.0),
+        last_peer_x.map_or(FLOW_GRID_ORIGIN_X, |x| {
+            (x + FLOW_GRID_COLUMN_STEP).min(FLOW_GRID_MAX_X)
+        }),
         FLOW_GRID_ORIGIN_Y + FLOW_GRID_ROW_STEP * layers_before as f64,
     ))
 }
