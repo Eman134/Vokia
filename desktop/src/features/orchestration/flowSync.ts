@@ -28,7 +28,7 @@ import {
 const NO_CURVE = 0
 
 function metaOf(edge: OrchFlowEdge): FlowEdgeMeta {
-  return { whenEvent: edge.whenEvent, action: edge.action, requestKind: edge.kind, turnLimit: edge.turnLimit, isDefault: edge.isDefault }
+  return { whenEvent: edge.whenEvent, action: edge.action, requestKind: edge.kind, turnLimit: edge.turnLimit, isDefault: edge.isDefault, instructions: edge.instructions }
 }
 
 function draftOf(edge: OrchFlowEdge): FlowEdgeDraft {
@@ -43,6 +43,7 @@ function draftOf(edge: OrchFlowEdge): FlowEdgeDraft {
     kind: edge.kind,
     turnLimit: edge.turnLimit,
     curve: edge.curve,
+    instructions: edge.instructions,
   }
 }
 
@@ -135,6 +136,7 @@ function edgeDraft(
     kind: meta.requestKind,
     turnLimit: meta.turnLimit,
     curve,
+    instructions: meta.instructions,
   }
 }
 

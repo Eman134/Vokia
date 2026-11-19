@@ -69,7 +69,7 @@ export const FLOW_GEOMETRY = {
 } as const
 
 // Área fixa do canvas em unidades do desenho: nada sai dela, e o zoom só enquadra a área.
-export const CANVAS_AREA = 640
+export const CANVAS_AREA = 1600
 export const ZOOM_MIN = 1
 export const ZOOM_MAX = 3
 export const ZOOM_STEP = 1.15
@@ -118,22 +118,6 @@ export function clampNode(point: FlowPoint): FlowPoint {
     x: clamp(point.x, halfWidth + margin, CANVAS_AREA - halfWidth - margin),
     y: clamp(point.y, MIN_NODE_Y, MAX_NODE_Y),
   }
-}
-
-// Primeiro lugar livre (varrendo a área da esquerda para a direita, de cima para baixo) que não toca nenhum nó.
-export function freeSpot(taken: readonly FlowPoint[]): FlowPoint {
-  const stepX = FLOW_GEOMETRY.nodeWidth / 2 + GATEWAY_SIZE
-  const stepY = FLOW_GEOMETRY.nodeHeight / 2 + GATEWAY_SIZE
-  for (let y = MIN_NODE_Y; y <= MAX_NODE_Y; y += stepY) {
-    for (let x = FLOW_GEOMETRY.margin + FLOW_GEOMETRY.nodeWidth / 2; x <= CANVAS_AREA - FLOW_GEOMETRY.margin; x += stepX) {
-      const point = clampNode({ x, y })
-      const clear = taken.every(
-        (other) => Math.abs(other.x - point.x) >= stepX || Math.abs(other.y - point.y) >= stepY,
-      )
-      if (clear) return point
-    }
-  }
-  return clampNode({ x: CANVAS_AREA / 2, y: MIN_NODE_Y })
 }
 
 export function clampEndpoint(point: FlowPoint): FlowPoint {

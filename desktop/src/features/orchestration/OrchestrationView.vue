@@ -11,11 +11,12 @@ import AgentPanel from './AgentPanel.vue'
 import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
 import FlowGatewayPanel, { type GatewayExit } from './FlowGatewayPanel.vue'
+import FlowLinePanel, { type LineEditor } from './FlowLinePanel.vue'
 import FlowNodePanel from './FlowNodePanel.vue'
-import AgentActivityPanel from '../teammap/AgentActivityPanel.vue'
-import { endLineKey, freeSpot, lineKey, START_LINE_KEY, type FlowEdge, type LineKind } from './flowGraph'
+import PanelOverlay from './PanelOverlay.vue'
+import { endLineKey, lineKey, START_LINE_KEY, type FlowEdge, type LineKind } from './flowGraph'
 import { configChanges, toTeamFlowDraft, validationInputOf } from './flowSync'
-import { problemCountLabel, validateFlow } from './flowValidation'
+import { problemCountLabel, SAME_LEVEL_TOLERANCE, validateFlow } from './flowValidation'
 import { VIEW_COPY } from './orchestrationLabels'
 import { GATEWAY_KIND_VALUES, type FlowProblem, type GatewayKind, type OrchestrationSnapshot } from './orchestrationTypes'
 import { useFeed } from '../team/useFeed'
@@ -25,6 +26,7 @@ import { useOrchestration } from './useOrchestration'
 
 const CHIP_PORTRAIT_SIZE = 24
 const DRAG_THRESHOLD_PX = 4
+const HINT_MS = 4000
 const DROP_ZONE_SELECTOR = '[data-flow-canvas]'
 const GHOST_OFFSET_PX = 12
 const GHOST_PORTRAIT_SIZE = 28
@@ -35,6 +37,9 @@ const ALIGN_ACTIONS: readonly { mode: AlignMode; axis: AlignAxis; label: string;
   { mode: 'border', axis: 'vertical', label: VIEW_COPY.alignBorderVertical, path: 'M4 2v20M8 6h10v4H8zM8 14h6v4H8z' },
   { mode: 'border', axis: 'horizontal', label: VIEW_COPY.alignBorderHorizontal, path: 'M2 4h20M6 8h4v10H6zM14 8h4v6h-4z' },
 ]
+
+const GATEWAY_DRAG_PREFIX = 'gateway:'
+const GATEWAY_CHIP_ICON = 'M12 3l8 9-8 9-8-9z'
 
 type Selection =
   | { kind: 'node'; id: Agent }
@@ -102,11 +107,18 @@ const layers = computed(() => snapshot.value?.layers ?? [])
 
 // Validação local (mesmas regras V1 a V7 do backend): pinta início, fim e nós e trava o Salvar fluxo.
 const problems = computed(() => validateFlow(validationInputOf(draft), (id) => roster.nameOf(id)))
-const problemIds = computed(() => new Set(problems.value.flatMap((problem) => (problem.node === null ? [] : [problem.node]))))
 // Recusa do backend mostra a lista dele até o desenho mudar.
 const refusedProblems = ref<FlowProblem[]>([])
 const shownProblems = computed(() => (refusedProblems.value.length > 0 ? refusedProblems.value : problems.value))
 const problemsOpen = ref(false)
+// Cada caixinha do fluxo com problema recebe as mensagens dele (V1 a V7, do backend ou da validação local).
+const problemMessages = computed(() => {
+  const byNode = new Map<string, string[]>()
+  for (const problem of shownProblems.value) {
+    if (problem.node !== null) byNode.set(problem.node, [...(byNode.get(problem.node) ?? []), problem.message])
+  }
+  return byNode
+})
 const saving = ref(false)
 const canSave = computed(() => dirty.value && problems.value.length === 0 && !saving.value && snapshot.value !== null)
 
@@ -161,15 +173,19 @@ const gatewayExits = computed<GatewayExit[]>(() => {
   }
   return exits
 })
-const addingGateway = ref(false)
+const hint = ref<string | null>(null)
+const pairLimit = computed(() => snapshot.value?.settings.pairTurnLimit ?? 0)
+// Janela da ligação clicada e janela do fim (como cada agente chega até ele).
+const editingLine = ref<string | null>(null)
+const editingEnd = ref(false)
+const GATEWAY_ACTIONS = ['delegar', 'devolver'] as const
+let hintTimer: ReturnType<typeof setTimeout> | null = null
 const selectedLineKey = computed<string | null>(() => (selection.value?.kind === 'line' ? selection.value.key : null))
 const selectedAgent = computed<AgentProfile | null>(() =>
   selection.value?.kind === 'agent' ? (roster.profileOf(selection.value.id) ?? null) : null,
 )
 // Painel só existe com algo selecionado; no celular ele se sobrepõe ao canvas em vez de empurrar a página.
-const panelOpen = computed(
-  () => selectedNode.value !== null || selectedGateway.value !== null || (selectedAgent.value !== null && snapshot.value !== null),
-)
+
 
 function placementOf(agentId: Agent) {
   return snapshot.value?.placements.find((placement) => placement.agentId === agentId)
@@ -178,6 +194,78 @@ function placementOf(agentId: Agent) {
 function clearSelection(): void {
   selection.value = null
   groupSelection.value = []
+  editingLine.value = null
+  editingEnd.value = false
+}
+
+function nodeLabel(id: string): string {
+  const gateway = gateways.value.find((candidate) => candidate.id === id)
+  if (gateway === undefined) return roster.nameOf(id)
+  return gateway.kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive
+}
+
+// Campos editáveis de uma ligação: o início e o fim têm ação e evento fixos; a comunicação só tem limite e instrução.
+function lineEditorFor(key: string): LineEditor | null {
+  const meta = metas.get(key)
+  if (!meta) return null
+  if (key === START_LINE_KEY) {
+    const leader = completed.value.startAgent
+    if (leader === null) return null
+    return { key, label: `${VIEW_COPY.flowStart} → ${nodeLabel(leader)}`, meta, kind: null, showEvent: true, showLimit: false, actions: ['delegar'], removable: true }
+  }
+  if (key.startsWith(endLineKey(''))) {
+    const node = key.slice(endLineKey('').length)
+    return { key, label: `${nodeLabel(node)} → ${VIEW_COPY.flowEnd}`, meta, kind: null, showEvent: true, showLimit: false, actions: ['escalar'], removable: true }
+  }
+  const edge = completed.value.manualEdges.find((candidate) => lineKey(candidate) === key)
+  if (!edge) return null
+  const between = flowAgents.value.includes(edge.from) && flowAgents.value.includes(edge.to)
+  const communication = edge.communication === true
+  return {
+    key,
+    label: `${nodeLabel(edge.from)} → ${nodeLabel(edge.to)}`,
+    meta,
+    kind: between && !communication ? edge.kind : null,
+    showEvent: !communication,
+    showLimit: true,
+    actions: communication ? [] : GATEWAY_ACTIONS,
+    removable: true,
+  }
+}
+
+const lineEditors = computed<LineEditor[]>(() => {
+  const editor = editingLine.value === null ? null : lineEditorFor(editingLine.value)
+  return editor === null ? [] : [editor]
+})
+const endEditors = computed<LineEditor[]>(() =>
+  completed.value.endAgents.map((node) => lineEditorFor(endLineKey(node))).filter((editor): editor is LineEditor => editor !== null),
+)
+
+// Clicar numa ligação existente abre a janela dela; criar uma ligação só a deixa selecionada.
+function openLine(key: string): void {
+  selectLine(key)
+  editingLine.value = key
+}
+
+function onSelectEndpoint(which: 'start' | 'end'): void {
+  clearSelection()
+  if (which === 'end') {
+    editingEnd.value = true
+  } else if (completed.value.startAgent !== null) {
+    selection.value = { kind: 'line', key: START_LINE_KEY }
+    editingLine.value = START_LINE_KEY
+  }
+}
+
+function setLineKind(key: string, kind: LineKind): void {
+  const edge = completed.value.manualEdges.find((candidate) => lineKey(candidate) === key)
+  if (edge) setKind(edge.from, edge.to, kind)
+}
+
+function removeLineByKey(key: string): void {
+  const edge = completed.value.manualEdges.find((candidate) => lineKey(candidate) === key)
+  if (edge) removeEdge(edge)
+  else removeLine(key)
 }
 
 function selectAgent(id: Agent): void {
@@ -192,6 +280,26 @@ function selectLine(key: string): void {
 // Linha recém-criada já fica selecionada: a barra com síncrona ou assíncrona aparece na hora.
 function onLink(from: Agent, to: Agent): void {
   link(from, to)
+  selectLine(lineKey({ from, to }))
+}
+
+// Comunicação é só entre agentes da mesma linha (altura parecida); em linhas diferentes a ligação é cancelada com a dica.
+function onLinkCommunication(from: Agent, to: Agent): void {
+  const fromAgent = flowAgents.value.includes(from)
+  const toAgent = flowAgents.value.includes(to)
+  const fromY = positions.get(from)?.y
+  const toY = positions.get(to)?.y
+  const sameRow = fromAgent && toAgent && fromY !== undefined && toY !== undefined && Math.abs(fromY - toY) <= SAME_LEVEL_TOLERANCE
+  if (!sameRow) {
+    hint.value = VIEW_COPY.communicationHint
+    if (hintTimer !== null) clearTimeout(hintTimer)
+    hintTimer = setTimeout(() => {
+      hint.value = null
+      hintTimer = null
+    }, HINT_MS)
+    return
+  }
+  link(from, to, 'sync', true)
   selectLine(lineKey({ from, to }))
 }
 
@@ -237,15 +345,6 @@ function onFlowSelect(agent: Agent, additive: boolean): void {
     : [...groupSelection.value, agent]
 }
 
-// Gateway novo nasce no primeiro lugar livre e já fica selecionado para configurar o tipo e as saídas.
-function createGateway(kind: GatewayKind): void {
-  addingGateway.value = false
-  const taken = [...positions.values()]
-  const id = addGateway(kind, freeSpot(taken))
-  selection.value = { kind: 'gateway', id }
-  groupSelection.value = []
-}
-
 function setExitEvent(key: string, event: WhenEvent): void {
   setMeta(key, { whenEvent: event })
 }
@@ -282,6 +381,26 @@ function makeSelectedLeader(): void {
 
 // Clique sem arrasto abre o agente; arrastar até a área do fluxo adiciona o agente onde foi solto.
 // Quem já está no fluxo não arrasta: continua clicável, para abrir o agente.
+// Os gateways se arrastam da lista, como os agentes: o id do arraste leva o tipo.
+function startGatewayDrag(kind: GatewayKind, event: PointerEvent): void {
+  agentDrag.value = {
+    agent: `${GATEWAY_DRAG_PREFIX}${kind}`,
+    startX: event.clientX,
+    startY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    movable: true,
+    dragging: false,
+  }
+  window.addEventListener('pointermove', onAgentDragMove)
+  window.addEventListener('pointerup', onAgentDragEnd)
+  window.addEventListener('pointercancel', stopAgentDrag)
+}
+
+function gatewayKindOfDrag(id: string): GatewayKind | null {
+  return id.startsWith(GATEWAY_DRAG_PREFIX) ? (id.slice(GATEWAY_DRAG_PREFIX.length) as GatewayKind) : null
+}
+
 function startAgentDrag(agent: Agent, event: PointerEvent): void {
   agentDrag.value = {
     agent,
@@ -308,14 +427,17 @@ function onAgentDragEnd(event: PointerEvent): void {
   const current = agentDrag.value
   stopAgentDrag()
   if (!current) return
+  const gatewayKind = gatewayKindOfDrag(current.agent)
   if (!current.dragging) {
-    selectAgent(current.agent)
+    if (gatewayKind === null) selectAgent(current.agent)
     return
   }
   const dropZone = document.elementFromPoint(event.clientX, event.clientY)?.closest(DROP_ZONE_SELECTOR)
   if (!dropZone) return
   const point = flowRef.value?.toCanvasPoint(event.clientX, event.clientY)
-  if (point) addAgent(current.agent, point)
+  if (!point) return
+  if (gatewayKind !== null) addGateway(gatewayKind, point)
+  else addAgent(current.agent, point)
 }
 
 function stopAgentDrag(): void {
@@ -326,6 +448,12 @@ function stopAgentDrag(): void {
 }
 
 // Cinza: já está no fluxo, ou está sendo arrastado para o fluxo. Ao soltar ou cancelar o arrasto, volta ao normal.
+function dragLabel(id: string): string {
+  const kind = gatewayKindOfDrag(id)
+  if (kind === null) return roster.nameOf(id)
+  return kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive
+}
+
 function isChipGreyed(agent: Agent): boolean {
   return flowAgents.value.includes(agent) || (agentDrag.value?.dragging === true && agentDrag.value.agent === agent)
 }
@@ -365,24 +493,22 @@ function onKeydown(event: KeyboardEvent): void {
     }
     return
   }
-  if (event.key !== 'Escape' || (selection.value === null && groupSelection.value.length === 0)) return
+  if (event.key !== 'Escape' || (selection.value === null && groupSelection.value.length === 0 && !editingEnd.value)) return
   event.preventDefault()
   clearSelection()
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => {
+  if (hintTimer !== null) clearTimeout(hintTimer)
   window.removeEventListener('keydown', onKeydown)
   stopAgentDrag()
 })
 </script>
 
 <template>
-  <section
-    class="relative grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-5"
-    :class="panelOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(320px,400px)]' : 'lg:grid-cols-[minmax(0,1fr)]'"
-  >
-    <BatchProgressList class="lg:col-span-2" />
+  <section class="relative grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] gap-5">
+    <BatchProgressList />
     <div class="row-start-2 flex min-h-0 min-w-0 flex-col gap-4">
       <section class="flex flex-col gap-2">
         <h3 class="text-label font-medium text-muted">{{ VIEW_COPY.agentsTitle }}</h3>
@@ -417,10 +543,25 @@ onUnmounted(() => {
               <span class="text-control font-semibold text-ink">{{ agent.name }}</span>
             </button>
           </li>
+          <li v-for="kind in GATEWAY_KIND_VALUES" :key="kind">
+            <button
+              type="button"
+              class="flex cursor-grab touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
+              :aria-label="kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive"
+              @pointerdown="startGatewayDrag(kind, $event)"
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-ink" aria-hidden="true">
+                <path :d="GATEWAY_CHIP_ICON" />
+                <path v-if="kind === 'paralelo'" d="M12 8v8M8 12h8" stroke-linecap="round" />
+                <path v-else d="M9 9l6 6M15 9l-6 6" stroke-linecap="round" />
+              </svg>
+              <span class="text-control font-semibold text-ink">
+                {{ kind === 'paralelo' ? VIEW_COPY.gatewayKindParallel : VIEW_COPY.gatewayKindExclusive }}
+              </span>
+            </button>
+          </li>
         </ul>
       </section>
-
-      <AgentActivityPanel :agents="flowAgents" />
 
       <div
         v-if="groupSelection.length >= 1"
@@ -459,14 +600,7 @@ onUnmounted(() => {
           {{ saving ? VIEW_COPY.savingFlow : VIEW_COPY.saveFlow }}
         </UiButton>
         <span v-if="dirty" class="text-small text-muted">{{ VIEW_COPY.unsaved }}</span>
-        <UiButton variant="quiet" size="sm" :aria-expanded="addingGateway" @press="addingGateway = !addingGateway">
-          {{ VIEW_COPY.addGateway }}
-        </UiButton>
-        <template v-if="addingGateway">
-          <UiButton v-for="kind in GATEWAY_KIND_VALUES" :key="kind" variant="quiet" size="sm" @press="createGateway(kind)">
-            {{ kind === 'paralelo' ? VIEW_COPY.gatewayKindParallel : VIEW_COPY.gatewayKindExclusive }}
-          </UiButton>
-        </template>
+        <span v-if="hint" class="text-small text-danger" role="status">{{ hint }}</span>
         <div v-if="shownProblems.length > 0" class="relative">
           <UiButton variant="quiet" size="sm" :aria-expanded="problemsOpen" @press="problemsOpen = !problemsOpen">
             <span class="text-danger">{{ problemCountLabel(shownProblems.length) }}</span>
@@ -495,14 +629,16 @@ onUnmounted(() => {
         :group-selected="groupSelection"
         :selected-line="selectedLineKey"
         :config-of="configOf"
-        :problem-ids="problemIds"
+        :problems="problemMessages"
         @select="onFlowSelect"
         @move-nodes="moveAgents"
         @move-endpoint="moveEndpoint"
         @marquee="onMarquee"
         @clear-selection="clearSelection"
         @link="onLink"
-        @select-line="selectLine"
+        @link-communication="onLinkCommunication"
+        @select-line="openLine"
+        @select-endpoint="onSelectEndpoint"
         @bend="setCurve"
         @set-kind="setEdgeKind"
         @unlink="removeEdge"
@@ -512,12 +648,30 @@ onUnmounted(() => {
       />
     </div>
 
-    <aside
-      v-if="panelOpen"
-      class="absolute inset-x-0 bottom-0 z-20 max-h-[60%] min-w-0 overflow-y-auto lg:relative lg:inset-auto lg:z-auto lg:col-start-2 lg:row-start-2 lg:max-h-full"
-    >
+    <PanelOverlay v-if="lineEditors.length > 0" @close="clearSelection()">
+      <FlowLinePanel
+        :title="VIEW_COPY.lineTitle"
+        :lines="lineEditors"
+        :pair-limit="pairLimit"
+        @close="clearSelection()"
+        @update="setMeta"
+        @set-kind="setLineKind"
+        @remove="removeLineByKey"
+      />
+    </PanelOverlay>
+    <PanelOverlay v-else-if="editingEnd" @close="clearSelection()">
+      <FlowLinePanel
+        :title="VIEW_COPY.endTitle"
+        :lines="endEditors"
+        :pair-limit="pairLimit"
+        @close="clearSelection()"
+        @update="setMeta"
+        @set-kind="setLineKind"
+        @remove="removeLineByKey"
+      />
+    </PanelOverlay>
+    <PanelOverlay v-else-if="selectedNode" @close="clearSelection()">
       <FlowNodePanel
-        v-if="selectedNode"
         :key="selectedNode"
         :agent="selectedNode"
         :is-leader="completed.startAgent === selectedNode"
@@ -527,8 +681,9 @@ onUnmounted(() => {
         @set-leader="makeSelectedLeader"
         @remove="removeFromFlow(selectedNode)"
       />
+    </PanelOverlay>
+    <PanelOverlay v-else-if="selectedGateway" @close="clearSelection()">
       <FlowGatewayPanel
-        v-else-if="selectedGateway"
         :key="selectedGateway.id"
         :kind="selectedGateway.kind"
         :exits="gatewayExits"
@@ -538,8 +693,9 @@ onUnmounted(() => {
         @set-default="setDefaultExit(selectedGateway.id, $event)"
         @remove="removeSelectedGateway"
       />
+    </PanelOverlay>
+    <PanelOverlay v-else-if="selectedAgent && snapshot" @close="clearSelection()">
       <AgentPanel
-        v-else-if="selectedAgent && snapshot"
         :key="selectedAgent.id"
         :agent="selectedAgent"
         :placement="placementOf(selectedAgent.id)"
@@ -547,15 +703,18 @@ onUnmounted(() => {
         :layers="layers"
         @close="clearSelection()"
       />
-    </aside>
+    </PanelOverlay>
 
     <div
       v-if="agentDrag?.dragging"
       class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5"
       :style="{ left: `${agentDrag.x + GHOST_OFFSET_PX}px`, top: `${agentDrag.y + GHOST_OFFSET_PX}px` }"
     >
-      <AgentPortrait :who="agentDrag.agent" :size="GHOST_PORTRAIT_SIZE" />
-      <span class="text-control font-semibold text-ink">{{ roster.nameOf(agentDrag.agent) }}</span>
+      <svg v-if="gatewayKindOfDrag(agentDrag.agent)" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path :d="GATEWAY_CHIP_ICON" />
+      </svg>
+      <AgentPortrait v-else :who="agentDrag.agent" :size="GHOST_PORTRAIT_SIZE" />
+      <span class="text-control font-semibold text-ink">{{ dragLabel(agentDrag.agent) }}</span>
     </div>
   </section>
 </template>

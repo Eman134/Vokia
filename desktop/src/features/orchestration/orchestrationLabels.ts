@@ -1,4 +1,4 @@
-import { WHEN_EVENT_VALUES, type WhenEvent } from './orchestrationTypes'
+import { WHEN_EVENT_VALUES, type EdgeAction, type WhenEvent } from './orchestrationTypes'
 
 export const EVENT_LABELS: Record<WhenEvent, string> = {
   plano_aprovado: 'Plano aprovado',
@@ -7,6 +7,13 @@ export const EVENT_LABELS: Record<WhenEvent, string> = {
   testes_falharam: 'Testes falharam',
   revisao_aprovou: 'Revisão aprovou',
   pedido_de_ajuda: 'Pedido de ajuda',
+}
+
+export const EDGE_ACTION_LABELS: Record<EdgeAction, string> = {
+  delegar: 'Delegar',
+  devolver: 'Devolver',
+  escalar: 'Chamar o usuário',
+  consultar: 'Consultar',
 }
 
 export const EVENT_OPTIONS = WHEN_EVENT_VALUES.map((value) => ({ value, label: EVENT_LABELS[value] }))
@@ -29,7 +36,16 @@ export const VIEW_COPY = {
   communicates: 'comunica',
   gatewayParallel: 'Gateway paralelo',
   gatewayExclusive: 'Gateway exclusivo',
-  addGateway: '+ gateway',
+  lineTitle: 'Ligação',
+  endTitle: 'Como chega ao fim',
+  endNoLines: 'Nenhum agente chega ao fim ainda. Arraste uma ligação até o fim.',
+  lineTypeLabel: 'Tipo de linha',
+  lineAction: 'Ação',
+  turnLimit: 'Limite de turnos',
+  turnLimitDefault: (limit: number): string => `Padrão (${limit})`,
+  lineInstruction: 'Instrução',
+  lineInstructionHint: 'Como o agente deve agir neste caminho.',
+  communicationHint: 'Comunicação só entre agentes da mesma linha.',
   gatewayType: 'Tipo de gateway',
   gatewayKindParallel: 'Paralelo',
   gatewayKindExclusive: 'Exclusivo',

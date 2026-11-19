@@ -39,6 +39,8 @@ export interface FlowEdgeMeta {
   turnLimit: number | null
   // Saída padrão de um gateway exclusivo: a que vale quando nenhum evento declarado bate.
   isDefault: boolean
+  // Instrução da ligação: como o agente deve agir naquele caminho (vai no prompt dele).
+  instructions: string
 }
 
 export interface DraftGateway {
@@ -46,10 +48,10 @@ export interface DraftGateway {
   kind: GatewayKind
 }
 
-export const START_META: FlowEdgeMeta = { whenEvent: 'plano_aprovado', action: 'delegar', requestKind: 'planejar', turnLimit: null, isDefault: false }
-export const AGENT_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'delegar', requestKind: 'implementar', turnLimit: null, isDefault: false }
-export const END_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'escalar', requestKind: 'revisar', turnLimit: null, isDefault: false }
-export const COMMUNICATION_META: FlowEdgeMeta = { whenEvent: 'pedido_de_ajuda', action: 'consultar', requestKind: 'pesquisar', turnLimit: null, isDefault: false }
+export const START_META: FlowEdgeMeta = { whenEvent: 'plano_aprovado', action: 'delegar', requestKind: 'planejar', turnLimit: null, isDefault: false, instructions: '' }
+export const AGENT_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'delegar', requestKind: 'implementar', turnLimit: null, isDefault: false, instructions: '' }
+export const END_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'escalar', requestKind: 'revisar', turnLimit: null, isDefault: false, instructions: '' }
+export const COMMUNICATION_META: FlowEdgeMeta = { whenEvent: 'pedido_de_ajuda', action: 'consultar', requestKind: 'pesquisar', turnLimit: null, isDefault: false, instructions: '' }
 
 const GATEWAY_ID_PREFIX = 'gw-'
 const GATEWAY_ID_LENGTH = 8

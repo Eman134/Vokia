@@ -225,7 +225,6 @@ fn map_rules_text(
     }
 }
 
-// Ligação sem agente no destino (gateway, por exemplo) ou com evento/tipo fora da tabela não gera frase.
 // Ligação que entra num gateway: o agente delega a qualquer destino das saídas e o app escolhe o caminho.
 fn gateway_sentence(
     team: &Team,
@@ -265,7 +264,23 @@ fn gateway_sentence(
     ))
 }
 
+// A instrução da ligação acompanha a frase dela: é como o agente deve agir naquele caminho.
 fn edge_sentence(snapshot: &OrchestrationSnapshot, team: &Team, edge: &FlowEdge) -> Option<String> {
+    let sentence = edge_rule_sentence(snapshot, team, edge)?;
+    let instructions = edge.instructions.trim();
+    if instructions.is_empty() {
+        Some(sentence)
+    } else {
+        Some(format!("{sentence} Instrução: {instructions}"))
+    }
+}
+
+// Ligação sem agente no destino (gateway, por exemplo) ou com evento/tipo fora da tabela não gera frase.
+fn edge_rule_sentence(
+    snapshot: &OrchestrationSnapshot,
+    team: &Team,
+    edge: &FlowEdge,
+) -> Option<String> {
     let event = phrase(EVENT_PHRASES, &edge.when_event)?;
     if edge.action == ACTION_ESCALATE {
         return Some(format!(

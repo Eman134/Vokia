@@ -43,6 +43,7 @@ import {
 import type { DraftGateway, FlowNodeConfig } from './useFlowDraft'
 
 const ARROWHEAD_ID = 'flow-arrowhead'
+const ARROWHEAD_INK_ID = 'flow-arrowhead-ink'
 const SHADOW_ID = 'flow-soft-shadow'
 const DOT_BACKGROUND_CLASSES =
   'pointer-events-none absolute inset-0 bg-[radial-gradient(var(--color-dot)_1.2px,transparent_1.2px)] bg-[length:18px_18px] [mask-image:radial-gradient(ellipse_at_center,black_55%,transparent_100%)]'
@@ -50,7 +51,7 @@ const ARROW_WIDTH = 1.5
 const ARROW_SELECTED_WIDTH = 2.5
 const ARROW_HIT_WIDTH = 14
 const ASYNC_DASH = '6 4'
-const AUTOMATIC_DASH = '1.5 4'
+const ENDPOINT_ARROW_WIDTH = 2
 const COMMUNICATION_DASH = '2 3'
 const COMMUNICATION_LABEL_DY = -6
 const GATEWAY_ICON_ARM = 7
@@ -91,10 +92,10 @@ const EMPTY_TITLE_DY = 62
 const EMPTY_STEP_DYS = [86, 104] as const
 const EMPTY_STEPS = [VIEW_COPY.emptyFlowStepOne, VIEW_COPY.emptyFlowStepTwo] as const
 const LEGEND_SAMPLES = [
-  { label: VIEW_COPY.lineSync, dash: undefined },
-  { label: VIEW_COPY.lineAsync, dash: ASYNC_DASH },
-  { label: VIEW_COPY.lineAuto, dash: AUTOMATIC_DASH },
-  { label: VIEW_COPY.lineCommunication, dash: COMMUNICATION_DASH },
+  { label: VIEW_COPY.lineSync, dash: undefined, ink: false },
+  { label: VIEW_COPY.lineAsync, dash: ASYNC_DASH, ink: false },
+  { label: VIEW_COPY.lineAuto, dash: undefined, ink: true },
+  { label: VIEW_COPY.lineCommunication, dash: COMMUNICATION_DASH, ink: false },
 ] as const
 const MARQUEE_DASH = '4 3'
 const MARQUEE_OPACITY = 0.12
@@ -115,8 +116,8 @@ const props = defineProps<{
   groupSelected: readonly Agent[]
   selectedLine: string | null
   configOf: (agent: Agent) => FlowNodeConfig
-  // Início, fim e agentes com problema de validação: ficam no token de erro.
-  problemIds: ReadonlySet<string>
+  // Início, fim, agentes e gateways com problema de validação: ficam no token de erro e mostram a mensagem ao passar o mouse.
+  problems: ReadonlyMap<string, readonly string[]>
 }>()
 const emit = defineEmits<{
   select: [agent: Agent, additive: boolean]
@@ -127,6 +128,7 @@ const emit = defineEmits<{
   link: [from: Agent, to: Agent]
   linkCommunication: [from: Agent, to: Agent]
   selectLine: [key: string]
+  selectEndpoint: [which: 'start' | 'end']
   bend: [key: string, offset: number]
   setKind: [edge: FlowEdge, kind: LineKind]
   unlink: [edge: FlowEdge]
@@ -151,6 +153,8 @@ interface Line {
   dash: string | undefined
   arrow: boolean
   label: string | null
+  // Linha do início ou do fim: traço próprio (cheio, na cor do texto), diferente das ligações entre nós.
+  endpoint: boolean
 }
 type PointerAction =
   | { kind: 'node'; agent: Agent; offset: FlowPoint; moved: boolean; additive: boolean; clientX: number; clientY: number }
@@ -268,6 +272,7 @@ const lines = computed<Line[]>(() => {
     edge: FlowEdge | null,
     dash: string | undefined,
     communication = false,
+    endpoint = false,
   ) => {
     const arc = arcPath(from, to, props.curves.get(key))
     result.push({
@@ -280,6 +285,7 @@ const lines = computed<Line[]>(() => {
       dash,
       arrow: !communication,
       label: communication ? VIEW_COPY.communicates : null,
+      endpoint,
     })
   }
   for (const edge of props.links.manualEdges) {
@@ -294,13 +300,13 @@ const lines = computed<Line[]>(() => {
   const startPlacement = props.links.startAgent ? placementOf.value.get(props.links.startAgent) : undefined
   if (startPlacement) {
     const origin = { x: start.x, y: start.y + radius }
-    add(START_LINE_KEY, origin, borderPoint(startPlacement, origin), null, AUTOMATIC_DASH)
+    add(START_LINE_KEY, origin, borderPoint(startPlacement, origin), null, undefined, false, true)
   }
   for (const agent of props.links.endAgents) {
     const placement = nodeCenter(agent)
     if (!placement) continue
     const target = { x: end.x, y: end.y - radius }
-    add(endLineKey(agent), borderPoint(placement, target, halfOf(agent)), target, null, AUTOMATIC_DASH)
+    add(endLineKey(agent), borderPoint(placement, target, halfOf(agent)), target, null, undefined, false, true)
   }
   return result
 })
@@ -623,6 +629,10 @@ function onActionEnd(event: PointerEvent): void {
     emit('select', current.agent, current.additive)
     return
   }
+  if (current.kind === 'endpoint' && !current.moved) {
+    emit('selectEndpoint', current.which)
+    return
+  }
   if (current.kind === 'pan') return
   if (current.kind !== 'marquee') return
   const world = canvasPoint(event.clientX, event.clientY)
@@ -772,6 +782,17 @@ onUnmounted(() => {
         >
           <path d="M0 0 L10 5 L0 10 z" class="fill-accent" />
         </marker>
+        <marker
+          :id="ARROWHEAD_INK_ID"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path d="M0 0 L10 5 L0 10 z" class="fill-ink" />
+        </marker>
         <filter :id="SHADOW_ID" x="-30%" y="-30%" width="160%" height="170%">
           <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.16" />
         </filter>
@@ -795,12 +816,12 @@ onUnmounted(() => {
         @pointerenter="hoveredEndpoint = 'start'"
         @pointerleave="hoveredEndpoint = hoveredEndpoint === 'start' ? null : hoveredEndpoint"
       >
-        <title>{{ VIEW_COPY.flowStart }}</title>
+        <title>{{ [VIEW_COPY.flowStart, ...(problems.get(FLOW_START) ?? [])].join(' — ') }}</title>
         <circle
           :cx="layout.start.x"
           :cy="layout.start.y"
           :r="FLOW_GEOMETRY.endpointRadius"
-          :class="problemIds.has(FLOW_START) ? 'fill-danger' : 'fill-ink'"
+          :class="problems.has(FLOW_START) ? 'fill-danger' : 'fill-ink'"
           :filter="`url(#${SHADOW_ID})`"
         />
         <circle
@@ -838,16 +859,16 @@ onUnmounted(() => {
         @pointerenter="hoveredEndpoint = 'end'"
         @pointerleave="hoveredEndpoint = hoveredEndpoint === 'end' ? null : hoveredEndpoint"
       >
-        <title>{{ VIEW_COPY.flowEnd }}</title>
+        <title>{{ [VIEW_COPY.flowEnd, ...(problems.get(FLOW_END) ?? [])].join(' — ') }}</title>
         <circle
           :cx="layout.end.x"
           :cy="layout.end.y"
           :r="FLOW_GEOMETRY.endpointRadius"
-          :class="problemIds.has(FLOW_END) ? 'fill-danger/10 stroke-danger' : 'fill-surface stroke-ink'"
+          :class="problems.has(FLOW_END) ? 'fill-danger/10 stroke-danger' : 'fill-surface stroke-ink'"
           stroke-width="2"
           :filter="`url(#${SHADOW_ID})`"
         />
-        <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" :class="problemIds.has(FLOW_END) ? 'fill-danger' : 'fill-ink'" />
+        <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" :class="problems.has(FLOW_END) ? 'fill-danger' : 'fill-ink'" />
         <foreignObject
           :x="layout.end.x + FLOW_GEOMETRY.endpointRadius + EMBER_ICON_GAP"
           :y="layout.end.y - EMBER_ICON_SIZE / 2"
@@ -926,10 +947,10 @@ onUnmounted(() => {
         <path
           :d="line.d"
           fill="none"
-          :stroke-width="isLineSelected(line) ? ARROW_SELECTED_WIDTH : ARROW_WIDTH"
+          :stroke-width="isLineSelected(line) ? ARROW_SELECTED_WIDTH : line.endpoint ? ENDPOINT_ARROW_WIDTH : ARROW_WIDTH"
           :stroke-dasharray="line.dash"
-          :marker-end="line.arrow ? `url(#${ARROWHEAD_ID})` : undefined"
-          :class="isLineSelected(line) ? 'stroke-accent' : 'stroke-accent/60'"
+          :marker-end="line.arrow ? `url(#${line.endpoint ? ARROWHEAD_INK_ID : ARROWHEAD_ID})` : undefined"
+          :class="isLineSelected(line) ? 'stroke-accent' : line.endpoint ? 'stroke-ink' : 'stroke-accent/60'"
           pointer-events="none"
         />
         <text
@@ -1020,6 +1041,7 @@ onUnmounted(() => {
         @keydown.enter.prevent="emit('select', node.agent, false)"
         @keydown.space.prevent="emit('select', node.agent, false)"
       >
+        <title v-if="problems.has(node.agent)">{{ problems.get(node.agent)?.join(' — ') }}</title>
         <rect
           :x="nodeLeft(node.x)"
           :y="nodeTop(node.y)"
@@ -1027,7 +1049,7 @@ onUnmounted(() => {
           :height="FLOW_GEOMETRY.nodeHeight"
           :rx="NODE_RADIUS"
           :class="
-            problemIds.has(node.agent)
+            problems.has(node.agent)
               ? 'fill-danger/10 stroke-danger'
               : ['fill-surface', isHighlighted(node.agent) || isLeader(node.agent) ? 'stroke-accent' : 'stroke-line']
           "
@@ -1103,10 +1125,11 @@ onUnmounted(() => {
         @keydown.enter.prevent="emit('select', gateway.id, false)"
         @keydown.space.prevent="emit('select', gateway.id, false)"
       >
+        <title v-if="problems.has(gateway.id)">{{ problems.get(gateway.id)?.join(' — ') }}</title>
         <polygon
           :points="`${gateway.x},${gateway.y - GATEWAY_HALF.height} ${gateway.x + GATEWAY_HALF.width},${gateway.y} ${gateway.x},${gateway.y + GATEWAY_HALF.height} ${gateway.x - GATEWAY_HALF.width},${gateway.y}`"
           :class="
-            problemIds.has(gateway.id)
+            problems.has(gateway.id)
               ? 'fill-danger/10 stroke-danger'
               : ['fill-surface', isHighlighted(gateway.id) ? 'stroke-accent' : 'stroke-line']
           "
@@ -1150,8 +1173,8 @@ onUnmounted(() => {
           :x2="LEGEND_SAMPLE_WIDTH"
           :y2="LEGEND_SAMPLE_Y"
           :stroke-dasharray="sample.dash"
-          stroke-width="1.5"
-          class="stroke-accent"
+          :stroke-width="sample.ink ? ENDPOINT_ARROW_WIDTH : 1.5"
+          :class="sample.ink ? 'stroke-ink' : 'stroke-accent'"
         />
       </svg>
       {{ sample.label }}

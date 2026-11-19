@@ -302,7 +302,7 @@ fn insert_migrated_edge(
         INSERT_EDGE_SQL,
         rusqlite::params![
             team_id, from_node, to_node, "fluxo", "sincrona", when_event, false, action, kind,
-            turn_limit, 0.0
+            turn_limit, 0.0, ""
         ],
     )?;
     Ok(())
@@ -438,6 +438,12 @@ fn migrate_flow(tx: &Transaction) -> rusqlite::Result<()> {
     ensure_column(tx, "backlog_items", "cycle_started_at", "INTEGER")?;
     rebuild_handoffs_with_flow(tx)?;
     tx.execute_batch(&with_flow_nodes(FLOW_SCHEMA))?;
+    ensure_column(
+        tx,
+        "orch_flow_edges",
+        "instructions",
+        "TEXT NOT NULL DEFAULT '' CHECK (length(instructions) <= 4000)",
+    )?;
     if migrated {
         return Ok(());
     }

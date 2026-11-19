@@ -7,6 +7,7 @@ import UiPageHeader from '../../ui/UiPageHeader.vue'
 import { flowSourceFrom } from '../orchestration/flowSync'
 import ModalPanel from '../orchestration/ModalPanel.vue'
 import OrchestrationView from '../orchestration/OrchestrationView.vue'
+import AgentActivityPanel from './AgentActivityPanel.vue'
 import TeamsList from '../orchestration/TeamsList.vue'
 import { VIEW_COPY } from '../orchestration/orchestrationLabels'
 import { peekFlowDraft } from '../orchestration/useFlowDraft'
@@ -20,6 +21,8 @@ const selectedTeamId = ref<string | null>(null)
 const selectedTeam = computed(
   () => orchestration.snapshot?.teams.find((team) => team.id === selectedTeamId.value) ?? null,
 )
+// Agentes posicionados em algum time: a atividade do mapa mostra todos eles.
+const placedAgents = computed(() => [...new Set((orchestration.snapshot?.placements ?? []).map((placement) => placement.agentId))])
 const confirmingLeave = ref(false)
 
 // Sair do time com o fluxo alterado e não salvo pede confirmação; descartar volta o desenho ao que está gravado.
@@ -52,7 +55,10 @@ function discardAndLeave(): void {
       </div>
       <OrchestrationView :key="selectedTeam.id" :team-id="selectedTeam.id" />
     </template>
-    <TeamsList v-else @open="selectedTeamId = $event" />
+    <template v-else>
+      <TeamsList @open="selectedTeamId = $event" />
+      <AgentActivityPanel :agents="placedAgents" />
+    </template>
     <ModalPanel v-if="confirmingLeave" :title="VIEW_COPY.discardTitle" @close="confirmingLeave = false">
       <div class="flex justify-end gap-2">
         <UiButton variant="quiet" size="lg" @press="confirmingLeave = false">{{ VIEW_COPY.discardKeep }}</UiButton>

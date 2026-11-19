@@ -25,7 +25,7 @@ const ACTION_CONSULT: &str = "consultar";
 const START_EDGE_EVENT: &str = "plano_aprovado";
 const START_EDGE_KIND: &str = "planejar";
 // Mesmas medidas da grade da tela (CANVAS_AREA e posição inicial de cada camada); a migração repete os números em SQL.
-const FLOW_CANVAS_SIZE: f64 = 640.0;
+const FLOW_CANVAS_SIZE: f64 = 1600.0;
 const FLOW_GRID_ORIGIN_Y: f64 = 120.0;
 const FLOW_GRID_ROW_STEP: f64 = 110.0;
 
@@ -74,8 +74,8 @@ const FINAL_VALIDATION_VALUES: &[&str] = &["manual", "automatica"];
 
 pub(super) const INSERT_EDGE_SQL: &str =
     "INSERT INTO orch_flow_edges (team_id, from_node, to_node, link, \
-    sync_mode, when_event, is_default, action, kind, turn_limit, curve, position) \
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, \
+    sync_mode, when_event, is_default, action, kind, turn_limit, curve, instructions, position) \
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, \
         (SELECT COALESCE(MAX(position) + 1, 0) FROM orch_flow_edges WHERE team_id = ?1))";
 
 struct Bounds {
@@ -204,6 +204,8 @@ pub struct FlowEdge {
     pub kind: String,
     pub turn_limit: Option<i64>,
     pub curve: f64,
+    // Instrução da ligação (como o agente chega até aqui); vai no prompt de quem envia por ela.
+    pub instructions: String,
     pub position: i64,
 }
 
@@ -313,6 +315,8 @@ pub struct FlowEdgeDraft {
     pub turn_limit: Option<i64>,
     #[serde(default)]
     pub curve: f64,
+    #[serde(default)]
+    pub instructions: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -373,7 +377,7 @@ const PLACEMENT_COLUMNS: &str = "agent_id, team_id, layer_id, instructions, max_
     pos_x, pos_y, criteria, max_worktrees";
 const EDGE_COLUMNS: &str =
     "id, team_id, from_node, to_node, link, sync_mode, when_event, is_default, \
-    action, kind, turn_limit, curve, position";
+    action, kind, turn_limit, curve, position, instructions";
 const HANDOFF_COLUMNS: &str = "id, run_id, from_agent, to_agent, from_layer, to_layer, action, \
     kind, item_id, return_count, message_id, created_at, event, edge_id";
 
@@ -455,6 +459,7 @@ fn edge_from_row(row: &Row<'_>) -> rusqlite::Result<FlowEdge> {
         turn_limit: row.get(10)?,
         curve: row.get(11)?,
         position: row.get(12)?,
+        instructions: row.get(13)?,
     })
 }
 
@@ -691,6 +696,7 @@ fn check_flow_shape(draft: &TeamFlowDraft) -> Result<(), DbError> {
         if let Some(turn_limit) = edge.turn_limit {
             check_bounds(&TURN_LIMIT, turn_limit)?;
         }
+        check_instructions(&edge.instructions)?;
         let consults = edge.action == ACTION_CONSULT;
         let shape_ok = edge.from_node != edge.to_node
             && edge.to_node != FLOW_START
@@ -1035,7 +1041,8 @@ impl Db {
                     edge.action,
                     edge.kind,
                     edge.turn_limit,
-                    edge.curve
+                    edge.curve,
+                    edge.instructions
                 ],
             )?;
         }

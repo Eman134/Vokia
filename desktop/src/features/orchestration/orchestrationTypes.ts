@@ -104,6 +104,7 @@ export interface OrchFlowEdge {
   kind: RequestKind
   turnLimit: number | null
   curve: number
+  instructions: string
   position: number
 }
 
@@ -168,6 +169,7 @@ export interface FlowEdgeDraft {
   kind: RequestKind
   turnLimit: number | null
   curve: number
+  instructions: string
 }
 
 export interface FlowPoint {
