@@ -10,6 +10,8 @@ export type LineKind = 'sync' | 'async'
 
 export interface FlowEdge extends FlowLink {
   kind: LineKind
+  // Ligação de comunicação: consulta sem direção entre agentes da mesma linha; não é etapa do fluxo.
+  communication?: boolean
 }
 
 export interface FlowPoint {
@@ -54,6 +56,9 @@ export interface CompletedFlow {
 
 export const PORT_SIDES = ['top', 'right', 'bottom', 'left'] as const
 export type PortSide = (typeof PORT_SIDES)[number]
+
+// Lado do losango do gateway, em unidades do desenho.
+export const GATEWAY_SIZE = 40
 
 export const FLOW_GEOMETRY = {
   nodeWidth: 168,
@@ -113,6 +118,22 @@ export function clampNode(point: FlowPoint): FlowPoint {
     x: clamp(point.x, halfWidth + margin, CANVAS_AREA - halfWidth - margin),
     y: clamp(point.y, MIN_NODE_Y, MAX_NODE_Y),
   }
+}
+
+// Primeiro lugar livre (varrendo a área da esquerda para a direita, de cima para baixo) que não toca nenhum nó.
+export function freeSpot(taken: readonly FlowPoint[]): FlowPoint {
+  const stepX = FLOW_GEOMETRY.nodeWidth / 2 + GATEWAY_SIZE
+  const stepY = FLOW_GEOMETRY.nodeHeight / 2 + GATEWAY_SIZE
+  for (let y = MIN_NODE_Y; y <= MAX_NODE_Y; y += stepY) {
+    for (let x = FLOW_GEOMETRY.margin + FLOW_GEOMETRY.nodeWidth / 2; x <= CANVAS_AREA - FLOW_GEOMETRY.margin; x += stepX) {
+      const point = clampNode({ x, y })
+      const clear = taken.every(
+        (other) => Math.abs(other.x - point.x) >= stepX || Math.abs(other.y - point.y) >= stepY,
+      )
+      if (clear) return point
+    }
+  }
+  return clampNode({ x: CANVAS_AREA / 2, y: MIN_NODE_Y })
 }
 
 export function clampEndpoint(point: FlowPoint): FlowPoint {
@@ -244,9 +265,17 @@ export function zoomAt(view: FlowView, factor: number, anchor: FlowPoint, aspect
   return clampView({ zoom, x: anchor.x - fx * newHeight * aspect, y: anchor.y - fy * newHeight }, aspect)
 }
 
-export function portAt(center: FlowPoint, side: PortSide): FlowPoint {
-  const halfWidth = FLOW_GEOMETRY.nodeWidth / 2
-  const halfHeight = FLOW_GEOMETRY.nodeHeight / 2
+export interface HalfSize {
+  width: number
+  height: number
+}
+
+export const AGENT_HALF: HalfSize = { width: FLOW_GEOMETRY.nodeWidth / 2, height: FLOW_GEOMETRY.nodeHeight / 2 }
+export const GATEWAY_HALF: HalfSize = { width: GATEWAY_SIZE / 2, height: GATEWAY_SIZE / 2 }
+
+export function portAt(center: FlowPoint, side: PortSide, half: HalfSize = AGENT_HALF): FlowPoint {
+  const halfWidth = half.width
+  const halfHeight = half.height
   const offsets: Record<PortSide, FlowPoint> = {
     top: { x: 0, y: -halfHeight },
     right: { x: halfWidth, y: 0 },
@@ -257,9 +286,9 @@ export function portAt(center: FlowPoint, side: PortSide): FlowPoint {
 }
 
 // Ponto na borda do retângulo do nó, na direção de outro ponto: a seta não entra no texto.
-export function borderPoint(center: FlowPoint, toward: FlowPoint): FlowPoint {
-  const halfWidth = FLOW_GEOMETRY.nodeWidth / 2
-  const halfHeight = FLOW_GEOMETRY.nodeHeight / 2
+export function borderPoint(center: FlowPoint, toward: FlowPoint, half: HalfSize = AGENT_HALF): FlowPoint {
+  const halfWidth = half.width
+  const halfHeight = half.height
   const dx = toward.x - center.x
   const dy = toward.y - center.y
   const scaleX = dx === 0 ? Infinity : halfWidth / Math.abs(dx)

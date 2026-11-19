@@ -8,8 +8,10 @@ import { useRoster } from '../team/useRoster'
 import { VIEW_COPY } from './orchestrationLabels'
 import { FLOW_END, FLOW_START } from './orchestrationTypes'
 import {
+  AGENT_HALF,
   CANVAS_AREA,
   FLOW_GEOMETRY,
+  GATEWAY_HALF,
   PORT_SIDES,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -34,10 +36,11 @@ import {
   type FlowEndpoints,
   type FlowPoint,
   type FlowView,
+  type HalfSize,
   type LineKind,
   type PortSide,
 } from './flowGraph'
-import type { FlowNodeConfig } from './useFlowDraft'
+import type { DraftGateway, FlowNodeConfig } from './useFlowDraft'
 
 const ARROWHEAD_ID = 'flow-arrowhead'
 const SHADOW_ID = 'flow-soft-shadow'
@@ -48,6 +51,9 @@ const ARROW_SELECTED_WIDTH = 2.5
 const ARROW_HIT_WIDTH = 14
 const ASYNC_DASH = '6 4'
 const AUTOMATIC_DASH = '1.5 4'
+const COMMUNICATION_DASH = '2 3'
+const COMMUNICATION_LABEL_DY = -6
+const GATEWAY_ICON_ARM = 7
 const LEGEND_SAMPLE_WIDTH = 28
 const LEGEND_SAMPLE_Y = 4
 const LEADER_STROKE_WIDTH = 2
@@ -88,6 +94,7 @@ const LEGEND_SAMPLES = [
   { label: VIEW_COPY.lineSync, dash: undefined },
   { label: VIEW_COPY.lineAsync, dash: ASYNC_DASH },
   { label: VIEW_COPY.lineAuto, dash: AUTOMATIC_DASH },
+  { label: VIEW_COPY.lineCommunication, dash: COMMUNICATION_DASH },
 ] as const
 const MARQUEE_DASH = '4 3'
 const MARQUEE_OPACITY = 0.12
@@ -99,6 +106,7 @@ const TWO_FINGERS = 2
 
 const props = defineProps<{
   agents: Agent[]
+  gateways: readonly DraftGateway[]
   positions: ReadonlyMap<Agent, FlowPoint>
   endpoints: FlowEndpoints
   links: CompletedFlow
@@ -117,6 +125,7 @@ const emit = defineEmits<{
   marquee: [agents: Agent[]]
   clearSelection: []
   link: [from: Agent, to: Agent]
+  linkCommunication: [from: Agent, to: Agent]
   selectLine: [key: string]
   bend: [key: string, offset: number]
   setKind: [edge: FlowEdge, kind: LineKind]
@@ -128,6 +137,7 @@ const emit = defineEmits<{
 
 interface LinkDrag {
   from: string
+  communication: boolean
   start: FlowPoint
   pointer: FlowPoint
 }
@@ -139,6 +149,8 @@ interface Line {
   end: FlowPoint
   edge: FlowEdge | null
   dash: string | undefined
+  arrow: boolean
+  label: string | null
 }
 type PointerAction =
   | { kind: 'node'; agent: Agent; offset: FlowPoint; moved: boolean; additive: boolean; clientX: number; clientY: number }
@@ -212,6 +224,28 @@ const viewBox = computed(() => `${view.value.x} ${view.value.y} ${viewWidth.valu
 const layout = computed(() => canvasLayout(props.agents, props.positions, props.endpoints))
 const emptyBox = computed(() => layout.value.emptyBox)
 const placementOf = computed(() => new Map(layout.value.nodes.map((node) => [node.agent, node])))
+const gatewayNodes = computed(() =>
+  props.gateways.map((gateway) => ({ ...gateway, ...(props.positions.get(gateway.id) ?? { x: CANVAS_AREA / 2, y: CANVAS_AREA / 2 }) })),
+)
+const gatewayById = computed(() => new Map(gatewayNodes.value.map((gateway) => [gateway.id, gateway])))
+
+// Centro e meia medida de qualquer nó do desenho: agente (cartão) ou gateway (losango).
+function nodeCenter(id: string): FlowPoint | undefined {
+  return placementOf.value.get(id) ?? gatewayById.value.get(id)
+}
+
+function halfOf(id: string): HalfSize {
+  return gatewayById.value.has(id) ? GATEWAY_HALF : AGENT_HALF
+}
+
+function nodeAt(point: FlowPoint): string | null {
+  const agent = agentAt(layout.value.nodes, point)
+  if (agent !== null) return agent
+  const hit = gatewayNodes.value.find(
+    (gateway) => Math.abs(point.x - gateway.x) <= GATEWAY_HALF.width && Math.abs(point.y - gateway.y) <= GATEWAY_HALF.height,
+  )
+  return hit?.id ?? null
+}
 const linkPreviewPath = computed(() => (linkDrag.value ? linePath(linkDrag.value.start, linkDrag.value.pointer) : ''))
 const marqueeBox = computed(() => {
   const rect = marqueeRect.value
@@ -227,15 +261,33 @@ const marqueeBox = computed(() => {
 // Todas as linhas do desenho: entre agentes (tipo e remoção) e as do início e do fim (só remoção).
 const lines = computed<Line[]>(() => {
   const result: Line[] = []
-  const add = (key: string, from: FlowPoint, to: FlowPoint, edge: FlowEdge | null, dash: string | undefined) => {
+  const add = (
+    key: string,
+    from: FlowPoint,
+    to: FlowPoint,
+    edge: FlowEdge | null,
+    dash: string | undefined,
+    communication = false,
+  ) => {
     const arc = arcPath(from, to, props.curves.get(key))
-    result.push({ key, d: arc.d, middle: arc.middle, start: from, end: to, edge, dash })
+    result.push({
+      key,
+      d: arc.d,
+      middle: arc.middle,
+      start: from,
+      end: to,
+      edge,
+      dash,
+      arrow: !communication,
+      label: communication ? VIEW_COPY.communicates : null,
+    })
   }
   for (const edge of props.links.manualEdges) {
-    const source = placementOf.value.get(edge.from)
-    const target = placementOf.value.get(edge.to)
+    const source = nodeCenter(edge.from)
+    const target = nodeCenter(edge.to)
     if (!source || !target) continue
-    add(lineKey(edge), borderPoint(source, target), borderPoint(target, source), edge, edge.kind === 'async' ? ASYNC_DASH : undefined)
+    const dash = edge.communication ? COMMUNICATION_DASH : edge.kind === 'async' ? ASYNC_DASH : undefined
+    add(lineKey(edge), borderPoint(source, target, halfOf(edge.from)), borderPoint(target, source, halfOf(edge.to)), edge, dash, edge.communication === true)
   }
   const { start, end } = layout.value
   const radius = FLOW_GEOMETRY.endpointRadius
@@ -245,10 +297,10 @@ const lines = computed<Line[]>(() => {
     add(START_LINE_KEY, origin, borderPoint(startPlacement, origin), null, AUTOMATIC_DASH)
   }
   for (const agent of props.links.endAgents) {
-    const placement = placementOf.value.get(agent)
+    const placement = nodeCenter(agent)
     if (!placement) continue
     const target = { x: end.x, y: end.y - radius }
-    add(endLineKey(agent), borderPoint(placement, target), target, null, AUTOMATIC_DASH)
+    add(endLineKey(agent), borderPoint(placement, target, halfOf(agent)), target, null, AUTOMATIC_DASH)
   }
   return result
 })
@@ -325,18 +377,21 @@ function canvasPoint(clientX: number, clientY: number): FlowPoint | null {
   return { x: local.x, y: local.y }
 }
 
-function beginLinkDrag(from: string, start: FlowPoint, event: PointerEvent): void {
+function beginLinkDrag(from: string, start: FlowPoint, event: PointerEvent, communication = false): void {
   event.preventDefault()
   event.stopPropagation()
-  linkDrag.value = { from, start, pointer: start }
+  linkDrag.value = { from, communication, start, pointer: start }
   window.addEventListener('pointermove', onLinkMove)
   window.addEventListener('pointerup', onLinkEnd)
   window.addEventListener('pointercancel', stopLink)
 }
 
+// Alt pressionado num conector lateral de agente começa uma ligação de comunicação.
 function startLink(from: Agent, side: PortSide, event: PointerEvent): void {
-  const origin = placementOf.value.get(from)
-  if (origin) beginLinkDrag(from, portAt(origin, side), event)
+  const origin = nodeCenter(from)
+  if (!origin) return
+  const communication = event.altKey && !gatewayById.value.has(from) && (side === 'left' || side === 'right')
+  beginLinkDrag(from, portAt(origin, side, halfOf(from)), event, communication)
 }
 
 // A ligação do início sai de uma bolinha abaixo dele e termina num agente.
@@ -360,9 +415,13 @@ function onLinkEnd(event: PointerEvent): void {
   const point = canvasPoint(event.clientX, event.clientY)
   stopLink()
   if (!current || !point) return
-  const target = agentAt(layout.value.nodes, point)
+  const target = nodeAt(point)
   if (current.from === FLOW_START) {
     if (target !== null) emit('linkStart', target)
+    return
+  }
+  if (current.communication) {
+    if (target !== null) emit('linkCommunication', current.from, target)
     return
   }
   if (target !== null) emit('link', current.from, target)
@@ -869,10 +928,19 @@ onUnmounted(() => {
           fill="none"
           :stroke-width="isLineSelected(line) ? ARROW_SELECTED_WIDTH : ARROW_WIDTH"
           :stroke-dasharray="line.dash"
-          :marker-end="`url(#${ARROWHEAD_ID})`"
+          :marker-end="line.arrow ? `url(#${ARROWHEAD_ID})` : undefined"
           :class="isLineSelected(line) ? 'stroke-accent' : 'stroke-accent/60'"
           pointer-events="none"
         />
+        <text
+          v-if="line.label"
+          :x="line.middle.x"
+          :y="line.middle.y + COMMUNICATION_LABEL_DY"
+          text-anchor="middle"
+          class="fill-muted text-tiny pointer-events-none"
+        >
+          {{ line.label }}
+        </text>
         <circle
           v-if="isLineSelected(line)"
           :cx="line.middle.x"
@@ -1019,6 +1087,55 @@ onUnmounted(() => {
             :stroke-width="PORT_STROKE_WIDTH"
             class="cursor-crosshair fill-surface stroke-accent"
             @pointerdown="startLink(node.agent, side, $event)"
+          />
+        </template>
+      </g>
+      <g
+        v-for="gateway in gatewayNodes"
+        :key="gateway.id"
+        role="button"
+        tabindex="0"
+        :aria-label="gateway.kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive"
+        class="cursor-grab outline-none focus-visible:opacity-80"
+        @pointerdown="startNodeDrag(gateway.id, $event)"
+        @pointerenter="enterAgent(gateway.id)"
+        @pointerleave="leaveAgent(gateway.id)"
+        @keydown.enter.prevent="emit('select', gateway.id, false)"
+        @keydown.space.prevent="emit('select', gateway.id, false)"
+      >
+        <polygon
+          :points="`${gateway.x},${gateway.y - GATEWAY_HALF.height} ${gateway.x + GATEWAY_HALF.width},${gateway.y} ${gateway.x},${gateway.y + GATEWAY_HALF.height} ${gateway.x - GATEWAY_HALF.width},${gateway.y}`"
+          :class="
+            problemIds.has(gateway.id)
+              ? 'fill-danger/10 stroke-danger'
+              : ['fill-surface', isHighlighted(gateway.id) ? 'stroke-accent' : 'stroke-line']
+          "
+          stroke-width="1.5"
+          stroke-linejoin="round"
+          :filter="`url(#${SHADOW_ID})`"
+        />
+        <path
+          :d="
+            gateway.kind === 'paralelo'
+              ? `M ${gateway.x - GATEWAY_ICON_ARM} ${gateway.y} H ${gateway.x + GATEWAY_ICON_ARM} M ${gateway.x} ${gateway.y - GATEWAY_ICON_ARM} V ${gateway.y + GATEWAY_ICON_ARM}`
+              : `M ${gateway.x - GATEWAY_ICON_ARM + 1} ${gateway.y - GATEWAY_ICON_ARM + 1} L ${gateway.x + GATEWAY_ICON_ARM - 1} ${gateway.y + GATEWAY_ICON_ARM - 1} M ${gateway.x + GATEWAY_ICON_ARM - 1} ${gateway.y - GATEWAY_ICON_ARM + 1} L ${gateway.x - GATEWAY_ICON_ARM + 1} ${gateway.y + GATEWAY_ICON_ARM - 1}`
+          "
+          fill="none"
+          class="stroke-ink"
+          stroke-width="2"
+          stroke-linecap="round"
+          pointer-events="none"
+        />
+        <template v-if="showPorts(gateway.id)">
+          <circle
+            v-for="side in PORT_SIDES"
+            :key="side"
+            :cx="portAt(gateway, side, GATEWAY_HALF).x"
+            :cy="portAt(gateway, side, GATEWAY_HALF).y"
+            :r="PORT_RADIUS"
+            :stroke-width="PORT_STROKE_WIDTH"
+            class="cursor-crosshair fill-surface stroke-accent"
+            @pointerdown="startLink(gateway.id, side, $event)"
           />
         </template>
       </g>

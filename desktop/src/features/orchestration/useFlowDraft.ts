@@ -7,6 +7,7 @@ import {
   completeFlow,
   endLineKey,
   FLOW_GEOMETRY,
+  lineKey,
   START_LINE_KEY,
   type FlowEdge,
   type FlowEndpoints,
@@ -14,12 +15,13 @@ import {
   type LineKind,
 } from './flowGraph'
 import { DEFAULT_INSTANCES, DEFAULT_WORKTREES } from './orchestrationForm'
-import type {
-  EdgeAction,
-  FlowEdgeDraft,
-  FlowGatewayDraft,
-  RequestKind,
-  WhenEvent,
+import {
+  WHEN_EVENT_VALUES,
+  type EdgeAction,
+  type FlowEdgeDraft,
+  type GatewayKind,
+  type RequestKind,
+  type WhenEvent,
 } from './orchestrationTypes'
 
 export interface FlowNodeConfig {
@@ -35,7 +37,22 @@ export interface FlowEdgeMeta {
   action: EdgeAction
   requestKind: RequestKind
   turnLimit: number | null
+  // Saída padrão de um gateway exclusivo: a que vale quando nenhum evento declarado bate.
+  isDefault: boolean
 }
+
+export interface DraftGateway {
+  id: string
+  kind: GatewayKind
+}
+
+export const START_META: FlowEdgeMeta = { whenEvent: 'plano_aprovado', action: 'delegar', requestKind: 'planejar', turnLimit: null, isDefault: false }
+export const AGENT_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'delegar', requestKind: 'implementar', turnLimit: null, isDefault: false }
+export const END_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'escalar', requestKind: 'revisar', turnLimit: null, isDefault: false }
+export const COMMUNICATION_META: FlowEdgeMeta = { whenEvent: 'pedido_de_ajuda', action: 'consultar', requestKind: 'pesquisar', turnLimit: null, isDefault: false }
+
+const GATEWAY_ID_PREFIX = 'gw-'
+const GATEWAY_ID_LENGTH = 8
 
 // Estado do fluxo como o backend o guarda; o que o canvas ainda não desenha (gateways e ligações de comunicação)
 // passa intacto e é regravado no salvar.
@@ -49,7 +66,7 @@ export interface FlowSource {
   endpoints: FlowEndpoints
   curves: Map<string, number>
   metas: Map<string, FlowEdgeMeta>
-  extraGateways: FlowGatewayDraft[]
+  gateways: DraftGateway[]
   extraEdges: FlowEdgeDraft[]
 }
 
@@ -75,7 +92,7 @@ function createFlowDraft() {
   const curves = reactive(new Map<string, number>())
   const endAgents = ref<Agent[]>([])
   const metas = reactive(new Map<string, FlowEdgeMeta>())
-  const extraGateways = ref<FlowGatewayDraft[]>([])
+  const gateways = ref<DraftGateway[]>([])
   const extraEdges = ref<FlowEdgeDraft[]>([])
   const loaded = ref(false)
   const baseline = ref('')
@@ -83,7 +100,9 @@ function createFlowDraft() {
   const leader = computed(() =>
     leaderChoice.value !== null && agents.value.includes(leaderChoice.value) ? leaderChoice.value : null,
   )
-  const completed = computed(() => completeFlow(agents.value, edges.value, leader.value, endAgents.value))
+  const gatewayKindOf = (id: string): GatewayKind | undefined => gateways.value.find((gateway) => gateway.id === id)?.kind
+  const nodeIds = computed(() => [...agents.value, ...gateways.value.map((gateway) => gateway.id)])
+  const completed = computed(() => completeFlow(nodeIds.value, edges.value, leader.value, endAgents.value))
 
   // Texto estável do estado inteiro: o rascunho está sujo quando difere do que foi carregado ou salvo.
   function serialize(): string {
@@ -98,7 +117,7 @@ function createFlowDraft() {
       endpoints: { start: endpoints.start, end: endpoints.end },
       curves: entries(curves),
       metas: entries(metas),
-      extraGateways: extraGateways.value,
+      gateways: gateways.value,
       extraEdges: extraEdges.value,
     })
   }
@@ -120,7 +139,7 @@ function createFlowDraft() {
       ;(target as Map<string, unknown>).clear()
       for (const [key, value] of from as Map<string, unknown>) (target as Map<string, unknown>).set(key, value)
     }
-    extraGateways.value = [...source.extraGateways]
+    gateways.value = [...source.gateways]
     extraEdges.value = [...source.extraEdges]
     loaded.value = true
     baseline.value = serialize()
@@ -151,12 +170,59 @@ function createFlowDraft() {
   }
 
   // Toda linha nova nasce síncrona; o usuário troca o tipo na própria linha selecionada.
-  function link(from: Agent, to: Agent, kind: LineKind = 'sync'): void {
+  function link(from: string, to: string, kind: LineKind = 'sync', communication = false): void {
     if (!canLink(edges.value, from, to)) return
-    edges.value = [...edges.value, { from, to, kind }]
+    const edge: FlowEdge = communication ? { from, to, kind: 'sync', communication: true } : { from, to, kind }
+    edges.value = [...edges.value, edge]
+    metas.set(lineKey(edge), communication ? { ...COMMUNICATION_META } : newMeta(from, AGENT_META))
   }
 
-  function setKind(from: Agent, to: Agent, kind: LineKind): void {
+  // Saída nova de gateway exclusivo: evento ainda não usado pelas outras saídas, e a primeira vira a padrão.
+  function newMeta(from: string, base: FlowEdgeMeta): FlowEdgeMeta {
+    if (gatewayKindOf(from) !== 'exclusivo') return { ...base }
+    const exits = [...edges.value.filter((edge) => edge.from === from), ...endAgents.value.filter((node) => node === from)]
+    const used = new Set(
+      [...metas.entries()].filter(([key]) => key.startsWith(`${from}>`) || key === endLineKey(from)).map(([, meta]) => meta.whenEvent),
+    )
+    const free = WHEN_EVENT_VALUES.find((event) => !used.has(event)) ?? base.whenEvent
+    return { ...base, whenEvent: free, isDefault: exits.length <= 1 }
+  }
+
+  function setMeta(key: string, patch: Partial<FlowEdgeMeta>): void {
+    const current = metas.get(key)
+    if (!current) return
+    metas.set(key, { ...current, ...patch })
+  }
+
+  // Marcar uma saída como padrão desmarca as outras do mesmo gateway.
+  function setDefaultExit(gatewayId: string, key: string): void {
+    for (const [other, meta] of metas.entries()) {
+      const exits = other.startsWith(`${gatewayId}>`) || other === endLineKey(gatewayId)
+      if (exits) metas.set(other, { ...meta, isDefault: other === key })
+    }
+  }
+
+  function addGateway(kind: GatewayKind, point: FlowPoint): string {
+    const id = `${GATEWAY_ID_PREFIX}${crypto.randomUUID().replaceAll('-', '').slice(0, GATEWAY_ID_LENGTH)}`
+    gateways.value = [...gateways.value, { id, kind }]
+    positions.set(id, clampNode(point))
+    return id
+  }
+
+  function setGatewayKind(id: string, kind: GatewayKind): void {
+    gateways.value = gateways.value.map((gateway) => (gateway.id === id ? { ...gateway, kind } : gateway))
+  }
+
+  function removeGateway(id: string): void {
+    gateways.value = gateways.value.filter((gateway) => gateway.id !== id)
+    edges.value = edges.value.filter((edge) => edge.from !== id && edge.to !== id)
+    endAgents.value = endAgents.value.filter((node) => node !== id)
+    positions.delete(id)
+    for (const key of [...metas.keys()]) if (key.includes(id)) metas.delete(key)
+    for (const key of [...curves.keys()]) if (key.includes(id)) curves.delete(key)
+  }
+
+  function setKind(from: string, to: string, kind: LineKind): void {
     edges.value = edges.value.map((edge) => (edge.from === from && edge.to === to ? { ...edge, kind } : edge))
   }
 
@@ -177,8 +243,10 @@ function createFlowDraft() {
     }
   }
 
-  function unlink(from: Agent, to: Agent): void {
+  function unlink(from: string, to: string): void {
     edges.value = edges.value.filter((edge) => edge.from !== from || edge.to !== to)
+    metas.delete(lineKey({ from, to }))
+    curves.delete(lineKey({ from, to }))
   }
 
   // Início e fim: ligar põe a linha; remover a linha deixa o ponto solto (e a validação o marca).
@@ -191,8 +259,10 @@ function createFlowDraft() {
     metas.delete(START_LINE_KEY)
   }
 
-  function linkEnd(agent: Agent): void {
-    if (agents.value.includes(agent) && !endAgents.value.includes(agent)) endAgents.value = [...endAgents.value, agent]
+  function linkEnd(node: string): void {
+    if (!nodeIds.value.includes(node) || endAgents.value.includes(node)) return
+    metas.set(endLineKey(node), newMeta(node, END_META))
+    endAgents.value = [...endAgents.value, node]
   }
 
   function unlinkEnd(agent: Agent): void {
@@ -256,12 +326,18 @@ function createFlowDraft() {
     curves,
     metas,
     endAgents,
-    extraGateways,
     extraEdges,
     dirty,
     loaded,
     load,
     markSaved,
+    gateways,
+    nodeIds,
+    addGateway,
+    setGatewayKind,
+    removeGateway,
+    setMeta,
+    setDefaultExit,
     link,
     setKind,
     unlink,

@@ -12,7 +12,11 @@ import {
   type TeamFlowDraft,
 } from './orchestrationTypes'
 import {
+  AGENT_META,
+  COMMUNICATION_META,
+  END_META,
   forgetFlowDraft,
+  START_META,
   useFlowDraft,
   type FlowDraft,
   type FlowEdgeMeta,
@@ -20,14 +24,11 @@ import {
   type FlowSource,
 } from './useFlowDraft'
 
-const START_META: FlowEdgeMeta = { whenEvent: 'plano_aprovado', action: 'delegar', requestKind: 'planejar', turnLimit: null }
-const AGENT_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'delegar', requestKind: 'implementar', turnLimit: null }
-const END_META: FlowEdgeMeta = { whenEvent: 'tarefa_concluida', action: 'escalar', requestKind: 'revisar', turnLimit: null }
 // Sem curva gravada, a linha usa a curva padrão do canvas.
 const NO_CURVE = 0
 
 function metaOf(edge: OrchFlowEdge): FlowEdgeMeta {
-  return { whenEvent: edge.whenEvent, action: edge.action, requestKind: edge.kind, turnLimit: edge.turnLimit }
+  return { whenEvent: edge.whenEvent, action: edge.action, requestKind: edge.kind, turnLimit: edge.turnLimit, isDefault: edge.isDefault }
 }
 
 function draftOf(edge: OrchFlowEdge): FlowEdgeDraft {
@@ -50,10 +51,17 @@ export function flowSourceFrom(snapshot: OrchestrationSnapshot, teamId: string):
   const team = snapshot.teams.find((candidate) => candidate.id === teamId)
   const placements = snapshot.placements.filter((placement) => placement.teamId === teamId)
   const agents = placements.map((placement) => placement.agentId)
-  const known = new Set<string>(agents)
+  const gatewayIds = snapshot.gateways.filter((gateway) => gateway.teamId === teamId).map((gateway) => gateway.id)
+  const known = new Set<string>([...agents, ...gatewayIds])
+  const isAgent = new Set<string>(agents)
   const source: FlowSource = {
     agents,
-    positions: new Map(placements.map((placement) => [placement.agentId, clampNode({ x: placement.posX, y: placement.posY })])),
+    positions: new Map([
+      ...placements.map((placement): [string, FlowPoint] => [placement.agentId, clampNode({ x: placement.posX, y: placement.posY })]),
+      ...snapshot.gateways
+        .filter((gateway) => gateway.teamId === teamId)
+        .map((gateway): [string, FlowPoint] => [gateway.id, clampNode({ x: gateway.posX, y: gateway.posY })]),
+    ]),
     edges: [],
     leader: null,
     endAgents: [],
@@ -74,9 +82,9 @@ export function flowSourceFrom(snapshot: OrchestrationSnapshot, teamId: string):
     },
     curves: new Map(),
     metas: new Map(),
-    extraGateways: snapshot.gateways
+    gateways: snapshot.gateways
       .filter((gateway) => gateway.teamId === teamId)
-      .map((gateway) => ({ id: gateway.id, kind: gateway.kind, posX: gateway.posX, posY: gateway.posY })),
+      .map((gateway) => ({ id: gateway.id, kind: gateway.kind })),
     extraEdges: [],
   }
   const remember = (key: string, edge: OrchFlowEdge): void => {
@@ -84,16 +92,21 @@ export function flowSourceFrom(snapshot: OrchestrationSnapshot, teamId: string):
     if (edge.curve !== NO_CURVE) source.curves.set(key, edge.curve)
   }
   for (const edge of snapshot.edges.filter((candidate) => candidate.teamId === teamId)) {
-    const fromAgent = known.has(edge.fromNode)
-    const toAgent = known.has(edge.toNode)
-    if (edge.link === 'fluxo' && edge.fromNode === FLOW_START && toAgent && source.leader === null) {
+    const fromNode = known.has(edge.fromNode)
+    const toNode = known.has(edge.toNode)
+    if (edge.link === 'fluxo' && edge.fromNode === FLOW_START && isAgent.has(edge.toNode) && source.leader === null) {
       source.leader = edge.toNode
       remember(START_LINE_KEY, edge)
-    } else if (edge.link === 'fluxo' && edge.toNode === FLOW_END && fromAgent) {
+    } else if (edge.link === 'fluxo' && edge.toNode === FLOW_END && fromNode) {
       source.endAgents.push(edge.fromNode)
       remember(endLineKey(edge.fromNode), edge)
-    } else if (edge.link === 'fluxo' && fromAgent && toAgent) {
-      const flowEdge: FlowEdge = { from: edge.fromNode, to: edge.toNode, kind: edge.syncMode === 'assincrona' ? 'async' : 'sync' }
+    } else if ((edge.link === 'fluxo' || isAgent.has(edge.fromNode)) && fromNode && toNode) {
+      const flowEdge: FlowEdge = {
+        from: edge.fromNode,
+        to: edge.toNode,
+        kind: edge.syncMode === 'assincrona' ? 'async' : 'sync',
+        ...(edge.link === 'comunicacao' ? { communication: true } : {}),
+      }
       source.edges.push(flowEdge)
       remember(lineKey(flowEdge), edge)
     } else {
@@ -103,14 +116,21 @@ export function flowSourceFrom(snapshot: OrchestrationSnapshot, teamId: string):
   return source
 }
 
-function edgeDraft(fromNode: string, toNode: string, meta: FlowEdgeMeta, syncMode: FlowEdgeDraft['syncMode'], curve: number): FlowEdgeDraft {
+function edgeDraft(
+  fromNode: string,
+  toNode: string,
+  meta: FlowEdgeMeta,
+  syncMode: FlowEdgeDraft['syncMode'],
+  curve: number,
+  link: FlowEdgeDraft['link'] = 'fluxo',
+): FlowEdgeDraft {
   return {
     fromNode,
     toNode,
-    link: 'fluxo',
+    link,
     syncMode,
     whenEvent: meta.whenEvent,
-    isDefault: false,
+    isDefault: meta.isDefault,
     action: meta.action,
     kind: meta.requestKind,
     turnLimit: meta.turnLimit,
@@ -128,7 +148,11 @@ export function flowEdgesOf(draft: FlowDraft): FlowEdgeDraft[] {
   }
   for (const edge of draft.edges.value) {
     const key = lineKey(edge)
-    edges.push(edgeDraft(edge.from, edge.to, draft.metas.get(key) ?? AGENT_META, edge.kind === 'async' ? 'assincrona' : 'sincrona', curveOf(key)))
+    const communication = edge.communication === true
+    const meta = draft.metas.get(key) ?? (communication ? COMMUNICATION_META : AGENT_META)
+    edges.push(
+      edgeDraft(edge.from, edge.to, meta, edge.kind === 'async' ? 'assincrona' : 'sincrona', curveOf(key), communication ? 'comunicacao' : 'fluxo'),
+    )
   }
   for (const agent of draft.completed.value.endAgents) {
     const key = endLineKey(agent)
@@ -140,7 +164,7 @@ export function flowEdgesOf(draft: FlowDraft): FlowEdgeDraft[] {
 export function validationInputOf(draft: FlowDraft): ValidationInput {
   return {
     nodes: draft.agents.value.map((agent) => ({ id: agent, y: draft.positions.get(agent)?.y ?? 0 })),
-    gateways: draft.extraGateways.value.map((gateway) => ({ id: gateway.id, kind: gateway.kind })),
+    gateways: draft.gateways.value.map((gateway) => ({ id: gateway.id, kind: gateway.kind })),
     edges: flowEdgesOf(draft).map((edge) => ({
       from: edge.fromNode,
       to: edge.toNode,
@@ -167,7 +191,10 @@ export function toTeamFlowDraft(draft: FlowDraft, snapshot: OrchestrationSnapsho
   }
   return {
     nodes,
-    gateways: [...draft.extraGateways.value],
+    gateways: draft.gateways.value.map((gateway) => {
+      const point = draft.positions.get(gateway.id)
+      return { id: gateway.id, kind: gateway.kind, posX: point?.x ?? 0, posY: point?.y ?? 0 }
+    }),
     edges: flowEdgesOf(draft),
     start: pointOf(draft.endpoints.start),
     end: pointOf(draft.endpoints.end),

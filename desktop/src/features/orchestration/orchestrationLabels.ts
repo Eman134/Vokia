@@ -1,3 +1,16 @@
+import { WHEN_EVENT_VALUES, type WhenEvent } from './orchestrationTypes'
+
+export const EVENT_LABELS: Record<WhenEvent, string> = {
+  plano_aprovado: 'Plano aprovado',
+  tarefa_concluida: 'Tarefa concluída',
+  revisao_reprovou: 'Revisão reprovou',
+  testes_falharam: 'Testes falharam',
+  revisao_aprovou: 'Revisão aprovou',
+  pedido_de_ajuda: 'Pedido de ajuda',
+}
+
+export const EVENT_OPTIONS = WHEN_EVENT_VALUES.map((value) => ({ value, label: EVENT_LABELS[value] }))
+
 export function layerName(layers: readonly { id: string; name: string }[], id: string): string {
   return layers.find((layer) => layer.id === id)?.name ?? id
 }
@@ -11,7 +24,20 @@ export const VIEW_COPY = {
   emptyFlowTitle: 'Monte o fluxo',
   emptyFlowStepOne: 'Arraste um agente da lista',
   emptyFlowStepTwo: 'Escolha o líder',
-  lineAuto: 'Automática',
+  lineAuto: 'Início e fim',
+  lineCommunication: 'Comunicação',
+  communicates: 'comunica',
+  gatewayParallel: 'Gateway paralelo',
+  gatewayExclusive: 'Gateway exclusivo',
+  addGateway: '+ gateway',
+  gatewayType: 'Tipo de gateway',
+  gatewayKindParallel: 'Paralelo',
+  gatewayKindExclusive: 'Exclusivo',
+  gatewayExits: 'Saídas',
+  gatewayNoExits: 'Ligue o gateway às saídas.',
+  exitEvent: 'Quando',
+  exitDefault: 'Saída padrão',
+  removeGateway: 'Remover gateway',
   lineLegend: 'Legenda das ligações',
   teamName: 'Nome do time',
   newTeam: 'Novo time',

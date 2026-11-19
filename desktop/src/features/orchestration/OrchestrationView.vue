@@ -10,14 +10,16 @@ import { useRoster } from '../team/useRoster'
 import AgentPanel from './AgentPanel.vue'
 import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
+import FlowGatewayPanel, { type GatewayExit } from './FlowGatewayPanel.vue'
 import FlowNodePanel from './FlowNodePanel.vue'
 import AgentActivityPanel from '../teammap/AgentActivityPanel.vue'
-import { endLineKey, lineKey, START_LINE_KEY, type FlowEdge, type LineKind } from './flowGraph'
+import { endLineKey, freeSpot, lineKey, START_LINE_KEY, type FlowEdge, type LineKind } from './flowGraph'
 import { configChanges, toTeamFlowDraft, validationInputOf } from './flowSync'
 import { problemCountLabel, validateFlow } from './flowValidation'
 import { VIEW_COPY } from './orchestrationLabels'
-import type { FlowProblem, OrchestrationSnapshot } from './orchestrationTypes'
+import { GATEWAY_KIND_VALUES, type FlowProblem, type GatewayKind, type OrchestrationSnapshot } from './orchestrationTypes'
 import { useFeed } from '../team/useFeed'
+import type { WhenEvent } from './orchestrationTypes'
 import { useFlowDraft, type AlignAxis, type AlignMode, type FlowNodeConfig } from './useFlowDraft'
 import { useOrchestration } from './useOrchestration'
 
@@ -34,7 +36,11 @@ const ALIGN_ACTIONS: readonly { mode: AlignMode; axis: AlignAxis; label: string;
   { mode: 'border', axis: 'horizontal', label: VIEW_COPY.alignBorderHorizontal, path: 'M2 4h20M6 8h4v10H6zM14 8h4v6h-4z' },
 ]
 
-type Selection = { kind: 'node'; id: Agent } | { kind: 'agent'; id: Agent } | { kind: 'line'; key: string }
+type Selection =
+  | { kind: 'node'; id: Agent }
+  | { kind: 'agent'; id: Agent }
+  | { kind: 'line'; key: string }
+  | { kind: 'gateway'; id: string }
 
 interface AgentDrag {
   agent: Agent
@@ -74,6 +80,13 @@ const {
   linkEnd,
   unlinkEnd,
   dirty,
+  gateways,
+  addGateway,
+  setGatewayKind,
+  removeGateway,
+  setMeta,
+  setDefaultExit,
+  metas,
 } = draft
 
 const feed = useFeed()
@@ -129,12 +142,34 @@ async function saveFlow(): Promise<void> {
 }
 
 const selectedNode = computed<Agent | null>(() => (selection.value?.kind === 'node' ? selection.value.id : null))
+const selectedGateway = computed(() => {
+  const current = selection.value
+  return current?.kind === 'gateway' ? (gateways.value.find((gateway) => gateway.id === current.id) ?? null) : null
+})
+// Saídas do gateway selecionado: as linhas que saem dele e, se ligado, o fim; cada uma com o evento e se é a padrão.
+const gatewayExits = computed<GatewayExit[]>(() => {
+  const gateway = selectedGateway.value
+  if (gateway === null) return []
+  const exits: GatewayExit[] = []
+  for (const edge of completed.value.manualEdges.filter((candidate) => candidate.from === gateway.id)) {
+    const meta = metas.get(lineKey(edge))
+    if (meta) exits.push({ key: lineKey(edge), label: roster.nameOf(edge.to), whenEvent: meta.whenEvent, isDefault: meta.isDefault })
+  }
+  const endMeta = metas.get(endLineKey(gateway.id))
+  if (completed.value.endAgents.includes(gateway.id) && endMeta) {
+    exits.push({ key: endLineKey(gateway.id), label: VIEW_COPY.flowEnd, whenEvent: endMeta.whenEvent, isDefault: endMeta.isDefault })
+  }
+  return exits
+})
+const addingGateway = ref(false)
 const selectedLineKey = computed<string | null>(() => (selection.value?.kind === 'line' ? selection.value.key : null))
 const selectedAgent = computed<AgentProfile | null>(() =>
   selection.value?.kind === 'agent' ? (roster.profileOf(selection.value.id) ?? null) : null,
 )
 // Painel só existe com algo selecionado; no celular ele se sobrepõe ao canvas em vez de empurrar a página.
-const panelOpen = computed(() => selectedNode.value !== null || (selectedAgent.value !== null && snapshot.value !== null))
+const panelOpen = computed(
+  () => selectedNode.value !== null || selectedGateway.value !== null || (selectedAgent.value !== null && snapshot.value !== null),
+)
 
 function placementOf(agentId: Agent) {
   return snapshot.value?.placements.find((placement) => placement.agentId === agentId)
@@ -187,6 +222,11 @@ function removeSelectedLine(): void {
 
 // Shift acrescenta ou tira o nó do grupo; sem Shift, o nó clicado vira a seleção única.
 function onFlowSelect(agent: Agent, additive: boolean): void {
+  if (gateways.value.some((gateway) => gateway.id === agent)) {
+    selection.value = { kind: 'gateway', id: agent }
+    groupSelection.value = []
+    return
+  }
   selection.value = { kind: 'node', id: agent }
   if (!additive) {
     groupSelection.value = [agent]
@@ -195,6 +235,26 @@ function onFlowSelect(agent: Agent, additive: boolean): void {
   groupSelection.value = groupSelection.value.includes(agent)
     ? groupSelection.value.filter((member) => member !== agent)
     : [...groupSelection.value, agent]
+}
+
+// Gateway novo nasce no primeiro lugar livre e já fica selecionado para configurar o tipo e as saídas.
+function createGateway(kind: GatewayKind): void {
+  addingGateway.value = false
+  const taken = [...positions.values()]
+  const id = addGateway(kind, freeSpot(taken))
+  selection.value = { kind: 'gateway', id }
+  groupSelection.value = []
+}
+
+function setExitEvent(key: string, event: WhenEvent): void {
+  setMeta(key, { whenEvent: event })
+}
+
+function removeSelectedGateway(): void {
+  const gateway = selectedGateway.value
+  if (gateway === null) return
+  removeGateway(gateway.id)
+  clearSelection()
 }
 
 function removeEdge(edge: FlowEdge): void {
@@ -293,7 +353,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Delete' || event.key === 'Backspace') {
     if (isTypingTarget(event.target)) return
-    if (selectedNode.value !== null) {
+    if (selectedGateway.value !== null) {
+      event.preventDefault()
+      removeSelectedGateway()
+    } else if (selectedNode.value !== null) {
       event.preventDefault()
       removeFromFlow(selectedNode.value)
     } else if (selectedLineKey.value !== null) {
@@ -396,6 +459,14 @@ onUnmounted(() => {
           {{ saving ? VIEW_COPY.savingFlow : VIEW_COPY.saveFlow }}
         </UiButton>
         <span v-if="dirty" class="text-small text-muted">{{ VIEW_COPY.unsaved }}</span>
+        <UiButton variant="quiet" size="sm" :aria-expanded="addingGateway" @press="addingGateway = !addingGateway">
+          {{ VIEW_COPY.addGateway }}
+        </UiButton>
+        <template v-if="addingGateway">
+          <UiButton v-for="kind in GATEWAY_KIND_VALUES" :key="kind" variant="quiet" size="sm" @press="createGateway(kind)">
+            {{ kind === 'paralelo' ? VIEW_COPY.gatewayKindParallel : VIEW_COPY.gatewayKindExclusive }}
+          </UiButton>
+        </template>
         <div v-if="shownProblems.length > 0" class="relative">
           <UiButton variant="quiet" size="sm" :aria-expanded="problemsOpen" @press="problemsOpen = !problemsOpen">
             <span class="text-danger">{{ problemCountLabel(shownProblems.length) }}</span>
@@ -415,6 +486,7 @@ onUnmounted(() => {
         ref="flowRef"
         class="min-h-0 flex-1"
         :agents="flowAgents"
+        :gateways="gateways"
         :positions="positions"
         :endpoints="endpoints"
         :links="completed"
@@ -454,6 +526,17 @@ onUnmounted(() => {
         @update="updateSelectedConfig"
         @set-leader="makeSelectedLeader"
         @remove="removeFromFlow(selectedNode)"
+      />
+      <FlowGatewayPanel
+        v-else-if="selectedGateway"
+        :key="selectedGateway.id"
+        :kind="selectedGateway.kind"
+        :exits="gatewayExits"
+        @close="clearSelection()"
+        @set-kind="setGatewayKind(selectedGateway.id, $event)"
+        @set-event="setExitEvent"
+        @set-default="setDefaultExit(selectedGateway.id, $event)"
+        @remove="removeSelectedGateway"
       />
       <AgentPanel
         v-else-if="selectedAgent && snapshot"
