@@ -1,5 +1,3 @@
-import { ARTIFACT_KIND_INFO } from '../artifacts/artefatosSample'
-
 interface ProjectIconInfo {
   label: string
   path: string
@@ -12,9 +10,9 @@ export const PROJECT_ICONS = {
   triangle: { label: 'Triângulo', path: 'M8 2.5l5.5 10h-11z' },
   square: { label: 'Quadrado', path: 'M3.5 3.5h9v9h-9z' },
   diamond: { label: 'Losango', path: 'M8 2l6 6-6 6-6-6z' },
-  document: { label: 'Documento', path: ARTIFACT_KIND_INFO.documento.iconPath },
-  diagram: { label: 'Diagrama', path: ARTIFACT_KIND_INFO.mermaid.iconPath },
-  whiteboard: { label: 'Whiteboard', path: ARTIFACT_KIND_INFO.whiteboard.iconPath },
+  document: { label: 'Documento', path: 'M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8h4.5M6 10.5h4.5' },
+  diagram: { label: 'Diagrama', path: 'M3 2.5h4v3H3zM9 10.5h4v3H9zM5 5.5v2.5h6v2.5' },
+  whiteboard: { label: 'Whiteboard', path: 'M2 2.5h5v4H2zM9.5 9.5a2.5 2.5 0 105 0 2.5 2.5 0 00-5 0zM2 13.5l3-4 3 4zM7 4.5h3.5v3' },
   star: { label: 'Estrela', path: 'M8 2.3L9.5 6.3L13.7 6.45L10.4 9.1L11.5 13.15L8 10.8L4.5 13.15L5.6 9.1L2.3 6.45L6.5 6.3Z' },
   heart: { label: 'Coração', path: 'M8 13.5C3 10 2.5 7.5 3.5 5.5C4.5 3.5 7.2 3.5 8 5.5C8.8 3.5 11.5 3.5 12.5 5.5C13.5 7.5 13 10 8 13.5Z' },
   bolt: { label: 'Raio', path: 'M9 2.5L4.5 9H8L7 13.5L11.5 7H8Z' },

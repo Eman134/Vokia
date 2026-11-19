@@ -210,6 +210,7 @@ watch(
               :column="column.name"
               :state="itemPlan.stateFor(item)"
               :plan-line="itemPlan.lineFor(item)"
+              :proposal="itemPlan.proposalFor(item)"
               @open="onOpenCard(item.id)"
               @action="onCardAction(item.id, $event)"
             />

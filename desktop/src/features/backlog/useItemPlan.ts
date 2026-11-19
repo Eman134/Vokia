@@ -10,7 +10,7 @@ import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './back
 import { DECISION_QUESTION_PREFIX, DEFAULT_COLUMN, READY_COLUMN, type BacklogItem, type BacklogState } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { useTriage } from './useTriage'
-import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal } from './planProposal'
+import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal, type ParsedProposal } from './planProposal'
 
 export type PlanTab = 'vincular' | 'pedir'
 export type PlanDepth = 'rapido' | 'completo'
@@ -302,6 +302,11 @@ export const useItemPlan = defineStore('itemPlan', () => {
     },
   )
 
+  function proposalFor(item: BacklogItem): ParsedProposal | undefined {
+    const proposal = states.value[item.id]?.proposal
+    return proposal ? parseProposal(proposal) : undefined
+  }
+
   return {
     states,
     plans,
@@ -310,6 +315,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     stateOf,
     stateFor,
     lineFor,
+    proposalFor,
     openDialog,
     closeDialog,
     takePreferredTab,

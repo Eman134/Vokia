@@ -6,7 +6,6 @@ import ArtefatosPage from '../features/artifacts/ArtefatosPage.vue'
 import ConfiguracoesPage from '../features/settings/ConfiguracoesPage.vue'
 import OnboardingPage from '../features/onboarding/OnboardingPage.vue'
 import MemoriaPage from '../features/memory/MemoriaPage.vue'
-import PlanosPage from '../features/plans/PlanosPage.vue'
 import ProjetosPage from '../features/projects/ProjetosPage.vue'
 import NovoProjetoPage from '../features/projects/NovoProjetoPage.vue'
 import BacklogPage from '../features/backlog/BacklogPage.vue'
@@ -21,7 +20,6 @@ export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
   config: [ConfiguracoesPage],
   onboarding: [OnboardingPage],
   memoria: [MemoriaPage],
-  plano: [PlanosPage],
   projetos: [ProjetosPage],
   'novo-projeto': [NovoProjetoPage],
   backlog: [BacklogPage],

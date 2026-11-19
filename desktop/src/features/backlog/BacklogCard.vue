@@ -17,6 +17,7 @@ import {
   STATE_CHIP,
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
+import type { ParsedProposal } from './planProposal'
 import { tagColor, tagLabel, tagTextColor } from './tags'
 import {
   DEFAULT_COLUMN,
@@ -30,13 +31,20 @@ import {
   type BacklogTag,
 } from './backlogTypes'
 
-const props = defineProps<{ item: BacklogItem; column: BacklogColumn; state: BacklogState; planLine?: string }>()
+const props = defineProps<{
+  item: BacklogItem
+  column: BacklogColumn
+  state: BacklogState
+  planLine?: string
+  proposal?: ParsedProposal
+}>()
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 
 const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
 const AVATAR_SIZE = 22
+const KEY_POINTS_LIMIT = 3
 const FEATURE_STACK_SHADOW =
   'shadow-[0_1px_2px_rgb(0_0_0/8%),4px_4px_0_-1px_var(--color-surface),4px_4px_0_0_var(--color-line),8px_8px_0_-1px_var(--color-surface),8px_8px_0_0_var(--color-line)]'
 
@@ -118,6 +126,13 @@ function tagPillStyle(tag: BacklogTag) {
       Erro ao ler este item: {{ item.error.reason }}
     </p>
     <p v-if="planLine" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
+    <div v-if="proposal" class="flex flex-col gap-1.5 rounded-control-lg bg-warn-soft px-2.5 py-2">
+      <p v-if="proposal.summary" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-ink">{{ proposal.summary }}</p>
+      <p class="text-meta text-muted">{{ proposal.lots.length }} etapas<template v-if="proposal.estimate"> · {{ proposal.estimate }}</template></p>
+      <ul v-if="proposal.lots.length" class="flex flex-col gap-0.5 pl-3.5 text-meta text-muted list-disc">
+        <li v-for="lot in proposal.lots.slice(0, KEY_POINTS_LIMIT)" :key="lot.n" class="truncate">{{ lot.title }}</li>
+      </ul>
+    </div>
 
     <div v-if="action" class="flex items-center gap-1">
       <UiButton variant="primary" size="sm" class="h-6.5 gap-1.5 rounded-control-sm pr-2.25 pl-1.75 text-small font-semibold" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
