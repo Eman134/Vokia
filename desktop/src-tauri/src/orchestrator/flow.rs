@@ -119,12 +119,18 @@ pub async fn answer_decision(
     id: u64,
     answer: &str,
 ) -> Result<(), FlowError> {
-    let decision = state
-        .decisions
-        .lock()
-        .map_err(|_| FlowError::DecisionsPoisoned)?
-        .remove(&id)
-        .ok_or(FlowError::UnknownDecision)?;
+    let decision = {
+        let mut decisions = state
+            .decisions
+            .lock()
+            .map_err(|_| FlowError::DecisionsPoisoned)?;
+        // Devolver sem motivo é recusado com a decisão ainda aberta: só some depois de aceita.
+        let pending = decisions.get(&id).ok_or(FlowError::UnknownDecision)?;
+        if pending.kind == DecisionKind::Validacao && returns_without_motive(answer) {
+            return Err(DbError::ReturnMotiveRequired.into());
+        }
+        decisions.remove(&id).ok_or(FlowError::UnknownDecision)?
+    };
     if decision.kind == DecisionKind::Validacao {
         return answer_validation(app, state, &decision, answer).await;
     }
@@ -140,6 +146,12 @@ pub async fn answer_decision(
     handle_request(app, state, &text, decision.agent, project_id, context)
         .await
         .map(|_| ())
+}
+
+fn returns_without_motive(answer: &str) -> bool {
+    answer
+        .strip_prefix(VALIDATION_RETURN)
+        .is_some_and(|rest| rest.trim_start_matches(':').trim().is_empty())
 }
 
 // Validação final: "Concluir" fecha o card sem falar com agente; "Devolver: <motivo>" volta a task ao líder.
