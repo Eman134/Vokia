@@ -5,9 +5,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { placeableAgents } from '../team/agents'
 import type { Agent } from '../team/events'
-import type { AgentProfile } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
-import AgentPanel from './AgentPanel.vue'
 import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
 import FlowGatewayPanel, { type GatewayExit } from './FlowGatewayPanel.vue'
@@ -43,7 +41,6 @@ const GATEWAY_CHIP_ICON = 'M12 3l8 9-8 9-8-9z'
 
 type Selection =
   | { kind: 'node'; id: Agent }
-  | { kind: 'agent'; id: Agent }
   | { kind: 'line'; key: string }
   | { kind: 'gateway'; id: string }
 
@@ -103,7 +100,6 @@ const agentDrag = ref<AgentDrag | null>(null)
 // O Ember é o orquestrador: fica no início e no fim do fluxo, não no elenco que se arrasta.
 const elencoAgents = computed(() => placeableAgents(roster.agents))
 const snapshot = computed<OrchestrationSnapshot | null>(() => orchestration.snapshot)
-const layers = computed(() => snapshot.value?.layers ?? [])
 
 // Validação local (mesmas regras V1 a V7 do backend): pinta início, fim e nós e trava o Salvar fluxo.
 const problems = computed(() => validateFlow(validationInputOf(draft), (id) => roster.nameOf(id)))
@@ -181,15 +177,8 @@ const editingEnd = ref(false)
 const GATEWAY_ACTIONS = ['delegar', 'devolver'] as const
 let hintTimer: ReturnType<typeof setTimeout> | null = null
 const selectedLineKey = computed<string | null>(() => (selection.value?.kind === 'line' ? selection.value.key : null))
-const selectedAgent = computed<AgentProfile | null>(() =>
-  selection.value?.kind === 'agent' ? (roster.profileOf(selection.value.id) ?? null) : null,
-)
 // Painel só existe com algo selecionado; no celular ele se sobrepõe ao canvas em vez de empurrar a página.
 
-
-function placementOf(agentId: Agent) {
-  return snapshot.value?.placements.find((placement) => placement.agentId === agentId)
-}
 
 function clearSelection(): void {
   selection.value = null
@@ -266,10 +255,6 @@ function removeLineByKey(key: string): void {
   const edge = completed.value.manualEdges.find((candidate) => lineKey(candidate) === key)
   if (edge) removeEdge(edge)
   else removeLine(key)
-}
-
-function selectAgent(id: Agent): void {
-  selection.value = { kind: 'agent', id }
 }
 
 function selectLine(key: string): void {
@@ -428,10 +413,7 @@ function onAgentDragEnd(event: PointerEvent): void {
   stopAgentDrag()
   if (!current) return
   const gatewayKind = gatewayKindOfDrag(current.agent)
-  if (!current.dragging) {
-    if (gatewayKind === null) selectAgent(current.agent)
-    return
-  }
+  if (!current.dragging) return
   const dropZone = document.elementFromPoint(event.clientX, event.clientY)?.closest(DROP_ZONE_SELECTOR)
   if (!dropZone) return
   const point = flowRef.value?.toCanvasPoint(event.clientX, event.clientY)
@@ -520,9 +502,7 @@ onUnmounted(() => {
               class="group flex touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
               :class="isChipGreyed(agent.id) ? 'cursor-default opacity-40' : 'cursor-grab'"
               :aria-label="agent.name"
-              :aria-pressed="selection?.kind === 'agent' && selection.id === agent.id"
               @pointerdown="startAgentDrag(agent.id, $event)"
-              @keydown.enter="selectAgent(agent.id)"
             >
               <svg
                 class="shrink-0 cursor-grab text-faint group-hover:text-ink"
@@ -546,10 +526,18 @@ onUnmounted(() => {
           <li v-for="kind in GATEWAY_KIND_VALUES" :key="kind">
             <button
               type="button"
-              class="flex cursor-grab touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
+              class="group flex cursor-grab touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
               :aria-label="kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive"
               @pointerdown="startGatewayDrag(kind, $event)"
             >
+              <svg class="shrink-0 text-faint group-hover:text-ink" width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+                <circle cx="2.5" cy="3" r="1.3" />
+                <circle cx="7.5" cy="3" r="1.3" />
+                <circle cx="2.5" cy="8" r="1.3" />
+                <circle cx="7.5" cy="8" r="1.3" />
+                <circle cx="2.5" cy="13" r="1.3" />
+                <circle cx="7.5" cy="13" r="1.3" />
+              </svg>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-ink" aria-hidden="true">
                 <path :d="GATEWAY_CHIP_ICON" />
                 <path v-if="kind === 'paralelo'" d="M12 8v8M8 12h8" stroke-linecap="round" />
@@ -692,16 +680,6 @@ onUnmounted(() => {
         @set-event="setExitEvent"
         @set-default="setDefaultExit(selectedGateway.id, $event)"
         @remove="removeSelectedGateway"
-      />
-    </PanelOverlay>
-    <PanelOverlay v-else-if="selectedAgent && snapshot" @close="clearSelection()">
-      <AgentPanel
-        :key="selectedAgent.id"
-        :agent="selectedAgent"
-        :placement="placementOf(selectedAgent.id)"
-        :teams="snapshot.teams"
-        :layers="layers"
-        @close="clearSelection()"
       />
     </PanelOverlay>
 
