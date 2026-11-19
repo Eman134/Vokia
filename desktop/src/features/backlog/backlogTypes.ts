@@ -116,6 +116,9 @@ export interface BacklogItem {
   origin: BacklogOrigin
   branch: string | null
   worktreePath: string | null
+  // Quem concluiu o card (a validação automática ou o usuário) e quantas devoluções automáticas ele já teve.
+  closedBy?: 'usuario' | 'automatico' | null
+  autoAttempts?: number
   isNew?: boolean
   column?: BacklogColumn
   priority?: string

@@ -14,6 +14,10 @@ import {
   OTHER_PLACEHOLDER,
   optionMessage,
   PERMISSION_ALLOW,
+  RETURN_MOTIVE_PLACEHOLDER,
+  VALIDATION_RETURN_LABEL,
+  VALIDATION_RETURN_MESSAGE,
+  VALIDATION_RETURN_PREFIX,
   type CardAction,
 } from './decisionCopy'
 import { useDecisions, type PanelCard } from './useDecisions'
@@ -23,6 +27,8 @@ const props = defineProps<{ card: PanelCard }>()
 const decisions = useDecisions()
 const selected = ref<string | null>(null)
 const otherText = ref('')
+const returning = ref(false)
+const returnMotive = ref('')
 
 const name = computed(() => agentName(props.card.agent))
 const actions = computed(() => actionsFor(props.card.kind, name.value))
@@ -39,6 +45,13 @@ function run(action: CardAction): void {
   } else if (props.card.decisionId !== null) {
     decisions.answer(props.card.decisionId, action.answer, message)
   }
+}
+
+// Devolver na validação final exige o motivo; o backend recebe "Devolver: <motivo>".
+function submitReturn(): void {
+  const motive = returnMotive.value.trim()
+  if (motive === '' || props.card.decisionId === null) return
+  decisions.answer(props.card.decisionId, `${VALIDATION_RETURN_PREFIX}${motive}`, VALIDATION_RETURN_MESSAGE(name.value))
 }
 
 function submitChoice(): void {
@@ -93,6 +106,15 @@ function submitChoice(): void {
         @press="run(action)"
       >
         {{ action.label }}
+      </UiButton>
+      <UiButton v-if="card.kind === 'validacao'" variant="quiet" size="sm" @press="returning = !returning">
+        {{ VALIDATION_RETURN_LABEL }}
+      </UiButton>
+    </div>
+    <div v-if="card.kind === 'validacao' && returning" class="mt-2 flex items-end gap-2">
+      <UiField v-model="returnMotive" class="min-w-0 flex-1" :label="RETURN_MOTIVE_PLACEHOLDER" />
+      <UiButton variant="danger" size="sm" :disabled="returnMotive.trim() === ''" @press="submitReturn">
+        {{ VALIDATION_RETURN_LABEL }}
       </UiButton>
     </div>
   </li>

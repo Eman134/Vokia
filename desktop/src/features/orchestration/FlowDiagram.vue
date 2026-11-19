@@ -6,6 +6,7 @@ import { DEFAULT_RECIPIENT } from '../team/agents'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { VIEW_COPY } from './orchestrationLabels'
+import { FLOW_END, FLOW_START } from './orchestrationTypes'
 import {
   CANVAS_AREA,
   FLOW_GEOMETRY,
@@ -20,10 +21,12 @@ import {
   canvasLayout,
   clampView,
   contentFitsView,
+  endLineKey,
   frameContent,
   lineKey,
   portAt,
   snapPoint,
+  START_LINE_KEY,
   visibleSize,
   zoomAt,
   type CompletedFlow,
@@ -104,6 +107,8 @@ const props = defineProps<{
   groupSelected: readonly Agent[]
   selectedLine: string | null
   configOf: (agent: Agent) => FlowNodeConfig
+  // Início, fim e agentes com problema de validação: ficam no token de erro.
+  problemIds: ReadonlySet<string>
 }>()
 const emit = defineEmits<{
   select: [agent: Agent, additive: boolean]
@@ -116,10 +121,13 @@ const emit = defineEmits<{
   bend: [key: string, offset: number]
   setKind: [edge: FlowEdge, kind: LineKind]
   unlink: [edge: FlowEdge]
+  removeLine: [key: string]
+  linkStart: [to: Agent]
+  linkEnd: [from: Agent]
 }>()
 
 interface LinkDrag {
-  from: Agent
+  from: string
   start: FlowPoint
   pointer: FlowPoint
 }
@@ -216,7 +224,7 @@ const marqueeBox = computed(() => {
   }
 })
 
-// Todas as linhas do desenho: manuais (tipo e remoção), automáticas (início, fim e ligações sem conexão).
+// Todas as linhas do desenho: entre agentes (tipo e remoção) e as do início e do fim (só remoção).
 const lines = computed<Line[]>(() => {
   const result: Line[] = []
   const add = (key: string, from: FlowPoint, to: FlowPoint, edge: FlowEdge | null, dash: string | undefined) => {
@@ -234,19 +242,13 @@ const lines = computed<Line[]>(() => {
   const startPlacement = props.links.startAgent ? placementOf.value.get(props.links.startAgent) : undefined
   if (startPlacement) {
     const origin = { x: start.x, y: start.y + radius }
-    add('inicio', origin, borderPoint(startPlacement, origin), null, AUTOMATIC_DASH)
-  }
-  for (const link of props.links.automaticEdges) {
-    const source = placementOf.value.get(link.from)
-    const target = placementOf.value.get(link.to)
-    if (!source || !target) continue
-    add(lineKey(link), borderPoint(source, target), borderPoint(target, source), null, AUTOMATIC_DASH)
+    add(START_LINE_KEY, origin, borderPoint(startPlacement, origin), null, AUTOMATIC_DASH)
   }
   for (const agent of props.links.endAgents) {
     const placement = placementOf.value.get(agent)
     if (!placement) continue
     const target = { x: end.x, y: end.y - radius }
-    add(`fim:${agent}`, borderPoint(placement, target), target, null, AUTOMATIC_DASH)
+    add(endLineKey(agent), borderPoint(placement, target), target, null, AUTOMATIC_DASH)
   }
   return result
 })
@@ -254,17 +256,17 @@ const lines = computed<Line[]>(() => {
 // Barra da linha selecionada: tipo (síncrona ou assíncrona) e remoção. Só para linhas manuais.
 const toolbar = computed(() => {
   const line = lines.value.find((candidate) => candidate.key === props.selectedLine)
-  if (!line?.edge) return null
+  if (!line) return null
   const edge = line.edge
-  const keys = ['sync', 'async', 'remove'] as const
+  const keys = edge ? (['sync', 'async', 'remove'] as const) : (['remove'] as const)
   const totalWidth = keys.reduce((sum, key) => sum + TOOLBAR_WIDTHS[key], 0) + TOOLBAR_GAP * (keys.length - 1)
   let x = line.middle.x - totalWidth / 2
   const buttons = keys.map((key) => {
-    const button = { key, x, width: TOOLBAR_WIDTHS[key], active: key !== 'remove' && edge.kind === key }
+    const button = { key, x, width: TOOLBAR_WIDTHS[key], active: key !== 'remove' && edge?.kind === key }
     x += TOOLBAR_WIDTHS[key] + TOOLBAR_GAP
     return button
   })
-  return { edge, y: line.middle.y + TOOLBAR_OFFSET, buttons }
+  return { key: line.key, edge, y: line.middle.y + TOOLBAR_OFFSET, buttons }
 })
 
 const TOOLBAR_LABELS = {
@@ -323,16 +325,29 @@ function canvasPoint(clientX: number, clientY: number): FlowPoint | null {
   return { x: local.x, y: local.y }
 }
 
-function startLink(from: Agent, side: PortSide, event: PointerEvent): void {
-  const origin = placementOf.value.get(from)
-  if (!origin) return
+function beginLinkDrag(from: string, start: FlowPoint, event: PointerEvent): void {
   event.preventDefault()
   event.stopPropagation()
-  const start = portAt(origin, side)
   linkDrag.value = { from, start, pointer: start }
   window.addEventListener('pointermove', onLinkMove)
   window.addEventListener('pointerup', onLinkEnd)
   window.addEventListener('pointercancel', stopLink)
+}
+
+function startLink(from: Agent, side: PortSide, event: PointerEvent): void {
+  const origin = placementOf.value.get(from)
+  if (origin) beginLinkDrag(from, portAt(origin, side), event)
+}
+
+// A ligação do início sai de uma bolinha abaixo dele e termina num agente.
+function startFromStart(event: PointerEvent): void {
+  const { start } = layout.value
+  beginLinkDrag(FLOW_START, { x: start.x, y: start.y + FLOW_GEOMETRY.endpointRadius + PORT_RADIUS }, event)
+}
+
+function overEnd(point: FlowPoint): boolean {
+  const { end } = layout.value
+  return Math.hypot(point.x - end.x, point.y - end.y) <= FLOW_GEOMETRY.endpointRadius + PORT_RADIUS
 }
 
 function onLinkMove(event: PointerEvent): void {
@@ -346,7 +361,12 @@ function onLinkEnd(event: PointerEvent): void {
   stopLink()
   if (!current || !point) return
   const target = agentAt(layout.value.nodes, point)
+  if (current.from === FLOW_START) {
+    if (target !== null) emit('linkStart', target)
+    return
+  }
   if (target !== null) emit('link', current.from, target)
+  else if (overEnd(point)) emit('linkEnd', current.from)
 }
 
 function stopLink(): void {
@@ -598,9 +618,13 @@ watch(layout, () => {
   if (action === null) keepContentInView()
 })
 
-function onToolbar(edge: FlowEdge, key: 'sync' | 'async' | 'remove'): void {
-  if (key === 'remove') emit('unlink', edge)
-  else emit('setKind', edge, key)
+function onToolbar(toolbarState: { key: string; edge: FlowEdge | null }, key: 'sync' | 'async' | 'remove'): void {
+  if (key === 'remove') {
+    if (toolbarState.edge) emit('unlink', toolbarState.edge)
+    else emit('removeLine', toolbarState.key)
+    return
+  }
+  if (toolbarState.edge) emit('setKind', toolbarState.edge, key)
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -713,7 +737,22 @@ onUnmounted(() => {
         @pointerleave="hoveredEndpoint = hoveredEndpoint === 'start' ? null : hoveredEndpoint"
       >
         <title>{{ VIEW_COPY.flowStart }}</title>
-        <circle :cx="layout.start.x" :cy="layout.start.y" :r="FLOW_GEOMETRY.endpointRadius" class="fill-ink" :filter="`url(#${SHADOW_ID})`" />
+        <circle
+          :cx="layout.start.x"
+          :cy="layout.start.y"
+          :r="FLOW_GEOMETRY.endpointRadius"
+          :class="problemIds.has(FLOW_START) ? 'fill-danger' : 'fill-ink'"
+          :filter="`url(#${SHADOW_ID})`"
+        />
+        <circle
+          v-if="hoveredEndpoint === 'start' || linkDrag?.from === FLOW_START"
+          :cx="layout.start.x"
+          :cy="layout.start.y + FLOW_GEOMETRY.endpointRadius + PORT_RADIUS"
+          :r="PORT_RADIUS"
+          :stroke-width="PORT_STROKE_WIDTH"
+          class="cursor-crosshair fill-surface stroke-accent"
+          @pointerdown="startFromStart($event)"
+        />
         <foreignObject
           :x="layout.start.x + FLOW_GEOMETRY.endpointRadius + EMBER_ICON_GAP"
           :y="layout.start.y - EMBER_ICON_SIZE / 2"
@@ -745,11 +784,11 @@ onUnmounted(() => {
           :cx="layout.end.x"
           :cy="layout.end.y"
           :r="FLOW_GEOMETRY.endpointRadius"
-          class="fill-surface stroke-ink"
+          :class="problemIds.has(FLOW_END) ? 'fill-danger/10 stroke-danger' : 'fill-surface stroke-ink'"
           stroke-width="2"
           :filter="`url(#${SHADOW_ID})`"
         />
-        <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" class="fill-ink" />
+        <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" :class="problemIds.has(FLOW_END) ? 'fill-danger' : 'fill-ink'" />
         <foreignObject
           :x="layout.end.x + FLOW_GEOMETRY.endpointRadius + EMBER_ICON_GAP"
           :y="layout.end.y - EMBER_ICON_SIZE / 2"
@@ -853,9 +892,9 @@ onUnmounted(() => {
           tabindex="0"
           :aria-label="TOOLBAR_LABELS[button.key]"
           class="cursor-pointer outline-none focus-visible:opacity-80"
-          @click="onToolbar(toolbar.edge, button.key)"
-          @keydown.enter.prevent="onToolbar(toolbar.edge, button.key)"
-          @keydown.space.prevent="onToolbar(toolbar.edge, button.key)"
+          @click="onToolbar(toolbar, button.key)"
+          @keydown.enter.prevent="onToolbar(toolbar, button.key)"
+          @keydown.space.prevent="onToolbar(toolbar, button.key)"
         >
           <rect
             :x="button.x"
@@ -919,8 +958,11 @@ onUnmounted(() => {
           :width="FLOW_GEOMETRY.nodeWidth"
           :height="FLOW_GEOMETRY.nodeHeight"
           :rx="NODE_RADIUS"
-          class="fill-surface"
-          :class="isHighlighted(node.agent) || isLeader(node.agent) ? 'stroke-accent' : 'stroke-line'"
+          :class="
+            problemIds.has(node.agent)
+              ? 'fill-danger/10 stroke-danger'
+              : ['fill-surface', isHighlighted(node.agent) || isLeader(node.agent) ? 'stroke-accent' : 'stroke-line']
+          "
           :stroke-width="isLeader(node.agent) ? LEADER_STROKE_WIDTH : 1.5"
           :filter="`url(#${SHADOW_ID})`"
         />

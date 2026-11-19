@@ -27,8 +27,14 @@ export const KIND_LABELS: Record<CardKind, string> = {
   escolha: 'Escolha',
   pergunta: 'Pergunta',
   revisao: 'Revisão',
+  validacao: 'Validação',
   permissao: 'Permissão',
 }
+
+export const VALIDATION_RETURN_LABEL = 'Devolver'
+export const VALIDATION_RETURN_PREFIX = 'Devolver: '
+export const RETURN_MOTIVE_PLACEHOLDER = 'Motivo da devolução'
+export const VALIDATION_RETURN_MESSAGE = (agent: string): string => `Devolvido a ${agent}`
 
 export type ActionVariant = 'approve' | 'danger' | 'quiet'
 
@@ -63,6 +69,14 @@ const ALWAYS_ACTION: CardAction = {
   variant: 'quiet',
   answer: 'Aprovado, e vale sempre neste projeto',
   message: (_agent, subject) => `${subject} liberado sempre neste projeto`,
+}
+
+const CONCLUDE_ACTION: CardAction = {
+  id: 'conclude',
+  label: 'Concluir',
+  variant: 'approve',
+  answer: 'Concluir',
+  message: () => 'Task concluída',
 }
 
 const PERMISSION_ACTIONS: readonly CardAction[] = [
@@ -101,6 +115,8 @@ export function actionsFor(kind: CardKind, agent: string): CardAction[] {
       ]
     case 'permissao':
       return [...PERMISSION_ACTIONS]
+    case 'validacao':
+      return [CONCLUDE_ACTION]
     case 'escolha':
     case 'pergunta':
       return []

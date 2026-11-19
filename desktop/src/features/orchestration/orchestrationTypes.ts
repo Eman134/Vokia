@@ -28,11 +28,23 @@ export const WHEN_EVENT_VALUES = [
 ] as const
 export type WhenEvent = (typeof WHEN_EVENT_VALUES)[number]
 
-export const ORCH_ACTION_VALUES = ['delegar', 'devolver', 'escalar'] as const
-export type OrchAction = (typeof ORCH_ACTION_VALUES)[number]
+export const FLOW_START = '__inicio'
+export const FLOW_END = '__fim'
 
-export const EXEC_MODE_VALUES = ['sequencia', 'paralelo'] as const
-export type ExecMode = (typeof EXEC_MODE_VALUES)[number]
+export const FINAL_VALIDATION_VALUES = ['manual', 'automatica'] as const
+export type FinalValidation = (typeof FINAL_VALIDATION_VALUES)[number]
+
+export const GATEWAY_KIND_VALUES = ['paralelo', 'exclusivo'] as const
+export type GatewayKind = (typeof GATEWAY_KIND_VALUES)[number]
+
+export const LINK_VALUES = ['fluxo', 'comunicacao'] as const
+export type FlowLink = (typeof LINK_VALUES)[number]
+
+export const SYNC_MODE_VALUES = ['sincrona', 'assincrona'] as const
+export type SyncMode = (typeof SYNC_MODE_VALUES)[number]
+
+export const EDGE_ACTION_VALUES = ['delegar', 'devolver', 'escalar', 'consultar'] as const
+export type EdgeAction = (typeof EDGE_ACTION_VALUES)[number]
 
 export interface OrchestrationSettings {
   enforcement: Enforcement
@@ -59,6 +71,12 @@ export interface OrchTeam {
   name: string
   position: number
   leaderAgent: Agent | null
+  instructions: string
+  finalValidation: FinalValidation
+  startX: number | null
+  startY: number | null
+  endX: number | null
+  endY: number | null
 }
 
 export interface OrchPlacement {
@@ -67,18 +85,34 @@ export interface OrchPlacement {
   layerId: string
   instructions: string
   maxInstances: number
+  posX: number
+  posY: number
+  criteria: string
+  maxWorktrees: number | null
 }
 
-export interface OrchRule {
+export interface OrchFlowEdge {
   id: number
-  fromLayer: string
-  toLayer: string
+  teamId: string
+  fromNode: string
+  toNode: string
+  link: FlowLink
+  syncMode: SyncMode
   whenEvent: WhenEvent
-  action: OrchAction
+  isDefault: boolean
+  action: EdgeAction
   kind: RequestKind
-  execMode: ExecMode
-  returnLimit: number
+  turnLimit: number | null
+  curve: number
   position: number
+}
+
+export interface OrchFlowGateway {
+  id: string
+  teamId: string
+  kind: GatewayKind
+  posX: number
+  posY: number
 }
 
 export interface OrchestrationSnapshot {
@@ -86,12 +120,14 @@ export interface OrchestrationSnapshot {
   layers: OrchLayer[]
   teams: OrchTeam[]
   placements: OrchPlacement[]
-  rules: OrchRule[]
+  edges: OrchFlowEdge[]
+  gateways: OrchFlowGateway[]
 }
 
 export interface OrchTeamDraft {
   id: string | null
   name: string
+  instructions: string
 }
 
 export interface OrchPlacementDraft {
@@ -100,4 +136,59 @@ export interface OrchPlacementDraft {
   layerId: string
   instructions: string
   maxInstances: number
+  // Ausentes, o backend mantém a posição, os critérios e o limite de worktrees que o agente já tem.
+  posX?: number | null
+  posY?: number | null
+  criteria?: string
+  maxWorktrees?: number | null
+}
+
+export interface FlowNodeDraft {
+  agentId: Agent
+  layerId: string
+  posX: number
+  posY: number
+}
+
+export interface FlowGatewayDraft {
+  id: string
+  kind: GatewayKind
+  posX: number
+  posY: number
+}
+
+export interface FlowEdgeDraft {
+  fromNode: string
+  toNode: string
+  link: FlowLink
+  syncMode: SyncMode
+  whenEvent: WhenEvent
+  isDefault: boolean
+  action: EdgeAction
+  kind: RequestKind
+  turnLimit: number | null
+  curve: number
+}
+
+export interface FlowPoint {
+  x: number
+  y: number
+}
+
+export interface TeamFlowDraft {
+  nodes: FlowNodeDraft[]
+  gateways: FlowGatewayDraft[]
+  edges: FlowEdgeDraft[]
+  start: FlowPoint | null
+  end: FlowPoint | null
+}
+
+export const FLOW_PROBLEM_CODES = ['V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7'] as const
+export type FlowProblemCode = (typeof FLOW_PROBLEM_CODES)[number]
+
+// O save_team_flow recusado devolve a lista destes problemas como texto JSON.
+export interface FlowProblem {
+  code: FlowProblemCode
+  node: string | null
+  message: string
 }

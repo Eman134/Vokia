@@ -9,14 +9,14 @@ import { VIEW_COPY } from './orchestrationLabels'
 import type { OrchTeam } from './orchestrationTypes'
 import TeamDeleteDialog from './TeamDeleteDialog.vue'
 import TeamFlowThumb from './TeamFlowThumb.vue'
-import TeamNameDialog from './TeamNameDialog.vue'
+import TeamEditDialog, { type TeamEdit } from './TeamEditDialog.vue'
 import { forgetFlowDraft, peekFlowDraft } from './useFlowDraft'
 import { useOrchestration } from './useOrchestration'
 
 const ELLIPSIS_PATHS = ['M8 3h.01', 'M8 8h.01', 'M8 13h.01']
 const AVATAR_SIZE = 24
 
-type Dialog = { kind: 'name'; teamId: string | null; initialName: string } | { kind: 'delete'; team: OrchTeam }
+type Dialog = { kind: 'edit'; team: OrchTeam | null } | { kind: 'delete'; team: OrchTeam }
 
 const emit = defineEmits<{ open: [teamId: string] }>()
 
@@ -36,12 +36,19 @@ function toggleMenu(teamId: string): void {
 }
 
 function openCreate(): void {
-  dialog.value = { kind: 'name', teamId: null, initialName: '' }
+  dialog.value = { kind: 'edit', team: null }
 }
 
-function openRename(team: OrchTeam): void {
+function openEdit(team: OrchTeam): void {
   openMenuId.value = null
-  dialog.value = { kind: 'name', teamId: team.id, initialName: team.name }
+  dialog.value = { kind: 'edit', team }
+}
+
+// Só quem está posicionado no time pode liderá-lo (o Ember nunca é posicionado).
+function membersOf(teamId: string): Agent[] {
+  return (orchestration.snapshot?.placements ?? [])
+    .filter((placement) => placement.teamId === teamId)
+    .map((placement) => placement.agentId)
 }
 
 function openDelete(team: OrchTeam): void {
@@ -49,9 +56,10 @@ function openDelete(team: OrchTeam): void {
   dialog.value = { kind: 'delete', team }
 }
 
-async function saveName(name: string): Promise<void> {
-  if (dialog.value?.kind !== 'name') return
-  if (await orchestration.saveTeam({ id: dialog.value.teamId, name })) dialog.value = null
+async function saveEdit(edit: TeamEdit): Promise<void> {
+  if (dialog.value?.kind !== 'edit') return
+  const draft = { id: dialog.value.team?.id ?? null, name: edit.name, instructions: edit.instructions }
+  if (await orchestration.saveTeam(draft, edit.leaderAgent)) dialog.value = null
 }
 
 // Única porta de exclusão: só o modal de confirmação chama esta função.
@@ -110,9 +118,9 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
               type="button"
               role="menuitem"
               class="cursor-pointer rounded-control px-3 py-2 text-left text-control text-ink hover:bg-hover"
-              @click="openRename(team)"
+              @click="openEdit(team)"
             >
-              {{ VIEW_COPY.renameTeam }}
+              {{ VIEW_COPY.editTeam }}
             </button>
             <button
               type="button"
@@ -140,11 +148,14 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
       </li>
     </ul>
 
-    <TeamNameDialog
-      v-if="dialog?.kind === 'name'"
-      :title="dialog.teamId === null ? VIEW_COPY.newTeam : VIEW_COPY.renameTeamTitle"
-      :initial-name="dialog.initialName"
-      @save="saveName"
+    <TeamEditDialog
+      v-if="dialog?.kind === 'edit'"
+      :title="dialog.team === null ? VIEW_COPY.newTeam : VIEW_COPY.editTeamTitle"
+      :initial-name="dialog.team?.name ?? ''"
+      :initial-instructions="dialog.team?.instructions ?? ''"
+      :initial-leader="dialog.team?.leaderAgent ?? null"
+      :members="dialog.team === null ? [] : membersOf(dialog.team.id)"
+      @save="saveEdit"
       @cancel="dialog = null"
     />
     <TeamDeleteDialog

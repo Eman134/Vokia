@@ -30,7 +30,7 @@ export const useTriage = defineStore('triage', () => {
     const project = projects.selected
     if (project === null || !isUnassigned(item)) return
     try {
-      const snapshot = await fetchOrchestration(project.id)
+      const snapshot = await fetchOrchestration()
       const leader = roster.profileOf(snapshot.settings.leaderAgent)
       setWithoutLeader(item.id, leader === undefined)
       if (leader === undefined) return

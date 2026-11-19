@@ -11,9 +11,13 @@ import AgentPanel from './AgentPanel.vue'
 import BatchProgressList from './BatchProgressList.vue'
 import FlowDiagram from './FlowDiagram.vue'
 import FlowNodePanel from './FlowNodePanel.vue'
-import { lineKey, type FlowEdge, type LineKind } from './flowGraph'
+import AgentActivityPanel from '../teammap/AgentActivityPanel.vue'
+import { endLineKey, lineKey, START_LINE_KEY, type FlowEdge, type LineKind } from './flowGraph'
+import { configChanges, toTeamFlowDraft, validationInputOf } from './flowSync'
+import { problemCountLabel, validateFlow } from './flowValidation'
 import { VIEW_COPY } from './orchestrationLabels'
-import type { OrchestrationSnapshot } from './orchestrationTypes'
+import type { FlowProblem, OrchestrationSnapshot } from './orchestrationTypes'
+import { useFeed } from '../team/useFeed'
 import { useFlowDraft, type AlignAxis, type AlignMode, type FlowNodeConfig } from './useFlowDraft'
 import { useOrchestration } from './useOrchestration'
 
@@ -46,6 +50,7 @@ const props = defineProps<{ teamId: string }>()
 
 const orchestration = useOrchestration()
 const roster = useRoster()
+const draft = useFlowDraft(props.teamId)
 const {
   agents: flowAgents,
   positions,
@@ -64,8 +69,14 @@ const {
   alignAgents,
   configOf,
   setConfig,
-} = useFlowDraft(props.teamId)
+  linkStart,
+  unlinkStart,
+  linkEnd,
+  unlinkEnd,
+  dirty,
+} = draft
 
+const feed = useFeed()
 const flowRef = ref<InstanceType<typeof FlowDiagram> | null>(null)
 const selection = ref<Selection | null>(null)
 const groupSelection = ref<Agent[]>([])
@@ -75,6 +86,47 @@ const agentDrag = ref<AgentDrag | null>(null)
 const elencoAgents = computed(() => placeableAgents(roster.agents))
 const snapshot = computed<OrchestrationSnapshot | null>(() => orchestration.snapshot)
 const layers = computed(() => snapshot.value?.layers ?? [])
+
+// Validação local (mesmas regras V1 a V7 do backend): pinta início, fim e nós e trava o Salvar fluxo.
+const problems = computed(() => validateFlow(validationInputOf(draft), (id) => roster.nameOf(id)))
+const problemIds = computed(() => new Set(problems.value.flatMap((problem) => (problem.node === null ? [] : [problem.node]))))
+// Recusa do backend mostra a lista dele até o desenho mudar.
+const refusedProblems = ref<FlowProblem[]>([])
+const shownProblems = computed(() => (refusedProblems.value.length > 0 ? refusedProblems.value : problems.value))
+const problemsOpen = ref(false)
+const saving = ref(false)
+const canSave = computed(() => dirty.value && problems.value.length === 0 && !saving.value && snapshot.value !== null)
+
+watch(problems, () => {
+  refusedProblems.value = []
+})
+
+// A estrutura vai de uma vez ao backend; as configurações dos agentes que mudaram são regravadas em seguida.
+async function saveFlow(): Promise<void> {
+  const current = snapshot.value
+  if (current === null || !canSave.value) return
+  const flow = toTeamFlowDraft(draft, current, props.teamId)
+  if (flow === null) {
+    feed.feed.push({ type: 'error', message: VIEW_COPY.noLayer })
+    return
+  }
+  saving.value = true
+  try {
+    const result = await orchestration.saveFlow(props.teamId, flow)
+    if (!result.saved) {
+      refusedProblems.value = result.problems
+      return
+    }
+    const saved = orchestration.snapshot
+    const changes = saved === null ? [] : configChanges(draft, saved, props.teamId)
+    for (const change of changes) {
+      if (!(await orchestration.placeAgent(change))) return
+    }
+    draft.markSaved()
+  } finally {
+    saving.value = false
+  }
+}
 
 const selectedNode = computed<Agent | null>(() => (selection.value?.kind === 'node' ? selection.value.id : null))
 const selectedLineKey = computed<string | null>(() => (selection.value?.kind === 'line' ? selection.value.key : null))
@@ -106,6 +158,31 @@ function selectLine(key: string): void {
 function onLink(from: Agent, to: Agent): void {
   link(from, to)
   selectLine(lineKey({ from, to }))
+}
+
+function onLinkStart(agent: Agent): void {
+  linkStart(agent)
+  selectLine(START_LINE_KEY)
+}
+
+function onLinkEnd(from: Agent): void {
+  linkEnd(from)
+  selectLine(endLineKey(from))
+}
+
+// Linha do início ou do fim: remover só solta a ponta, que a validação passa a marcar.
+function removeLine(key: string): void {
+  if (key === START_LINE_KEY) unlinkStart()
+  else if (key.startsWith(endLineKey(''))) unlinkEnd(key.slice(endLineKey('').length))
+  clearSelection()
+}
+
+function removeSelectedLine(): void {
+  const key = selectedLineKey.value
+  if (key === null) return
+  const edge = completed.value.manualEdges.find((candidate) => lineKey(candidate) === key)
+  if (edge) removeEdge(edge)
+  else removeLine(key)
 }
 
 // Shift acrescenta ou tira o nó do grupo; sem Shift, o nó clicado vira a seleção única.
@@ -215,9 +292,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 // Delete ou Backspace tiram o nó selecionado do fluxo, exceto quando o foco está num campo de texto.
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Delete' || event.key === 'Backspace') {
-    if (selectedNode.value === null || isTypingTarget(event.target)) return
-    event.preventDefault()
-    removeFromFlow(selectedNode.value)
+    if (isTypingTarget(event.target)) return
+    if (selectedNode.value !== null) {
+      event.preventDefault()
+      removeFromFlow(selectedNode.value)
+    } else if (selectedLineKey.value !== null) {
+      event.preventDefault()
+      removeSelectedLine()
+    }
     return
   }
   if (event.key !== 'Escape' || (selection.value === null && groupSelection.value.length === 0)) return
@@ -275,6 +357,8 @@ onUnmounted(() => {
         </ul>
       </section>
 
+      <AgentActivityPanel :agents="flowAgents" />
+
       <div
         v-if="groupSelection.length >= 1"
         role="group"
@@ -307,6 +391,26 @@ onUnmounted(() => {
         </UiButton>
       </div>
 
+      <div class="flex flex-wrap items-center gap-2">
+        <UiButton variant="primary" size="sm" :disabled="!canSave" @press="saveFlow">
+          {{ saving ? VIEW_COPY.savingFlow : VIEW_COPY.saveFlow }}
+        </UiButton>
+        <span v-if="dirty" class="text-small text-muted">{{ VIEW_COPY.unsaved }}</span>
+        <div v-if="shownProblems.length > 0" class="relative">
+          <UiButton variant="quiet" size="sm" :aria-expanded="problemsOpen" @press="problemsOpen = !problemsOpen">
+            <span class="text-danger">{{ problemCountLabel(shownProblems.length) }}</span>
+          </UiButton>
+          <ul
+            v-if="problemsOpen"
+            class="absolute left-0 top-full z-20 mt-1 flex w-80 max-w-[80vw] list-none flex-col gap-1 rounded-control border border-line bg-surface p-2 text-small text-ink shadow-float"
+          >
+            <li v-for="(problem, index) in shownProblems" :key="`${problem.code}-${index}`">
+              <span class="font-mono text-tiny text-muted">{{ problem.code }}</span> {{ problem.message }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <FlowDiagram
         ref="flowRef"
         class="min-h-0 flex-1"
@@ -319,6 +423,7 @@ onUnmounted(() => {
         :group-selected="groupSelection"
         :selected-line="selectedLineKey"
         :config-of="configOf"
+        :problem-ids="problemIds"
         @select="onFlowSelect"
         @move-nodes="moveAgents"
         @move-endpoint="moveEndpoint"
@@ -329,6 +434,9 @@ onUnmounted(() => {
         @bend="setCurve"
         @set-kind="setEdgeKind"
         @unlink="removeEdge"
+        @remove-line="removeLine"
+        @link-start="onLinkStart"
+        @link-end="onLinkEnd"
       />
     </div>
 

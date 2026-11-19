@@ -113,7 +113,7 @@ export interface VokiaPermissionByRule {
   projectId: number | null
 }
 
-export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao'
+export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao' | 'validacao'
 
 export interface VokiaDecision {
   type: 'decision'
@@ -199,7 +199,6 @@ export interface VokiaBacklogChanged {
 
 export interface VokiaOrchestrationChanged {
   type: 'orchestration-changed'
-  projectId: number
 }
 
 export interface VokiaBatchProgress {

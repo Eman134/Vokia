@@ -40,6 +40,12 @@ export const BADGE_DOT: Record<BadgeStatus, string> = {
   backlog: 'bg-muted',
   lote: 'bg-accent',
 }
+export const AUTO_CLOSED_LABEL = 'concluída automaticamente'
+export const REOPEN_LABEL = 'Reabrir'
+export const REOPEN_MOTIVE_PLACEHOLDER = 'Por que reabrir?'
+export const DONE_COLUMN_NAME = 'Done'
+export const CLOSED_BY_AUTOMATIC = 'automatico'
+
 export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status: BadgeStatus }>> = {
   Ready: { label: 'ready', status: 'lote' },
   'In progress': { label: 'em andamento', status: 'lote' },

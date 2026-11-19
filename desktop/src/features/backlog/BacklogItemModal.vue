@@ -4,7 +4,21 @@ import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
-import { colorVar, DEFAULT_FEATURE_COLOR, FEATURE_COLOR, MICRO_STATUS_BADGE, ORIGIN_LABEL, STATE_BADGE } from './backlogLabels'
+import {
+  AUTO_CLOSED_LABEL,
+  CLOSED_BY_AUTOMATIC,
+  colorVar,
+  DEFAULT_FEATURE_COLOR,
+  DONE_COLUMN_NAME,
+  FEATURE_COLOR,
+  MICRO_STATUS_BADGE,
+  ORIGIN_LABEL,
+  REOPEN_LABEL,
+  REOPEN_MOTIVE_PLACEHOLDER,
+  STATE_BADGE,
+} from './backlogLabels'
+import { returnTask } from './backlogApi'
+import { useFeed } from '../team/useFeed'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagColor, tagLabel, tagTextColor } from './tags'
 import {
   AUTO_COLUMNS_HINT,
@@ -60,7 +74,10 @@ const runItem = useRunItem()
 const triage = useTriage()
 const roster = useRoster()
 const navigation = useNavigation()
+const feed = useFeed()
 const leaderName = computed(() => agentName(DEFAULT_RECIPIENT))
+const reopening = ref(false)
+const reopenMotive = ref('')
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const addingTag = ref(false)
@@ -70,7 +87,24 @@ const answerDrafts = ref<Record<string, string>>({})
 let previousFocus: HTMLElement | null = null
 
 const item = computed(() => backlog.openItem)
+
+// O motivo é obrigatório; o líder recebe a task de volta e o card sai de Done.
+async function reopen(): Promise<void> {
+  const projectId = backlog.loadedProjectId
+  const current = item.value
+  const motive = reopenMotive.value.trim()
+  if (projectId === null || current === null || motive === '') return
+  reopenMotive.value = ''
+  reopening.value = false
+  try {
+    await returnTask(projectId, current.id, motive)
+  } catch (error) {
+    feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+  }
+}
 const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
+// Só o card concluído pela validação automática pode ser reaberto por aqui; o manual o usuário mesmo moveu.
+const autoClosed = computed(() => column.value === DONE_COLUMN_NAME && item.value?.closedBy === CLOSED_BY_AUTOMATIC)
 const moveTargets = computed(() => MOVABLE_COLUMNS.filter((target) => target !== column.value))
 const readyBlocked = computed(() => !item.value || !itemPlan.isReviewed(item.value.id))
 const delegateTargets = computed(() =>
@@ -239,6 +273,7 @@ watch(
               <span class="size-2 rounded-full" :style="{ backgroundColor: colorVar(FEATURE_COLOR[item.feature] ?? DEFAULT_FEATURE_COLOR) }" />
               {{ item.feature }}
             </span>
+            <UiBadge v-if="autoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
             <UiBadge class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
             <UiButton variant="quiet" size="sm" @press="closeModal()">Fechar</UiButton>
           </div>
@@ -413,6 +448,20 @@ watch(
               :disabled="!runItem.canRun(item.id)"
               @press="void runItem.run(item.id, profile.id)"
             />
+          </template>
+          <template v-if="autoClosed">
+            <input
+              v-if="reopening"
+              v-model="reopenMotive"
+              :aria-label="REOPEN_MOTIVE_PLACEHOLDER"
+              :placeholder="REOPEN_MOTIVE_PLACEHOLDER"
+              :class="OTHER_INPUT_CLASSES"
+              @keydown.enter.prevent="reopen"
+            />
+            <UiButton v-if="!reopening" variant="quiet" size="lg" @press="reopening = true">{{ REOPEN_LABEL }}</UiButton>
+            <UiButton v-else variant="primary" size="lg" :disabled="reopenMotive.trim() === ''" @press="reopen">
+              {{ REOPEN_LABEL }}
+            </UiButton>
           </template>
           <UiConfirm
             :label="DELETE_LABEL"

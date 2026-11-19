@@ -31,9 +31,9 @@ const arrows = computed(() => {
   const placements = new Map(layout.value.nodes.map((node) => [node.agent, node]))
   const { start, end } = layout.value
   const radius = FLOW_GEOMETRY.endpointRadius
-  const { manualEdges, automaticEdges, startAgent, endAgents } = draft.completed.value
+  const { manualEdges, startAgent, endAgents } = draft.completed.value
   const paths: string[] = []
-  for (const edge of [...manualEdges, ...automaticEdges]) {
+  for (const edge of manualEdges) {
     const source = placements.get(edge.from)
     const target = placements.get(edge.to)
     if (source && target) paths.push(arcPath(borderPoint(source, target), borderPoint(target, source)).d)

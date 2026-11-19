@@ -26,7 +26,7 @@ export const PAGE_LABELS: Record<AppPage, string> = {
   agentes: 'Agentes e camadas',
   estatisticas: 'Estatísticas',
   skills: 'Skills',
-  mapa: 'Fluxo de Orquestração',
+  mapa: 'Fluxo de orquestração',
   backlog: 'Tasks',
   conversas: 'Conversas',
   canvas: 'Artefatos',

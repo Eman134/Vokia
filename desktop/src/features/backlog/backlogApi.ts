@@ -8,6 +8,7 @@ const SAVE_BACKLOG_ITEM_COMMAND = 'save_backlog_item'
 const CREATE_BACKLOG_ITEM_COMMAND = 'create_backlog_item'
 const CREATE_REQUEST_FROM_PROPOSAL_COMMAND = 'create_request_from_proposal'
 const MOVE_BACKLOG_ITEM_COMMAND = 'move_backlog_item'
+const RETURN_TASK_COMMAND = 'return_task'
 const SAVE_ITEM_PLAN_COMMAND = 'save_item_plan'
 const ARCHIVE_BACKLOG_ITEM_COMMAND = 'archive_backlog_item'
 const DELETE_BACKLOG_ITEM_COMMAND = 'delete_backlog_item'
@@ -71,6 +72,11 @@ export async function createRequestFromProposal(
 
 export function moveBacklogItem(projectId: number, id: string, column: BacklogColumn): Promise<void> {
   return invoke<void>(MOVE_BACKLOG_ITEM_COMMAND, { projectId, id, column })
+}
+
+// Devolve a task concluída ao líder: o motivo é obrigatório e o card volta a In progress.
+export function returnTask(projectId: number, itemId: string, motive: string): Promise<void> {
+  return invoke<void>(RETURN_TASK_COMMAND, { projectId, itemId, motive })
 }
 
 export function saveItemPlan(projectId: number, itemId: string, plan: ItemPlanInput): Promise<void> {

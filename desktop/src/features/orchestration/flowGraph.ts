@@ -48,7 +48,6 @@ export interface FlowView {
 
 export interface CompletedFlow {
   manualEdges: FlowEdge[]
-  automaticEdges: FlowLink[]
   startAgent: Agent | null
   endAgents: Agent[]
 }
@@ -88,26 +87,17 @@ export function canLink(edges: readonly FlowEdge[], from: Agent, to: Agent): boo
   return from !== to && !edges.some((edge) => edge.from === from && edge.to === to)
 }
 
-// Sem líder escolhido (ou com líder que saiu do fluxo), vale o primeiro agente adicionado: o início nunca fica solto.
-export function resolveLeader(agents: readonly Agent[], leader: Agent | null): Agent | null {
-  if (leader !== null && agents.includes(leader)) return leader
-  return agents[0] ?? null
-}
-
-// Ligações automáticas: início → líder; quem não recebe seta recebe do líder; quem não envia seta vai ao fim.
-export function completeFlow(agents: readonly Agent[], manualEdges: readonly FlowEdge[], leader: Agent | null): CompletedFlow {
-  const startAgent = resolveLeader(agents, leader)
-  if (startAgent === null) return { manualEdges: [], automaticEdges: [], startAgent: null, endAgents: [] }
-  const received = new Set(manualEdges.map((edge) => edge.to))
-  const automaticEdges = agents
-    .filter((agent) => agent !== startAgent && !received.has(agent))
-    .map((agent) => ({ from: startAgent, to: agent }))
-  const sent = new Set([...manualEdges, ...automaticEdges].map((edge) => edge.from))
+// Início e fim só têm ligação quando o usuário a desenha: sem ela ficam soltos e a validação os marca.
+export function completeFlow(
+  agents: readonly Agent[],
+  manualEdges: readonly FlowEdge[],
+  leader: Agent | null,
+  endAgents: readonly Agent[],
+): CompletedFlow {
   return {
     manualEdges: [...manualEdges],
-    automaticEdges,
-    startAgent,
-    endAgents: agents.filter((agent) => !sent.has(agent)),
+    startAgent: leader !== null && agents.includes(leader) ? leader : null,
+    endAgents: endAgents.filter((agent) => agents.includes(agent)),
   }
 }
 
@@ -312,6 +302,13 @@ export function bendFromHandle(from: FlowPoint, to: FlowPoint, handle: FlowPoint
 
 export function lineKey(link: FlowLink): string {
   return `${link.from}>${link.to}`
+}
+
+// Chaves das linhas do início (uma só) e do fim (uma por agente ligado a ele).
+export const START_LINE_KEY = 'inicio'
+
+export function endLineKey(agent: Agent): string {
+  return `fim:${agent}`
 }
 
 // Encaixe ao arrastar com Shift: centro igual ao de outro nó, na vertical ou na horizontal.

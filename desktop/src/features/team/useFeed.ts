@@ -27,6 +27,7 @@ import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
 import { useBacklog } from '../backlog/useBacklog'
 import { useOrchestration } from '../orchestration/useOrchestration'
+import { useAgentActivity } from '../teammap/useAgentActivity'
 import { useUsageLimit } from '../usage/useUsageLimit'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
@@ -169,12 +170,13 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'backlog-changed':
         void useBacklog().reloadAfterAgentChange(event.projectId)
+        void useAgentActivity().load()
         break
       case 'agent-named':
         roster.nameInstance(event.agent, event.name)
         break
       case 'orchestration-changed':
-        void useOrchestration().reload(event.projectId)
+        void useOrchestration().reload()
         break
       case 'batch-progress':
         useOrchestration().applyBatchProgress(event)

@@ -11,6 +11,8 @@ import {
   type ActionLabel,
   BADGE_DOT,
   colorVar,
+  AUTO_CLOSED_LABEL,
+  CLOSED_BY_AUTOMATIC,
   COLUMN_CHIP,
   STATE_ACTION,
   STATE_BADGE,
@@ -54,6 +56,7 @@ const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
 )
 const isFeature = computed(() => props.item.type === 'feature')
+const isAutoClosed = computed(() => props.column === DONE_COLUMN && props.item.closedBy === CLOSED_BY_AUTOMATIC)
 const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
 const createdOn = computed(() => props.item.activity?.[0]?.at.split(',')[0])
 
@@ -103,6 +106,7 @@ function tagPillStyle(tag: BacklogTag) {
       <span class="font-mono text-tiny text-muted">{{ item.id }}</span>
       <span v-if="isFeature" class="rounded-chip bg-accent-soft px-1.5 py-0.5 text-tiny font-bold tracking-[.03em] text-accent uppercase">feature</span>
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
+      <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
       <ul v-if="item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
         <li
           v-for="tag in item.tags"

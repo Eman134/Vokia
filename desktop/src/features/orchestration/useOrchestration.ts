@@ -1,14 +1,27 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
-import type { VokiaBatchProgress } from '../team/events'
+import type { Agent, VokiaBatchProgress } from '../team/events'
+import { syncFlowDrafts } from './flowSync'
 import * as orchestrationApi from './orchestrationApi'
-import type { OrchPlacementDraft, OrchTeamDraft, OrchestrationSnapshot } from './orchestrationTypes'
+import type { FlowProblem, OrchPlacementDraft, OrchTeamDraft, OrchestrationSnapshot, TeamFlowDraft } from './orchestrationTypes'
+
+// A orquestração é global: um só snapshot para todos os projetos, recarregado a cada evento de mudança.
+function parseProblems(error: unknown): FlowProblem[] {
+  try {
+    const parsed: unknown = JSON.parse(errorText(error))
+    return Array.isArray(parsed) ? (parsed as FlowProblem[]) : []
+  } catch {
+    return []
+  }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 export const useOrchestration = defineStore('orchestration', () => {
   const snapshot = ref<OrchestrationSnapshot | null>(null)
-  const loadedProjectId = ref<number | null>(null)
   // Placar de cada lote aberto, por projeto e líder; o evento done tira o lote da lista.
   const batches = ref(new Map<string, VokiaBatchProgress>())
 
@@ -23,30 +36,21 @@ export const useOrchestration = defineStore('orchestration', () => {
     batches.value = next
   }
   const feed = useFeed()
-  const projects = useProjects()
-  // Projeto da carga em curso ou da última: o evento que chega durante a primeira carga também recarrega.
-  let requestedProjectId: number | null = null
   let loadSeq = 0
 
-  function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-  }
-
   function reportError(error: unknown): void {
-    feed.feed.push({ type: 'error', message: errorMessage(error) })
+    feed.feed.push({ type: 'error', message: errorText(error) })
   }
 
-  function resetLoaded(): void {
-    snapshot.value = null
-    loadedProjectId.value = null
-  }
-
-  async function fetchAll(projectId: number, seq: number): Promise<boolean> {
+  // Resposta de carga anterior é descartada pela sequência; a tela não é limpa entre cargas.
+  async function load(): Promise<boolean> {
+    const seq = (loadSeq += 1)
     try {
-      const nextSnapshot = await orchestrationApi.fetchOrchestration(projectId)
+      const next = await orchestrationApi.fetchOrchestration()
       if (seq !== loadSeq) return false
-      snapshot.value = nextSnapshot
-      loadedProjectId.value = projectId
+      const previousTeamIds = snapshot.value?.teams.map((team) => team.id) ?? []
+      snapshot.value = next
+      syncFlowDrafts(next, previousTeamIds)
       return true
     } catch (error) {
       if (seq === loadSeq) reportError(error)
@@ -54,31 +58,10 @@ export const useOrchestration = defineStore('orchestration', () => {
     }
   }
 
-  function load(projectId: number): Promise<boolean> {
-    const seq = (loadSeq += 1)
-    requestedProjectId = projectId
-    resetLoaded()
-    return fetchAll(projectId, seq)
-  }
-
-  function clear(): void {
-    loadSeq += 1
-    requestedProjectId = null
-    resetLoaded()
-  }
-
-  // Recarrega sem limpar a tela; resposta de carga anterior é descartada pela sequência.
-  async function reload(projectId: number): Promise<void> {
-    if (requestedProjectId !== projectId) return
-    await fetchAll(projectId, (loadSeq += 1))
-  }
-
   // Escrita não mexe no estado: a tela muda quando o evento orchestration-changed recarregar.
-  async function write(operation: (projectId: number) => Promise<unknown>): Promise<boolean> {
-    const projectId = loadedProjectId.value
-    if (projectId === null) return false
+  async function write(operation: () => Promise<unknown>): Promise<boolean> {
     try {
-      await operation(projectId)
+      await operation()
       return true
     } catch (error) {
       reportError(error)
@@ -87,37 +70,38 @@ export const useOrchestration = defineStore('orchestration', () => {
   }
 
   function placeAgent(draft: OrchPlacementDraft): Promise<boolean> {
-    return write((projectId) => orchestrationApi.placeAgent(projectId, draft))
+    return write(() => orchestrationApi.placeAgent(draft))
   }
 
-  function saveTeam(draft: OrchTeamDraft): Promise<boolean> {
-    return write((projectId) => orchestrationApi.saveTeam(projectId, draft))
+  function saveTeam(draft: OrchTeamDraft, leaderAgent: Agent | null): Promise<boolean> {
+    return write(() => orchestrationApi.saveTeam(draft, leaderAgent))
   }
 
   function deleteTeam(id: string): Promise<boolean> {
-    return write((projectId) => orchestrationApi.deleteTeam(projectId, id))
+    return write(() => orchestrationApi.deleteTeam(id))
   }
 
-  watch(
-    () => projects.selected?.id,
-    (projectId) => {
-      if (projectId === undefined) {
-        clear()
-        return
-      }
-      void load(projectId)
-    },
-    { immediate: true },
-  )
+  // Salva a estrutura do fluxo. Recusa do backend volta como a lista de problemas (JSON); outro erro vai ao feed.
+  async function saveFlow(teamId: string, flow: TeamFlowDraft): Promise<{ saved: boolean; problems: FlowProblem[] }> {
+    try {
+      snapshot.value = await orchestrationApi.saveTeamFlow(teamId, flow)
+      return { saved: true, problems: [] }
+    } catch (error) {
+      const problems = parseProblems(error)
+      if (problems.length === 0) reportError(error)
+      return { saved: false, problems }
+    }
+  }
+
+  void load()
 
   return {
     snapshot,
-    loadedProjectId,
     batches,
     applyBatchProgress,
-    clear,
     load,
-    reload,
+    reload: load,
+    saveFlow,
     placeAgent,
     saveTeam,
     deleteTeam,
