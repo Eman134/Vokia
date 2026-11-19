@@ -1,13 +1,12 @@
 use crate::agents::{join_items, Agent, Team};
 use crate::db::{
-    FlowEdge, Layer, OrchestrationSnapshot, FLOW_END, GATEWAY_EXCLUSIVE, GATEWAY_PARALLEL,
-    LINK_COMMUNICATION,
+    FlowEdge, Layer, OrchestrationSnapshot, GATEWAY_EXCLUSIVE, GATEWAY_PARALLEL, LINK_COMMUNICATION,
 };
 
 use super::counters::TaskCounters;
 use super::snapshot::{
-    delegation_targets, enforced, event_phrase, flow_target, gateway_exits, node_id,
-    outgoing_edges, placement_of, ACTION_CONSULT, ACTION_DELEGATE, ACTION_RETURN,
+    delegation_targets, end_edge, enforced, event_phrase, flow_target, gateway_exits, is_join,
+    node_id, outgoing_edges, placement_of, ACTION_CONSULT, ACTION_DELEGATE, ACTION_RETURN,
 };
 
 pub(crate) const LIMIT_TITLE: &str = "Limite do mapa atingido";
@@ -49,8 +48,15 @@ pub(crate) enum Verdict {
 // evento) ou por um gateway paralelo (todas as saídas).
 enum Line<'a> {
     Direct(&'a FlowEdge),
-    Chosen(&'a FlowEdge),
-    Fork(Vec<&'a FlowEdge>),
+    // `entry` é a linha do agente até o gateway; `exit` (ou `exits`, no paralelo), as que saem dele.
+    Chosen {
+        entry: &'a FlowEdge,
+        exit: &'a FlowEdge,
+    },
+    Fork {
+        entry: &'a FlowEdge,
+        exits: Vec<&'a FlowEdge>,
+    },
 }
 
 pub(crate) struct Review {
@@ -103,14 +109,25 @@ pub(crate) fn check(
             Ok(found) => Verdict::Deliver(found),
             Err(motive) => Verdict::Escalate(motive),
         },
-        Some(Line::Chosen(edge)) => match flow_target(team, &edge.to_node) {
-            Some(destination) => match delivery.deliver(destination, edge, true) {
+        Some(Line::Chosen { entry, exit }) => match flow_target(team, &exit.to_node) {
+            Some(destination) => match delivery
+                .within_entry_limit(entry, destination)
+                .and_then(|()| delivery.deliver(destination, exit, true))
+            {
                 Ok(found) => Verdict::Deliver(found),
                 Err(motive) => Verdict::Escalate(motive),
             },
             None => Verdict::Refuse(not_allowed(snapshot, team, from, to)),
         },
-        Some(Line::Fork(exits)) => {
+        Some(Line::Fork { entry, exits }) => {
+            let first = exits
+                .iter()
+                .find_map(|exit| flow_target(team, &exit.to_node));
+            if let Some(destination) = first {
+                if let Err(motive) = delivery.within_entry_limit(entry, destination) {
+                    return Verdict::Escalate(motive);
+                }
+            }
             let mut passages = Vec::new();
             for exit in exits {
                 let Some(destination) = flow_target(team, &exit.to_node) else {
@@ -138,6 +155,36 @@ struct Delivery<'a> {
 }
 
 impl Delivery<'_> {
+    fn limit_motive(&self, destination: &Agent, passed: i64, limit: i64) -> String {
+        format!(
+            "{} passou trabalho a {} {passed} vezes nesta task (limite da linha: {limit}).",
+            self.team.name_of(self.from),
+            self.team.name_of(destination)
+        )
+    }
+
+    // Limite da linha que entra no gateway. Não há passagem gravada na entrada: cada passagem pelo gateway conta uma na
+    // saída usada, então o exclusivo soma as saídas e o paralelo (que passa por todas) vale pela maior.
+    fn within_entry_limit(&self, entry: &FlowEdge, destination: &Agent) -> Result<(), String> {
+        let Some((gateway, exits)) = gateway_exits(self.snapshot, entry) else {
+            return Ok(());
+        };
+        let counts = exits.iter().map(|exit| (self.edge_passages)(exit.id));
+        let passed = if gateway.kind == GATEWAY_PARALLEL {
+            counts.max()
+        } else {
+            Some(counts.sum())
+        }
+        .unwrap_or(0);
+        let limit = entry
+            .turn_limit
+            .unwrap_or(self.snapshot.settings.pair_turn_limit);
+        if passed >= limit {
+            return Err(self.limit_motive(destination, passed, limit));
+        }
+        Ok(())
+    }
+
     // Confere o limite da linha e monta a passagem; o Err é o motivo da escalada.
     fn deliver(
         &self,
@@ -150,11 +197,7 @@ impl Delivery<'_> {
             .unwrap_or(self.snapshot.settings.pair_turn_limit);
         let passed = (self.edge_passages)(edge.id);
         if passed >= limit {
-            return Err(format!(
-                "{} passou trabalho a {} {passed} vezes nesta task (limite da linha: {limit}).",
-                self.team.name_of(self.from),
-                self.team.name_of(destination)
-            ));
+            return Err(self.limit_motive(destination, passed, limit));
         }
         let return_count = if edge.action == ACTION_RETURN {
             self.counters.returns(self.from, destination) + 1
@@ -194,14 +237,21 @@ fn resolve_line<'a>(
         if !exits.iter().any(|exit| exit.to_node == node_id(to)) {
             continue;
         }
+        // Junção: o ramo termina sem delegar, e o destino recebe o trabalho uma vez, na junção do lote.
+        if is_join(snapshot, gateway) {
+            return None;
+        }
         return match gateway.kind.as_str() {
-            GATEWAY_PARALLEL => Some(Line::Fork(
-                exits
+            GATEWAY_PARALLEL => Some(Line::Fork {
+                entry,
+                exits: exits
                     .into_iter()
                     .filter(|exit| flow_target(team, &exit.to_node).is_some())
                     .collect(),
-            )),
-            GATEWAY_EXCLUSIVE => choose_exit(&exits, event).map(Line::Chosen),
+            }),
+            GATEWAY_EXCLUSIVE => {
+                choose_exit(&exits, event).map(|exit| Line::Chosen { entry, exit })
+            }
             _ => None,
         };
     }
@@ -321,13 +371,11 @@ pub(crate) fn task_limit_reached(
     (counters.turns() >= limit).then(|| format!("A tarefa passou de {limit} turnos."))
 }
 
-// Quem tem ligação até o fim do fluxo chega a ele ao terminar sem delegar.
+// Quem tem ligação até o fim do fluxo, direta ou por gateway, chega a ele ao terminar sem delegar.
 pub(crate) fn reaches_flow_end(snapshot: Option<&OrchestrationSnapshot>, speaker: &Agent) -> bool {
     snapshot
         .filter(|snapshot| enforced(Some(snapshot)))
-        .is_some_and(|snapshot| {
-            outgoing_edges(snapshot, speaker).any(|edge| edge.to_node == FLOW_END)
-        })
+        .is_some_and(|snapshot| end_edge(snapshot, speaker).is_some())
 }
 
 // Revisão do fim da cadeia: só com `on`, gate diferente de `nunca` e uma ligação de quem falou até o fim do fluxo.
@@ -341,7 +389,7 @@ pub(crate) fn chain_review(
     if human_gate == HUMAN_GATE_NEVER {
         return None;
     }
-    let edge = outgoing_edges(snapshot, speaker).find(|edge| edge.to_node == FLOW_END)?;
+    let edge = end_edge(snapshot, speaker)?;
     let event = event_phrase(&edge.when_event)?;
     let title = if human_gate == HUMAN_GATE_END {
         REVIEW_TASK_TITLE

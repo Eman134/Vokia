@@ -1,7 +1,7 @@
 use crate::agents::{join_items, replica_of, Agent, Team};
 use crate::db::{
-    FlowEdge, FlowGateway, Layer, OrchestrationSnapshot, Placement, FLOW_START, GATEWAY_PARALLEL,
-    LINK_COMMUNICATION, LINK_FLOW,
+    FlowEdge, FlowGateway, Layer, OrchestrationSnapshot, Placement, FLOW_END, FLOW_START,
+    GATEWAY_PARALLEL, LINK_COMMUNICATION, LINK_FLOW,
 };
 
 const ENFORCEMENT_ON: &str = "on";
@@ -137,6 +137,53 @@ pub(crate) fn gateway_exits<'a>(
     Some((gateway, exits))
 }
 
+// Gateway paralelo de junção: 2 ou mais entradas e uma só saída. Os ramos que chegam nele terminam sem delegar, e o app
+// entrega o resultado ao destino uma única vez, quando o último ramo volta.
+pub(crate) fn is_join(snapshot: &OrchestrationSnapshot, gateway: &FlowGateway) -> bool {
+    if gateway.kind != GATEWAY_PARALLEL {
+        return false;
+    }
+    let flow_edges = || {
+        snapshot
+            .edges
+            .iter()
+            .filter(|edge| edge.team_id == gateway.team_id && edge.link == LINK_FLOW)
+    };
+    let entries = flow_edges()
+        .filter(|edge| edge.to_node == gateway.id)
+        .count();
+    let exits = flow_edges()
+        .filter(|edge| edge.from_node == gateway.id)
+        .count();
+    entries >= 2 && exits == 1
+}
+
+// A ligação que leva o agente ao fim do fluxo: direta ou pela saída de um gateway (gateways encadeados também).
+pub(crate) fn end_edge<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    agent: &Agent,
+) -> Option<&'a FlowEdge> {
+    outgoing_edges(snapshot, agent).find_map(|edge| end_through(snapshot, edge, &mut Vec::new()))
+}
+
+fn end_through<'a>(
+    snapshot: &'a OrchestrationSnapshot,
+    edge: &'a FlowEdge,
+    visited: &mut Vec<&'a str>,
+) -> Option<&'a FlowEdge> {
+    if edge.to_node == FLOW_END {
+        return Some(edge);
+    }
+    let (gateway, exits) = gateway_exits(snapshot, edge)?;
+    if visited.contains(&gateway.id.as_str()) {
+        return None;
+    }
+    visited.push(&gateway.id);
+    exits
+        .into_iter()
+        .find_map(|exit| end_through(snapshot, exit, visited))
+}
+
 pub(crate) fn delegation_targets(
     snapshot: &OrchestrationSnapshot,
     team: &Team,
@@ -147,6 +194,8 @@ pub(crate) fn delegation_targets(
         .filter(|edge| edge.action == ACTION_DELEGATE || edge.action == ACTION_RETURN);
     for edge in delegating {
         let destinations: Vec<&str> = match gateway_exits(snapshot, edge) {
+            // Quem entra numa junção termina sem delegar: o app entrega ao destino quando todos os ramos voltam.
+            Some((gateway, _)) if is_join(snapshot, gateway) => continue,
             Some((_, exits)) => exits.iter().map(|exit| exit.to_node.as_str()).collect(),
             None => vec![edge.to_node.as_str()],
         };
@@ -264,6 +313,18 @@ fn gateway_sentence(
     ))
 }
 
+fn join_sentence(team: &Team, event: &str, exits: &[&FlowEdge]) -> Option<String> {
+    let exit = exits.first()?;
+    let destination = if exit.to_node == FLOW_END {
+        "o fim do fluxo".to_string()
+    } else {
+        team.name_of(flow_target(team, &exit.to_node)?).to_string()
+    };
+    Some(format!(
+        "Quando {event}, termine a resposta sem delegar: o resultado segue para {destination} quando todos os ramos concluírem."
+    ))
+}
+
 // A instrução da ligação acompanha a frase dela: é como o agente deve agir naquele caminho.
 fn edge_sentence(snapshot: &OrchestrationSnapshot, team: &Team, edge: &FlowEdge) -> Option<String> {
     let sentence = edge_rule_sentence(snapshot, team, edge)?;
@@ -288,6 +349,9 @@ fn edge_rule_sentence(
         ));
     }
     if let Some((gateway, exits)) = gateway_exits(snapshot, edge) {
+        if is_join(snapshot, gateway) {
+            return join_sentence(team, event, &exits);
+        }
         return gateway_sentence(team, edge, &gateway.kind, &exits, event);
     }
     let name = team.name_of(flow_target(team, &edge.to_node)?);

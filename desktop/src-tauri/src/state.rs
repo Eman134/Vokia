@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
@@ -101,6 +101,8 @@ pub struct FlowQueue {
     pub open_branches: HashMap<(i64, String), u32>,
     // Card que chegou ao fim do fluxo, com o agente que chegou: a validação final roda quando o último ramo termina.
     pub ended: HashMap<(i64, String), crate::events::Agent>,
+    // Card com algum ramo que parou por erro: a validação final não abre enquanto o card não tiver todos os ramos concluídos.
+    pub stopped: HashSet<(i64, String)>,
 }
 
 // Um lote: as trocas paralelas de um turno do líder. A junção sai quando a última volta.

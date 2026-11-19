@@ -7,7 +7,9 @@ use tauri::{AppHandle, Manager};
 use crate::agents::replica_of;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
-use crate::db::{DbError, DbState, FlowEdge, OrchestrationSnapshot, GATEWAY_PARALLEL, LINK_FLOW};
+use crate::db::{
+    DbError, DbState, FlowEdge, OrchestrationSnapshot, FLOW_END, GATEWAY_PARALLEL, LINK_FLOW,
+};
 use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
 use crate::mcp::{McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
@@ -490,10 +492,14 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
         .state::<AgentRegistry>()
         .team()
         .map_err(FlowError::Team)?;
-    if let Some(target) = snapshot
+    let join = snapshot
         .as_ref()
-        .and_then(|snapshot| join_target(snapshot, &team, &batch))
-    {
+        .and_then(|snapshot| join_target(snapshot, &team, &batch));
+    // A junção sai para o fim: os ramos já marcaram o fim do card e a validação final abre quando o último termina.
+    if matches!(join, Some(JoinExit::End)) && batch.item_id.is_some() {
+        return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
+    }
+    if let Some(JoinExit::Agent(target)) = join {
         let max_instances = snapshot
             .as_ref()
             .and_then(|snapshot| placement_of(snapshot, &target))
@@ -543,9 +549,14 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
     emit_state(app, batch.project_id, batch.leader, AgentState::Waiting)
 }
 
+enum JoinExit {
+    Agent(Agent),
+    End,
+}
+
 // Gateway paralelo de junção (2 ou mais entradas, uma saída) cujas entradas vêm todas dos ramos do lote: o destino da
-// saída recebe os resultados quando o último ramo volta.
-fn join_target(snapshot: &OrchestrationSnapshot, team: &Team, batch: &Batch) -> Option<Agent> {
+// saída (um agente ou o fim do fluxo) recebe os resultados quando o último ramo volta.
+fn join_target(snapshot: &OrchestrationSnapshot, team: &Team, batch: &Batch) -> Option<JoinExit> {
     let branches: HashSet<&str> = batch.dispatched.iter().map(node_id).collect();
     let flow_edges = |from: bool, gateway: &str| -> Vec<&FlowEdge> {
         snapshot
@@ -573,7 +584,10 @@ fn join_target(snapshot: &OrchestrationSnapshot, team: &Team, batch: &Batch) -> 
                     .iter()
                     .all(|edge| branches.contains(edge.from_node.as_str()));
             match exits.as_slice() {
-                [exit] if from_branches => flow_target(team, &exit.to_node).cloned(),
+                [exit] if from_branches && exit.to_node == FLOW_END => Some(JoinExit::End),
+                [exit] if from_branches => flow_target(team, &exit.to_node)
+                    .cloned()
+                    .map(JoinExit::Agent),
                 _ => None,
             }
         })
@@ -584,10 +598,12 @@ fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: Reques
     tauri::async_runtime::spawn(async move {
         let project_id = key.project_id;
         let state = app.state::<AppState>();
+        let item_id = context.item_id.clone();
         let cli = match state.cli.as_ref() {
             Ok(cli) => cli.clone(),
             Err(problem) => {
                 let _ = stop_with_error(&app, project_id, problem.reason.clone());
+                abandon_flow(&app, &state, &key, item_id.as_deref());
                 return;
             }
         };
@@ -595,6 +611,7 @@ fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: Reques
             Ok(team) => team,
             Err(error) => {
                 let _ = report_failure(&app, project_id, &FlowError::Team(error));
+                abandon_flow(&app, &state, &key, item_id.as_deref());
                 return;
             }
         };
@@ -602,6 +619,18 @@ fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: Reques
             let _ = report_failure(&app, project_id, &error);
         }
     });
+}
+
+// O fluxo não chegou a rodar: solta a reserva da sessão e o ramo do card, para não prender open_branches nem pending.
+fn abandon_flow(app: &AppHandle, state: &AppState, key: &SessionKey, item_id: Option<&str>) {
+    if let Ok(mut flow) = state.flow.lock() {
+        flow.pending.remove(key);
+        flow.running.remove(key);
+    }
+    if let Some(item) = item_id {
+        close_branch(state, key.project_id, item, true);
+    }
+    drain_waiting(app, state, key.project_id);
 }
 
 fn start_or_enqueue(
@@ -690,6 +719,7 @@ async fn release_branch(
     let Some(item) = item_id else {
         return;
     };
+    let failed = stopped.is_some();
     if let Some(reason) = stopped {
         let leader = load_orchestration(app)
             .ok()
@@ -703,27 +733,41 @@ async fn release_branch(
             let _ = emit_feed_note(app, key.project_id, Speaker::from(leader), &text, time);
         }
     }
-    let ended = {
-        let Ok(mut flow) = state.flow.lock() else {
-            return;
-        };
-        let branch = (key.project_id, item.to_string());
-        let open = flow.open_branches.get(&branch).copied().unwrap_or(0);
-        if open > 1 {
-            flow.open_branches.insert(branch, open - 1);
-            return;
-        }
-        flow.open_branches.remove(&branch);
-        flow.ended.remove(&branch)
+    let Some((ended, finished)) = close_branch(state, key.project_id, item, failed) else {
+        return;
     };
     // Sem ramo aberto: só o card que chegou ao fim do fluxo vai para a validação final.
     if let Some(speaker) = ended {
         if let Err(error) =
-            validation::on_flow_end(app, state, team, key.project_id, item, &speaker).await
+            validation::on_flow_end(app, state, team, key.project_id, item, &speaker, finished)
+                .await
         {
             let _ = report_failure(app, key.project_id, &error);
         }
     }
+}
+
+// Fecha um ramo do card. Devolve None enquanto restam ramos abertos; no último, o agente que chegou ao fim (se algum
+// chegou) e se todos os ramos terminaram sem parar por erro.
+fn close_branch(
+    state: &AppState,
+    project_id: i64,
+    item: &str,
+    failed: bool,
+) -> Option<(Option<Agent>, bool)> {
+    let mut flow = state.flow.lock().ok()?;
+    let branch = (project_id, item.to_string());
+    if failed {
+        flow.stopped.insert(branch.clone());
+    }
+    let open = flow.open_branches.get(&branch).copied().unwrap_or(0);
+    if open > 1 {
+        flow.open_branches.insert(branch, open - 1);
+        return None;
+    }
+    flow.open_branches.remove(&branch);
+    let finished = !flow.stopped.remove(&branch);
+    Some((flow.ended.remove(&branch), finished))
 }
 
 fn set_running_item(

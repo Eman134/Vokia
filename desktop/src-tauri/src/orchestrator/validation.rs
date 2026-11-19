@@ -60,7 +60,8 @@ pub(crate) fn evaluate(item: &BacklogItem, open_decision: bool, finished: bool) 
     }
 }
 
-// O último ramo do card chegou ao fim: o card vai para In review e a validação final do time do líder decide.
+// O último ramo do card chegou ao fim: o card vai para In review e a validação final do time do líder decide. Com um ramo
+// que parou por erro (`finished` falso) a validação não abre: o card fica onde está, com a nota na atividade.
 pub(super) async fn on_flow_end(
     app: &AppHandle,
     state: &AppState,
@@ -68,6 +69,7 @@ pub(super) async fn on_flow_end(
     project_id: i64,
     item_id: &str,
     speaker: &Agent,
+    finished: bool,
 ) -> Result<(), FlowError> {
     let db_state = app.state::<DbState>();
     let Some(db) = db_state.db() else {
@@ -78,6 +80,14 @@ pub(super) async fn on_flow_end(
         Err(DbError::BacklogItemNotFound(_)) => return Ok(()),
         Err(error) => return Err(error.into()),
     };
+    if !finished {
+        db.add_card_activity(
+            project_id,
+            item_id,
+            &format!("Validação final de {item_id} não aberta: um ramo parou antes do fim."),
+        )?;
+        return emit_backlog_changed(app, project_id);
+    }
     db.advance_card(project_id, item_id, "In review")?;
     emit_backlog_changed(app, project_id)?;
     let snapshot = load_orchestration(app)?;
@@ -98,7 +108,7 @@ pub(super) async fn on_flow_end(
         return open_manual_validation(app, state, &leader, project_id, &item, "");
     }
     let open_decision = has_open_decision(state, project_id, item_id)?;
-    match evaluate(&item, open_decision, true) {
+    match evaluate(&item, open_decision, finished) {
         FinalCheck::Passed { met, total } => {
             db.close_card(project_id, item_id, CLOSED_BY_AUTOMATIC)?;
             let text = format!("Concluí {item_id} automaticamente: critérios {met}/{total}.");
