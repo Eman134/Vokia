@@ -1,6 +1,4 @@
 export const SKILLS_TITLE = 'Skills'
-export const SKILLS_SUBTITLE =
-  'Manuais que o agente segue numa situação. Você liga cada skill às ocupações que precisam dela, e o agente carrega só quando a tarefa pede.'
 export const SKILLS_MEMORY_ACTION_LABEL = 'Criar da memória'
 export const SKILLS_INSTALL_ACTION_LABEL = 'Instalar skill'
 export const SKILL_FROM_MEMORY_LABEL = 'criada da memória'

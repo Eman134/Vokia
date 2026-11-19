@@ -9,8 +9,6 @@ import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 
 const PAGE_CLASSES = `flex-[999_1_640px] flex min-w-0 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const PAGE_TITLE = 'Memória e grafo'
-const PAGE_SUBTITLE =
-  'O que os agentes aprenderam sobre o projeto e o mapa que liga código e artefatos (diagramas, documentos e decisões) para ler menos e trabalhar sem se atropelar.'
 const SECTIONS_CLASSES = 'flex flex-wrap items-start gap-4.5'
 const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-dialog border border-line bg-surface'
 const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
@@ -23,7 +21,7 @@ const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 <template>
   <main :class="PAGE_CLASSES">
-    <UiPageHeader :title="PAGE_TITLE" :project-name="projectName" :subtitle="PAGE_SUBTITLE" />
+    <UiPageHeader :title="PAGE_TITLE" :project-name="projectName" />
     <div :class="SECTIONS_CLASSES">
       <section aria-label="Memória" :class="MEMORY_SECTION_CLASSES">
         <MemoryList />

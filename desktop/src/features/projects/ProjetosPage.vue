@@ -10,7 +10,7 @@ import { useFeed } from '../team/useFeed'
 import { useConsole } from '../console/useConsole'
 import ProjectCard from './ProjectCard.vue'
 import ProjectEditForm from './ProjectEditForm.vue'
-import { NEW_PROJECT_LABEL, PROJECTS_SUBTITLE, PROJECTS_TITLE } from './projetosSample'
+import { NEW_PROJECT_LABEL, PROJECTS_TITLE } from './projetosSample'
 import {
   isProjectError,
   type PermissionLevel,
@@ -84,7 +84,7 @@ onMounted(async () => {
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="PROJECTS_TITLE" :subtitle="PROJECTS_SUBTITLE">
+    <UiPageHeader :title="PROJECTS_TITLE">
       <template #actions>
         <UiButton
           variant="primary"

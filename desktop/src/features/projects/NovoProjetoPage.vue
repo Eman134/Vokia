@@ -19,7 +19,6 @@ import {
   SAMPLE_TEAM_PREVIEW,
   SHARED_HEADING,
   SHARED_NOTE,
-  STEP_SUBTITLES,
   STEP_TITLES,
   SUMMARY_HEADING,
   TEAM_NEXT_HEADING,
@@ -59,7 +58,7 @@ const previewOrigin = computed(() => (wizard.originKind === 'folder' ? 'Pasta' :
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="STEP_TITLES[index]" :subtitle="STEP_SUBTITLES[index]" />
+    <UiPageHeader :title="STEP_TITLES[index]" />
 
     <div :class="COLUMNS_CLASSES">
       <div :class="FORM_CLASSES">

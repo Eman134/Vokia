@@ -13,15 +13,12 @@ const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-hidden ${PAGE_
 const PANELS_CLASSES = 'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto md:flex-row md:overflow-hidden'
 // Abaixo de lg (1024 px) não cabe a coluna de fila: ela vira aba da conversa.
 const WIDE_MEDIA_QUERY = '(min-width: 64rem)'
-const SUBTITLE = 'Cada agente tem a sua conversa: o que ele disse e o que rodou no terminal.'
-const SUBTITLE_WITH_QUEUE = 'Cada agente tem a sua conversa: o que ele disse, o que rodou no terminal e o que vem na fila dele.'
 
 const projectsStore = useProjects()
 const conversationTab = useConversationTab()
 // Sem item na fila a seção (e a aba dela no modo estreito) não aparece.
 const queueItems = useQueueItems()
 const hasQueue = computed(() => queueItems.value.length > 0)
-const subtitle = computed(() => (hasQueue.value ? SUBTITLE_WITH_QUEUE : SUBTITLE))
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 const wideMedia = window.matchMedia(WIDE_MEDIA_QUERY)
 const wide = ref(wideMedia.matches)
@@ -39,7 +36,7 @@ onUnmounted(() => {
 
 <template>
   <main :class="PAGE_CLASSES">
-    <UiPageHeader title="Conversas" :project-name="projectName" :subtitle="subtitle" />
+    <UiPageHeader title="Conversas" :project-name="projectName" />
     <div :class="PANELS_CLASSES">
       <AgentList />
       <Conversation :fila-em-aba="!wide && hasQueue">

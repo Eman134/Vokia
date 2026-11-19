@@ -16,7 +16,6 @@ import {
   ALL_FEATURES_LABEL,
   ALL_FEATURES_VALUE,
   ALL_TRIAGED_LABEL,
-  BACKLOG_SUBTITLE,
   BACKLOG_TITLE,
   COLUMN_META,
   EMPTY_BOARD_TEXT,
@@ -149,7 +148,7 @@ watch(
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="BACKLOG_TITLE" :project-name="projectName" :subtitle="BACKLOG_SUBTITLE">
+    <UiPageHeader :title="BACKLOG_TITLE" :project-name="projectName">
       <template #actions>
         <UiButton
           variant="quiet"

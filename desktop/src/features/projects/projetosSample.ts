@@ -1,6 +1,4 @@
 export const PROJECTS_TITLE = 'Seus projetos'
-export const PROJECTS_SUBTITLE =
-  'Cada projeto tem um símbolo e o seu próprio mapa do time, backlog, conversas, artefatos e memória. Um agente pode trabalhar em mais de um.'
 export const NEW_PROJECT_LABEL = '+ Novo projeto'
 export const OPEN_LABEL = 'Abrir'
 export const EDIT_LABEL = 'Editar'
@@ -8,11 +6,6 @@ export const SAVE_LABEL = 'Salvar'
 export const EMPTY_PATH_TEXT = 'Sem pasta definida'
 
 export const STEP_TITLES = ['Novo projeto', 'Montar o time', 'Primeiro pedido'] as const
-export const STEP_SUBTITLES = [
-  'De uma pasta do computador ou de um repositório do GitHub. Nos próximos passos você escolhe o time e faz o primeiro pedido.',
-  'Reaproveite um time que já trabalha em outro projeto, comece de um modelo ou deixe para depois.',
-  'Diga o que o time deve fazer primeiro. A líder transforma o pedido em uma feature com cards e você decide quando começa.',
-] as const
 export const PREVIEW_HEADING = 'Prévia em Projetos'
 export const TEAM_NEXT_HEADING = 'Time no próximo passo'
 export const CREATES_HEADING = 'O que a Vokia cria'

@@ -12,7 +12,6 @@ import SettingRow from './SettingRow.vue'
 import SettingsSection from './SettingsSection.vue'
 import { SETTINGS_SECTIONS } from './configuracoesSample'
 
-const PAGE_SUBTITLE = 'Valem para todos os projetos. Regras de um projeto ou de um agente ficam nas páginas deles e têm prioridade.'
 const SEARCH_LABEL = 'Buscar configuração'
 const ACTIVE_SECTION_TITLE = 'Geral'
 const CONNECTION_STATUS = 'Tudo conectado'
@@ -47,7 +46,7 @@ async function save(): Promise<void> {
 
 <template>
   <div :class="PAGE_CLASSES">
-    <UiPageHeader :title="PAGE_LABELS.config" :subtitle="PAGE_SUBTITLE">
+    <UiPageHeader :title="PAGE_LABELS.config">
       <template #actions>
         <input type="search" :aria-label="SEARCH_LABEL" :placeholder="SEARCH_LABEL" :class="SEARCH_CLASSES" disabled aria-disabled="true" />
       </template>
