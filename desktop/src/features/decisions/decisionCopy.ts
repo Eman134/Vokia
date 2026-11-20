@@ -21,6 +21,7 @@ export const OTHER_PLACEHOLDER = 'Sua resposta'
 
 export const PERMISSION_ALLOW = 'allow'
 export const PERMISSION_DENY = 'deny'
+export const PERMISSION_ALWAYS = 'always'
 
 export const KIND_LABELS: Record<CardKind, string> = {
   aprovacao: 'Aprovação',
@@ -82,6 +83,7 @@ const CONCLUDE_ACTION: CardAction = {
 const PERMISSION_ACTIONS: readonly CardAction[] = [
   { ...APPROVE_ACTION, answer: PERMISSION_ALLOW },
   { ...DENY_ACTION, answer: PERMISSION_DENY },
+  { ...ALWAYS_ACTION, answer: PERMISSION_ALWAYS },
 ]
 
 export function actionsFor(kind: CardKind, agent: string): CardAction[] {

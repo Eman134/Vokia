@@ -13,7 +13,8 @@ import {
   OTHER_OPTION,
   OTHER_PLACEHOLDER,
   optionMessage,
-  PERMISSION_ALLOW,
+  PERMISSION_ALWAYS,
+  PERMISSION_DENY,
   RETURN_MOTIVE_PLACEHOLDER,
   VALIDATION_RETURN_LABEL,
   VALIDATION_RETURN_MESSAGE,
@@ -41,7 +42,12 @@ const chosenAnswer = computed(() => (typingOther.value ? otherText.value.trim() 
 function run(action: CardAction): void {
   const message = action.message(name.value, subject.value)
   if (props.card.permissionId !== null) {
-    decisions.answerPermission(props.card.permissionId, action.answer === PERMISSION_ALLOW, message)
+    decisions.answerPermission(
+      props.card.permissionId,
+      action.answer !== PERMISSION_DENY,
+      message,
+      action.answer === PERMISSION_ALWAYS,
+    )
   } else if (props.card.decisionId !== null) {
     decisions.answer(props.card.decisionId, action.answer, message)
   }

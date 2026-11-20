@@ -10,6 +10,8 @@ use crate::permissions::{Answer, PermissionError};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, RequestContext};
 
+const PERMISSION_REASON_MAX_CHARS: usize = 500;
+
 #[tauri::command]
 pub fn cli_problem(state: State<'_, AppState>) -> Option<CliProblem> {
     state.cli.as_ref().err().cloned()
@@ -65,17 +67,30 @@ pub async fn send_request(
     }
 }
 
+// Corta por caracteres, não por bytes, para não partir UTF-8.
+fn clean_reason(reason: Option<String>) -> Option<String> {
+    let text: String = reason?
+        .trim()
+        .chars()
+        .take(PERMISSION_REASON_MAX_CHARS)
+        .collect();
+    (!text.is_empty()).then_some(text)
+}
+
 #[tauri::command]
 pub fn answer_permission(
     state: State<'_, AppState>,
     id: String,
     allow: bool,
     always: bool,
+    reason: Option<String>,
 ) -> Result<(), String> {
     let answer = if allow {
         Answer::Allow { always }
     } else {
-        Answer::Deny
+        Answer::Deny {
+            reason: clean_reason(reason),
+        }
     };
     match state.permissions.answer(&id, answer) {
         // A outra superfície já decidiu ou o pedido expirou: nada a mostrar.

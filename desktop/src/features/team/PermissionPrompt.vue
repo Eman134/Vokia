@@ -1,13 +1,23 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiField from '../../ui/UiField.vue'
 import type { VokiaPermission } from './events'
 import { agentName } from './agents'
 import { useFeed } from './useFeed'
 import { usePermissionCountdown } from './usePermissionCountdown'
 
 const props = defineProps<{ permission: VokiaPermission }>()
-const emit = defineEmits<{ decide: [allow: boolean] }>()
+const emit = defineEmits<{ decide: [allow: boolean, reason?: string] }>()
 const feed = useFeed()
+
+const PERMISSION_REASON_MAX_CHARS = 500
+const REASON_LABEL = 'Motivo ao negar (opcional)'
+const reason = ref('')
+
+function deny(): void {
+  emit('decide', false, Array.from(reason.value.trim()).slice(0, PERMISSION_REASON_MAX_CHARS).join(''))
+}
 
 const name = agentName(props.permission.agent)
 const { label } = usePermissionCountdown(props.permission.expiresAt)
@@ -45,14 +55,15 @@ const approvals =
         <p v-if="permission.suggestAlways" class="mt-2 text-caption text-ink">
           Você costuma permitir isto neste projeto. Quer permitir sempre neste projeto?
         </p>
+        <div class="mt-3"><UiField v-model="reason" :label="REASON_LABEL" /></div>
         <div class="mt-3 flex flex-wrap gap-2">
           <UiButton variant="approve" size="sm" @press="emit('decide', true)">Permitir</UiButton>
-          <span v-if="permission.suggestAlways" class="inline-flex motion-safe:animate-permission-sway">
+          <span :class="['inline-flex', permission.suggestAlways && 'motion-safe:animate-permission-sway']">
             <UiButton variant="approve" size="sm" @press="feed.decidePermission(permission.id, true, true)">
               Permitir sempre
             </UiButton>
           </span>
-          <UiButton variant="danger" size="sm" @press="emit('decide', false)">Negar</UiButton>
+          <UiButton variant="danger" size="sm" @press="deny">Negar</UiButton>
         </div>
       </div>
     </div>

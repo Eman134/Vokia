@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use super::activity::{ActivityParser, TurnActivity};
 use super::command::{agent_command, timeout_for, Access};
 use super::console::{tool_summary, ConsoleKind, ConsoleLine, ConsoleParser};
-use super::control::{parse_control_request, ControlRequest, PermissionRequest};
+use super::control::{parse_control_request, ControlRequest, PermissionRequest, PermissionVerdict};
 use super::error::ClaudeError;
 use super::stream::{into_reply, CliResponse, RateLimits, Reply, StreamAccumulator};
 use crate::mcp::{ExchangeSlot, McpSession};
@@ -113,7 +113,7 @@ impl LiveSession {
     ) -> Result<Reply, ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
-        F: Future<Output = bool>,
+        F: Future<Output = PermissionVerdict>,
         O: FnMut(ConsoleLine),
         A: FnMut(TurnActivity),
     {
@@ -137,7 +137,7 @@ impl LiveSession {
     ) -> Result<(CliResponse, Option<RateLimits>, TurnActivity), ClaudeError>
     where
         D: Fn(PermissionRequest) -> F,
-        F: Future<Output = bool>,
+        F: Future<Output = PermissionVerdict>,
         O: FnMut(ConsoleLine),
         A: FnMut(TurnActivity),
     {
@@ -176,12 +176,13 @@ impl LiveSession {
                             tool_summary(&request.tool, &request.input)
                         ),
                     ));
-                    let allowed = decide(request).await;
-                    self.answer_permission(&id, allowed.then_some(input))
+                    let verdict = decide(request).await;
+                    self.answer_permission(&id, permission_response(verdict, input))
                         .await?;
                 }
                 Some(ControlRequest::Malformed(id)) => {
-                    self.answer_permission(&id, None).await?;
+                    self.answer_permission(&id, permission_response(PermissionVerdict::Deny(None), serde_json::Value::Null))
+                        .await?;
                 }
                 None => {
                     for console_line in console.lines(line.as_bytes()) {
@@ -223,12 +224,8 @@ impl LiveSession {
     async fn answer_permission(
         &mut self,
         request_id: &str,
-        allowed_input: Option<serde_json::Value>,
+        decision: serde_json::Value,
     ) -> Result<(), ClaudeError> {
-        let decision = match allowed_input {
-            Some(input) => serde_json::json!({ "behavior": "allow", "updatedInput": input }),
-            None => serde_json::json!({ "behavior": "deny", "message": DENIED_MESSAGE }),
-        };
         let payload = serde_json::json!({
             "type": CONTROL_RESPONSE_KIND,
             "response": { "subtype": "success", "request_id": request_id, "response": decision },
@@ -258,6 +255,16 @@ impl LiveSession {
             // O kill só falha se o processo já saiu, que é o resultado desejado.
             let _ = self.child.kill().await;
         }
+    }
+}
+
+fn permission_response(verdict: PermissionVerdict, input: serde_json::Value) -> serde_json::Value {
+    match verdict {
+        PermissionVerdict::Allow => serde_json::json!({ "behavior": "allow", "updatedInput": input }),
+        PermissionVerdict::Deny(Some(reason)) => {
+            serde_json::json!({ "behavior": "deny", "message": format!("{DENIED_MESSAGE} Motivo: {reason}") })
+        }
+        PermissionVerdict::Deny(None) => serde_json::json!({ "behavior": "deny", "message": DENIED_MESSAGE }),
     }
 }
 

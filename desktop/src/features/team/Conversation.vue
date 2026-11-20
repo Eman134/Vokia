@@ -232,7 +232,7 @@ watch(temTerminal, (disponivel) => {
       </ol>
       <ol v-if="feed.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
         <li v-for="permission in feed.permissions" :key="permission.id">
-          <PermissionPrompt :permission="permission" @decide="(allow) => feed.decidePermission(permission.id, allow)" />
+          <PermissionPrompt :permission="permission" @decide="(allow, reason) => feed.decidePermission(permission.id, allow, false, reason)" />
         </li>
       </ol>
       <div v-if="liveRun" class="mt-3 flex max-w-3xl items-start gap-2.5" data-testid="activity-live-block">

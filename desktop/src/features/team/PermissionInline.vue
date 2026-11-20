@@ -21,6 +21,14 @@ const feed = useFeed()
     <UiButton variant="approve" size="sm" @press="feed.decidePermission(feed.permissions[0].id, true)">
       Permitir
     </UiButton>
+    <UiButton
+      variant="approve"
+      size="sm"
+      title="Permitir sempre este comando neste projeto"
+      @press="feed.decidePermission(feed.permissions[0].id, true, true)"
+    >
+      Sempre
+    </UiButton>
     <UiButton variant="danger" size="sm" @press="feed.decidePermission(feed.permissions[0].id, false)">
       Negar
     </UiButton>

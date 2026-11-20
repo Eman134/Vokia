@@ -7,7 +7,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
-use crate::claude::PermissionRequest;
+use crate::claude::{PermissionRequest, PermissionVerdict};
 use crate::db::{ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
@@ -34,10 +34,11 @@ impl fmt::Display for PermissionError {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Answer {
     Allow { always: bool },
-    Deny,
+    // O motivo só segue ao agente; nunca vai ao banco, ao console nem a evento.
+    Deny { reason: Option<String> },
     // Sessão encerrada pelo app: negado, mas não é uma recusa do usuário.
     Closed,
 }
@@ -63,23 +64,23 @@ pub struct PermissionGate<'a> {
 }
 
 impl PermissionGate<'_> {
-    pub async fn decide(self, request: PermissionRequest) -> bool {
+    pub async fn decide(self, request: PermissionRequest) -> PermissionVerdict {
         if rule_allows(self.app, self.project_id, &request.tool, &target_of(&request)) {
             announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request));
-            return true;
+            return PermissionVerdict::Allow;
         }
         let approval = approval_key(&request);
         if self.grant_per_session && self.is_granted(&approval) {
-            return true;
+            return PermissionVerdict::Allow;
         }
-        let allowed = self
+        let verdict = self
             .broker
             .request(self.app, self.agent.clone(), self.project_id, request)
             .await;
-        if allowed && self.grant_per_session {
+        if verdict == PermissionVerdict::Allow && self.grant_per_session {
             self.remember(approval);
         }
-        allowed
+        verdict
     }
 
     // Lock envenenado vale como "não aprovado": o comando volta a ser perguntado.
@@ -104,14 +105,14 @@ impl PermissionBroker {
         agent: Agent,
         project_id: i64,
         request: PermissionRequest,
-    ) -> bool {
+    ) -> PermissionVerdict {
         let (sender, receiver) = oneshot::channel();
         if self.register(&request.id, project_id, sender).is_err() {
-            return false;
+            return PermissionVerdict::Deny(None);
         }
         let Ok(now) = now_millis() else {
             self.forget(&request.id);
-            return false;
+            return PermissionVerdict::Deny(None);
         };
         let command = detail(&request);
         let target = target_of(&request);
@@ -133,17 +134,17 @@ impl PermissionBroker {
         };
         if app.emit(EVENT_NAME, event).is_err() {
             self.forget(&request.id);
-            return false;
+            return PermissionVerdict::Deny(None);
         }
         emit_agent_state(app, &agent, AgentState::Waiting, project_id);
         let (outcome, answer) = match timeout(PERMISSION_WAIT_LIMIT, receiver).await {
-            Ok(Ok(answer)) => (answer_outcome(answer), Some(answer)),
+            Ok(Ok(answer)) => (answer_outcome(&answer), Some(answer)),
             Ok(Err(_)) => (PermissionOutcome::Denied, None),
             Err(_) => (PermissionOutcome::Expired, None),
         };
         self.forget(&request.id);
         if let Some(db) = db {
-            record_answer(app, db, project_id, &request.tool, &target, answer);
+            record_answer(app, db, project_id, &request.tool, &target, answer.as_ref());
         }
         // Sem este aviso o balão ficaria aberto depois de negado por tempo.
         let _ = app.emit(
@@ -155,7 +156,7 @@ impl PermissionBroker {
             },
         );
         emit_agent_state(app, &agent, AgentState::Thinking, project_id);
-        outcome == PermissionOutcome::Allowed
+        verdict_of(answer)
     }
 
     pub fn answer(&self, id: &str, answer: Answer) -> Result<(), PermissionError> {
@@ -208,10 +209,18 @@ impl PermissionBroker {
     }
 }
 
-fn answer_outcome(answer: Answer) -> PermissionOutcome {
+fn answer_outcome(answer: &Answer) -> PermissionOutcome {
     match answer {
         Answer::Allow { .. } => PermissionOutcome::Allowed,
-        Answer::Deny | Answer::Closed => PermissionOutcome::Denied,
+        Answer::Deny { .. } | Answer::Closed => PermissionOutcome::Denied,
+    }
+}
+
+fn verdict_of(answer: Option<Answer>) -> PermissionVerdict {
+    match answer {
+        Some(Answer::Allow { .. }) => PermissionVerdict::Allow,
+        Some(Answer::Deny { reason }) => PermissionVerdict::Deny(reason),
+        Some(Answer::Closed) | None => PermissionVerdict::Deny(None),
     }
 }
 
@@ -221,7 +230,7 @@ fn record_answer(
     project_id: i64,
     tool: &str,
     target: &str,
-    answer: Option<Answer>,
+    answer: Option<&Answer>,
 ) {
     let recorded = now_millis()
         .map_err(|error| error.to_string())
@@ -239,17 +248,17 @@ fn store_answer(
     tool: &str,
     target: &str,
     time: u64,
-    answer: Option<Answer>,
+    answer: Option<&Answer>,
 ) -> Result<(), DbError> {
     match answer {
         Some(Answer::Allow { always }) => {
             db.record_approval(project_id, tool, target, time)?;
-            if always {
+            if *always {
                 db.save_permission_rule(project_id, tool, target, time)?;
             }
             Ok(())
         }
-        Some(Answer::Deny) => db.record_denial(project_id, tool, target, time),
+        Some(Answer::Deny { .. }) => db.record_denial(project_id, tool, target, time),
         Some(Answer::Closed) | None => Ok(()),
     }
 }

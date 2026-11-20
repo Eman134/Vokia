@@ -252,9 +252,9 @@ export const useFeed = defineStore('feed', () => {
     }
   }
 
-  async function decidePermission(id: string, allow: boolean, always = false): Promise<void> {
+  async function decidePermission(id: string, allow: boolean, always = false, reason?: string): Promise<void> {
     try {
-      await answerPermission(id, allow, always)
+      await answerPermission(id, allow, always, reason)
     } catch (error) {
       feed.value.push({ type: 'error', message: String(error) })
       permissions.value = permissions.value.filter((permission) => permission.id !== id)

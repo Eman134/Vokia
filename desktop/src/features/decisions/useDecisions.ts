@@ -124,8 +124,8 @@ export const useDecisions = defineStore('decisions', () => {
     logAnswer({ decisionId: id, text: '', kind: 'undone' })
   }
 
-  function answerPermission(id: string, allow: boolean, message: string): void {
-    void feed.decidePermission(id, allow)
+  function answerPermission(id: string, allow: boolean, message: string, always = false): void {
+    void feed.decidePermission(id, allow, always)
     resolved.value.push({ key: `permissao-${id}`, message, decisionId: null, sent: true })
   }
 

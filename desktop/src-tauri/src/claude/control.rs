@@ -10,6 +10,12 @@ pub struct PermissionRequest {
     pub input: serde_json::Value,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PermissionVerdict {
+    Allow,
+    Deny(Option<String>),
+}
+
 pub(super) enum ControlRequest {
     Permission(PermissionRequest),
     Malformed(String),
