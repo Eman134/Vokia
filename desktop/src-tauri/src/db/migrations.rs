@@ -125,6 +125,21 @@ const ARTIFACTS_SCHEMA: &str = "
     );
 ";
 
+const ATTACHMENTS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS attachments (
+        project_id INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('image', 'pdf', 'file')),
+        size INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        sent_at INTEGER,
+        PRIMARY KEY (project_id, id),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+";
+
 // Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
 const PLANS_WITHOUT_ARTIFACT_SQL: &str = "SELECT saved.project_id, saved.item_id, saved.text, saved.agent, card.title \
     FROM item_plans AS saved \
@@ -584,6 +599,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(RUNS_SCHEMA)?;
     tx.execute_batch(PERMISSION_SCHEMA)?;
     tx.execute_batch(ARTIFACTS_SCHEMA)?;
+    tx.execute_batch(ATTACHMENTS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

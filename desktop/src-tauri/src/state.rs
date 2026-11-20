@@ -59,6 +59,8 @@ pub struct RequestContext {
     pub parallel: bool,
     // Lote de delegações paralelas ao qual este pedido pertence (a junção espera todas).
     pub batch: Option<u64>,
+    // Anexos que a mensagem do usuário referencia; são marcados como enviados ao gravar a mensagem.
+    pub attachments: Vec<String>,
 }
 
 impl RequestContext {
@@ -72,6 +74,7 @@ impl RequestContext {
             channel_id,
             parallel: false,
             batch: None,
+            attachments: Vec::new(),
         }
     }
 }

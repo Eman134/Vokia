@@ -11,7 +11,7 @@ use std::path::Path;
 
 use tauri::AppHandle;
 
-pub use registry::{Binding, RandomnessUnavailable};
+pub use registry::{random_hex, Binding, RandomnessUnavailable};
 #[cfg(test)]
 pub use registry::Token;
 pub use server::{McpConfigFile, McpServer, McpSession};

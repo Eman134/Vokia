@@ -88,6 +88,7 @@ pub enum Access<'a> {
 #[derive(Clone, Copy)]
 pub struct ProjectAccess<'a> {
     pub dir: &'a Path,
+    pub attachments: &'a Path,
     pub level: PermissionLevel,
 }
 
@@ -148,6 +149,7 @@ pub(super) fn agent_command(
             command
                 .arg("--add-dir")
                 .arg(project.dir)
+                .arg(project.attachments)
                 .args(["--permission-mode", PERMISSION_MODE])
                 .args(["--setting-sources", NO_SETTING_SOURCES]);
             if let Some(tools) = flags_for(project.level).tools {

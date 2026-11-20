@@ -110,6 +110,7 @@ fn args_of(access: Access<'_>, mcp: Option<&McpConfigFile>) -> Vec<String> {
 fn project_access(level: PermissionLevel) -> ProjectAccess<'static> {
     ProjectAccess {
         dir: Path::new("."),
+        attachments: Path::new("."),
         level,
     }
 }

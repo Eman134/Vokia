@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import { motion } from 'motion-v'
 import type { ComposeSize } from './pageActions'
 import { useConnection } from './useConnection'
@@ -28,6 +28,7 @@ import QueueButton from './bar/QueueButton.vue'
 import StatusRing from './bar/StatusRing.vue'
 import { useComposerSubmit } from './bar/useComposerSubmit'
 import { usePageActions } from './bar/usePageActions'
+import { listenFileDrops } from '../attachments/attachmentsApi'
 
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
 const COLLAPSE_MS = BAR_COLLAPSE_TOTAL_MS
@@ -44,7 +45,7 @@ const flow = useFlow()
 const projectsStore = useProjects()
 const pillRef = ref<ComponentPublicInstance | null>(null)
 const pillElement = computed(() => pillRef.value?.$el ?? null)
-const { draft, confirmed, submit } = useComposerSubmit()
+const { draft, confirmed, attachments, submit } = useComposerSubmit()
 const composer = ref<InstanceType<typeof ComposerField> | null>(null)
 const hovered = ref(false)
 const collapsing = ref(false)
@@ -55,7 +56,7 @@ const queueOpen = ref(false)
 const menuOpen = ref(false)
 const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
-const hasDraft = computed(() => draft.value !== '')
+const hasDraft = computed(() => draft.value !== '' || attachments.attachments.value.length > 0)
 const interacting = computed(
   () => hasDraft.value || hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
 )
@@ -81,6 +82,8 @@ const layoutKey = computed(() =>
     usageLimit.visible,
     feed.permissions.length,
     feed.activeAgents.length,
+    attachments.attachments.value.length,
+    attachments.saving.value,
   ].join('|'),
 )
 const pillWidthClass = computed(() => {
@@ -127,7 +130,26 @@ watch(hovered, (isHovered, _previous, onCleanup) => {
   onCleanup(() => document.removeEventListener('pointermove', reconcileHover))
 })
 
+// O ouvinte vive o tempo do componente: a barra é desmontada offline e remontada, e um ouvinte esquecido duplicaria anexos.
+let stopFileDrops: (() => void) | undefined
+let unmounted = false
+
+onMounted(async () => {
+  const stop = await listenFileDrops((paths) => {
+    if (canAsk.value && connection.online) {
+      void attachments.addPaths(paths)
+    }
+  })
+  if (unmounted) {
+    stop()
+  } else {
+    stopFileDrops = stop
+  }
+})
+
 onUnmounted(() => {
+  unmounted = true
+  stopFileDrops?.()
   clearTimeout(collapseTimer)
 })
 
@@ -182,6 +204,7 @@ function onPointerLeave(): void {
         :inline-permission="inlinePermission"
         :rail-page="railPage"
         :pill="pillElement"
+        :attachments="attachments"
         @menu-open="menuOpen = $event"
       />
       <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />

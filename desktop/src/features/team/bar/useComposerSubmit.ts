@@ -11,6 +11,7 @@ import { screenDestination } from '../screenRecipient'
 import { useFeed } from '../useFeed'
 import { useRoster } from '../useRoster'
 import { useChannels } from '../../channels/useChannels'
+import { useComposerAttachments } from '../../attachments/useComposerAttachments'
 
 // Rascunho e envio vivem no pai: o campo é desmontado offline, e a restauração após falha precisa sobreviver a isso.
 export function useComposerSubmit() {
@@ -23,10 +24,11 @@ export function useComposerSubmit() {
   const roster = useRoster()
   const draft = ref('')
   const confirmed = ref(new Set<Agent>())
+  const composerAttachments = useComposerAttachments()
 
   async function submit(): Promise<void> {
     const text = draft.value.trim()
-    if (text === '' || connection.checking) {
+    if ((text === '' && composerAttachments.attachments.value.length === 0) || connection.checking || composerAttachments.saving.value) {
       return
     }
     const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
@@ -41,18 +43,31 @@ export function useComposerSubmit() {
     const pending = draft.value
     // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
     const pendingConfirmed = confirmed.value
+    const batch = composerAttachments.take()
     draft.value = ''
+    // A rejeição do comando chega depois do envio: o usuário pode já ter digitado de novo, e isso não se sobrescreve.
+    const restore = (): void => {
+      if (draft.value === '') {
+        draft.value = pending
+        confirmed.value = pendingConfirmed
+      }
+      if (composerAttachments.attachments.value.length === 0) {
+        composerAttachments.restore(batch)
+      }
+    }
     if (
       !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
         channelId: channelId ?? undefined,
+        attachments: batch.ids,
+        attachmentsProjectId: batch.projectId,
         onEnqueued: requestNotices.announceSent,
         onQueued: requestNotices.markBackendQueued,
+        onRejected: restore,
       }))
     ) {
-      draft.value = pending
-      confirmed.value = pendingConfirmed
+      restore()
     }
   }
 
-  return { draft, confirmed, submit }
+  return { draft, confirmed, attachments: composerAttachments, submit }
 }

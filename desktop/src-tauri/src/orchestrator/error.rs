@@ -4,6 +4,7 @@ use std::time::SystemTimeError;
 use serde::Serialize;
 
 use crate::agents::AgentError;
+use crate::attachments::AttachmentError;
 use crate::claude::{ClaudeError, UsageLimit};
 use crate::db::DbError;
 use crate::projects::worktree::WorktreeError;
@@ -28,6 +29,7 @@ pub enum FlowError {
     QueuePoisoned,
     ArchivePoisoned,
     ArchivePath(tauri::Error),
+    AttachmentsDir(AttachmentError),
     ArchiveIo(std::io::Error),
     ArchiveJson(serde_json::Error),
     Clock(SystemTimeError),
@@ -67,6 +69,9 @@ impl fmt::Display for FlowError {
                 f,
                 "Não foi possível localizar a pasta de dados do app: {error}"
             ),
+            FlowError::AttachmentsDir(error) => {
+                write!(f, "Não foi possível preparar a pasta de anexos: {error}")
+            }
             FlowError::ArchiveIo(error) => {
                 write!(f, "Não foi possível gravar o arquivo de tarefas: {error}")
             }

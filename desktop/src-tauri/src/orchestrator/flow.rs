@@ -5,6 +5,7 @@ use std::sync::PoisonError;
 use tauri::{AppHandle, Manager};
 
 use crate::agents::replica_of;
+use crate::attachments;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{self, ProjectAccess};
 use crate::db::{
@@ -105,6 +106,12 @@ pub(super) async fn handle_request_from(
         None,
         None,
     )?;
+    // Só depois da mensagem gravada: antes disso o anexo ainda é rascunho e pode ser descartado.
+    if !context.attachments.is_empty() {
+        app.state::<DbState>()
+            .require()?
+            .mark_attachments_sent(project_id, &context.attachments)?;
+    }
     let key = SessionKey {
         project_id,
         agent: recipient,
@@ -994,6 +1001,11 @@ async fn working_dir(
     Ok(worktree.path)
 }
 
+fn attachments_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
+    let data_dir = app.path().app_data_dir().map_err(FlowError::ArchivePath)?;
+    attachments::project_dir(&data_dir, project_id).map_err(FlowError::AttachmentsDir)
+}
+
 // Delegação paralela: a instância responde ao pedido uma vez. Não interpreta nem abre tarefa do projeto, então a tarefa do líder fica intacta.
 #[allow(clippy::too_many_arguments)]
 async fn run_parallel_item(
@@ -1022,6 +1034,7 @@ async fn run_parallel_item(
         announce_batch(app, state, id);
     }
     let project_dir = project_dir(app, key.project_id)?;
+    let attachments_dir = attachments_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
@@ -1043,6 +1056,7 @@ async fn run_parallel_item(
         cli,
         project: ProjectAccess {
             dir: &working,
+            attachments: &attachments_dir,
             level: project.permission_level,
         },
         project_context: &context,
@@ -1428,6 +1442,7 @@ async fn exchange_turns(
     let request = with_channel_note(request, channel.as_ref());
     let request = request.as_str();
     let project_dir = project_dir(app, key.project_id)?;
+    let attachments_dir = attachments_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
     // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
     let tree = scan_structure(&project_dir).await;
@@ -1464,6 +1479,7 @@ async fn exchange_turns(
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
     let access = ProjectAccess {
         dir: &working,
+        attachments: &attachments_dir,
         level: project.permission_level,
     };
     let exchange = Exchange {

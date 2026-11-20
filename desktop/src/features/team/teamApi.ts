@@ -80,8 +80,9 @@ export function sendRequest(
   runId?: number,
   itemId?: string,
   channelId?: number,
+  attachments?: string[],
 ): Promise<RequestOutcome> {
-  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId, channelId })
+  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId, channelId, attachments })
 }
 
 export function answerPermission(id: string, allow: boolean, always: boolean): Promise<void> {

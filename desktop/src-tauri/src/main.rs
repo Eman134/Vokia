@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agents;
+mod attachments;
 mod claude;
 mod commands;
 mod console_log;
@@ -43,6 +44,10 @@ fn main() {
             commands::team::set_agent_paused,
             commands::team::check_connection,
             commands::team::agent_console,
+            commands::attachments::pick_attachment_files,
+            commands::attachments::save_attachment_files,
+            commands::attachments::save_attachment_bytes,
+            commands::attachments::discard_attachment,
             commands::settings::db_problem,
             commands::projects::list_projects,
             commands::projects::select_project,
@@ -116,6 +121,10 @@ fn main() {
                 if let Some(db) = app.state::<DbState>().db() {
                     orchestration::seed::fill_missing_leaders(db, &team).map_err(|error| error.to_string())?;
                 }
+            }
+            // Um anexo nunca enviado é sobra de rascunho; falha na limpeza não pode impedir o app de abrir.
+            if let Some(db) = app.state::<DbState>().db() {
+                let _ = attachments::purge_unsent(db, &data_dir);
             }
             mcp::clear_stale_configs(&data_dir);
             app.manage(mcp::McpState::start(app.handle().clone()));

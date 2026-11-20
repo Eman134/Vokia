@@ -2,6 +2,7 @@ mod agent_removal;
 mod agent_sessions;
 mod approvals;
 mod artifacts;
+mod attachments;
 mod backlog;
 mod channels;
 mod connection;

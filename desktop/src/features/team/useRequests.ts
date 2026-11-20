@@ -21,10 +21,14 @@ export interface QueuedRequest {
   to: Agent
   projectId: number
   channelId?: number
+  attachments: string[]
   editing: boolean
   onQueued?: (id: number) => void
+  onRejected?: () => void
   onSettled?: (result: RunResult) => void
 }
+
+const ATTACHMENTS_OTHER_PROJECT_NOTICE = 'Os anexos são de outro projeto. Selecione o projeto deles para enviar.'
 
 export type QueueMove = 'up' | 'down'
 
@@ -87,6 +91,7 @@ export const useRequests = defineStore('requests', () => {
         request.onSettled !== undefined ? request.id : undefined,
         undefined,
         request.channelId,
+        request.attachments,
       )
       if (outcome === 'queued') {
         if (request.onSettled === undefined || waiting.has(request.id)) {
@@ -97,6 +102,7 @@ export const useRequests = defineStore('requests', () => {
       result = outcome
     } catch (error) {
       feed.feed.push({ type: 'error', message: String(error) })
+      runCallback(() => request.onRejected?.())
     }
     const settle = waiting.get(request.id)
     waiting.delete(request.id)
@@ -152,7 +158,7 @@ export const useRequests = defineStore('requests', () => {
 
   function saveEdit(id: number, text: string): boolean {
     const target = queue.value.find((request) => request.id === id)
-    if (target === undefined || text.trim() === '') {
+    if (target === undefined || (text.trim() === '' && target.attachments.length === 0)) {
       return false
     }
     target.text = text
@@ -250,7 +256,10 @@ export const useRequests = defineStore('requests', () => {
     options?: {
       projectId?: number
       channelId?: number
+      attachments?: string[]
+      attachmentsProjectId?: number | null
       onQueued?: (id: number) => void
+      onRejected?: () => void
       onSettled?: (result: RunResult) => void
       onEnqueued?: (info: {
         id: number
@@ -261,7 +270,8 @@ export const useRequests = defineStore('requests', () => {
       }) => void
     },
   ): Promise<boolean> {
-    if (text.trim() === '') {
+    const attachments = options?.attachments ?? []
+    if (text.trim() === '' && attachments.length === 0) {
       return false
     }
     if (!(await connection.confirmOnline())) {
@@ -270,6 +280,10 @@ export const useRequests = defineStore('requests', () => {
     const screenProjectId = projects.selected?.id
     const projectId = options?.projectId ?? (await targetProjectId(text))
     if (projectId === null) {
+      return false
+    }
+    if (attachments.length > 0 && projectId !== options?.attachmentsProjectId) {
+      feed.notify(ATTACHMENTS_OTHER_PROJECT_NOTICE)
       return false
     }
     // Um id de canal só vale no projeto da tela; texto que aponta outro projeto vai sem canal.
@@ -288,8 +302,10 @@ export const useRequests = defineStore('requests', () => {
       to: recipient,
       projectId,
       channelId,
+      attachments,
       editing: false,
       onQueued: options?.onQueued,
+      onRejected: options?.onRejected,
       onSettled: options?.onSettled,
     })
     void drain()

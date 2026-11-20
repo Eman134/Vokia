@@ -9,6 +9,7 @@ import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import { taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
+import { splitAttachments } from '../attachments/attachmentBlock'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UserAvatar from '../profile/UserAvatar.vue'
@@ -23,11 +24,14 @@ const roster = useRoster()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
 
+const userContent = computed(() => splitAttachments(props.entry.type === 'message' ? props.entry.text : ''))
+
 const runCard = computed(() => {
   const { entry } = props
   if (entry.type !== 'message' || entry.from !== 'user') return null
-  const title = runTitleOf(entry.text)
-  return title === undefined ? null : taskStartedRow(title, entry.text)
+  const { text } = userContent.value
+  const title = runTitleOf(text)
+  return title === undefined ? null : taskStartedRow(title, text)
 })
 
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
@@ -71,9 +75,28 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
       <ActivityRow :row="runCard" />
     </ul>
-    <div v-else class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3">
-      <MarkdownText :text="entry.text" />
+    <div
+      v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
+      class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3"
+    >
+      <MarkdownText :text="userContent.text" />
     </div>
+    <ul
+      v-if="userContent.attachments.length > 0"
+      class="flex flex-wrap justify-end gap-1.5"
+      data-testid="message-attachments"
+    >
+      <li
+        v-for="attachment in userContent.attachments"
+        :key="attachment.path"
+        :title="attachment.path"
+        :data-attachment-name="attachment.name"
+        class="flex min-w-0 items-center gap-1.5 rounded-card border border-line bg-surface px-2.5 py-1.5 text-caption"
+      >
+        <span class="truncate font-semibold text-ink">{{ attachment.name }}</span>
+        <span class="shrink-0 text-muted">{{ attachment.label }} · {{ attachment.size }}</span>
+      </li>
+    </ul>
     <div class="flex flex-wrap items-center justify-end gap-1.5 text-caption text-muted">
       <UserAvatar :size="META_AVATAR_SIZE" :title="userProfile.displayName" />
       <span class="font-semibold text-ink">{{ speakerName(entry.from) }}</span>

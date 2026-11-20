@@ -20,6 +20,11 @@ import { useProjects } from '../../projects/useProjects'
 import MentionMenu from '../MentionMenu.vue'
 import CommandMenu from '../CommandMenu.vue'
 import { useComposerMenus } from './useComposerMenus'
+import AttachmentChips from '../../attachments/AttachmentChips.vue'
+import type { useComposerAttachments } from '../../attachments/useComposerAttachments'
+import UiButton from '../../../ui/UiButton.vue'
+
+const ATTACH_LABEL = 'Anexar arquivo'
 
 const props = defineProps<{
   canAsk: boolean
@@ -27,6 +32,7 @@ const props = defineProps<{
   inlinePermission: boolean
   railPage: RailPage | null
   pill: HTMLElement | null
+  attachments: ReturnType<typeof useComposerAttachments>
 }>()
 
 const emit = defineEmits<{
@@ -164,6 +170,16 @@ async function placeCaret(position: number): Promise<void> {
   syncCaret()
 }
 
+// Só intercepta quando há arquivo (ex.: print); colar texto segue o caminho padrão do input.
+function onPaste(event: ClipboardEvent): void {
+  const files = Array.from(event.clipboardData?.files ?? [])
+  if (files.length === 0) {
+    return
+  }
+  event.preventDefault()
+  void props.attachments.addFiles(files)
+}
+
 function isFocused(): boolean {
   return document.activeElement === inputRef.value
 }
@@ -172,6 +188,25 @@ defineExpose({ isFocused })
 </script>
 
 <template>
+  <UiButton
+    v-if="canAsk && !composerHidden"
+    variant="quiet"
+    size="sm"
+    :aria-label="ATTACH_LABEL"
+    :title="ATTACH_LABEL"
+    :disabled="attachments.saving.value || locked"
+    @press="attachments.pickFiles()"
+  >
+    <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
+    </svg>
+  </UiButton>
+  <AttachmentChips
+    v-if="canAsk && !composerHidden"
+    :attachments="attachments.attachments.value"
+    :saving="attachments.saving.value"
+    @remove="attachments.remove($event)"
+  />
   <div
     v-if="canAsk && !composerHidden"
     ref="wrapperRef"
@@ -222,6 +257,7 @@ defineExpose({ isFocused })
       @select="syncCaret"
       @scroll="syncCaret"
       @blur="dismissMenu"
+      @paste="onPaste"
     />
   </div>
   <CommandMenu

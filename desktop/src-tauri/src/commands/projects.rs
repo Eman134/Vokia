@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager, State};
 
+use super::attachments;
 use crate::db::{DbError, DbState, PermissionRule, Project};
 use crate::events::VokiaEvent;
 use crate::orchestrator;
@@ -110,6 +111,7 @@ pub async fn delete_project(
     }
     stop_project_work(&app_state, id).await;
     db.delete_project(id)?;
+    attachments::purge_project_files(&app, db, id);
     orchestrator::forget_project(&app_state, id);
     Ok(())
 }
@@ -128,6 +130,7 @@ pub async fn clear_conversation(
     stop_project_work(&app_state, project_id).await;
     db.clear_messages(project_id)
         .map_err(|error| error.to_string())?;
+    attachments::purge_sent_files(&app, db, project_id);
     orchestrator::forget_project(&app_state, project_id);
     Ok(())
 }

@@ -1,4 +1,5 @@
 pub(crate) mod agents;
+pub(crate) mod attachments;
 pub(crate) mod artifacts;
 pub(crate) mod backlog;
 pub(crate) mod channels;
