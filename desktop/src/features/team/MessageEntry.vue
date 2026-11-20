@@ -175,8 +175,4 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   >
     {{ OUTCOME_LABELS[entry.outcome] }} {{ entry.detail }}
   </p>
-  <div v-else class="flex items-center gap-2.5 rounded-card border border-danger bg-surface px-4 py-3">
-    <span class="size-1.75 shrink-0 rounded-full bg-danger" />
-    <p class="wrap-break-word min-w-0 whitespace-pre-wrap text-control text-ink">{{ entry.message }}</p>
-  </div>
 </template>

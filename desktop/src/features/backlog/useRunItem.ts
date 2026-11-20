@@ -19,7 +19,7 @@ const SENT_NOTE = (agent: string) => `${SENT_PREFIX}${agent}.`
 const QUEUED_NOTE = (agent: string) => `${agent}${QUEUED_SUFFIX}`
 const DONE_NOTE = (agent: string) => `Execução concluída por ${agent}.`
 const NOT_SENT_NOTE = 'A execução não foi enviada.'
-const FAILED_NOTE = 'A execução falhou; veja o erro no feed.'
+const FAILED_NOTE = 'A execução falhou; veja o erro na barra.'
 const CANCELLED_NOTE = 'Execução cancelada na fila.'
 const PAUSED_NOTE = 'Execução pausada pelo limite de uso; retome pelo aviso da barra.'
 const INTERRUPTED_NOTE = 'Execução interrompida: o app foi fechado ou o projeto trocado antes do fim.'

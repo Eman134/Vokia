@@ -1,4 +1,5 @@
 import type { AgentProfile } from '../teamApi'
+import { errorSummary } from '../errorSummary'
 import { doneRule } from './doneRule'
 import { errorRule } from './errorRule'
 import { needsYouRule } from './needsYouRule'
@@ -20,13 +21,14 @@ export const STATUS_RULES: readonly StatusRule[] = [
 export const STATUS_PRIORITY: readonly TeamStatus[] = STATUS_RULES.map((rule) => rule.status)
 export const DONE_HOLD_MS = 15000
 
-export const STATUS_COPY: Record<Exclude<TeamStatus, 'working' | 'needs-you'>, StatusCopy> = {
+const ERROR_PLACEHOLDER = 'Explique o que esperava'
+
+export const STATUS_COPY: Record<Exclude<TeamStatus, 'working' | 'needs-you' | 'error'>, StatusCopy> = {
   paused: {
     status: 'Time pausado',
     detail: 'retome pela barra',
     placeholder: 'Peça algo ao projeto ou mencione @alguém',
   },
-  error: { status: 'Algo quebrou', detail: 'o último pedido falhou', placeholder: 'Explique o que esperava' },
   done: { status: 'Pedido concluído', detail: 'tudo certo', placeholder: 'Peça a próxima feature' },
   rest: {
     status: 'Tudo em dia',
@@ -46,6 +48,11 @@ export const STATUS_RING: Record<TeamStatus, string> = {
 
 export function resolveTeamStatus(input: TeamStatusInput): TeamStatus {
   return STATUS_RULES.find((rule) => rule.applies(input))?.status ?? 'rest'
+}
+
+// O erro real vai no título do status; sem mensagem o título fica vazio, sem texto fixo.
+export function errorCopy(message: string): StatusCopy {
+  return { status: errorSummary(message).title, detail: '', placeholder: ERROR_PLACEHOLDER }
 }
 
 // O contador de decisões já mostra quantas esperam; repetir aqui só polui a barra.

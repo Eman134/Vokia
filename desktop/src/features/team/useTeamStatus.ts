@@ -5,6 +5,7 @@ import { useUsage } from '../usage/useUsage'
 import { useFeed } from './useFeed'
 import {
   DONE_HOLD_MS,
+  errorCopy,
   needsYouCopy,
   resolveTeamStatus,
   STATUS_COPY,
@@ -27,7 +28,8 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   const outcomes = computed(() =>
     feed.feed.filter((entry) => entry.type === 'error' || (entry.type === 'message' && entry.from !== 'user')),
   )
-  const lastIsError = computed(() => outcomes.value.at(-1)?.type === 'error')
+  const lastOutcome = computed(() => outcomes.value.at(-1))
+  const lastIsError = computed(() => lastOutcome.value?.type === 'error')
 
   const status = computed<TeamStatus>(() =>
     resolveTeamStatus({
@@ -42,6 +44,10 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   const copy = computed(() => {
     if (status.value === 'working') {
       return workingCopy(feed.activeAgents)
+    }
+    if (status.value === 'error') {
+      const last = lastOutcome.value
+      return errorCopy(last?.type === 'error' ? last.message : '')
     }
     return status.value === 'needs-you' ? needsYouCopy() : STATUS_COPY[status.value]
   })

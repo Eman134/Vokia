@@ -48,6 +48,19 @@ const showDecisionsButton = computed(
     >
       <path d="M2.5 8.5L6 12l7.5-8" />
     </svg>
-    <span v-if="expanded">{{ decisionsTitle }}</span>
+    <svg
+      v-else-if="expanded"
+      class="size-3.5 sm:hidden"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.5 3.5h11v6h-3l-1 2h-3l-1-2h-3z" />
+    </svg>
+    <span v-if="expanded" class="max-sm:hidden">{{ decisionsTitle }}</span>
   </UiButton>
 </template>

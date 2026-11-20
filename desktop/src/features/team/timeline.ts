@@ -84,6 +84,8 @@ function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNE
 export function buildTimeline(feed: readonly FeedEntry[]): TimelineItem[] {
   const items: TimelineItem[] = []
   feed.forEach((entry, index) => {
+    // Erros vão para o popup da Actionbar, não para a conversa.
+    if (entry.type === 'error') return
     const last = items.at(-1)
     if (entry.type !== 'message' || !isBetweenAgents(entry)) {
       items.push({ type: 'entry', start: index, entry })

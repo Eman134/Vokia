@@ -18,6 +18,7 @@ import PausedAgents from './PausedAgents.vue'
 import UsageLimitNotice from './UsageLimitNotice.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
+import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
 import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
@@ -33,6 +34,10 @@ import { listenFileDrops } from '../attachments/attachmentsApi'
 const COMPACT_WIDTH_CLASS = 'w-fit max-w-[min(32rem,100%)]'
 const COLLAPSE_MS = BAR_COLLAPSE_TOTAL_MS
 const EXPANDED_WIDTH_CLASS = 'w-full max-w-full'
+// Em janelas estreitas os controles ao redor do campo tomam a largura toda; menos espaço entre eles devolve o mínimo ao campo.
+const NARROW_GAP_CLASS = 'max-sm:gap-1.5'
+// Abaixo de sm a coluna do trilho deixaria a pílula estreita demais para os controles: ela passa a ocupar a janela com 16 px de margem.
+const NARROW_WRAP_CLASS = 'max-sm:left-4 max-sm:right-4'
 const CONTENT_WIDTH_CLASS = 'w-fit max-w-full'
 
 const emit = defineEmits<{
@@ -68,6 +73,7 @@ const requests = useRequests()
 const decisions = useDecisions()
 const control = useAgentControl()
 const usageLimit = useUsageLimit()
+useErrorNotices()
 // Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
 const layoutKey = computed(() =>
   [
@@ -174,7 +180,7 @@ function onPointerLeave(): void {
 </script>
 
 <template>
-  <div v-if="connection.online" :class="BAR_WRAP_CLASSES">
+  <div v-if="connection.online" :class="[BAR_WRAP_CLASSES, NARROW_WRAP_CLASS]">
     <Balloon />
     <PanelShell />
     <motion.form
@@ -182,7 +188,7 @@ function onPointerLeave(): void {
       layout
       :layout-dependency="layoutKey"
       :transition="BAR_SPRING"
-      :class="[PILL_CLASSES, pillWidthClass]"
+      :class="[PILL_CLASSES, NARROW_GAP_CLASS, pillWidthClass]"
       @pointerenter="hovered = true"
       @pointerleave="onPointerLeave"
       @focusin="focusWithin = true"

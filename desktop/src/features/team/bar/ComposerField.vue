@@ -210,7 +210,7 @@ defineExpose({ isFocused })
   <div
     v-if="canAsk && !composerHidden"
     ref="wrapperRef"
-    class="relative h-8.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2"
+    class="relative h-8.5 min-w-28 flex-1 overflow-hidden rounded-full bg-surface-2"
   >
     <div
       aria-hidden="true"

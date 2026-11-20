@@ -5,6 +5,8 @@ import UiButton from '../../ui/UiButton.vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 
 const store = useBalloons()
+// Centralizado sobre a barra; a largura cabe na tela com 16 px de margem de cada lado.
+const POSITION_CLASSES = 'left-1/2 -translate-x-1/2 w-80 max-w-[calc(100vw-2rem)]'
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape' && !event.defaultPrevented && store.current !== null) {
@@ -20,7 +22,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   <div
     v-if="store.current && !store.panelOpen"
     role="status"
-    class="pointer-events-auto absolute bottom-full mb-3 w-80 rounded-popover border border-line bg-surface p-3 shadow-float"
+    :class="['pointer-events-auto absolute bottom-full mb-3 rounded-popover border border-line bg-surface p-3 shadow-float', POSITION_CLASSES]"
   >
     <div class="flex items-start gap-2">
       <VokiaMascot v-if="store.current.mascot" :look="store.current.mascot" />
