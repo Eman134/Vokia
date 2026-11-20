@@ -12,6 +12,7 @@ const CHECK_CONNECTION_COMMAND = 'check_connection'
 const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
 const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
 const LIST_AGENTS_COMMAND = 'list_agents'
+const AVAILABLE_PROVIDERS_COMMAND = 'available_providers'
 const CREATE_AGENT_COMMAND = 'create_agent'
 const UPDATE_AGENT_COMMAND = 'update_agent'
 const DELETE_AGENT_COMMAND = 'delete_agent'
@@ -118,6 +119,10 @@ export function discardInterruptedRun(id: number): Promise<void> {
 
 export function listAgents(): Promise<TeamListing> {
   return invoke<TeamListing>(LIST_AGENTS_COMMAND)
+}
+
+export function availableProviders(): Promise<string[]> {
+  return invoke<string[]>(AVAILABLE_PROVIDERS_COMMAND)
 }
 
 export function createAgent(draft: AgentDraft): Promise<AgentProfile> {

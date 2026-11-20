@@ -57,6 +57,7 @@ export interface VokiaMessage {
   channelId?: number
   activity?: TurnActivity
   requestProposal?: RequestProposal
+  isError?: boolean
 }
 
 export interface VokiaAgentState {

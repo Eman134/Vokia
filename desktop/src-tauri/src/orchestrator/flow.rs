@@ -899,6 +899,10 @@ async fn run_flow(
             Ok(_) => (RequestOutcome::Failed, None),
             Err(error) => match error.usage_limit() {
                 Some(limit) => (RequestOutcome::Paused, Some(limit)),
+                None if error.is_limit() => {
+                    outcome = outcome.and(set_agents_idle(app, key.project_id));
+                    (RequestOutcome::Failed, None)
+                }
                 None => {
                     outcome = outcome.and(report_failure(app, key.project_id, &error));
                     (RequestOutcome::Failed, None)
@@ -1093,7 +1097,21 @@ async fn answer_once(
             with_tools,
         ))
     })?;
-    let reply = ask_step(exchange, sessions, &agent, &prompts).await?;
+    let reply = match ask_step(exchange, sessions, &agent, &prompts).await {
+        Ok(reply) => reply,
+        Err(error) => {
+            if error.is_limit() {
+                let _ = super::emit::emit_error_message(
+                    exchange.app,
+                    project_id,
+                    Speaker::from(agent.clone()),
+                    exchange.channel_id,
+                    &error.to_string(),
+                );
+            }
+            return Err(error);
+        }
+    };
     let read = read_reply(
         with_tools,
         &TextContext {
@@ -1457,7 +1475,7 @@ async fn exchange_turns(
         &project_dir,
     )
     .await?;
-    let mut definition = interpret_task(
+    let mut definition = match interpret_task(
         app,
         state,
         cli,
@@ -1466,7 +1484,22 @@ async fn exchange_turns(
         team,
         orchestration.as_ref(),
     )
-    .await?;
+    .await
+    {
+        Ok(definition) => definition,
+        Err(error) => {
+            if error.is_limit() {
+                let _ = super::emit::emit_error_message(
+                    app,
+                    key.project_id,
+                    Speaker::from(key.agent.clone()),
+                    channel.as_ref().map(|found| found.id),
+                    &error.to_string(),
+                );
+            }
+            return Err(error);
+        }
+    };
     definition.participants = placed_participants(
         orchestration.as_ref(),
         std::mem::take(&mut definition.participants),
@@ -1664,6 +1697,10 @@ pub(super) fn stop_with_error(
     message: String,
 ) -> Result<(), FlowError> {
     emit(app, VokiaEvent::Error { message })?;
+    set_agents_idle(app, project_id)
+}
+
+fn set_agents_idle(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
     let agents = match app.state::<AgentRegistry>().team() {
         Ok(team) => team.ids().cloned().collect(),
         Err(_) => vec![Agent::ember(), Agent::axiom(), Agent::vexa()],

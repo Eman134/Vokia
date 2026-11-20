@@ -138,6 +138,7 @@ pub(super) fn into_reply(
         if let Some(limit) = limits.and_then(RateLimits::exhausted) {
             return Err(ClaudeError::UsageLimit(limit));
         }
+        return Err(ClaudeError::LimitExhausted);
     }
     if response.is_error {
         let message = if response.result.is_empty() {

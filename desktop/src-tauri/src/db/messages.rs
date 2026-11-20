@@ -91,9 +91,12 @@ impl Db {
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
             let (from, to, text, time, channel_id, activity, request_proposal) = row?;
+            let from = parse_speaker(&from)?;
+            let is_error = from != Speaker::User && text == "Limite esgotado";
             Ok(VokiaEvent::Message {
-                from: parse_speaker(&from)?,
+                from,
                 to: parse_speaker(&to)?,
+                is_error,
                 text,
                 time: time as u64,
                 project_id: Some(project_id),

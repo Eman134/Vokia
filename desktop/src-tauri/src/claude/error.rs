@@ -1,7 +1,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use super::stream::{LimitName, UsageLimit};
+use super::stream::UsageLimit;
 
 #[derive(Debug)]
 pub enum ClaudeError {
@@ -11,6 +11,7 @@ pub enum ClaudeError {
     MissingResult,
     Reported(String),
     UsageLimit(UsageLimit),
+    LimitExhausted,
     Timeout(Duration),
     SessionClosed(String),
     Mcp(String),
@@ -30,15 +31,25 @@ impl ClaudeError {
             _ => None,
         }
     }
-}
 
-impl LimitName {
-    pub fn label(self) -> &'static str {
+    pub fn is_limit(&self) -> bool {
         match self {
-            LimitName::FiveHour => "de 5 horas",
-            LimitName::SevenDay => "semanal",
+            ClaudeError::UsageLimit(_) | ClaudeError::LimitExhausted => true,
+            ClaudeError::Reported(message) | ClaudeError::Exit { message, .. } => {
+                is_limit_message(message)
+            }
+            _ => false,
         }
     }
+}
+
+fn is_limit_message(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("usage_limit_reached")
+        || lower.contains("hit your limit")
+        || lower.contains("out of extra usage")
+        || lower.contains("rate_limit_error")
+        || lower.contains("limite esgotado")
 }
 
 impl fmt::Display for ClaudeError {
@@ -46,6 +57,9 @@ impl fmt::Display for ClaudeError {
         match self {
             ClaudeError::Spawn(error) => {
                 write!(f, "Não foi possível executar a CLI claude: {error}")
+            }
+            ClaudeError::Exit { message, .. } if is_limit_message(message) => {
+                f.write_str("Limite esgotado")
             }
             ClaudeError::Exit {
                 code: Some(code),
@@ -73,12 +87,13 @@ impl fmt::Display for ClaudeError {
                     limit.as_secs()
                 )
             }
+            ClaudeError::Reported(message) if is_limit_message(message) => {
+                f.write_str("Limite esgotado")
+            }
             ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
-            ClaudeError::UsageLimit(limit) => write!(
-                f,
-                "O limite de uso da janela {} foi atingido.",
-                limit.window.label()
-            ),
+            ClaudeError::UsageLimit(_) | ClaudeError::LimitExhausted => {
+                f.write_str("Limite esgotado")
+            }
             ClaudeError::SessionClosed(reason) => {
                 write!(f, "A sessão da CLI claude foi encerrada: {reason}")
             }

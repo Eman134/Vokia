@@ -116,6 +116,9 @@ export const useFeed = defineStore('feed', () => {
     switch (event.type) {
       case 'message':
         feed.value.push(event)
+        if (event.isError && event.from !== 'user') {
+          useUsageLimit().suggestFromLimitMessage(event.from)
+        }
         break
       case 'error':
         feed.value.push(event)

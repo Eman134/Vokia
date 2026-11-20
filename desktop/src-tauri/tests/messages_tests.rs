@@ -174,6 +174,7 @@ fn evento_serializa_request_proposal_em_camel_case_e_omite_quando_nao_ha() {
         channel_id: None,
         activity: None,
         request_proposal,
+        is_error: false,
     };
     let with = serde_json::to_value(message(Some(RequestProposal {
         title: "T".to_string(),

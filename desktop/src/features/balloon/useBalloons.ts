@@ -68,7 +68,7 @@ export const useBalloons = defineStore('balloons', () => {
     advance()
   }
 
-  function act(actionId: string): void {
+  async function act(actionId: string): Promise<void> {
     const item = current.value
     if (item === null || confirmation.value !== null) {
       return
@@ -78,7 +78,7 @@ export const useBalloons = defineStore('balloons', () => {
       return
     }
     cancelMomentTimer()
-    const text = action.run?.()
+    const text = await action.run?.()
     if (!text) {
       close()
       return

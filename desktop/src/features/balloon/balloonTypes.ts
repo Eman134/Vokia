@@ -8,7 +8,7 @@ export interface BalloonAction {
   label: string
   primary?: boolean
   disabled?: boolean
-  run?: () => string | void
+  run?: () => string | void | Promise<string | void>
 }
 
 export interface BalloonItem {

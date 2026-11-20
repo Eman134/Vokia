@@ -85,6 +85,7 @@ fn main() {
             commands::projects::list_permission_rules,
             commands::projects::delete_permission_rule,
             commands::agents::list_agents,
+            commands::agents::available_providers,
             commands::agents::create_agent,
             commands::agents::update_agent,
             commands::agents::delete_agent,

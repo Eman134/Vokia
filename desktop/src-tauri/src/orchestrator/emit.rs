@@ -54,6 +54,7 @@ pub(crate) fn emit_feed_note(
             channel_id: None,
             activity: None,
             request_proposal: None,
+            is_error: false,
         },
     )
 }
@@ -94,6 +95,43 @@ pub(crate) fn emit_message(
             channel_id,
             activity,
             request_proposal,
+            is_error: false,
+        },
+    )
+}
+
+pub(crate) fn emit_error_message(
+    app: &AppHandle,
+    project_id: i64,
+    from: Speaker,
+    channel_id: Option<i64>,
+    text: &str,
+) -> Result<(), FlowError> {
+    let time = now_millis()?;
+    if let Some(db) = app.state::<DbState>().db() {
+        db.insert_message(
+            project_id,
+            from.clone(),
+            Speaker::User,
+            text,
+            time,
+            channel_id,
+            None,
+            None,
+        )?;
+    }
+    emit(
+        app,
+        VokiaEvent::Message {
+            from,
+            to: Speaker::User,
+            text: text.to_string(),
+            time,
+            project_id: Some(project_id),
+            channel_id,
+            activity: None,
+            request_proposal: None,
+            is_error: true,
         },
     )
 }

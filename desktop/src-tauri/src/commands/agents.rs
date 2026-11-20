@@ -13,6 +13,15 @@ pub fn list_agents(registry: State<'_, AgentRegistry>) -> Result<TeamListing, St
 }
 
 #[tauri::command]
+pub fn available_providers() -> Vec<String> {
+    crate::agents::presets()
+        .into_iter()
+        .filter(|preset| which::which(preset.default_command).is_ok())
+        .map(|preset| preset.id.to_string())
+        .collect()
+}
+
+#[tauri::command]
 pub fn create_agent(
     registry: State<'_, AgentRegistry>,
     roles: State<'_, RoleRegistry>,

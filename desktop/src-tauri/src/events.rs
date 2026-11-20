@@ -117,6 +117,10 @@ pub enum GoalState {
     Repetindo,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum VokiaEvent {
@@ -133,6 +137,8 @@ pub enum VokiaEvent {
         activity: Option<TurnActivity>,
         #[serde(skip_serializing_if = "Option::is_none")]
         request_proposal: Option<RequestProposal>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        is_error: bool,
     },
     #[serde(rename_all = "camelCase")]
     AgentState {

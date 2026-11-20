@@ -80,8 +80,12 @@ function dashClass(agent: Agent): string {
   </span>
   <span class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
     <span
-      class="text-label font-semibold text-muted"
-      :class="[collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate', { 'max-xl:hidden': !canAsk }]"
+      class="text-label font-semibold"
+      :class="[
+        statusStore.limitExhausted ? 'text-warn-text' : 'text-muted',
+        collapsing ? 'overflow-hidden whitespace-nowrap' : 'truncate',
+        { 'max-xl:hidden': !canAsk },
+      ]"
       :title="statusLabel"
     >
       {{ statusLabel }}

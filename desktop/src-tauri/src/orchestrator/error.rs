@@ -118,6 +118,13 @@ impl FlowError {
             _ => None,
         }
     }
+
+    pub fn is_limit(&self) -> bool {
+        match self {
+            FlowError::Claude(error) => error.is_limit(),
+            _ => false,
+        }
+    }
 }
 
 impl From<ClaudeError> for FlowError {

@@ -121,7 +121,21 @@ pub(super) async fn run_turns(
             text: reply,
             activity,
             outcome,
-        } = ask_step(exchange, sessions, &turn.speaker, &prompts).await?;
+        } = match ask_step(exchange, sessions, &turn.speaker, &prompts).await {
+            Ok(step) => step,
+            Err(error) => {
+                if error.is_limit() {
+                    let _ = super::emit::emit_error_message(
+                        app,
+                        project_id,
+                        Speaker::from(turn.speaker.clone()),
+                        exchange.channel_id,
+                        &error.to_string(),
+                    );
+                }
+                return Err(error);
+            }
+        };
         counters.task.register_turn(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
         let mut activity = activity;

@@ -65,6 +65,19 @@ export function renewsLabel(resetsAt: number, nowMs: number): string {
   return `renova em ${hours} h ${rest}`
 }
 
+export function resetCountdownLabel(resetsAt: number, nowMs: number): string {
+  const totalMinutes = Math.max(0, Math.ceil((resetsAt * MS_PER_SECOND - nowMs) / MS_PER_MINUTE))
+  const hours = Math.floor(totalMinutes / MINUTES_PER_HOUR)
+  const minutes = totalMinutes % MINUTES_PER_HOUR
+  if (hours > 0 && minutes > 0) {
+    return `em ${hours} ${hours === 1 ? 'hora' : 'horas'} e ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`
+  }
+  if (hours > 0) {
+    return `em ${hours} ${hours === 1 ? 'hora' : 'horas'}`
+  }
+  return `em ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`
+}
+
 export function updatedLabel(updatedAtMs: number, nowMs: number): string {
   const minutes = Math.floor((nowMs - updatedAtMs) / MS_PER_MINUTE)
   return minutes < 1 ? 'atualizado agora' : `atualizado há ${minutes} min`

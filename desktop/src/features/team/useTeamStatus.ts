@@ -2,6 +2,8 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDecisions } from '../decisions/useDecisions'
 import { useUsage } from '../usage/useUsage'
+import { useUsageLimit } from '../usage/useUsageLimit'
+import { usageLimitText } from '../usage/usageLimitCopy'
 import { useFeed } from './useFeed'
 import {
   DONE_HOLD_MS,
@@ -19,6 +21,7 @@ const DONE_TICK_MS = 1000
 export const useTeamStatus = defineStore('teamStatus', () => {
   const feed = useFeed()
   const usage = useUsage()
+  const usageLimit = useUsageLimit()
   const decisions = useDecisions()
   const now = ref(Date.now())
   const doneUntil = ref(0)
@@ -51,8 +54,14 @@ export const useTeamStatus = defineStore('teamStatus', () => {
     }
     return status.value === 'needs-you' ? needsYouCopy() : STATUS_COPY[status.value]
   })
-  const ring = computed(() => STATUS_RING[status.value])
-  const statusText = computed(() => [copy.value.status, copy.value.detail].filter(Boolean).join(' · '))
+  const limitExhausted = computed(() => status.value !== 'working' && usageLimit.visible && usageLimit.notice !== null)
+  const ring = computed(() => (limitExhausted.value ? 'stroke-warn' : STATUS_RING[status.value]))
+  const statusText = computed(() => {
+    if (limitExhausted.value && usageLimit.notice !== null) {
+      return usageLimitText(usageLimit.notice, usage.now)
+    }
+    return [copy.value.status, copy.value.detail].filter(Boolean).join(' · ')
+  })
   const placeholder = computed(() => copy.value.placeholder)
 
   function stopDoneTimer(): void {
@@ -78,7 +87,7 @@ export const useTeamStatus = defineStore('teamStatus', () => {
 
   function lastIsAgentReply(): boolean {
     const last = feed.feed.at(-1)
-    return last?.type === 'message' && last.to === 'user'
+    return last?.type === 'message' && last.to === 'user' && !last.isError && last.text !== 'Limite esgotado'
   }
 
   watch(
@@ -102,5 +111,5 @@ export const useTeamStatus = defineStore('teamStatus', () => {
 
   onScopeDispose(stopDoneTimer)
 
-  return { status, ring, statusText, placeholder }
+  return { status, ring, limitExhausted, statusText, placeholder }
 })

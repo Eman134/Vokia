@@ -20,6 +20,8 @@ function buildErrorBalloon(index: number, message: string): BalloonItem {
   }
 }
 
+const LIMIT_ERROR_TEXT = 'Limite esgotado'
+
 // Erro sai do feed e vira balão que só fecha ao dispensar: o tipo 'error' não tem timer de sumir.
 export const useErrorNotices = defineStore('errorNotices', () => {
   const feed = useFeed()
@@ -33,6 +35,7 @@ export const useErrorNotices = defineStore('errorNotices', () => {
       for (const entry of feed.feed) {
         if (entry.type !== 'error' || announced.has(entry)) continue
         announced.add(entry)
+        if (entry.message === LIMIT_ERROR_TEXT) continue
         count += 1
         balloons.enqueue(buildErrorBalloon(count, entry.message))
       }

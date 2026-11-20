@@ -47,6 +47,10 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const CHECK_ICON_PATH = 'M3.5 8.5l3 3 6-6.5'
 const WARNING_ICON_PATH = 'M8 2.5L14 13.5H2Z M8 6.5v3M8 11.2v.3'
+const ERROR_ICON_CIRCLE_CX = 8
+const ERROR_ICON_CIRCLE_CY = 8
+const ERROR_ICON_CIRCLE_R = 6
+const ERROR_ICON_PATH = 'M8 5v3.5M8 10.8v.4'
 
 function taskResultTitle(entry: VokiaTaskResult): string {
   return entry.concluded ? `Tarefa concluída: ${entry.objective}` : `Tarefa interrompida: ${entry.objective}`
@@ -125,7 +129,27 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   </div>
   <div v-else-if="entry.type === 'message'" class="flex min-w-0 flex-col gap-1.5">
     <ActivityRun v-if="entry.activity" :activity="entry.activity" />
-    <MarkdownText :text="entry.text" />
+    <div
+      v-if="entry.from !== 'user' && (entry.isError || entry.text === 'Limite esgotado')"
+      class="flex items-center gap-2 text-danger"
+      data-testid="agent-error-message"
+    >
+      <svg
+        class="size-4 shrink-0"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle :cx="ERROR_ICON_CIRCLE_CX" :cy="ERROR_ICON_CIRCLE_CY" :r="ERROR_ICON_CIRCLE_R" />
+        <path :d="ERROR_ICON_PATH" />
+      </svg>
+      <span class="wrap-break-word">{{ entry.text }}</span>
+    </div>
+    <MarkdownText v-else :text="entry.text" />
     <UiButton
       v-if="entry.requestProposal"
       class="self-start"
