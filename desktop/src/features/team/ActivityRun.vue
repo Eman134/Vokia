@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue'
 import type { TurnActivity } from './events'
-import { activityRows, activitySentence, thinkingLabel, type CardTitleOf } from './activitySummary'
+import { activityRows, activitySentence, thinkingRow, type CardTitleOf } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
+import MarkdownText from './MarkdownText.vue'
 import { useBacklog } from '../backlog/useBacklog'
 
 const props = defineProps<{ activity: TurnActivity; live?: boolean }>()
@@ -10,6 +11,8 @@ const props = defineProps<{ activity: TurnActivity; live?: boolean }>()
 const backlog = useBacklog()
 const open = ref(false)
 const listId = useId()
+const thinkingOpen = ref(false)
+const thinkingListId = useId()
 const sentence = computed(() => activitySentence(props.activity.tools))
 const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
 const rows = computed(() => activityRows(props.activity.tools, cardTitleOf))
@@ -17,7 +20,27 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf))
 
 <template>
   <div class="mt-0.5 flex flex-col gap-1 text-caption text-muted" data-testid="activity-run">
-    <span v-if="!live && activity.thinkingMs !== undefined" data-testid="activity-thinking">{{ thinkingLabel(activity.thinkingMs) }}</span>
+    <div v-if="!live && activity.thinkingMs !== undefined" class="flex flex-col gap-1" data-testid="activity-thinking">
+      <ul class="flex flex-col">
+        <ActivityRow :row="thinkingRow(activity.thinkingMs)" />
+      </ul>
+      <template v-if="activity.thinkingText">
+        <button
+          type="button"
+          class="flex w-fit cursor-pointer items-center gap-1 pl-5 text-left hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+          :aria-expanded="thinkingOpen"
+          :aria-controls="thinkingListId"
+          data-testid="activity-thinking-toggle"
+          @click="thinkingOpen = !thinkingOpen"
+        >
+          <span>Raciocínio</span>
+          <span aria-hidden="true">{{ thinkingOpen ? '▾' : '▸' }}</span>
+        </button>
+        <div v-if="thinkingOpen" :id="thinkingListId" class="min-w-0 pl-5" data-testid="activity-thinking-text">
+          <MarkdownText :text="activity.thinkingText" />
+        </div>
+      </template>
+    </div>
     <ul v-if="live && rows.length > 0" class="flex flex-col gap-1" data-testid="activity-live">
       <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
     </ul>

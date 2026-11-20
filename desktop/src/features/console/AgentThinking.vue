@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
 import type { AgentState } from '../team/events'
 import { formatClock } from '../team/activitySummary'
+import MarkdownText from '../team/MarkdownText.vue'
 import { currentTurn } from './consoleTurn'
 import { useConsole } from './useConsole'
 
@@ -56,6 +57,8 @@ const label = computed(() => {
         <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-3" />
       </span>
     </span>
-    <p v-if="written" class="line-clamp-4 wrap-break-word whitespace-pre-wrap text-body text-ink">{{ written }}</p>
+    <div v-if="written" class="line-clamp-4 min-w-0">
+      <MarkdownText :text="written" />
+    </div>
   </div>
 </template>

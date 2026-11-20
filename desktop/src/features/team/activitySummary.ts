@@ -21,6 +21,8 @@ const TASK_UPDATE_FALLBACK_VERB = 'Atualizou tarefa'
 const STARTED_VERB = 'Iniciou tarefa'
 const TASK_STARTED_VERB = 'Task iniciada'
 const TASK_STARTED_ID = 'task-started'
+const THINKING_VERB = 'Pensou'
+const THINKING_ROW_ID = 'thinking'
 export type CardTitleOf = (cardId: string) => string | undefined
 
 type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'agent' | 'tool'
@@ -69,7 +71,7 @@ const ROW_VERBS: Record<ToolCategory, RowVerbs> = {
   other: { running: 'Usando', done: 'Usou', failed: 'Tentou usar' },
 }
 
-export type RowIconKind = FileIconKind | 'folder' | 'search' | 'edit' | 'command' | 'web' | 'other'
+export type RowIconKind = FileIconKind | 'folder' | 'search' | 'edit' | 'command' | 'web' | 'thinking' | 'other'
 
 const ROW_ICON: Record<ToolCategory, RowIconKind> = {
   read: 'document',
@@ -85,8 +87,8 @@ const ROW_ICON: Record<ToolCategory, RowIconKind> = {
 }
 
 const FILE_CATEGORIES: readonly ToolCategory[] = ['read', 'edit']
-// Padrão de busca ou caminho de listagem: o alvo inteiro vira o chip, sem cortar pelo separador.
-const PATTERN_CATEGORIES: readonly ToolCategory[] = ['search', 'list']
+// Padrão de busca, caminho de listagem ou comando: o alvo inteiro vira o chip, sem cortar pelo separador.
+const WHOLE_TARGET_CATEGORIES: readonly ToolCategory[] = ['search', 'list', 'command']
 // Sem alvo, só o nome diz qual ferramenta rodou; as demais categorias já têm um verbo próprio.
 const NAMED_CATEGORIES: readonly ToolCategory[] = ['mcp', 'other']
 
@@ -145,8 +147,9 @@ export function formatClock(ms: number): string {
   return `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
 }
 
-export function thinkingLabel(thinkingMs: number): string {
-  return `Pensou por ${formatClock(Math.max(thinkingMs, MIN_THINKING_MS))}`
+export function thinkingRow(thinkingMs: number): ActivityRowModel {
+  const seconds = Math.floor(Math.max(thinkingMs, MIN_THINKING_MS) / MS_PER_SECOND)
+  return { id: THINKING_ROW_ID, icon: 'thinking', verb: THINKING_VERB, text: `${seconds}s`, failed: false }
 }
 
 function verbFor(category: ToolCategory, status: ToolStatus): string {
@@ -207,7 +210,7 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): Act
   if (FILE_CATEGORIES.includes(tool.category) && target !== '') {
     return { id: tool.callId, icon, verb, chip: chipOf(target), meta, preview: tool.change, failed }
   }
-  if (PATTERN_CATEGORIES.includes(tool.category) && target !== '') {
+  if (WHOLE_TARGET_CATEGORIES.includes(tool.category) && target !== '') {
     return { id: tool.callId, icon, verb, chip: patternChip(target), meta, failed }
   }
   return { id: tool.callId, icon, verb, text: target === '' ? undefined : target, meta, failed }

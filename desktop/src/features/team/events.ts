@@ -37,6 +37,7 @@ export interface ToolActivity {
 
 export interface TurnActivity {
   thinkingMs?: number
+  thinkingText?: string
   tools: ToolActivity[]
 }
 

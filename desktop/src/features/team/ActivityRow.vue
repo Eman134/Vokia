@@ -14,6 +14,7 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
   edit: 'M4 20h4L19 9l-4-4L4 16z',
   command: 'M5 7l5 5-5 5 M12 19h7',
   web: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M3 12h18',
+  thinking: 'M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 3-3V7a3 3 0 0 0-3-3z M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z',
   other: 'M12 4v16 M4 12h16',
 }
 
@@ -66,11 +67,11 @@ async function showPreview(): Promise<void> {
     @pointerenter="showPreview"
     @pointerleave="hovering = false"
   >
-    <div class="flex min-w-0 flex-wrap items-center gap-1.5" :class="row.failed ? 'text-danger' : ''">
+    <div class="flex min-w-0 items-center gap-1.5" :class="row.failed ? 'text-danger' : ''">
       <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true">
         <path :d="ICON_PATHS[row.icon]" />
       </svg>
-      <span class="font-semibold text-ink">{{ row.verb }}</span>
+      <span class="shrink-0 font-semibold text-ink">{{ row.verb }}</span>
       <span v-if="row.chip" :class="CHIP_CLASSES" :title="row.chip.title" data-testid="activity-chip">
         <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true" :data-icon="row.chip.icon">
           <path :d="ICON_PATHS[row.chip.icon]" />
@@ -78,11 +79,11 @@ async function showPreview(): Promise<void> {
         <span class="truncate">{{ row.chip.label }}</span>
       </span>
       <span v-else-if="row.text" class="min-w-0 truncate text-ink" :title="row.text">{{ row.text }}</span>
-      <span v-if="row.meta" class="text-muted">{{ row.meta }}</span>
+      <span v-if="row.meta" class="shrink-0 text-muted">{{ row.meta }}</span>
       <button
         v-if="row.items"
         type="button"
-        class="cursor-pointer text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="shrink-0 cursor-pointer text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
         :aria-expanded="open"
         :aria-controls="listId"
         @click="open = !open"

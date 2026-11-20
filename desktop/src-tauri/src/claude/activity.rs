@@ -20,6 +20,7 @@ const MAX_PATCH_HUNK_LINES: usize = 400;
 const ASSISTANT_KIND: &str = "assistant";
 const USER_KIND: &str = "user";
 const THINKING_BLOCKS: [&str; 2] = ["thinking", "redacted_thinking"];
+const THINKING_SEPARATOR: &str = "\n\n";
 const TOOL_USE_BLOCK: &str = "tool_use";
 const TOOL_RESULT_BLOCK: &str = "tool_result";
 const MCP_PREFIX: &str = "mcp__";
@@ -107,6 +108,8 @@ pub struct ToolActivity {
 pub struct TurnActivity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_text: Option<String>,
     pub tools: Vec<ToolActivity>,
 }
 
@@ -119,6 +122,7 @@ struct OpenTool {
 pub(super) struct ActivityParser {
     last_line_at: Instant,
     thinking_ms: Option<u64>,
+    thinking_text: Option<String>,
     tools: Vec<ToolActivity>,
     open: HashMap<String, OpenTool>,
 }
@@ -128,6 +132,7 @@ impl ActivityParser {
         Self {
             last_line_at: now,
             thinking_ms: None,
+            thinking_text: None,
             tools: Vec::new(),
             open: HashMap::new(),
         }
@@ -150,6 +155,7 @@ impl ActivityParser {
     pub(super) fn snapshot(&self) -> TurnActivity {
         TurnActivity {
             thinking_ms: self.thinking_ms,
+            thinking_text: self.thinking_text.clone(),
             tools: self.tools.clone(),
         }
     }
@@ -157,6 +163,7 @@ impl ActivityParser {
     pub(super) fn finish(self) -> TurnActivity {
         TurnActivity {
             thinking_ms: self.thinking_ms,
+            thinking_text: self.thinking_text,
             tools: self.tools,
         }
     }
@@ -167,9 +174,13 @@ impl ActivityParser {
         };
         let mut thought = false;
         let mut opened = false;
+        let mut thinking_texts: Vec<&str> = Vec::new();
         for block in blocks {
             match block["type"].as_str() {
-                Some(kind) if THINKING_BLOCKS.contains(&kind) => thought = true,
+                Some(kind) if THINKING_BLOCKS.contains(&kind) => {
+                    thought = true;
+                    thinking_texts.extend(block["thinking"].as_str().filter(|text| !text.is_empty()));
+                }
                 Some(TOOL_USE_BLOCK) => opened |= self.start_tool(block, now),
                 _ => {}
             }
@@ -180,7 +191,20 @@ impl ActivityParser {
                 .unwrap_or_else(|| since_last_line_ms.max(MIN_CLOCK_THINKING_MS));
             self.thinking_ms = Some(self.thinking_ms.unwrap_or(0).saturating_add(spent));
         }
+        if !thinking_texts.is_empty() {
+            self.append_thinking(&thinking_texts.join(THINKING_SEPARATOR));
+        }
         opened
+    }
+
+    fn append_thinking(&mut self, text: &str) {
+        match &mut self.thinking_text {
+            Some(existing) => {
+                existing.push_str(THINKING_SEPARATOR);
+                existing.push_str(text);
+            }
+            None => self.thinking_text = Some(text.to_string()),
+        }
     }
 
     fn start_tool(&mut self, block: &Value, now: Instant) -> bool {
