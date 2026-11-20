@@ -33,6 +33,7 @@ export interface ToolActivity {
   change?: ToolChange
   durationMs?: number
   detail?: ToolDetail
+  result?: string
 }
 
 export interface TurnActivity {

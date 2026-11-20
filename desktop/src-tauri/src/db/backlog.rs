@@ -4,7 +4,9 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::agents::Team;
 use crate::events::Agent;
+use crate::plan_proposal::{parse_proposal, PlanDraft};
 
+use super::artifacts::{artifact_exists, artifact_id, delete_artifact, replace_artifact};
 use super::connection::Db;
 use super::error::DbError;
 
@@ -47,6 +49,7 @@ const CARD_ID_PREFIX: &str = "item-";
 const USER_CREATED_TEXT: &str = "Pedido criado por você.";
 const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
 const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
+const PLAN_CARD_CREATED_TEXT: &str = "Etapa criada pelo plano aceito do item";
 
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
@@ -73,6 +76,21 @@ const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title,
 const INSERT_CARD_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     is_new, \"column\", who, \"by\", description, origin, activity, links, position) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)";
+
+const INSERT_PLAN_CARD_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
+    parent, is_new, \"column\", who, \"by\", description, origin, activity, position) \
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, \
+    (SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1)) \
+    ON CONFLICT(project_id, id) DO NOTHING";
+
+// Sem filho ativo, total e feitos ficam nulos juntos: item_from_row recusa um sem o outro.
+const REFRESH_CHILDREN_SQL: &str = "UPDATE backlog_items SET \
+    children_total = (SELECT NULLIF(COUNT(*), 0) FROM backlog_items AS child \
+        WHERE child.project_id = ?1 AND child.parent = ?2 AND child.archived_at IS NULL), \
+    children_done = (SELECT CASE WHEN COUNT(*) = 0 THEN NULL ELSE SUM(child.\"column\" = ?3) END \
+        FROM backlog_items AS child \
+        WHERE child.project_id = ?1 AND child.parent = ?2 AND child.archived_at IS NULL) \
+    WHERE project_id = ?1 AND id = ?2";
 
 const UPSERT_PLAN_SQL: &str = "INSERT INTO item_plans (project_id, item_id, state, text, plan_id, \
     plan_name, plan_meta, agent, linked_at) \
@@ -318,6 +336,13 @@ struct CardDraft<'a> {
     links: Vec<Link>,
 }
 
+struct PlanCard<'a> {
+    id: String,
+    parent: &'a str,
+    title: &'a str,
+    description: Option<&'a str>,
+}
+
 impl Db {
     pub fn list_backlog(&self, project_id: i64) -> Result<BacklogSnapshot, DbError> {
         let conn = self.conn()?;
@@ -335,9 +360,14 @@ impl Db {
 
     pub fn save_backlog_item(&self, project_id: i64, item: &BacklogItem) -> Result<(), DbError> {
         validate_item(item)?;
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        upsert_item(&conn, project_id, item)
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        upsert_item(&tx, project_id, item)?;
+        refresh_children(&tx, project_id, &item.id)?;
+        refresh_parent_of(&tx, project_id, &item.id)?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn move_backlog_item(
@@ -352,9 +382,10 @@ impl Db {
         if !MOVABLE_COLUMNS.contains(&column) {
             return Err(DbError::ColumnNotMovable(column.to_string()));
         }
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET \"column\" = ?3, \
                 closed_by = CASE WHEN ?3 = ?4 THEN ?5 ELSE NULL END \
              WHERE project_id = ?1 AND id = ?2",
@@ -363,6 +394,8 @@ impl Db {
         if changed == 0 {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
+        refresh_parent_of(&tx, project_id, id)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -382,9 +415,10 @@ impl Db {
         if column != IN_PROGRESS_COLUMN && column != IN_REVIEW_COLUMN {
             return Err(DbError::ColumnNotMovable(column.to_string()));
         }
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET \"column\" = ?3, \
                 cycle_started_at = CASE WHEN ?3 = ?4 THEN CAST(unixepoch('subsec') * 1000 AS INTEGER) \
                     ELSE cycle_started_at END \
@@ -394,6 +428,8 @@ impl Db {
         if changed == 0 {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
+        refresh_parent_of(&tx, project_id, id)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -402,23 +438,27 @@ impl Db {
         if !CLOSERS.contains(&closed_by) {
             return Err(DbError::InvalidClosedBy(closed_by.to_string()));
         }
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET \"column\" = ?3, closed_by = ?4 WHERE project_id = ?1 AND id = ?2",
             params![project_id, id, DONE_COLUMN, closed_by],
         )?;
         if changed == 0 {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
+        refresh_parent_of(&tx, project_id, id)?;
+        tx.commit()?;
         Ok(())
     }
 
     // Reabre o card devolvido pelo usuário: volta a In progress, sem quem concluiu e com as tentativas zeradas.
     pub fn reopen_card(&self, project_id: i64, id: &str) -> Result<(), DbError> {
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET \"column\" = ?3, closed_by = NULL, auto_attempts = 0, \
                 cycle_started_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) \
              WHERE project_id = ?1 AND id = ?2",
@@ -427,6 +467,8 @@ impl Db {
         if changed == 0 {
             return Err(DbError::BacklogItemNotFound(id.to_string()));
         }
+        refresh_parent_of(&tx, project_id, id)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -516,37 +558,44 @@ impl Db {
     }
 
     pub fn archive_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET archived_at = ?3 WHERE project_id = ?1 AND id = ?2 AND archived_at IS NULL",
             params![project_id, item_id, Local::now().to_rfc3339()],
         )?;
         if changed == 1 {
+            refresh_parent_of(&tx, project_id, item_id)?;
+            tx.commit()?;
             return Ok(());
         }
-        ensure_item(&conn, project_id, item_id)?;
+        ensure_item(&tx, project_id, item_id)?;
         Err(DbError::BacklogItemArchived)
     }
 
     pub fn restore_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let changed = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let changed = tx.execute(
             "UPDATE backlog_items SET archived_at = NULL WHERE project_id = ?1 AND id = ?2 AND archived_at IS NOT NULL",
             params![project_id, item_id],
         )?;
         if changed == 1 {
+            refresh_parent_of(&tx, project_id, item_id)?;
+            tx.commit()?;
             return Ok(());
         }
-        ensure_item(&conn, project_id, item_id)?;
+        ensure_item(&tx, project_id, item_id)?;
         Err(DbError::BacklogItemNotArchived)
     }
 
     pub fn delete_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let column: String = conn
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let column: String = tx
             .query_row(
                 "SELECT \"column\" FROM backlog_items WHERE project_id = ?1 AND id = ?2",
                 params![project_id, item_id],
@@ -557,7 +606,7 @@ impl Db {
         if column == IN_PROGRESS_COLUMN {
             return Err(DbError::BacklogDeleteInProgress);
         }
-        let has_plan: bool = conn.query_row(
+        let has_plan: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM item_plans WHERE project_id = ?1 AND item_id = ?2)",
             params![project_id, item_id],
             |row| row.get(0),
@@ -565,10 +614,15 @@ impl Db {
         if has_plan {
             return Err(DbError::BacklogDeleteWithPlan);
         }
-        conn.execute(
+        let parent = parent_of(&tx, project_id, item_id)?;
+        tx.execute(
             "DELETE FROM backlog_items WHERE project_id = ?1 AND id = ?2",
             params![project_id, item_id],
         )?;
+        if let Some(parent) = parent {
+            refresh_children(&tx, project_id, &parent)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -652,18 +706,31 @@ impl Db {
         plan: &ItemPlanInput,
     ) -> Result<(), DbError> {
         validate_plan(plan)?;
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        ensure_item(&conn, project_id, item_id)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let item = find_card(&tx, project_id, item_id)?;
         if plan.state == EMPTY_PLAN {
-            conn.execute(
+            let previous: Option<String> = tx
+                .query_row(
+                    "SELECT state FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                    params![project_id, item_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            tx.execute(
                 "DELETE FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
                 params![project_id, item_id],
             )?;
+            // Descartar a proposta apaga o plano; desvincular um plano aceito o mantém (D3).
+            if previous.as_deref() == Some(PROPOSED_PLAN) {
+                delete_artifact(&tx, project_id, item_id)?;
+            }
+            tx.commit()?;
             return Ok(());
         }
         let linked = plan.plan.as_ref();
-        conn.execute(
+        tx.execute(
             UPSERT_PLAN_SQL,
             params![
                 project_id,
@@ -676,6 +743,22 @@ impl Db {
                 plan.agent,
             ],
         )?;
+        let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
+        let own_plan = linked.is_none_or(|linked| linked.id == item_id);
+        if let (Some(text), true) = (proposal, own_plan) {
+            let draft = parse_proposal(text);
+            let author = plan.agent.as_deref();
+            if plan.state == PROPOSED_PLAN {
+                replace_artifact(&tx, project_id, item_id, &item.title, text, author, &draft)?;
+            } else {
+                validate_item(&item)?;
+                if !artifact_exists(&tx, project_id, item_id)? {
+                    replace_artifact(&tx, project_id, item_id, &item.title, text, author, &draft)?;
+                }
+                create_plan_cards(&tx, project_id, &item, author, &draft)?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 }
@@ -741,7 +824,7 @@ fn validate_plan(plan: &ItemPlanInput) -> Result<(), DbError> {
     }
 }
 
-fn ensure_project(conn: &Connection, project_id: i64) -> Result<(), DbError> {
+pub(super) fn ensure_project(conn: &Connection, project_id: i64) -> Result<(), DbError> {
     conn.query_row("SELECT 1 FROM projects WHERE id = ?1", [project_id], |_| {
         Ok(())
     })
@@ -923,6 +1006,95 @@ fn insert_card(
             position,
         ],
     )?;
+    Ok(())
+}
+
+// Ids derivados do plano tornam a criação idempotente: aceitar de novo não duplica nem altera etapas.
+fn create_plan_cards(
+    conn: &Connection,
+    project_id: i64,
+    item: &BacklogItem,
+    author: Option<&str>,
+    draft: &PlanDraft,
+) -> Result<(), DbError> {
+    let plan_id = artifact_id(&item.id);
+    let author = author.unwrap_or(item.who.as_str());
+    for lot in &draft.lots {
+        let stage = PlanCard {
+            id: format!("{plan_id}.{}", lot.n),
+            parent: &item.id,
+            title: &lot.title,
+            description: Some(lot.meta.as_str()).filter(|meta| !meta.is_empty()),
+        };
+        insert_plan_card(conn, project_id, item, author, &stage)?;
+        for (index, task) in lot.tasks.iter().enumerate() {
+            let subtask = PlanCard {
+                id: format!("{}.{}", stage.id, index + 1),
+                parent: &stage.id,
+                title: task,
+                description: None,
+            };
+            insert_plan_card(conn, project_id, item, author, &subtask)?;
+        }
+        refresh_children(conn, project_id, &stage.id)?;
+    }
+    refresh_children(conn, project_id, &item.id)?;
+    Ok(())
+}
+
+fn insert_plan_card(
+    conn: &Connection,
+    project_id: i64,
+    item: &BacklogItem,
+    author: &str,
+    card: &PlanCard<'_>,
+) -> Result<(), DbError> {
+    let activity = vec![activity_entry(
+        &card.id,
+        1,
+        format!("{PLAN_CARD_CREATED_TEXT} {}.", item.id),
+    )];
+    conn.execute(
+        INSERT_PLAN_CARD_SQL,
+        params![
+            project_id,
+            card.id,
+            card.title,
+            item.kind,
+            NEW_CARD_STATE,
+            card.parent,
+            true,
+            DEFAULT_COLUMN,
+            item.who,
+            author,
+            card.description,
+            ORIGIN_AGENT,
+            to_json(&card.id, "activity", &activity)?,
+        ],
+    )?;
+    Ok(())
+}
+
+pub(super) fn refresh_children(conn: &Connection, project_id: i64, parent_id: &str) -> rusqlite::Result<()> {
+    conn.execute(REFRESH_CHILDREN_SQL, params![project_id, parent_id, DONE_COLUMN])?;
+    Ok(())
+}
+
+fn parent_of(conn: &Connection, project_id: i64, id: &str) -> Result<Option<String>, DbError> {
+    Ok(conn
+        .query_row(
+            "SELECT parent FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+            params![project_id, id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+fn refresh_parent_of(conn: &Connection, project_id: i64, id: &str) -> Result<(), DbError> {
+    if let Some(parent) = parent_of(conn, project_id, id)? {
+        refresh_children(conn, project_id, &parent)?;
+    }
     Ok(())
 }
 

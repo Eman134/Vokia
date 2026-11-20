@@ -13,6 +13,7 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4-4',
   edit: 'M4 20h4L19 9l-4-4L4 16z',
   command: 'M5 7l5 5-5 5 M12 19h7',
+  delegate: 'M4 12h14 M13 6l6 6-6 6',
   web: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M3 12h18',
   thinking: 'M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 3-3V7a3 3 0 0 0-3-3z M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z',
   other: 'M12 4v16 M4 12h16',

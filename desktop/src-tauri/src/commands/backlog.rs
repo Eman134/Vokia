@@ -180,12 +180,13 @@ pub fn delete_backlog_item(
 }
 
 // A gravação já está no banco; falha ao avisar o front não vira erro para quem chamou.
-fn notify_backlog_changed(app: &AppHandle, project_id: i64) {
+pub(crate) fn notify_backlog_changed(app: &AppHandle, project_id: i64) {
     let _ = emit_backlog_changed(app, project_id);
 }
 
 #[tauri::command]
 pub fn save_item_plan(
+    app: AppHandle,
     state: State<'_, DbState>,
     project_id: i64,
     item_id: String,
@@ -193,7 +194,9 @@ pub fn save_item_plan(
 ) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.save_item_plan(project_id, &item_id, &plan)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(&app, project_id);
+    Ok(())
 }
 
 // Devolve a task concluída ao líder: o motivo é obrigatório e o card volta a In progress.

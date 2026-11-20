@@ -39,6 +39,7 @@ const SET_VARIABLE: &str = "set_variable";
 const GET_ORCHESTRATION: &str = "get_orchestration";
 const LIST_AGENTS: &str = "list_agents";
 const SAVE_ITEM_PLAN: &str = "save_item_plan";
+const ARTIFACT_SET_CRITERION: &str = "artifact_set_criterion";
 const LIST_MOVEMENTS: &str = "list_movements";
 const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
 const OP_SET: &str = "set";
@@ -80,6 +81,8 @@ const PROPOSAL_REGISTERED: &str = "Proposta registrada. Escreva a resposta norma
 const PROPOSAL_ALREADY_REGISTERED: &str = "Já há um pedido proposto nesta resposta.";
 const PROPOSAL_EMPTY_TITLE: &str = "O título do pedido não pode ser vazio.";
 const DECISION_CHOICE_WITHOUT_OPTIONS: &str = "Uma decisão do tipo escolha precisa de opções.";
+const CRITERION_DONE: &str = "marcado";
+const CRITERION_UNDONE: &str = "desmarcado";
 
 // Falha de negócio volta ao agente com a frase do banco; falha de sistema não expõe detalhe.
 type ToolText = Result<String, String>;
@@ -173,6 +176,13 @@ struct SavePlanArgs {
     item_id: String,
     #[serde(flatten)]
     plan: ItemPlanInput,
+}
+
+#[derive(Deserialize)]
+struct CriterionArgs {
+    artifact_id: String,
+    criterion_id: String,
+    done: bool,
 }
 
 pub fn definitions() -> Vec<Value> {
@@ -350,6 +360,16 @@ pub fn definitions() -> Vec<Value> {
             &["item_id", "state"],
         ),
         tool(
+            ARTIFACT_SET_CRITERION,
+            "Marca ou desmarca um critério do plano de um card. artifact_id é plano-<id do card>; criterion_id é c<n>, onde n é o número da etapa do plano.",
+            json!({
+                "artifact_id": { "type": "string" },
+                "criterion_id": { "type": "string" },
+                "done": { "type": "boolean" },
+            }),
+            &["artifact_id", "criterion_id", "done"],
+        ),
+        tool(
             LIST_MOVEMENTS,
             "Lista as passagens de trabalho recentes entre agentes do projeto.",
             json!({}),
@@ -413,6 +433,9 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         GET_ORCHESTRATION => get_orchestration(app),
         LIST_AGENTS => list_agents(app),
         SAVE_ITEM_PLAN => parse(name, arguments).and_then(|args| save_item_plan(app, binding, args)),
+        ARTIFACT_SET_CRITERION => {
+            parse(name, arguments).and_then(|args| set_artifact_criterion(app, binding, args))
+        }
         LIST_MOVEMENTS => list_movements(app, binding),
         POST_CHANNEL_MESSAGE => {
             parse(name, arguments).and_then(|args| post_channel_message(app, binding, args))
@@ -966,7 +989,20 @@ fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> Too
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
     db.save_item_plan(binding.project_id, &args.item_id, &args.plan)
         .map_err(|error| refusal_or_system(&error))?;
-    Ok(format!("Plano do card {} gravado.", args.item_id))
+    let message = format!("Plano do card {} gravado.", args.item_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
+}
+
+fn set_artifact_criterion(app: &AppHandle, binding: &Binding, args: CriterionArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    db.set_artifact_criterion(binding.project_id, &args.artifact_id, &args.criterion_id, args.done)
+        .map_err(|error| refusal_or_system(&error))?;
+    let mark = if args.done { CRITERION_DONE } else { CRITERION_UNDONE };
+    let message = format!("Critério {} do plano {} {mark}.", args.criterion_id, args.artifact_id);
+    record_backlog_change(app, binding, vec![message.clone()]);
+    Ok(message)
 }
 
 fn list_movements(app: &AppHandle, binding: &Binding) -> ToolText {

@@ -516,6 +516,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "get_orchestration",
             "list_agents",
             "save_item_plan",
+            "artifact_set_criterion",
             "list_movements",
             "post_channel_message"
         ]
@@ -552,6 +553,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__get_orchestration",
             "mcp__vokia__list_agents",
             "mcp__vokia__save_item_plan",
+            "mcp__vokia__artifact_set_criterion",
             "mcp__vokia__list_movements",
             "mcp__vokia__post_channel_message"
         ]
@@ -661,4 +663,156 @@ fn card_do_pedido_so_vale_dentro_da_troca_e_deixa_de_valer_depois_do_end() {
         outcome.text,
         format!("O card {foreign} não é seu nem do pedido atual.")
     );
+}
+
+const PLAN_PROPOSAL: &str = "Resumo\n#lote 1|Base|Base pronta|Criar tabela\n#lote 2|Tela|Tela funcionando";
+
+fn linked_plan_arguments(card: &str) -> Value {
+    json!({
+        "item_id": card,
+        "state": "vinculado",
+        "proposal": PLAN_PROPOSAL,
+        "plan": { "id": card, "name": "Plano", "meta": "proposta aceita" },
+        "agent": "axiom"
+    })
+}
+
+fn criteria_of(world: &World, project: i64) -> Vec<(String, bool)> {
+    world
+        .db()
+        .list_artifacts(project)
+        .unwrap()
+        .into_iter()
+        .flat_map(|artifact| artifact.criteria)
+        .map(|criterion| (criterion.id, criterion.done))
+        .collect()
+}
+
+#[test]
+fn save_item_plan_vinculado_pelo_mcp_cria_os_filhos_e_marca_a_troca_como_alterada() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let card = world.create(&axiom, "Login");
+    axiom.slot.lock().changed = false;
+
+    let outcome = world.call(&axiom, "save_item_plan", linked_plan_arguments(&card));
+
+    assert!(!outcome.is_error, "{}", outcome.text);
+    let mut ids: Vec<String> = world
+        .cards(project)
+        .into_iter()
+        .map(|item| item.id)
+        .filter(|id| id.starts_with("plano-"))
+        .collect();
+    ids.sort();
+    assert_eq!(
+        ids,
+        [
+            format!("plano-{card}.1"),
+            format!("plano-{card}.1.1"),
+            format!("plano-{card}.2")
+        ]
+    );
+    let parent = world.cards(project).into_iter().find(|item| item.id == card).unwrap();
+    let children = parent.children.expect("o card deveria ter progresso");
+    assert_eq!((children.total, children.done), (2, 0));
+    assert!(axiom.slot.lock().changed);
+}
+
+#[test]
+fn artifact_set_criterion_marca_responde_com_a_frase_e_aparece_marcado_na_leitura() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let card = world.create(&axiom, "Login");
+    world.call(&axiom, "save_item_plan", linked_plan_arguments(&card));
+
+    let outcome = world.call(
+        &axiom,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c1", "done": true }),
+    );
+
+    assert!(!outcome.is_error, "{}", outcome.text);
+    assert_eq!(outcome.text, format!("Critério c1 do plano plano-{card} marcado."));
+    assert_eq!(
+        criteria_of(&world, project),
+        [("c1".to_string(), true), ("c2".to_string(), false)]
+    );
+
+    let undone = world.call(
+        &axiom,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c1", "done": false }),
+    );
+    assert_eq!(undone.text, format!("Critério c1 do plano plano-{card} desmarcado."));
+    assert_eq!(criteria_of(&world, project)[0], ("c1".to_string(), false));
+}
+
+#[test]
+fn artifact_set_criterion_com_criterio_ou_plano_inexistente_volta_como_erro_com_a_frase() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+    let card = world.create(&axiom, "Login");
+    world.call(&axiom, "save_item_plan", linked_plan_arguments(&card));
+
+    let wrong_criterion = world.call(
+        &axiom,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c9", "done": true }),
+    );
+    let wrong_plan = world.call(
+        &axiom,
+        "artifact_set_criterion",
+        json!({ "artifact_id": "plano-item-99", "criterion_id": "c1", "done": true }),
+    );
+
+    assert!(wrong_criterion.is_error);
+    assert_eq!(wrong_criterion.text, "O critério c9 não existe neste plano.");
+    assert!(wrong_plan.is_error);
+    assert_eq!(wrong_plan.text, "O plano plano-item-99 não existe neste projeto.");
+    assert_eq!(
+        criteria_of(&world, project),
+        [("c1".to_string(), false), ("c2".to_string(), false)]
+    );
+}
+
+#[test]
+fn artifact_set_criterion_de_outro_projeto_e_recusado_e_done_invalido_volta_como_argumento_invalido() {
+    let world = world();
+    let project_a = world.project("a");
+    let project_b = world.project("b");
+    let axiom_a = world.agent("axiom", "Axiom", project_a);
+    let axiom_b = world.agent("axiom", "Axiom", project_b);
+    let card = world.create(&axiom_a, "Login");
+    world.call(&axiom_a, "save_item_plan", linked_plan_arguments(&card));
+
+    let foreign = world.call(
+        &axiom_b,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c1", "done": true }),
+    );
+    let bad_done = world.call(
+        &axiom_a,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c1", "done": "sim" }),
+    );
+    let missing_done = world.call(
+        &axiom_a,
+        "artifact_set_criterion",
+        json!({ "artifact_id": format!("plano-{card}"), "criterion_id": "c1" }),
+    );
+
+    assert!(foreign.is_error);
+    assert_eq!(foreign.text, format!("O plano plano-{card} não existe neste projeto."));
+    for outcome in [bad_done, missing_done] {
+        assert!(outcome.is_error);
+        assert_eq!(
+            outcome.text,
+            "Argumentos inválidos para artifact_set_criterion: confira o schema da ferramenta."
+        );
+    }
+    assert_eq!(criteria_of(&world, project_a)[0], ("c1".to_string(), false));
 }

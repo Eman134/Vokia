@@ -21,6 +21,14 @@ const TASK_UPDATE_FALLBACK_VERB = 'Atualizou tarefa'
 const STARTED_VERB = 'Iniciou tarefa'
 const TASK_STARTED_VERB = 'Task iniciada'
 const TASK_STARTED_ID = 'task-started'
+const DELEGATION_COMMAND = /^maestri\s+ask\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s*([\s\S]*)$/
+const WRAPPING_QUOTES = /^(["'])([\s\S]*)\1$/
+const LINE_BREAK = '\n'
+const DELEGATION_VERB = 'Delegou a'
+const DELEGATION_FAILED_VERB = 'Tentou delegar a'
+const DELEGATION_WAITING = '· aguardando'
+const DELEGATION_ANSWERED = '· respondeu'
+const DELEGATION_DONE = '· concluída'
 const THINKING_VERB = 'Pensou'
 const THINKING_ROW_ID = 'thinking'
 export type CardTitleOf = (cardId: string) => string | undefined
@@ -71,7 +79,7 @@ const ROW_VERBS: Record<ToolCategory, RowVerbs> = {
   other: { running: 'Usando', done: 'Usou', failed: 'Tentou usar' },
 }
 
-export type RowIconKind = FileIconKind | 'folder' | 'search' | 'edit' | 'command' | 'web' | 'thinking' | 'other'
+export type RowIconKind = FileIconKind | 'folder' | 'search' | 'edit' | 'command' | 'delegate' | 'web' | 'thinking' | 'other'
 
 const ROW_ICON: Record<ToolCategory, RowIconKind> = {
   read: 'document',
@@ -202,6 +210,35 @@ function foundRow(tool: ToolActivity, detail: FoundDetail, icon: RowIconKind): A
   }
 }
 
+interface Delegation {
+  agent: string
+  prompt: string
+}
+
+function delegationOf(tool: ToolActivity): Delegation | undefined {
+  if (tool.category !== 'command') return undefined
+  const match = DELEGATION_COMMAND.exec(tool.target)
+  if (!match) return undefined
+  return { agent: match[1] ?? match[2] ?? match[3], prompt: match[4].trim().replace(WRAPPING_QUOTES, '$2') }
+}
+
+// O estado do destino não chega à atividade: sem resposta a linha diz só "aguardando", com ela "respondeu".
+function delegationRow(tool: ToolActivity, delegation: Delegation): ActivityRowModel {
+  const failed = tool.status === 'failed'
+  const lines = tool.result?.split(LINE_BREAK).filter((line) => line.trim() !== '')
+  const answered = tool.status === 'ok' && lines !== undefined && lines.length > 0
+  const state = answered ? `${DELEGATION_ANSWERED} · ${lines[0]}` : tool.status === 'ok' ? DELEGATION_DONE : DELEGATION_WAITING
+  return {
+    id: tool.callId,
+    icon: 'delegate',
+    verb: failed ? DELEGATION_FAILED_VERB : DELEGATION_VERB,
+    chip: { label: delegation.agent, title: delegation.prompt, icon: 'generic' },
+    meta: failed ? undefined : state,
+    items: answered ? lines : undefined,
+    failed,
+  }
+}
+
 function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
   const target = tool.target === '' && NAMED_CATEGORIES.includes(tool.category) ? shownName(tool) : tool.target
   const showChanges = tool.status === 'ok' && tool.added !== undefined && tool.removed !== undefined
@@ -276,6 +313,8 @@ export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleO
     if (tool.detail?.kind === 'updated') return [taskUpdatedRow(tool, tool.detail, created)]
     if (tool.detail?.kind === 'read') return [readRow(tool, tool.detail, icon)]
     if (tool.detail?.kind === 'found') return [foundRow(tool, tool.detail, icon)]
+    const delegation = delegationOf(tool)
+    if (delegation) return [delegationRow(tool, delegation)]
     return [defaultRow(tool, icon, tool.status === 'failed')]
   })
 }

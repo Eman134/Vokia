@@ -85,6 +85,8 @@ pub enum DbError {
     FlowInvalid(Vec<FlowProblem>),
     OrchestratorNotLeader,
     RunNotInterrupted(i64),
+    ArtifactNotFound(String),
+    CriterionNotFound(String),
 }
 
 impl DbError {
@@ -114,6 +116,8 @@ impl DbError {
                 | DbError::InvalidPlanState(_)
                 | DbError::InvalidPlanAgent(_)
                 | DbError::InvalidBacklogPlan(_)
+                | DbError::ArtifactNotFound(_)
+                | DbError::CriterionNotFound(_)
         )
     }
 }
@@ -327,6 +331,12 @@ impl fmt::Display for DbError {
             }
             DbError::RunNotInterrupted(id) => {
                 write!(f, "O pedido {id} não está mais interrompido.")
+            }
+            DbError::ArtifactNotFound(id) => {
+                write!(f, "O plano {id} não existe neste projeto.")
+            }
+            DbError::CriterionNotFound(id) => {
+                write!(f, "O critério {id} não existe neste plano.")
             }
         }
     }

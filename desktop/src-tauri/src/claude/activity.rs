@@ -29,6 +29,8 @@ const PATCH_REMOVED: char = '-';
 const FOUND_NAMES_MAX: usize = 20;
 const FIRST_LINE: u32 = 1;
 const NAME_MAX_CHARS: usize = 120;
+const DELEGATION_COMMAND: &str = "maestri ask";
+const RESULT_MAX_CHARS: usize = 2000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -101,6 +103,8 @@ pub struct ToolActivity {
     pub duration_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<ToolDetail>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +242,7 @@ impl ActivityParser {
             change,
             duration_ms: None,
             detail: entry_detail(name, input),
+            result: None,
         });
         true
     }
@@ -277,6 +282,9 @@ impl ActivityParser {
                 continue;
             }
             tool.status = ToolStatus::Ok;
+            if tool.target.starts_with(DELEGATION_COMMAND) {
+                tool.result = result_text(&result["content"]);
+            }
             if let (true, Some((added, removed))) = (open.patchable, patch) {
                 tool.added = Some(added);
                 tool.removed = Some(removed);
@@ -288,6 +296,26 @@ impl ActivityParser {
         }
         closed
     }
+}
+
+// O conteúdo do tool_result é uma string ou uma lista de blocos de texto.
+fn result_text(content: &Value) -> Option<String> {
+    let raw = match content {
+        Value::String(text) => text.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("
+"),
+        _ => return None,
+    };
+    let text: String = ConsoleLine::new(ConsoleKind::Text, &raw)
+        .text
+        .chars()
+        .take(RESULT_MAX_CHARS)
+        .collect();
+    (!text.trim().is_empty()).then_some(text)
 }
 
 fn entry_detail(name: &str, input: &Value) -> Option<ToolDetail> {

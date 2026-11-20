@@ -11,6 +11,7 @@ mod mcp;
 mod orchestration;
 mod orchestrator;
 mod permissions;
+mod plan_proposal;
 mod projects;
 mod roles;
 mod session_key;
@@ -73,6 +74,8 @@ fn main() {
             commands::backlog::archive_backlog_item,
             commands::backlog::restore_backlog_item,
             commands::backlog::delete_backlog_item,
+            commands::artifacts::list_artifacts,
+            commands::artifacts::set_artifact_criterion,
             commands::projects::set_permission_level,
             commands::projects::list_permission_rules,
             commands::projects::delete_permission_rule,

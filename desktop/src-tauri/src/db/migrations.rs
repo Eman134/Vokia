@@ -1,7 +1,10 @@
 use rusqlite::{Connection, OptionalExtension, Transaction};
 
 use crate::agents::AGENT_ID_RENAMES;
+use crate::plan_proposal::parse_proposal;
 
+use super::artifacts::replace_artifact;
+use super::backlog::refresh_children;
 use super::orchestration::{FLOW_END, FLOW_START, INSERT_EDGE_SQL};
 
 const SCHEMA: &str = include_str!("schema.sql");
@@ -89,6 +92,75 @@ const PERMISSION_SCHEMA: &str = "
         PRIMARY KEY (project_id, tool, command)
     );
 ";
+
+// Plano como artefato: um por item (índice único) e critérios que os agentes marcam por MCP.
+const ARTIFACTS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS artifacts (
+        project_id INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        points TEXT NOT NULL DEFAULT '[]',
+        estimate TEXT NOT NULL DEFAULT '',
+        risks TEXT NOT NULL DEFAULT '[]',
+        tags TEXT NOT NULL DEFAULT '[]',
+        detail TEXT NOT NULL,
+        author TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, id),
+        FOREIGN KEY (project_id, item_id) REFERENCES backlog_items(project_id, id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS artifacts_by_item ON artifacts(project_id, item_id);
+    CREATE TABLE IF NOT EXISTS artifact_criteria (
+        project_id INTEGER NOT NULL,
+        artifact_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0,1)),
+        PRIMARY KEY (project_id, artifact_id, id),
+        FOREIGN KEY (project_id, artifact_id) REFERENCES artifacts(project_id, id) ON DELETE CASCADE
+    );
+";
+
+// Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
+const PLANS_WITHOUT_ARTIFACT_SQL: &str = "SELECT saved.project_id, saved.item_id, saved.text, saved.agent, card.title \
+    FROM item_plans AS saved \
+    JOIN backlog_items AS card ON card.project_id = saved.project_id AND card.id = saved.item_id \
+    WHERE trim(COALESCE(saved.text, '')) <> '' AND NOT EXISTS (SELECT 1 FROM artifacts AS artifact \
+        WHERE artifact.project_id = saved.project_id AND artifact.item_id = saved.item_id)";
+
+// CASE em cascata: json_type falha em JSON inválido, e só a primeira condição verdadeira é avaliada.
+const VALID_TASKS: &str = "CASE WHEN NOT json_valid(item.tasks) THEN '[]' \
+    WHEN json_type(item.tasks) = 'array' THEN item.tasks ELSE '[]' END";
+
+const MICRO_TASK_PARENTS_SQL: &str = "SELECT item.project_id, item.id FROM backlog_items AS item \
+    WHERE json_array_length({tasks}) > 0";
+
+const MICRO_TASK_CARDS_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
+        parent, description, who, \"by\", is_new, \"column\", origin, position) \
+    SELECT item.project_id, \
+        'micro-' || item.id || '.' || (task.key + 1), \
+        json_extract(task.value, '$.title'), \
+        item.\"type\", 'vazio', item.id, \
+        NULLIF(trim(COALESCE(json_extract(task.value, '$.script.context'), '')), ''), \
+        COALESCE(json_extract(task.value, '$.who'), item.who), \
+        COALESCE(json_extract(task.value, '$.who'), item.who), \
+        0, \
+        CASE json_extract(task.value, '$.status') \
+            WHEN 'ready' THEN 'Ready' WHEN 'em andamento' THEN 'In progress' \
+            WHEN 'em revisão' THEN 'In review' WHEN 'feito' THEN 'Done' ELSE 'Backlog' END, \
+        'agente', \
+        (SELECT COALESCE(MAX(last.position), 0) FROM backlog_items AS last WHERE last.project_id = item.project_id) \
+            + ROW_NUMBER() OVER (PARTITION BY item.project_id ORDER BY item.position, task.key) \
+    FROM backlog_items AS item, json_each({tasks}) AS task \
+    WHERE trim(COALESCE(json_extract(task.value, '$.title'), '')) <> '' \
+    ON CONFLICT(project_id, id) DO NOTHING";
+
+const CLEAR_MICRO_TASKS_SQL: &str = "UPDATE backlog_items AS item SET tasks = '[]' \
+    WHERE json_array_length({tasks}) > 0";
 
 // Fluxo por agente dentro do time: cada seta liga dois agentes do mesmo time, ou o início a um agente, ou um agente ao fim.
 // A seta de início é única por time e o líder do time é o destino dela.
@@ -452,6 +524,42 @@ fn migrate_flow(tx: &Transaction) -> rusqlite::Result<()> {
     tx.execute_batch(&with_flow_nodes(FLOW_START_FROM_LEADERS_SQL))
 }
 
+fn migrate_plan_artifacts(tx: &Transaction) -> rusqlite::Result<()> {
+    let pending = {
+        let mut statement = tx.prepare(PLANS_WITHOUT_ARTIFACT_SQL)?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (project_id, item_id, text, agent, title) in pending {
+        let draft = parse_proposal(&text);
+        replace_artifact(tx, project_id, &item_id, &title, &text, agent.as_deref(), &draft)?;
+    }
+    Ok(())
+}
+
+// Micro-tarefa vira card filho do item (D10); id derivado e lista esvaziada tornam a migração repetível.
+fn migrate_micro_tasks(tx: &Transaction) -> rusqlite::Result<()> {
+    let parents = {
+        let mut statement = tx.prepare(&MICRO_TASK_PARENTS_SQL.replace("{tasks}", VALID_TASKS))?;
+        let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.execute_batch(&MICRO_TASK_CARDS_SQL.replace("{tasks}", VALID_TASKS))?;
+    tx.execute_batch(&CLEAR_MICRO_TASKS_SQL.replace("{tasks}", VALID_TASKS))?;
+    for (project_id, item_id) in parents {
+        refresh_children(tx, project_id, &item_id)?;
+    }
+    Ok(())
+}
+
 pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)")?;
     let current: i64 = conn.query_row(
@@ -475,6 +583,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute_batch(RUNS_SCHEMA)?;
     tx.execute_batch(PERMISSION_SCHEMA)?;
+    tx.execute_batch(ARTIFACTS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;
@@ -485,5 +594,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     migrate_flow(&tx)?;
     tx.execute_batch("DROP TABLE IF EXISTS orch_rules")?;
     tx.execute_batch(&legacy_agent_sql())?;
+    migrate_plan_artifacts(&tx)?;
+    migrate_micro_tasks(&tx)?;
     tx.commit()
 }

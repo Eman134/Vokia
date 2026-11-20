@@ -9,8 +9,9 @@ use super::folder::inspect_folder;
 use super::github::{create_from_github, GithubOrigin};
 
 // Espelha as chaves de desktop/src/features/projects/projectIcons.ts.
-const PROJECT_ICONS: [&str; 23] = [
+const PROJECT_ICONS: [&str; 24] = [
     "folder",
+    "circle",
     "target",
     "triangle",
     "square",

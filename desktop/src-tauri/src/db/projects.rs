@@ -10,8 +10,10 @@ const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
      (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level, color, setup_command";
 
-// item_plans antes de backlog_items: a chave estrangeira deles aponta para backlog_items.
+// Critérios antes de artefatos, e os dois com item_plans antes de backlog_items: as chaves estrangeiras apontam nessa ordem.
 const PROJECT_CHILD_TABLES: &[&str] = &[
+    "artifact_criteria",
+    "artifacts",
     "item_plans",
     "backlog_items",
     "messages",

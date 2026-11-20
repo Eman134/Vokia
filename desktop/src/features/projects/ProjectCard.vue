@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
-import ProjectBadge from './ProjectBadge.vue'
+import ProjectIcon from './ProjectIcon.vue'
 import { projectColorOf } from './projectColors'
 import { EDIT_LABEL, EMPTY_PATH_TEXT, OPEN_LABEL } from './projetosSample'
 import type { Project } from './projectsApi'
@@ -34,7 +34,7 @@ const originLabel = computed(() =>
 <template>
   <article :class="CARD_CLASSES" data-testid="project-card">
     <div :class="HEADER_CLASSES">
-      <ProjectBadge :color="projectColorOf(project)" :class="BADGE_CLASSES" data-testid="project-card-icon" />
+      <ProjectIcon :icon="project.symbol" :color="projectColorOf(project)" :class="BADGE_CLASSES" data-testid="project-card-icon" />
       <div class="min-w-0">
         <div class="flex min-w-0 items-center gap-2">
           <b :class="NAME_CLASSES" class="min-w-0 block">{{ project.name }}</b>

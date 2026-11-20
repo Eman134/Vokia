@@ -1,6 +1,7 @@
 mod agent_removal;
 mod agent_sessions;
 mod approvals;
+mod artifacts;
 mod backlog;
 mod channels;
 mod connection;
@@ -15,6 +16,7 @@ mod settings;
 
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
+pub use artifacts::Artifact;
 pub use permission_rules::PermissionRule;
 pub use backlog::{
     board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible, CardResult,
