@@ -22,6 +22,7 @@ import {
   ROLE_LABEL,
   SAVE_LABEL,
 } from './agentFormCopy'
+import { COMMAND_LABEL, RESTORE_DEFAULT_LABEL } from './agentesCopy'
 import { useRoles } from './useRoles'
 
 const props = defineProps<{ agent?: AgentProfile }>()
@@ -47,10 +48,29 @@ const role = ref(props.agent?.role ?? '')
 const avatar = ref(
   props.agent?.avatar ?? (AVATAR_PROFILES.find((profile) => !usedAvatars.has(profile.id)) ?? AVATAR_PROFILES[0]).id,
 )
+const isBuiltin = computed(() => props.agent?.builtin ?? false)
 const cli = ref(props.agent?.cli ?? firstPreset?.id ?? '')
+const preset = computed(() => roster.presets.find((candidate) => candidate.id === cli.value))
 const model = ref(props.agent?.model ?? firstPreset?.defaultModel ?? '')
+const command = ref(props.agent?.command ?? preset.value?.defaultCommand ?? '')
+const commandId = `${titleId}-command`
 const submitting = ref(false)
 const failure = ref<string | null>(null)
+
+const commandError = computed(() => {
+  if (!failure.value) return undefined
+  const text = failure.value.toLowerCase()
+  if (text.includes('comando') || text.includes('flag')) {
+    return failure.value
+  }
+  return undefined
+})
+
+watch(command, () => {
+  if (commandError.value) {
+    failure.value = null
+  }
+})
 
 const roleOptions = computed(() => {
   const options = roles.roles.map((candidate) => ({ label: candidate.name, value: candidate.name }))
@@ -61,15 +81,27 @@ const roleOptions = computed(() => {
   return options
 })
 const cliOptions = computed(() => roster.presets.map((preset) => ({ label: preset.label, value: preset.id })))
-const preset = computed(() => roster.presets.find((candidate) => candidate.id === cli.value))
 const modelOptions = computed(() => (preset.value?.models ?? []).map((candidate) => ({ label: candidate, value: candidate })))
 const canSave = computed(
-  () => name.value.trim() !== '' && role.value !== '' && cli.value !== '' && model.value !== '' && !submitting.value,
+  () =>
+    name.value.trim() !== '' &&
+    role.value !== '' &&
+    cli.value !== '' &&
+    model.value !== '' &&
+    command.value.trim() !== '' &&
+    !isBuiltin.value &&
+    !submitting.value,
 )
 
 watch(cli, () => {
   model.value = preset.value?.defaultModel ?? ''
+  command.value = preset.value?.defaultCommand ?? ''
 })
+
+function restoreDefaultCommand(): void {
+  command.value = preset.value?.defaultCommand ?? ''
+  failure.value = null
+}
 
 function focusName(): void {
   dialog.value?.querySelector('input')?.focus()
@@ -97,6 +129,7 @@ async function submit(): Promise<void> {
     avatar: avatar.value,
     cli: cli.value,
     model: model.value,
+    command: command.value.trim(),
   }
   try {
     const profile = props.agent ? await roster.update(props.agent.id, draft) : await roster.create(draft)
@@ -128,7 +161,7 @@ onMounted(focusName)
       @keydown.tab="trapFocus($event, dialog)"
     >
       <h2 :id="titleId" class="text-control font-bold text-ink">{{ agent ? EDIT_TITLE : DIALOG_TITLE }}</h2>
-      <fieldset :disabled="submitting" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+      <fieldset :disabled="submitting || isBuiltin" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         <div class="flex flex-col gap-3" @keydown.enter.prevent="submit()">
           <UiField v-model="name" :label="NAME_LABEL" />
           <label class="flex flex-col gap-1.5">
@@ -151,8 +184,35 @@ onMounted(focusName)
             <UiSelect v-model="model" :options="modelOptions" :label="MODEL_LABEL" />
           </label>
         </div>
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-baseline justify-between gap-3">
+            <label :for="commandId" class="text-label font-medium text-muted">{{ COMMAND_LABEL }}</label>
+            <button
+              v-if="!isBuiltin"
+              type="button"
+              class="cursor-pointer text-caption text-muted hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="submitting || command === (preset?.defaultCommand ?? '')"
+              @click="restoreDefaultCommand()"
+            >
+              {{ RESTORE_DEFAULT_LABEL }}
+            </button>
+          </div>
+          <input
+            :id="commandId"
+            v-model="command"
+            :disabled="isBuiltin || submitting"
+            :class="[
+              'h-9 w-full min-w-0 rounded-control border bg-surface px-3 font-mono text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent',
+              commandError ? 'border-danger' : 'border-line',
+              isBuiltin ? 'cursor-not-allowed opacity-60' : '',
+            ]"
+            :aria-invalid="Boolean(commandError)"
+            @keydown.enter.prevent="submit()"
+          />
+          <span v-if="commandError" role="alert" class="text-small text-danger">{{ commandError }}</span>
+        </div>
       </fieldset>
-      <UiNotice v-if="failure !== null" :text="failure" @close="dismissFailure()" />
+      <UiNotice v-if="failure !== null && !commandError" :text="failure" @close="dismissFailure()" />
       <div class="flex justify-end gap-2">
         <UiButton variant="quiet" size="lg" @press="close()">{{ CANCEL_LABEL }}</UiButton>
         <UiButton variant="primary" size="lg" :disabled="!canSave" @press="submit()">

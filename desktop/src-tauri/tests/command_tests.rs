@@ -95,6 +95,7 @@ impl Drop for McpFixture {
 fn args_of(access: Access<'_>, mcp: Option<&McpConfigFile>) -> Vec<String> {
     agent_command(
         Path::new("claude"),
+        &[],
         &["-p", "oi"],
         "papel",
         "haiku",
@@ -212,6 +213,7 @@ fn comando_base_e_de_agente_definem_no_proxy_para_o_loopback() {
     let base = base_command(Path::new("claude"));
     let agent = agent_command(
         Path::new("claude"),
+        &[],
         &["-p", "oi"],
         "papel",
         "haiku",
@@ -289,4 +291,33 @@ fn as_ferramentas_do_mcp_entram_depois_das_do_nivel_sem_remover_nenhuma() {
             "{level:?}"
         );
     }
+}
+
+#[test]
+fn argumentos_do_usuario_entram_antes_de_tools_allowed_tools_e_append_system_prompt() {
+    let fixture = mcp_fixture("mcp");
+    let user_args = vec!["--user-custom-flag".to_string(), "custom_val".to_string()];
+    let command = agent_command(
+        Path::new("claude"),
+        &user_args,
+        &["-p", "oi"],
+        "Tech Lead",
+        "sonnet",
+        Access::Project(project_access(PermissionLevel::Edicao)),
+        Some(fixture.session.config()),
+    );
+    let args: Vec<String> = command
+        .as_std()
+        .get_args()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+
+    let pos_user = position(&args, "--user-custom-flag");
+    let pos_tools = position(&args, "--tools");
+    let pos_allowed = position(&args, ALLOWED_FLAG);
+    let pos_append = position(&args, APPEND_FLAG);
+
+    assert!(pos_user < pos_tools, "user_args ({pos_user}) deve vir antes de --tools ({pos_tools})");
+    assert!(pos_user < pos_allowed, "user_args ({pos_user}) deve vir antes de --allowedTools ({pos_allowed})");
+    assert!(pos_user < pos_append, "user_args ({pos_user}) deve vir antes de --append-system-prompt ({pos_append})");
 }

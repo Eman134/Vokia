@@ -24,11 +24,87 @@ const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 const CLAUDE_CLI: &str = "claude";
 const CLAUDE_CLI_LABEL: &str = "Claude Code";
 const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
+const CODEX_CLI: &str = "codex";
+const CODEX_CLI_LABEL: &str = "Codex";
+const CODEX_DEFAULT_MODEL: &str = "gpt-6-luna";
+const CODEX_MODELS: [&str; 3] = ["gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"];
+const CODEX_RESERVED_FLAGS: [&str; 12] = [
+    "--json",
+    "-m",
+    "--model",
+    "-s",
+    "--sandbox",
+    "-C",
+    "--cd",
+    "--add-dir",
+    "--dangerously-bypass-approvals-and-sandbox",
+    "-c",
+    "--config",
+    "--approve-for-me",
+];
+const OPENCODE_CLI: &str = "opencode";
+const OPENCODE_CLI_LABEL: &str = "OpenCode";
+const OPENCODE_DEFAULT_MODEL: &str = "openai/gpt-6-astra";
+const OPENCODE_MODELS: [&str; 3] = [
+    "openai/gpt-6-astra",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.4-mini",
+];
+const OPENCODE_RESERVED_FLAGS: [&str; 9] = [
+    "--format",
+    "-m",
+    "--model",
+    "--dir",
+    "--auto",
+    "-s",
+    "--session",
+    "-c",
+    "--continue",
+];
+const ANTIGRAVITY_CLI: &str = "antigravity";
+const ANTIGRAVITY_CLI_LABEL: &str = "Antigravity";
+const ANTIGRAVITY_DEFAULT_COMMAND: &str = "agy";
+const ANTIGRAVITY_DEFAULT_MODEL: &str = "gemini-4-hydrogen-medium";
+const ANTIGRAVITY_MODELS: [&str; 4] = [
+    "gemini-4-hydrogen-medium",
+    "gemini-4-neon-medium",
+    "gemini-4-argon-medium",
+    "gemini-3.8-flash-medium",
+];
+const ANTIGRAVITY_RESERVED_FLAGS: [&str; 13] = [
+    "-p",
+    "--print",
+    "--prompt",
+    "--output-format",
+    "--input-format",
+    "--model",
+    "--sandbox",
+    "--mode",
+    "--dangerously-skip-permissions",
+    "--add-dir",
+    "--conversation",
+    "-c",
+    "--continue",
+];
+const CLAUDE_RESERVED_FLAGS: [&str; 10] = [
+    "-p",
+    "--output-format",
+    "--input-format",
+    "--model",
+    "--tools",
+    "--allowedTools",
+    "--mcp-config",
+    "--permission-mode",
+    "--append-system-prompt",
+    "--resume",
+];
 const EMBER: &str = "ember";
 const AXIOM: &str = "axiom";
 const VEXA: &str = "vexa";
 
-const INITIAL_AGENTS: [(&str, &str, &str); 3] = [
+const INITIAL_AGENTS: [(&str, &str, &str); 5] = [
+    ("Axiom", "Tech Lead", "quarzo"),
+    ("Vexa", "Frontend Developer", "lume"),
     ("Kairo", "Backend Developer", "vesper"),
     ("Sentry", "QA Engineer", "selene"),
     ("Oracle", "Researcher", "ambar-ouro"),
@@ -112,6 +188,8 @@ pub struct AgentProfile {
     pub cli: String,
     pub model: String,
     #[serde(default)]
+    pub command: String,
+    #[serde(default)]
     pub builtin: bool,
     // Vem do mapa de instruções do registro, não do registro de cada agente; vazio quando não há.
     #[serde(default)]
@@ -126,6 +204,7 @@ pub struct AgentDraft {
     pub avatar: String,
     pub cli: String,
     pub model: String,
+    pub command: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -135,15 +214,40 @@ pub struct CliPreset {
     pub label: &'static str,
     pub models: &'static [&'static str],
     pub default_model: &'static str,
+    pub default_command: &'static str,
 }
 
 pub fn presets() -> Vec<CliPreset> {
-    vec![CliPreset {
-        id: CLAUDE_CLI,
-        label: CLAUDE_CLI_LABEL,
-        models: &CLAUDE_MODELS,
-        default_model: DEFAULT_MODEL,
-    }]
+    vec![
+        CliPreset {
+            id: CLAUDE_CLI,
+            label: CLAUDE_CLI_LABEL,
+            models: &CLAUDE_MODELS,
+            default_model: DEFAULT_MODEL,
+            default_command: CLAUDE_CLI,
+        },
+        CliPreset {
+            id: CODEX_CLI,
+            label: CODEX_CLI_LABEL,
+            models: &CODEX_MODELS,
+            default_model: CODEX_DEFAULT_MODEL,
+            default_command: CODEX_CLI,
+        },
+        CliPreset {
+            id: OPENCODE_CLI,
+            label: OPENCODE_CLI_LABEL,
+            models: &OPENCODE_MODELS,
+            default_model: OPENCODE_DEFAULT_MODEL,
+            default_command: OPENCODE_CLI,
+        },
+        CliPreset {
+            id: ANTIGRAVITY_CLI,
+            label: ANTIGRAVITY_CLI_LABEL,
+            models: &ANTIGRAVITY_MODELS,
+            default_model: ANTIGRAVITY_DEFAULT_MODEL,
+            default_command: ANTIGRAVITY_DEFAULT_COMMAND,
+        },
+    ]
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -164,6 +268,8 @@ pub enum AgentError {
     AvatarInUse(String),
     UnknownCli(String),
     UnknownModel { cli: String, model: String },
+    InvalidCommand,
+    ReservedCommandFlag(String),
     UnknownAgent(String),
     BuiltinLocked(String),
     LoadFailed(String),
@@ -204,6 +310,14 @@ impl Display for AgentError {
             AgentError::UnknownModel { cli, model } => {
                 write!(f, "O modelo {model} não existe para {cli}.")
             }
+            AgentError::InvalidCommand => write!(
+                f,
+                "Comando inválido: informe um comando válido e com aspas fechadas."
+            ),
+            AgentError::ReservedCommandFlag(flag) => write!(
+                f,
+                "A flag {flag} é controlada pelo app e não pode ser usada no comando."
+            ),
             AgentError::UnknownAgent(id) => write!(f, "Agente desconhecido: {id}."),
             AgentError::BuiltinLocked(name) => {
                 write!(f, "{name} é um agente embutido e não pode ser alterado.")
@@ -231,17 +345,14 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         avatar: avatar.to_string(),
         cli: CLAUDE_CLI.to_string(),
         model: DEFAULT_MODEL.to_string(),
+        command: CLAUDE_CLI.to_string(),
         builtin: true,
         extra_instructions: String::new(),
     }
 }
 
 fn builtins() -> Vec<AgentProfile> {
-    vec![
-        builtin(Agent::ember(), "Ember", "Orquestrador geral", "ember"),
-        builtin(Agent::axiom(), "Axiom", "Tech Lead", "quarzo"),
-        builtin(Agent::vexa(), "Vexa", "Frontend Developer", "lume"),
-    ]
+    vec![builtin(Agent::ember(), "Ember", "Orquestrador geral", "ember")]
 }
 
 fn initial_agents() -> Vec<AgentProfile> {
@@ -254,6 +365,7 @@ fn initial_agents() -> Vec<AgentProfile> {
             avatar: avatar.to_string(),
             cli: CLAUDE_CLI.to_string(),
             model: DEFAULT_MODEL.to_string(),
+            command: CLAUDE_CLI.to_string(),
             builtin: false,
             extra_instructions: String::new(),
         })
@@ -321,6 +433,40 @@ pub fn name_key(name: &str) -> String {
         .collect()
 }
 
+fn default_command_for(cli: &str) -> &'static str {
+    presets()
+        .into_iter()
+        .find(|preset| preset.id == cli)
+        .map_or(CLAUDE_CLI, |preset| preset.default_command)
+}
+
+fn validate_command(cli: &str, command: &str) -> Result<(), AgentError> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return Err(AgentError::InvalidCommand);
+    }
+    let Some(parts) = shlex::split(trimmed) else {
+        return Err(AgentError::InvalidCommand);
+    };
+    if parts.is_empty() {
+        return Err(AgentError::InvalidCommand);
+    }
+    let reserved: &[&str] = match cli {
+        CLAUDE_CLI => &CLAUDE_RESERVED_FLAGS,
+        CODEX_CLI => &CODEX_RESERVED_FLAGS,
+        OPENCODE_CLI => &OPENCODE_RESERVED_FLAGS,
+        ANTIGRAVITY_CLI => &ANTIGRAVITY_RESERVED_FLAGS,
+        _ => &[],
+    };
+    for arg in parts {
+        let flag_name = arg.split_once('=').map_or(arg.as_str(), |(name, _)| name);
+        if reserved.contains(&flag_name) {
+            return Err(AgentError::ReservedCommandFlag(flag_name.to_string()));
+        }
+    }
+    Ok(())
+}
+
 fn validate(
     draft: &AgentDraft,
     team: &[AgentProfile],
@@ -383,6 +529,7 @@ fn validate(
             model: draft.model.clone(),
         });
     }
+    validate_command(&draft.cli, &draft.command)?;
 
     Ok(AgentProfile {
         id: editing.cloned().unwrap_or(Agent(key)),
@@ -391,6 +538,7 @@ fn validate(
         avatar: avatar.to_string(),
         cli: draft.cli.clone(),
         model: draft.model.clone(),
+        command: draft.command.trim().to_string(),
         builtin: false,
         extra_instructions: String::new(),
     })
@@ -471,11 +619,14 @@ pub(crate) fn join_items(items: &[String]) -> String {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentsFile {
     version: u32,
     agents: Vec<AgentProfile>,
     #[serde(default)]
     instructions: BTreeMap<String, String>,
+    #[serde(default)]
+    roster_migrated: bool,
 }
 
 // Agentes gravados e instruções extras por id (inclusive dos embutidos, que não ficam em `agents`).
@@ -641,12 +792,19 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
     for stored in parsed.agents {
         let profile = renamed_stored(stored.clone());
         rewrite |= profile.id != stored.id;
+        let command = if profile.command.trim().is_empty() {
+            rewrite = true;
+            default_command_for(&profile.cli).to_string()
+        } else {
+            profile.command.clone()
+        };
         let mut draft = AgentDraft {
             name: profile.name.clone(),
             role: profile.role.clone(),
             avatar: profile.avatar.clone(),
             cli: profile.cli.clone(),
             model: profile.model.clone(),
+            command,
         };
         let team = team_of(&loaded);
         // Avatar repetido já gravado não derruba o carregamento: o segundo recebe o próximo livre.
@@ -669,6 +827,40 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             ));
         }
         loaded.push(validated);
+    }
+    if !parsed.roster_migrated {
+        for (id, name, role, default_avatar) in [
+            (Agent::axiom(), "Axiom", "Tech Lead", "quarzo"),
+            (Agent::vexa(), "Vexa", "Frontend Developer", "lume"),
+        ] {
+            if loaded.iter().any(|profile| profile.id == id) {
+                continue;
+            }
+            let team = team_of(&loaded);
+            if team.len() >= MAX_AGENTS {
+                break;
+            }
+            let avatar = if team.iter().any(|other| other.avatar == default_avatar) {
+                match free_avatar(&team) {
+                    Some(free) => free.to_string(),
+                    None => continue,
+                }
+            } else {
+                default_avatar.to_string()
+            };
+            loaded.push(AgentProfile {
+                id,
+                name: name.to_string(),
+                role: role.to_string(),
+                avatar,
+                cli: CLAUDE_CLI.to_string(),
+                model: DEFAULT_MODEL.to_string(),
+                command: CLAUDE_CLI.to_string(),
+                builtin: false,
+                extra_instructions: String::new(),
+            });
+        }
+        rewrite = true;
     }
     if rewrite {
         write_file(file, &loaded, &parsed.instructions).map_err(|detail| load_failed(file, detail))?;
@@ -734,6 +926,7 @@ fn write_file(
         version: FILE_VERSION,
         agents: agents.to_vec(),
         instructions: instructions.clone(),
+        roster_migrated: true,
     })
     .map_err(|error| error.to_string())?;
     write_atomic(file, AGENTS_FILE_TMP, &text)

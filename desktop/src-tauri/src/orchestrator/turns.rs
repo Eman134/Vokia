@@ -85,7 +85,7 @@ pub(super) async fn run_turns(
     // Um lote é a entrega de trabalho até o próximo fim de cadeia; só ele exige revisão, e cada lote novo volta a exigi-la.
     let mut lote_open = false;
     let mut rejections = 0;
-    let with_tools = app.state::<McpState>().server().is_some();
+    let has_mcp_server = app.state::<McpState>().server().is_some();
     loop {
         if let Some(motive) = policy::task_limit_reached(exchange.orchestration, &counters.task) {
             let speaker = counters
@@ -104,6 +104,10 @@ pub(super) async fn run_turns(
                 None,
             );
         }
+        let speaker_supports_mcp = team
+            .profile(&turn.speaker)
+            .is_some_and(|profile| super::cli_supports_mcp(&profile.cli));
+        let with_tools = has_mcp_server && speaker_supports_mcp;
         let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,

@@ -11,12 +11,13 @@ mod stream;
 
 pub use activity::TurnActivity;
 pub use ask::ask;
-pub(crate) use command::base_command;
+pub(crate) use command::{base_command, timeout_for};
 pub use command::{kill_process_tree, Access, ProjectAccess, DEFAULT_MODEL};
 pub(crate) use connectivity::is_reachable;
 pub use console::{ConsoleKind, ConsoleLine};
 pub use control::{PermissionRequest, PermissionVerdict};
 pub use error::ClaudeError;
 pub use live_session::LiveSession;
+pub(crate) use locate::cli_message;
 pub use locate::{locate, CliProblem};
 pub use stream::{LimitName, LimitWindow, RateLimits, Reply, UsageLimit};

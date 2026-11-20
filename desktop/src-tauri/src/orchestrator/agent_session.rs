@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use crate::agents::Agent;
+use crate::agents::{Agent, AgentProfile};
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
@@ -18,6 +18,7 @@ use crate::orchestration::snapshot::agent_prompt;
 use crate::permissions::PermissionGate;
 use crate::session_key::SessionKey;
 
+use super::adapters::ProviderAdapter;
 use super::console::ConsoleSink;
 use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
@@ -31,7 +32,7 @@ use super::session_policy::{
 use super::session_pool::{ExchangeSessions, NO_PID};
 use super::turns::Exchange;
 
-const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
+pub(super) const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
 const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 
 pub(super) struct StepReply {
@@ -80,12 +81,22 @@ async fn run_step(
         ..
     } = exchange;
     let profile = profile_of(team, agent)?;
-    let mcp = McpLaunch::new(
-        app,
-        key.project_id,
-        agent,
-        &crate::orchestration::instances::display_name(team, agent),
-    )?;
+    let adapter = ProviderAdapter::from_cli(&profile.cli)?;
+    if agent == &Agent::ember() && adapter != ProviderAdapter::Claude {
+        return Err(FlowError::CliUnavailable(
+            "O agente Ember deve usar a CLI claude.".to_string(),
+        ));
+    }
+    let mcp = if adapter.supports_mcp() {
+        McpLaunch::new(
+            app,
+            key.project_id,
+            agent,
+            &crate::orchestration::instances::display_name(team, agent),
+        )?
+    } else {
+        None
+    };
     let prompt = agent_prompt(*orchestration, team, agent);
     let base = role(
         profile,
@@ -114,7 +125,11 @@ async fn run_step(
     } else {
         base
     };
+    let (program, user_args) = resolve_agent_command(agent, profile, cli)?;
     let call = AgentCall {
+        adapter,
+        program,
+        user_args,
         role,
         model: profile.model.clone(),
         item_id: exchange.item_id.map(str::to_string),
@@ -151,22 +166,31 @@ async fn run_step(
             agent: agent.clone(),
         },
     };
-    let live = match call_mode(held.guard.fresh_only) {
-        CallMode::Live => {
-            held.guard
-                .reply(
-                    cli,
-                    *project,
-                    gate.clone(),
-                    &store,
-                    &call,
-                    prompts,
-                    first,
-                    console,
-                )
-                .await?
+    let access = if adapter.supports_mcp() {
+        Access::Project(*project)
+    } else {
+        Access::TextOnly
+    };
+    let live = if adapter.supports_live_session() {
+        match call_mode(held.guard.fresh_only) {
+            CallMode::Live => {
+                adapter
+                    .run_live(
+                        &mut held.guard,
+                        access,
+                        gate.clone(),
+                        &store,
+                        &call,
+                        prompts,
+                        first,
+                        console,
+                    )
+                    .await?
+            }
+            CallMode::Fresh => None,
         }
-        CallMode::Fresh => None,
+    } else {
+        None
     };
     let reply = match live {
         Some(reply) => reply,
@@ -177,7 +201,7 @@ async fn run_step(
                 ..gate
             };
             fresh_reply(
-                exchange,
+                access,
                 gate,
                 &held.slot.pid,
                 &call,
@@ -224,26 +248,16 @@ fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {
 
 // Contexto novo a cada chamada, mas pela sessão viva: só ela tem canal para o usuário decidir comandos fora da allowlist.
 async fn fresh_reply(
-    exchange: &Exchange<'_>,
+    access: Access<'_>,
     gate: PermissionGate<'_>,
     pid: &AtomicU32,
     call: &AgentCall,
     message: &str,
     console: &ConsoleSink<'_>,
 ) -> Result<Reply, ClaudeError> {
-    let mut live = LiveSession::open(
-        exchange.cli,
-        &call.role,
-        &call.model,
-        Access::Project(exchange.project),
-        None,
-        open_mcp(call)?,
-    )?;
-    pid.store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
-    let reply = send_in_slot(&mut live, call, message, &gate, console).await;
-    live.close(SESSION_CLOSE_GRACE).await;
-    pid.store(NO_PID, Ordering::SeqCst);
-    reply
+    call.adapter
+        .run_fresh(access, gate, pid, call, message, console)
+        .await
 }
 
 pub(super) struct SessionStore<'a> {
@@ -344,7 +358,6 @@ impl AgentSession {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn reply(
         &mut self,
-        cli: &Path,
         project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
         store: &SessionStore<'_>,
@@ -358,7 +371,6 @@ impl AgentSession {
         while let Some(attempt) = next {
             match self
                 .attempt(
-                    cli,
                     project,
                     gate.clone(),
                     call,
@@ -433,7 +445,6 @@ impl AgentSession {
     #[allow(clippy::too_many_arguments)]
     async fn attempt(
         &mut self,
-        cli: &Path,
         project: ProjectAccess<'_>,
         gate: PermissionGate<'_>,
         call: &AgentCall,
@@ -460,7 +471,8 @@ impl AgentSession {
                     _ => None,
                 };
                 LiveSession::open(
-                    cli,
+                    &call.program,
+                    &call.user_args,
                     &call.role,
                     &call.model,
                     Access::Project(project),
@@ -523,13 +535,45 @@ impl AgentSession {
 }
 
 pub(super) struct AgentCall {
-    role: String,
-    model: String,
+    pub(super) adapter: ProviderAdapter,
+    pub(super) program: PathBuf,
+    pub(super) user_args: Vec<String>,
+    pub(super) role: String,
+    pub(super) model: String,
     item_id: Option<String>,
     channel_id: Option<i64>,
     mcp: Option<McpLaunch>,
     has_variables: bool,
     collected: StdMutex<ExchangeOutcome>,
+}
+
+fn resolve_agent_command(
+    agent: &Agent,
+    profile: &AgentProfile,
+    default_cli: &Path,
+) -> Result<(PathBuf, Vec<String>), FlowError> {
+    if agent == &Agent::ember() {
+        return Ok((default_cli.to_path_buf(), Vec::new()));
+    }
+    let parts = shlex::split(profile.command.trim()).ok_or_else(|| {
+        FlowError::CliUnavailable(format!(
+            "Comando inválido para {}: {}.",
+            profile.name, profile.command
+        ))
+    })?;
+    let Some((bin, args)) = parts.split_first() else {
+        return Err(FlowError::CliUnavailable(format!(
+            "Comando vazio para {}.",
+            profile.name
+        )));
+    };
+    let program = which::which(bin).map_err(|_| {
+        FlowError::CliUnavailable(format!(
+            "CLI {bin} não encontrada para {} (comando: {}).",
+            profile.name, profile.command
+        ))
+    })?;
+    Ok((program, args.to_vec()))
 }
 
 // Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.
@@ -576,11 +620,11 @@ impl McpLaunch {
     }
 }
 
-fn open_mcp(call: &AgentCall) -> Result<Option<McpSession>, ClaudeError> {
+pub(super) fn open_mcp(call: &AgentCall) -> Result<Option<McpSession>, ClaudeError> {
     call.mcp.as_ref().map(McpLaunch::open).transpose()
 }
 
-async fn send_in_slot(
+pub(super) async fn send_in_slot(
     live: &mut LiveSession,
     call: &AgentCall,
     message: &str,

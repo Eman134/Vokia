@@ -401,3 +401,59 @@ mod map_rules {
         assert_eq!(request_of(&collected.delegation), Some("Faça"));
     }
 }
+
+#[test]
+fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
+    use crate::agents::{AgentDraft, AgentRegistry};
+    use tauri::Manager;
+
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.leader(project);
+    let card = world.create(&axiom, "Login");
+
+    let registry = world.app.state::<AgentRegistry>();
+
+    for (cli, model, cmd) in [
+        ("codex", "gpt-6-luna", "codex"),
+        ("opencode", "openai/gpt-6-astra", "opencode"),
+        ("antigravity", "gemini-4-hydrogen-medium", "agy"),
+    ] {
+        let draft = AgentDraft {
+            name: "Vexa".to_string(),
+            role: "Frontend Developer".to_string(),
+            avatar: "lume".to_string(),
+            cli: cli.to_string(),
+            model: model.to_string(),
+            command: cmd.to_string(),
+        };
+        registry.update(&agent("vexa"), &draft).expect("update vexa");
+
+        // 1. Com item_id (delegação de card) -> DEVE RECUSAR CONFORME D2
+        axiom.slot.begin(None, None);
+        let outcome_card = world.call(
+            &axiom,
+            "delegate",
+            json!({ "agent": "Vexa", "request": "Faça o card", "item_id": card }),
+        );
+        let after = axiom.slot.end();
+        assert!(outcome_card.is_error, "deveria recusar delegação de card para {cli}");
+        assert_eq!(
+            outcome_card.text,
+            "Vexa usa uma CLI sem suporte a MCP e não pode receber delegação de card."
+        );
+        assert!(after.delegation.is_none());
+
+        // 2. Sem item_id (conversa pura de texto) -> DEVE ACEITAR
+        axiom.slot.begin(None, None);
+        let outcome_text = world.call(
+            &axiom,
+            "delegate",
+            json!({ "agent": "Vexa", "request": "Responda em texto" }),
+        );
+        let after_text = axiom.slot.end();
+        assert!(!outcome_text.is_error, "deveria aceitar texto para {cli}: {}", outcome_text.text);
+        assert_eq!(outcome_text.text, REGISTERED);
+        assert_eq!(request_of(&after_text.delegation), Some("Responda em texto"));
+    }
+}

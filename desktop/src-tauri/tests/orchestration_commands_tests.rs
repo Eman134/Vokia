@@ -300,6 +300,7 @@ fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
             avatar: "onix".to_string(),
             cli: "claude".to_string(),
             model: "sonnet".to_string(),
+            command: "claude".to_string(),
         })
         .unwrap();
 

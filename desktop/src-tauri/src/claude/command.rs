@@ -92,7 +92,7 @@ pub struct ProjectAccess<'a> {
     pub level: PermissionLevel,
 }
 
-pub(super) fn timeout_for(access: Access<'_>) -> Duration {
+pub(crate) fn timeout_for(access: Access<'_>) -> Duration {
     match access {
         Access::TextOnly => CLI_TIMEOUT,
         Access::Project(_) => PROJECT_CLI_TIMEOUT,
@@ -121,17 +121,19 @@ pub fn kill_process_tree(pid: u32) {
 }
 
 pub(super) fn agent_command(
-    cli: &Path,
+    program: &Path,
+    user_args: &[String],
     leading: &[&str],
     role: &str,
     model: &str,
     access: Access<'_>,
     mcp: Option<&McpConfigFile>,
 ) -> Command {
-    let mut command = base_command(cli);
+    let mut command = base_command(program);
     command.kill_on_drop(true);
-    // A mensagem de `-p` vem antes das opções variádicas (`--tools`, `--allowedTools`),
-    // que a engoliriam; `--append-system-prompt` fica por último pelo mesmo motivo.
+    // Argumentos do usuário e mensagem de `-p` vêm antes das opções variádicas
+    // (`--tools`, `--allowedTools`), que os engoliriam; `--append-system-prompt` fica por último.
+    command.args(user_args);
     command.args(leading);
     command.args([
         "--output-format",

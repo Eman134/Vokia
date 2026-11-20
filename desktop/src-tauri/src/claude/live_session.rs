@@ -40,7 +40,8 @@ pub struct LiveSession {
 
 impl LiveSession {
     pub fn open(
-        cli: &Path,
+        program: &Path,
+        user_args: &[String],
         role: &str,
         model: &str,
         access: Access<'_>,
@@ -48,7 +49,8 @@ impl LiveSession {
         mcp: Option<McpSession>,
     ) -> Result<Self, ClaudeError> {
         let mut command = agent_command(
-            cli,
+            program,
+            user_args,
             &["-p", "--input-format", "stream-json"],
             role,
             model,

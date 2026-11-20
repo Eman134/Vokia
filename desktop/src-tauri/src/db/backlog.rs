@@ -22,7 +22,6 @@ const MICRO_TASK_STATUSES: &[&str] = &["proposta", "ready", "em andamento", "em 
 const EMPTY_PLAN: &str = "vazio";
 const PROPOSED_PLAN: &str = "proposto";
 const LINKED_PLAN: &str = "vinculado";
-const PLAN_AGENTS: &[&str] = &["axiom", "vexa"];
 const PROPOSAL_REQUIRED: &str = "A proposta do plano não pode ser vazia.";
 const LINKED_PLAN_REQUIRED: &str = "O plano vinculado precisa de id, nome e resumo.";
 const LINKED_PLAN_INCOMPLETE: &str = "os dados do plano vinculado estão incompletos.";
@@ -807,7 +806,7 @@ fn validate_plan(plan: &ItemPlanInput) -> Result<(), DbError> {
         return Ok(());
     }
     if let Some(agent) = plan.agent.as_deref() {
-        if !PLAN_AGENTS.contains(&agent) {
+        if Agent::from_stored(agent).is_none() {
             return Err(DbError::InvalidPlanAgent(agent.to_string()));
         }
     }
@@ -1476,7 +1475,7 @@ fn plan_from_row(row: &Row<'_>) -> Result<ItemPlanEntry, DbError> {
         return Err(DbError::InvalidPlanState(state));
     }
     if let Some(agent) = agent.as_deref() {
-        if !PLAN_AGENTS.contains(&agent) {
+        if Agent::from_stored(agent).is_none() {
             return Err(DbError::InvalidPlanAgent(agent.to_string()));
         }
     }

@@ -838,6 +838,17 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(str::to_string);
+    if item_id.is_some() {
+        let supports_mcp = team
+            .profile(&helper)
+            .is_some_and(|profile| crate::orchestrator::cli_supports_mcp(&profile.cli));
+        if !supports_mcp {
+            return Err(format!(
+                "{} usa uma CLI sem suporte a MCP e não pode receber delegação de card.",
+                team.name_of(&helper)
+            ));
+        }
+    }
     check_item(app, binding.project_id, item_id.as_deref())?;
     if binding.agent == Agent::ember() {
         ember_delegation_to_leader(app, binding, &helper, item_id.as_deref())?;

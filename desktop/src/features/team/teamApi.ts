@@ -43,6 +43,7 @@ export interface AgentProfile {
   avatar: string
   cli: string
   model: string
+  command: string
   builtin: boolean
   extraInstructions: string
 }
@@ -52,6 +53,7 @@ export interface CliPreset {
   label: string
   models: string[]
   defaultModel: string
+  defaultCommand: string
 }
 
 export interface TeamListing {
@@ -65,6 +67,7 @@ export interface AgentDraft {
   avatar: string
   cli: string
   model: string
+  command: string
 }
 
 export function fetchCliProblem(): Promise<CliProblem | null> {

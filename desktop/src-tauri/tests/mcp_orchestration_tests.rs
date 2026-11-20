@@ -106,6 +106,26 @@ fn save_item_plan_proposto_grava_o_plano_do_card_e_responde_com_o_id() {
 }
 
 #[test]
+fn save_item_plan_aceita_agente_do_elenco_alem_de_axiom_e_vexa() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.leader(project);
+    let card = world.create(&axiom, "Login");
+
+    let outcome = world.call(
+        &axiom,
+        "save_item_plan",
+        json!({ "item_id": card, "state": "proposto", "proposal": "Dividir em 2 lotes", "agent": "sentry" }),
+    );
+
+    assert!(!outcome.is_error, "{}", outcome.text);
+    assert_eq!(outcome.text, format!("Plano do card {card} gravado."));
+    let plans = world.db().list_backlog(project).expect("backlog").plans;
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].agent.as_deref(), Some("sentry"));
+}
+
+#[test]
 fn save_item_plan_recusa_entrada_invalida_e_nao_grava_plano() {
     let world = world();
     let project = world.project("a");
@@ -116,7 +136,7 @@ fn save_item_plan_recusa_entrada_invalida_e_nao_grava_plano() {
         json!({ "item_id": card, "state": "proposto" }),
         json!({ "item_id": card, "state": "proposto", "proposal": "   " }),
         json!({ "item_id": card, "state": "vinculado", "plan": { "id": "p1", "name": "Plano" } }),
-        json!({ "item_id": card, "state": "proposto", "proposal": "x", "agent": "sentry" }),
+        json!({ "item_id": card, "state": "proposto", "proposal": "x", "agent": "agente invalido" }),
         json!({ "item_id": "CARD-INEXISTENTE", "state": "proposto", "proposal": "x" }),
     ];
 

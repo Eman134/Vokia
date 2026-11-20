@@ -1,3 +1,4 @@
+mod adapters;
 mod agent_session;
 mod archive;
 mod console;
@@ -16,6 +17,7 @@ mod text_fallback;
 mod turns;
 mod validation;
 
+pub(crate) use adapters::cli_supports_mcp;
 pub(crate) use archive::remove_archive;
 pub(crate) use emit::{emit_backlog_changed, emit_feed_note, emit_message};
 pub(crate) use prompts::variables_listing;
