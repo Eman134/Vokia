@@ -23,9 +23,9 @@ pub(crate) fn build_command(
     command.kill_on_drop(true);
     command.args(user_args);
     command.args([
-        "-p",
+        "-p=",
         "--input-format",
-        "text",
+        "stream-json",
         "--output-format",
         "stream-json",
         "--model",
@@ -72,7 +72,11 @@ pub(super) async fn run_turn(
     if let Some((session, cli_path)) = vokia_cli {
         super::inject_vokia_cli_env(&mut command, session, cli_path);
     }
-    let prompt = format!("{role}\n\n{message}");
+    // O agy exige o valor colado ("-p=") e, com stream-json, lê uma mensagem NDJSON por linha no stdin.
+    let prompt = format!(
+        "{}\n",
+        serde_json::json!({"event": "user", "message": {"content": format!("{role}\n\n{message}")}})
+    );
     let stdout =
         super::run_cli_process(command, access, pid, Some(prompt), Some((provider, model))).await?;
     parse_stream_output_with_provider(&stdout, Some(provider), model)
@@ -91,6 +95,7 @@ pub(crate) fn parse_stream_output_with_provider(
     let raw = String::from_utf8_lossy(stdout);
     let mut result_text: Option<String> = None;
     let mut assistant_chunks: Vec<String> = Vec::new();
+    let mut delta_text = String::new();
     let mut saw_json = false;
     let mut assistant_model: Option<String> = None;
     let mut usage: Option<TurnUsage> = None;
@@ -104,6 +109,56 @@ pub(crate) fn parse_stream_output_with_provider(
             continue;
         };
         saw_json = true;
+        if let Some(event) = value.get("event").and_then(Json::as_str) {
+            match event {
+                "step_update" => {
+                    let step = &value["step_update"];
+                    if step.get("step_type").and_then(Json::as_str) == Some("agent_response") {
+                        if let Some(delta) = step.get("text_delta").and_then(Json::as_str) {
+                            delta_text.push_str(delta);
+                        }
+                    }
+                }
+                "result" => {
+                    let result = &value["result"];
+                    let status = result.get("status").and_then(Json::as_str).unwrap_or("");
+                    if status.eq_ignore_ascii_case("ERROR") {
+                        let message = result
+                            .get("error")
+                            .and_then(Json::as_str)
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("erro desconhecido no Antigravity");
+                        return Err(event_error(provider, model, message));
+                    }
+                    if let Some(text) = result.get("response").and_then(Json::as_str) {
+                        if !text.trim().is_empty() {
+                            result_text = Some(text.trim_end().to_string());
+                        }
+                    }
+                    let input_tokens = result.pointer("/usage/input_tokens").and_then(Json::as_u64);
+                    let output_tokens =
+                        result.pointer("/usage/output_tokens").and_then(Json::as_u64);
+                    let cached_input_tokens = result
+                        .pointer("/usage/cache_read_tokens")
+                        .and_then(Json::as_u64);
+                    if input_tokens.is_some()
+                        || output_tokens.is_some()
+                        || cached_input_tokens.is_some()
+                    {
+                        usage = Some(TurnUsage {
+                            provider: provider.map(|p| p.id.clone()),
+                            model: (!model.trim().is_empty()).then(|| model.to_string()),
+                            input_tokens,
+                            output_tokens,
+                            cached_input_tokens,
+                            cost_usd: None,
+                        });
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
         let Some(kind) = value.get("type").and_then(Json::as_str) else {
             continue;
         };
@@ -218,6 +273,8 @@ pub(crate) fn parse_stream_output_with_provider(
         text
     } else if !assistant_chunks.is_empty() {
         assistant_chunks.join("\n\n")
+    } else if !delta_text.trim().is_empty() {
+        delta_text.trim_end().to_string()
     } else if !saw_json {
         raw.trim().to_string()
     } else {
@@ -238,6 +295,21 @@ pub(crate) fn parse_stream_output_with_provider(
         activity: TurnActivity::default(),
         usage,
     })
+}
+
+fn event_error(provider: Option<&ProviderConfig>, model: &str, message: &str) -> ClaudeError {
+    if let Some(provider) = provider {
+        if let Some(classified) = classify_provider_error(
+            &provider.id,
+            model,
+            message,
+            &provider.rate_limit_patterns,
+            &provider.model_unavailable_patterns,
+        ) {
+            return classified;
+        }
+    }
+    ClaudeError::Reported(message.to_string())
 }
 
 fn extract_assistant_text(value: &Json) -> Option<String> {

@@ -279,9 +279,9 @@ fn antigravity_build_command_text_only_leitura_edicao_e_liberado() {
     let cmd_text = antigravity::build_command(program, &user_args, role, model, Access::TextOnly, message);
     let args_text = args_of(&cmd_text);
     assert_eq!(args_text[0], "--user-agy");
-    assert_eq!(args_text[1], "-p");
+    assert_eq!(args_text[1], "-p=");
     assert_eq!(args_text[2], "--input-format");
-    assert_eq!(args_text[3], "text");
+    assert_eq!(args_text[3], "stream-json");
     assert_eq!(args_text[4], "--output-format");
     assert_eq!(args_text[5], "stream-json");
     assert_eq!(args_text[6], "--model");
@@ -368,6 +368,80 @@ fn antigravity_parse_stream_output_processa_result_assistant_e_erros() {
     let plain = b"Resposta simples em texto puro do Antigravity";
     let reply_plain = antigravity::parse_stream_output(plain).unwrap();
     assert_eq!(reply_plain.text, "Resposta simples em texto puro do Antigravity");
+}
+
+#[test]
+fn antigravity_build_command_p_colado_nunca_seguido_de_valor_solto_e_prompt_fora_dos_args() {
+    let program = Path::new("agy");
+    let role = "PAPEL-SECRETO";
+    let message = "linha um\nlinha dois MENSAGEM-SECRETA";
+    let acessos = vec![
+        Access::TextOnly,
+        Access::Project(project_access(PermissionLevel::Leitura)),
+        Access::Project(project_access(PermissionLevel::Edicao)),
+        Access::Project(project_access(PermissionLevel::Liberado)),
+    ];
+    for access in acessos {
+        let cmd = antigravity::build_command(program, &[], role, "m", access, message);
+        let args = args_of(&cmd);
+        assert_eq!(args.iter().filter(|a| a.as_str() == "-p=").count(), 1);
+        assert!(!args.iter().any(|a| a == "-p"), "-p solto consumiria o proximo arg");
+        let i = position(&args, "-p=");
+        assert_eq!(args[i + 1], "--input-format");
+        assert_eq!(args[i + 2], "stream-json");
+        assert!(!args.iter().any(|a| a.contains("PAPEL-SECRETO") || a.contains("MENSAGEM-SECRETA")));
+        assert!(!args.iter().any(|a| a.contains('\n')));
+    }
+}
+
+#[test]
+fn antigravity_parse_event_result_sucesso_usa_response_e_usage() {
+    let out = r#"{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"parcial"}}
+{"event":"result","result":{"status":"SUCCESS","response":"Resposta final\n","usage":{"input_tokens":10,"output_tokens":4,"cache_read_tokens":2}}}
+"#;
+    let reply = antigravity::parse_stream_output(out.as_bytes()).unwrap();
+    assert_eq!(reply.text, "Resposta final");
+    let usage = reply.usage.expect("usage esperado");
+    assert_eq!(usage.input_tokens, Some(10));
+    assert_eq!(usage.output_tokens, Some(4));
+    assert_eq!(usage.cached_input_tokens, Some(2));
+}
+
+#[test]
+fn antigravity_parse_event_result_status_error_retorna_reported_com_mensagem() {
+    let out = r#"{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"x"}}
+{"event":"result","result":{"status":"ERROR","error":"falha do agy"}}
+"#;
+    match antigravity::parse_stream_output(out.as_bytes()) {
+        Err(ClaudeError::Reported(msg)) => assert_eq!(msg, "falha do agy"),
+        other => panic!("esperava Reported, veio {:?}", other.map(|r| r.text)),
+    }
+    let sem_msg = r#"{"event":"result","result":{"status":"error"}}"#;
+    match antigravity::parse_stream_output(sem_msg.as_bytes()) {
+        Err(ClaudeError::Reported(msg)) => assert_eq!(msg, "erro desconhecido no Antigravity"),
+        other => panic!("esperava Reported, veio {:?}", other.map(|r| r.text)),
+    }
+}
+
+#[test]
+fn antigravity_parse_step_update_text_delta_sem_result_concatena_deltas_e_ignora_outros_steps() {
+    let out = r#"{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"Ola, "}}
+{"event":"step_update","step_update":{"step_type":"tool_call","text_delta":"IGNORADO"}}
+{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"mundo"}}
+"#;
+    let reply = antigravity::parse_stream_output(out.as_bytes()).unwrap();
+    assert_eq!(reply.text, "Ola, mundo");
+}
+
+#[test]
+fn antigravity_parse_formato_antigo_por_type_continua_compativel() {
+    let antigo = r#"{"type":"result","is_error":false,"result":"texto antigo"}"#;
+    assert_eq!(antigravity::parse_stream_output(antigo.as_bytes()).unwrap().text, "texto antigo");
+    let antigo_erro = r#"{"type":"result","is_error":true,"result":"erro antigo"}"#;
+    match antigravity::parse_stream_output(antigo_erro.as_bytes()) {
+        Err(ClaudeError::Reported(msg)) => assert_eq!(msg, "erro antigo"),
+        other => panic!("esperava Reported, veio {:?}", other.map(|r| r.text)),
+    }
 }
 
 // ==========================================
