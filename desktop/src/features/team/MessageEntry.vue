@@ -37,6 +37,7 @@ const runCard = computed(() => {
   return title === undefined ? null : taskStartedRow(title, text)
 })
 
+const AVATAR_SIZE = PORTRAIT_SIZES.chat
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
 
@@ -75,45 +76,43 @@ function profile(speaker: Speaker): AgentProfile | undefined {
 </script>
 
 <template>
-  <div v-if="entry.type === 'message' && entry.from === 'user'" class="ml-auto flex max-w-3/4 flex-col items-end gap-1.5">
-    <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-caption text-muted">
-      Para {{ speakerName(entry.to) }}
-    </span>
-    <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
-      <ActivityRow :row="runCard" />
-    </ul>
-    <div
-      v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
-      class="wrap-break-word rounded-card rounded-tr-tail bg-surface-2 px-4 py-3"
-    >
-      <MarkdownText :text="userContent.text" />
+  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 items-start gap-3">
+    <div class="mt-0.5 shrink-0">
+      <UserAvatar :size="AVATAR_SIZE" :title="userProfile.displayName" />
     </div>
-    <ul
-      v-if="userContent.attachments.length > 0"
-      class="flex flex-wrap justify-end gap-1.5"
-      data-testid="message-attachments"
-    >
-      <li
-        v-for="attachment in userContent.attachments"
-        :key="attachment.path"
-        :title="attachment.path"
-        :data-attachment-name="attachment.name"
-        class="flex min-w-0 items-center gap-1.5 rounded-card border border-line bg-surface px-2.5 py-1.5 text-caption"
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
+        <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-small text-muted">
+          → {{ speakerName(entry.to) }}
+        </span>
+        <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+      </div>
+      <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
+        <ActivityRow :row="runCard" />
+      </ul>
+      <div
+        v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
+        class="w-fit max-w-full wrap-break-word rounded-card bg-surface-2 px-3.5 py-2.5"
       >
-        <span class="truncate font-semibold text-ink">{{ attachment.name }}</span>
-        <span class="shrink-0 text-muted">{{ attachment.label }} · {{ attachment.size }}</span>
-      </li>
-    </ul>
-    <div class="flex flex-wrap items-center justify-end gap-1.5 text-caption text-muted">
-      <UserAvatar :size="META_AVATAR_SIZE" :title="userProfile.displayName" />
-      <span class="font-semibold text-ink">{{ speakerName(entry.from) }}</span>
-      <TemporaryOverrideBadge
-        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
-        :override="overrides.byAgent(entry.from)!"
-        :restoring="Boolean(overrides.restoring[entry.from])"
-        @restore="overrides.restore(entry.from)"
-      />
-      <time>{{ TIME_FORMAT.format(entry.time) }}</time>
+        <MarkdownText :text="userContent.text" />
+      </div>
+      <ul
+        v-if="userContent.attachments.length > 0"
+        class="flex flex-wrap gap-1.5"
+        data-testid="message-attachments"
+      >
+        <li
+          v-for="attachment in userContent.attachments"
+          :key="attachment.path"
+          :title="attachment.path"
+          :data-attachment-name="attachment.name"
+          class="flex min-w-0 items-center gap-1.5 rounded-card border border-line bg-surface px-2.5 py-1.5 text-caption"
+        >
+          <span class="truncate font-semibold text-ink">{{ attachment.name }}</span>
+          <span class="shrink-0 text-muted">{{ attachment.label }} · {{ attachment.size }}</span>
+        </li>
+      </ul>
     </div>
   </div>
   <div
@@ -142,51 +141,59 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <MarkdownText :text="entry.text" />
     </div>
   </div>
-  <div v-else-if="entry.type === 'message'" class="flex min-w-0 flex-col gap-1.5">
-    <ActivityRun v-if="entry.activity" :activity="entry.activity" />
-    <div
-      v-if="entry.from !== 'user' && (entry.isError || entry.text === 'Limite esgotado')"
-      class="flex items-center gap-2 text-danger"
-      data-testid="agent-error-message"
-    >
-      <svg
-        class="size-4 shrink-0"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+  <div v-else-if="entry.type === 'message'" class="flex min-w-0 items-start gap-3">
+    <span class="mt-0.5 flex shrink-0" aria-hidden="true">
+      <AgentPortrait :who="entry.from" :size="AVATAR_SIZE" />
+    </span>
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
+        <span
+          v-if="profile(entry.from)?.role"
+          class="rounded-chip bg-surface-2 px-1.5 py-0.5 text-small text-muted"
+        >
+          {{ profile(entry.from)?.role }}
+        </span>
+        <TemporaryOverrideBadge
+          v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
+          :override="overrides.byAgent(entry.from)!"
+          :restoring="Boolean(overrides.restoring[entry.from])"
+          @restore="overrides.restore(entry.from)"
+        />
+        <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+      </div>
+      <ActivityRun v-if="entry.activity" :activity="entry.activity" />
+      <div
+        v-if="entry.from !== 'user' && (entry.isError || entry.text === 'Limite esgotado')"
+        class="flex items-center gap-2 text-danger"
+        data-testid="agent-error-message"
       >
-        <circle :cx="ERROR_ICON_CIRCLE_CX" :cy="ERROR_ICON_CIRCLE_CY" :r="ERROR_ICON_CIRCLE_R" />
-        <path :d="ERROR_ICON_PATH" />
-      </svg>
-      <span class="wrap-break-word">{{ entry.text }}</span>
-    </div>
-    <MarkdownText v-else :text="entry.text" />
-    <UiButton
-      v-if="entry.requestProposal"
-      class="self-start"
-      variant="quiet"
-      size="sm"
-      :disabled="entry.projectId === null || backlog.proposalCreated(entry)"
-      @press="backlog.createFromProposal(entry)"
-    >
-      {{ PROPOSAL_LABEL }}
-    </UiButton>
-    <div class="flex flex-wrap items-center gap-1.5 text-caption text-muted">
-      <span class="flex shrink-0" aria-hidden="true">
-        <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
-      </span>
-      <span class="font-semibold text-ink">{{ speakerName(entry.from) }}</span>
-      <TemporaryOverrideBadge
-        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
-        :override="overrides.byAgent(entry.from)!"
-        :restoring="Boolean(overrides.restoring[entry.from])"
-        @restore="overrides.restore(entry.from)"
-      />
-      <time>{{ profile(entry.from)?.role }} · {{ TIME_FORMAT.format(entry.time) }}</time>
+        <svg
+          class="size-4 shrink-0"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle :cx="ERROR_ICON_CIRCLE_CX" :cy="ERROR_ICON_CIRCLE_CY" :r="ERROR_ICON_CIRCLE_R" />
+          <path :d="ERROR_ICON_PATH" />
+        </svg>
+        <span class="wrap-break-word">{{ entry.text }}</span>
+      </div>
+      <MarkdownText v-else :text="entry.text" />
+      <UiButton
+        v-if="entry.requestProposal"
+        class="self-start"
+        variant="quiet"
+        size="sm"
+        :disabled="entry.projectId === null || backlog.proposalCreated(entry)"
+        @press="backlog.createFromProposal(entry)"
+      >
+        {{ PROPOSAL_LABEL }}
+      </UiButton>
     </div>
   </div>
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
