@@ -40,6 +40,7 @@ const roster = useRoster()
 const titleId = useId()
 
 const modelModalOpen = ref(false)
+const rootRef = ref<HTMLElement>()
 const dialogRef = ref<HTMLElement>()
 const searchInputRef = ref<HTMLInputElement>()
 const previousFocus = ref<HTMLElement | null>(null)
@@ -231,7 +232,10 @@ watch(selectableItems, () => {
 })
 
 watch(open, async (isOpen) => {
-  if (!isOpen) return
+  if (!isOpen) {
+    modelModalOpen.value = false
+    return
+  }
   if (!activeLlm.loaded) {
     await activeLlm.load()
   } else {
@@ -280,15 +284,24 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+function onDocumentMouseDown(event: MouseEvent): void {
+  if (!open.value || modelModalOpen.value) return
+  if (event.target instanceof Node && !rootRef.value?.contains(event.target)) {
+    open.value = false
+  }
+}
+
 onMounted(() => {
   if (!activeLlm.loaded) {
     void activeLlm.load()
   }
   window.addEventListener('keydown', onKeydown)
+  document.addEventListener('mousedown', onDocumentMouseDown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('mousedown', onDocumentMouseDown)
 })
 
 async function selectProvider(cli: string | undefined): Promise<void> {
@@ -306,19 +319,21 @@ async function selectProvider(cli: string | undefined): Promise<void> {
 }
 
 function openSetup(): void {
-  open.value = false
   modelModalOpen.value = false
+  open.value = false
   providersStore.openSetup()
 }
 
 function openModelSelector(): void {
-  open.value = false
+  // Mantém open = true para a ActionBar permanecer expandida e não desmontar o Teleport do modal.
+  open.value = true
   modelModalOpen.value = true
 }
 
 function closeModal(): void {
   if (busy.value) return
   modelModalOpen.value = false
+  open.value = false
 }
 
 async function selectModel(item: CatalogModelItem): Promise<void> {
@@ -408,7 +423,7 @@ function refreshCatalog(): void {
 </script>
 
 <template>
-  <div class="relative inline-flex items-center">
+  <div ref="rootRef" class="relative inline-flex items-center">
     <UiButton
       variant="quiet"
       size="sm"
@@ -446,58 +461,86 @@ function refreshCatalog(): void {
 
     <!-- Popover minimalista anterior com botão Selecionar modelo ao lado de Setup -->
     <div
-      v-if="open"
+      v-if="open && !modelModalOpen"
       data-testid="active-llm-popover"
       role="dialog"
       aria-label="Selecionar provedor ativo"
       class="absolute left-0 bottom-full z-40 pb-2"
     >
       <div class="flex w-72 flex-col gap-2.5 rounded-popover border border-line bg-surface p-3 shadow-float">
-        <div class="flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <span class="block text-small text-muted">Provedor atual</span>
-            <span class="block truncate text-caption font-semibold text-ink">
-              {{ activeProviderLabel }}
-            </span>
-            <span v-if="activeModelLabel" class="block truncate text-tiny text-muted">
+        <div class="flex flex-col gap-1">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <span class="block text-small text-muted">Provedor atual</span>
+              <span class="block truncate text-caption font-semibold text-ink">
+                {{ activeProviderLabel }}
+              </span>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                data-testid="open-model-selector"
+                title="Selecionar modelo"
+                aria-label="Selecionar modelo"
+                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+                @click="openModelSelector()"
+              >
+                <span>Modelo</span>
+                <svg
+                  class="size-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                title="Configurar provedores"
+                aria-label="Configurar provedores"
+                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+                @click="openSetup()"
+              >
+                <span>Setup</span>
+                <svg
+                  class="size-3"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div
+            v-if="activeModelLabel"
+            data-testid="active-llm-model-label"
+            class="flex items-center justify-between gap-2 rounded-control bg-surface-2 px-2 py-1"
+          >
+            <span class="text-tiny text-muted">Modelo</span>
+            <span
+              :class="[
+                'truncate font-mono text-tiny',
+                activeLlm.active.model ? 'font-semibold text-ink' : 'text-muted',
+              ]"
+              :title="activeModelLabel"
+            >
               {{ activeModelLabel }}
             </span>
-          </div>
-          <div class="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              data-testid="open-model-selector"
-              title="Selecionar modelo"
-              aria-label="Selecionar modelo"
-              class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
-              @click="openModelSelector()"
-            >
-              <span>Modelo</span>
-            </button>
-            <button
-              type="button"
-              title="Configurar provedores"
-              aria-label="Configurar provedores"
-              class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
-              @click="openSetup()"
-            >
-              <span>Setup</span>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </button>
           </div>
         </div>
 

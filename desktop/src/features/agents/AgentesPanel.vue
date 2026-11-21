@@ -28,9 +28,9 @@ import {
 } from './agentesCopy'
 import { ROLE_LABEL } from './agentFormCopy'
 
-const COLUMNS_CLASSES = 'flex flex-wrap items-start gap-5'
-const LIST_CLASSES = 'flex min-w-0 basis-[320px] flex-1 flex-col gap-3 rounded-[28px] bg-surface p-5'
-const FICHA_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-[28px] border border-line p-6'
+const COLUMNS_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]'
+const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-[28px] bg-surface p-5'
+const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-[28px] border border-line p-6'
 const ROW_BASE_CLASSES = 'flex cursor-pointer items-center gap-3 rounded-control border px-3 py-2 text-left'
 const ROW_ACTIVE_CLASSES = 'border-accent bg-accent-soft'
 const ROW_INACTIVE_CLASSES = 'border-line hover:bg-hover'
@@ -100,9 +100,11 @@ async function removeSelected(): Promise<void> {
   <div :class="COLUMNS_CLASSES">
     <div :class="LIST_CLASSES">
       <div class="flex flex-wrap items-end gap-2">
-        <UiField v-model="query" class="min-w-0 flex-1" :label="SEARCH_LABEL" />
-        <UiButton variant="quiet" size="lg" @press="providers.openSetup()">{{ CONFIGURE_LLMS_LABEL }}</UiButton>
-        <UiButton variant="primary" size="lg" @press="dialog = {}">{{ NEW_AGENT_LABEL }}</UiButton>
+        <UiField v-model="query" class="min-w-[200px] flex-1" :label="SEARCH_LABEL" />
+        <div class="flex flex-wrap items-center gap-2">
+          <UiButton variant="quiet" size="lg" @press="providers.openSetup()">{{ CONFIGURE_LLMS_LABEL }}</UiButton>
+          <UiButton variant="primary" size="lg" @press="dialog = {}">{{ NEW_AGENT_LABEL }}</UiButton>
+        </div>
       </div>
       <p v-if="visible.length === 0" class="text-caption text-muted">{{ NO_AGENTS_TEXT }}</p>
       <button
@@ -145,12 +147,12 @@ async function removeSelected(): Promise<void> {
           <span class="truncate text-caption text-muted">{{ selected.role }}</span>
         </div>
       </div>
-      <dl class="flex flex-col gap-2 text-caption">
-        <div class="flex gap-2"><dt class="w-36 shrink-0 text-muted">{{ ROLE_LABEL }}</dt><dd class="text-ink">{{ selected.role }}</dd></div>
-        <div class="flex gap-2">
-          <dt class="w-36 shrink-0 text-muted">{{ DEFAULT_PROVIDER_LABEL }}</dt>
-          <dd class="flex flex-wrap items-center gap-1.5 text-ink">
-            <span>{{ selected.followDefaultLlm ? 'Padrão global' : selected.cli }}</span>
+      <dl class="flex min-w-0 flex-col gap-2 text-caption">
+        <div class="flex min-w-0 gap-2"><dt class="w-32 shrink-0 text-muted sm:w-36">{{ ROLE_LABEL }}</dt><dd class="min-w-0 break-words text-ink">{{ selected.role }}</dd></div>
+        <div class="flex min-w-0 gap-2">
+          <dt class="w-32 shrink-0 text-muted sm:w-36">{{ DEFAULT_PROVIDER_LABEL }}</dt>
+          <dd class="flex min-w-0 flex-wrap items-center gap-1.5 text-ink">
+            <span class="truncate">{{ selected.followDefaultLlm ? 'Padrão global' : selected.cli }}</span>
             <span
               v-if="!selected.followDefaultLlm"
               class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-small font-medium text-muted"
@@ -166,13 +168,13 @@ async function removeSelected(): Promise<void> {
             </span>
           </dd>
         </div>
-        <div class="flex gap-2">
-          <dt class="w-36 shrink-0 text-muted">{{ EFFORT_LEVEL_LABEL }}</dt>
-          <dd class="text-ink">{{ effortSummary(selected) }}</dd>
+        <div class="flex min-w-0 gap-2">
+          <dt class="w-32 shrink-0 text-muted sm:w-36">{{ EFFORT_LEVEL_LABEL }}</dt>
+          <dd class="min-w-0 break-words text-ink">{{ effortSummary(selected) }}</dd>
         </div>
-        <div class="flex gap-2">
-          <dt class="w-36 shrink-0 text-muted">{{ FALLBACK_PROVIDER_LABEL }}</dt>
-          <dd class="text-ink">{{ fallbackSummary(selected) }}</dd>
+        <div class="flex min-w-0 gap-2">
+          <dt class="w-32 shrink-0 text-muted sm:w-36">{{ FALLBACK_PROVIDER_LABEL }}</dt>
+          <dd class="min-w-0 break-words text-ink">{{ fallbackSummary(selected) }}</dd>
         </div>
       </dl>
       <AgentInstructions :key="selected.id" :agent="selected" />
