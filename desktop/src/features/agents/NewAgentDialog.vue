@@ -56,7 +56,7 @@ const avatar = ref(
   props.agent?.avatar ?? (AVATAR_PROFILES.find((profile) => !usedAvatars.has(profile.id)) ?? AVATAR_PROFILES[0]).id,
 )
 const isBuiltin = computed(() => props.agent?.builtin ?? false)
-const followDefaultLlm = ref(props.agent?.followDefaultLlm ?? false)
+const followDefaultLlm = ref(props.agent?.followDefaultLlm ?? true)
 const cli = ref(props.agent?.cli ?? firstPreset?.id ?? '')
 const preset = computed(() => roster.presets.find((candidate) => candidate.id === cli.value))
 const modelMode = ref<'tier' | 'custom'>(

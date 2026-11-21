@@ -220,6 +220,8 @@ function onPointerLeave(): void {
       <UsageLimitNotice />
       <FlowSteps v-if="flow.active" />
       <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
+      <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
+      <ActiveLlmSwitcher v-if="canAsk && !flow.active" v-model:open="llmSwitcherOpen" />
       <ComposerField
         ref="composer"
         v-model:draft="draft"
@@ -232,8 +234,6 @@ function onPointerLeave(): void {
         :attachments="attachments"
         @menu-open="menuOpen = $event"
       />
-      <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
-      <ActiveLlmSwitcher v-if="canAsk && !flow.active" v-model:open="llmSwitcherOpen" />
       <DecisionsButton :expanded="expanded" />
       <QueueButton v-model:open="queueOpen" />
       <ActionMenu

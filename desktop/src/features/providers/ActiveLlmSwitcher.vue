@@ -82,8 +82,12 @@ const targetAgent = computed(() => {
   if (feed.screen.kind === 'agent') {
     return feed.screen.agent
   }
-  return roster.agents[0]?.id ?? 'ember'
+  return roster.agents.find((a) => !a.builtin)?.id ?? roster.agents[0]?.id ?? 'ember'
 })
+
+const emberRequiresMcpNotice = computed(
+  () => currentProvider.value !== undefined && !currentProvider.value.supportsMcp,
+)
 
 watch(open, async (isOpen) => {
   if (!isOpen) return
@@ -202,7 +206,7 @@ function openSetup(): void {
       data-testid="active-llm-popover"
       role="dialog"
       aria-label="Selecionar provedor ativo"
-      class="absolute right-0 bottom-full z-40 pb-2"
+      class="absolute left-0 bottom-full z-40 pb-2"
     >
       <div class="flex w-76 flex-col gap-3 rounded-popover border border-line bg-surface p-3.5 shadow-float">
         <div class="flex items-center justify-between gap-2">
@@ -247,6 +251,10 @@ function openSetup(): void {
             Aplicar global
           </UiButton>
         </div>
+
+        <p v-if="emberRequiresMcpNotice" class="text-small text-muted">
+          Ember exige MCP e continua no Claude; agentes no padrão global usam {{ currentProvider?.label }}.
+        </p>
 
         <p v-if="feedback" class="text-small text-muted">{{ feedback }}</p>
 
