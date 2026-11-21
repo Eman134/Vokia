@@ -10,19 +10,35 @@ use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
 
+#[allow(dead_code)]
 pub(crate) fn build_command(
+    program: &Path,
+    user_args: &[String],
+    role: &str,
+    model: &str,
+    access: Access<'_>,
+    message: &str,
+) -> Result<Command, ClaudeError> {
+    build_command_with_resume(program, user_args, role, model, access, message, None)
+}
+
+pub(crate) fn build_command_with_resume(
     program: &Path,
     user_args: &[String],
     _role: &str,
     model: &str,
     access: Access<'_>,
     _message: &str,
+    resume_session: Option<&str>,
 ) -> Result<Command, ClaudeError> {
     let mut command = base_command(program);
     command.kill_on_drop(true);
     command.args(user_args);
-    command.args(["run", "--format", "json"]);
+    command.args(["run", "--pure", "--format", "json"]);
     command.args(["-m", model]);
+    if let Some(sid) = resume_session.map(str::trim).filter(|s| !s.is_empty()) {
+        command.args(["-s", sid]);
+    }
     if let Access::Project(project) = access {
         if project.level == PermissionLevel::Liberado {
             return Err(ClaudeError::Reported(
@@ -47,8 +63,10 @@ pub(super) async fn run_turn(
     pid: &std::sync::atomic::AtomicU32,
     provider: &ProviderConfig,
     vokia_cli: Option<(&McpSession, &Path)>,
+    resume_session: Option<&str>,
 ) -> Result<Reply, ClaudeError> {
-    let mut command = build_command(program, user_args, role, model, access, message)?;
+    let mut command =
+        build_command_with_resume(program, user_args, role, model, access, message, resume_session)?;
     if let Some((session, cli_path)) = vokia_cli {
         super::inject_vokia_cli_env(&mut command, session, cli_path);
     }
@@ -76,6 +94,7 @@ pub(crate) fn parse_json_output_with_provider(
     let mut acc_cached: Option<u64> = None;
     let mut acc_cost: Option<f64> = None;
     let mut found_model: Option<String> = None;
+    let mut found_session_id: Option<String> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -86,6 +105,18 @@ pub(crate) fn parse_json_output_with_provider(
             continue;
         };
         saw_json = true;
+        if found_session_id.is_none() {
+            if let Some(sid) = value
+                .get("sessionID")
+                .or_else(|| value.get("session_id"))
+                .or_else(|| value.get("session"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                found_session_id = Some(sid.to_string());
+            }
+        }
         let Some(kind) = value.get("type").and_then(Json::as_str) else {
             continue;
         };
@@ -195,5 +226,6 @@ pub(crate) fn parse_json_output_with_provider(
         limits: None,
         activity: TurnActivity::default(),
         usage,
+        session_id: found_session_id,
     })
 }

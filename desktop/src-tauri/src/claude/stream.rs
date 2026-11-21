@@ -45,6 +45,7 @@ pub struct Reply {
     pub limits: Option<RateLimits>,
     pub activity: TurnActivity,
     pub usage: Option<TurnUsage>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -233,11 +234,13 @@ pub(super) fn into_reply(
         return Err(ClaudeError::Reported(message));
     }
     let usage = response.extract_usage();
+    let session_id = (!response.session_id.trim().is_empty()).then(|| response.session_id);
     Ok(Reply {
         text: response.result,
         limits,
         activity: TurnActivity::default(),
         usage,
+        session_id,
     })
 }
 

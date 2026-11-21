@@ -38,6 +38,14 @@ const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você
 const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto, escreva uma linha por operação: #card criar <título>|<descrição> ou #card mover <id>|<coluna>. As colunas são Backlog, In progress e In review; nunca use Ready nem Done: quem conclui a task é o usuário ou a validação final. Mova só cards seus ou o card do pedido atual. Não repita um card que já existe e não misture linhas #card com #decisao. O app confirma cada operação na conversa.";
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta set_variable (name, op, value) por variável alterada; use op append para listas; variáveis da tarefa são compartilhadas por padrão e todos podem ler e alterar, então use share false só para rascunho pessoal; get_variables para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request.";
+const PROMPT_RULES_NO_VARS: &str = "Execute o pedido agora: não se apresente nem comente o processo.";
+const PROMPT_RULES_NO_VARS_MCP: &str = "Execute o pedido agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request.";
+const PROMPT_RULES_NO_VARS_VOKIA_CLI: &str = "Execute o pedido agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, execute `vokia-cli delegate --agent <nome> --request \"<pedido>\"`.";
+const MAESTRO_VOKIA_CLI_COMMANDS: &str = "- list_backlog / read_card / create_card / move_card / update_card: consultar e gerir cards do backlog
+- save_item_plan / artifact_set_criterion: gravar plano e marcar critérios de um card
+- delegate: delegar pedido ao líder de um time (--agent <nome> --request \"<pedido>\" [--item-id <id>])
+- request_decision / propose_request: pedir decisão ou propor card ao usuário
+- get_orchestration / list_agents: ler mapa de times e elenco (rode `vokia-cli tools` para detalhes)";
 const TOOLS_RULE: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids. Para gerenciar papéis, agentes, orquestração, provedores, canais ou configurações do Vokia, descubra comandos com app_commands_list (opcionalmente filtrando domain) e execute com app_command_call.";
 const DELEGATION_TOOL_RULE: &str = "Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request. Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
@@ -247,17 +255,28 @@ fn step_prompt(
     with_request: bool,
     tool_mode: ToolPromptMode,
 ) -> String {
-    let mut sections = vec![format!("Objetivo: {}", definition.objetivo)];
+    let has_variables = !definition.variables.is_empty()
+        || cache
+            .visible_to(agent)
+            .into_iter()
+            .any(|variable| variable.name != CONVERSATION_VAR);
+    // Pedido simples: o objetivo é o próprio pedido, então não repete nem abre bloco de variáveis vazio.
+    let plain_request = !has_variables && definition.objetivo.trim() == instruction.trim();
+    let mut sections = Vec::new();
+    if !plain_request {
+        sections.push(format!("Objetivo: {}", definition.objetivo));
+    }
     if let Some(request) = cache.long_request().filter(|_| with_request) {
         sections.push(format!(
-            "Pedido original:
-{request}"
+            "Pedido original:\n{request}"
         ));
     }
-    sections.push(format!(
-        "Variáveis visíveis:\n{}",
-        variables_listing(cache, agent)
-    ));
+    if has_variables {
+        sections.push(format!(
+            "Variáveis visíveis:\n{}",
+            variables_listing(cache, agent)
+        ));
+    }
     let conversation = cache.recent_conversation(conversation_items);
     if !conversation.is_empty() {
         let entries: Vec<String> = conversation
@@ -266,15 +285,17 @@ fn step_prompt(
             .collect();
         sections.push(format!("Conversa recente:\n{}", entries.join("\n")));
     }
-    sections.push(format!("Instrução: {instruction}"));
-    sections.push(
-        match tool_mode {
-            ToolPromptMode::Mcp => PROMPT_RULES_TOOLS,
-            ToolPromptMode::VokiaCli => PROMPT_RULES_VOKIA_CLI,
-            ToolPromptMode::None => PROMPT_RULES,
-        }
-        .to_string(),
-    );
+    let label = if plain_request { "Pedido" } else { "Instrução" };
+    sections.push(format!("{label}: {instruction}"));
+    let rules = match (has_variables, tool_mode) {
+        (true, ToolPromptMode::Mcp) => PROMPT_RULES_TOOLS,
+        (true, ToolPromptMode::VokiaCli) => PROMPT_RULES_VOKIA_CLI,
+        (true, ToolPromptMode::None) => PROMPT_RULES,
+        (false, ToolPromptMode::Mcp) => PROMPT_RULES_NO_VARS_MCP,
+        (false, ToolPromptMode::VokiaCli) => PROMPT_RULES_NO_VARS_VOKIA_CLI,
+        (false, ToolPromptMode::None) => PROMPT_RULES_NO_VARS,
+    };
+    sections.push(rules.to_string());
     sections.join("\n")
 }
 
@@ -347,6 +368,14 @@ pub(super) fn maestro_role(
     };
     let head =
         format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
+    // O servidor MCP já entrega o schema das ferramentas; no CLI vai só o catálogo compacto das essenciais.
+    match tool_mode {
+        ToolPromptMode::Mcp => return head,
+        ToolPromptMode::VokiaCli => {
+            return format!("{head} {MAESTRO_COMMANDS_LABEL}\n{MAESTRO_VOKIA_CLI_COMMANDS}");
+        }
+        ToolPromptMode::None => {}
+    }
     let commands: Vec<String> = tools.iter().filter_map(command_line).collect();
     if commands.is_empty() {
         return head;
@@ -521,6 +550,100 @@ mod tests {
             assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_MCP));
             assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
         });
+    }
+
+    #[test]
+    fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
+        with_test_context(|team, _| {
+            let choices = ProjectChoices {
+                pinned: Some("projeto-a".to_string()),
+                labels: vec!["projeto-a".to_string()],
+            };
+            let mcp = maestro_role(
+                "Base Ember.",
+                &[serde_json::json!({"name": "create_card"})],
+                &choices,
+                None,
+                None,
+                team,
+                &[],
+                ToolPromptMode::Mcp,
+            );
+            assert!(!mcp.contains("Comandos disponíveis:"));
+            assert!(!mcp.contains("create_card"));
+            assert!(mcp.contains("app_commands_list"));
+
+            let cli = maestro_role(
+                "Base Ember.",
+                &[],
+                &choices,
+                None,
+                None,
+                team,
+                &[],
+                ToolPromptMode::VokiaCli,
+            );
+            assert!(cli.contains("Comandos disponíveis:"));
+            assert!(cli.contains("list_backlog"));
+            assert!(cli.contains("vokia-cli tools"));
+            assert!(cli.chars().count() < 1800);
+        });
+
+        let agent = Agent::ember();
+        let cache = crate::task::Cache::default();
+        let plain = crate::task::TaskDefinition {
+            kind: crate::task::TaskKind::Conversa,
+            nova_tarefa: true,
+            objetivo: "Oi".to_string(),
+            criterion: "Oi".to_string(),
+            verify: false,
+            participants: vec![agent.clone()],
+            alternate: false,
+            variables: Vec::new(),
+            stop: None,
+        };
+        let prompt = StepPrompts::build(&cache, &plain, &agent, "Oi", ToolPromptMode::VokiaCli);
+        assert!(!prompt.opening.contains("Variáveis visíveis:"));
+        assert!(!prompt.opening.contains("set_variable"));
+        assert!(prompt.opening.contains("Pedido: Oi"));
+        assert_eq!(prompt.opening.matches("Oi").count(), 1);
+
+        let with_vars = crate::task::TaskDefinition {
+            kind: crate::task::TaskKind::Demanda,
+            nova_tarefa: true,
+            objetivo: "Contar até 10".to_string(),
+            criterion: "Contar até 10".to_string(),
+            verify: false,
+            participants: vec![agent.clone()],
+            alternate: true,
+            variables: vec![crate::task::Variable::system(
+                "contagem".to_string(),
+                crate::task::VarValue::Number(0),
+                crate::task::Rule::Increment,
+            )],
+            stop: None,
+        };
+        let prompt_with_vars = StepPrompts::build(
+            &cache,
+            &with_vars,
+            &agent,
+            "Comece a contagem",
+            ToolPromptMode::Mcp,
+        );
+        assert!(prompt_with_vars.opening.contains("Variáveis visíveis:"));
+        assert!(prompt_with_vars.opening.contains("set_variable"));
+        assert!(prompt_with_vars.opening.contains("Objetivo: Contar até 10"));
+        assert!(prompt_with_vars.opening.contains("Instrução: Comece a contagem"));
+
+        let delegated = StepPrompts::build(
+            &cache,
+            &plain,
+            &agent,
+            "Axiom pediu: explique o projeto",
+            ToolPromptMode::None,
+        );
+        assert!(delegated.opening.contains("Objetivo: Oi"));
+        assert!(delegated.opening.contains("Instrução: Axiom pediu: explique o projeto"));
     }
 
     #[test]

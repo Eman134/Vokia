@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::db::{DbState, Project, ORIGIN_GITHUB};
-use crate::projects::{self, FolderTree, TREE_MAX_DEPTH};
+use crate::projects::{self, FolderTree};
 
 use super::error::FlowError;
 
@@ -25,6 +25,11 @@ const PROJECT_TREE_OMITTED_PREFIX: &str = "… e mais ";
 const PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX: &str = "… e mais de ";
 const PROJECT_TREE_OMITTED_SUFFIX: &str = " entradas não listadas.";
 const PROJECT_TREE_EMPTY: &str = "A pasta do projeto está vazia.";
+// Orçamento do bloco no prompt: bem menor que o da leitura da pasta, que segue com os limites de projects::folder_tree.
+const PROMPT_TREE_MAX_DEPTH: usize = 2;
+const PROMPT_TREE_MAX_ENTRIES: usize = 60;
+const PROMPT_TREE_MAX_CHARS: usize = 1800;
+const RESERVED_FOOTER_CHARS: usize = 64;
 
 pub(super) fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, FlowError> {
     let state = app.state::<DbState>();
@@ -147,24 +152,51 @@ pub(super) fn project_context(project: &Project, tree: Option<&FolderTree>) -> S
     context
 }
 
+// O Ember só roteia pedidos: a árvore de arquivos não entra no prompt dele.
+pub(super) fn project_context_without_tree(project: &Project) -> String {
+    project_context(project, None)
+}
+
+fn entry_depth(entry: &str) -> usize {
+    let trimmed = entry.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return 0;
+    }
+    trimmed.chars().filter(|&c| c == '/').count() + 1
+}
+
 fn project_tree_block(tree: &FolderTree) -> String {
     if tree.entries.is_empty() && tree.omitted == 0 {
         return PROJECT_TREE_EMPTY.to_string();
     }
-    let mut lines = vec![format!(
-        "{PROJECT_TREE_HEADER_PREFIX}{TREE_MAX_DEPTH}{PROJECT_TREE_HEADER_SUFFIX}"
-    )];
-    lines.extend(tree.entries.iter().cloned());
-    if tree.omitted > 0 {
+    let header = format!(
+        "{PROJECT_TREE_HEADER_PREFIX}{PROMPT_TREE_MAX_DEPTH}{PROJECT_TREE_HEADER_SUFFIX}"
+    );
+    let mut lines = vec![header];
+    let mut kept = 0usize;
+    let mut used_chars = lines[0].chars().count();
+    let mut cut_by_budget = 0usize;
+    for entry in &tree.entries {
+        let line_chars = entry.chars().count() + 1;
+        if entry_depth(entry) > PROMPT_TREE_MAX_DEPTH
+            || kept >= PROMPT_TREE_MAX_ENTRIES
+            || used_chars + line_chars + RESERVED_FOOTER_CHARS > PROMPT_TREE_MAX_CHARS
+        {
+            cut_by_budget += 1;
+            continue;
+        }
+        kept += 1;
+        used_chars += line_chars;
+        lines.push(entry.clone());
+    }
+    let omitted = tree.omitted + cut_by_budget;
+    if omitted > 0 {
         let prefix = if tree.omitted_is_lower_bound {
             PROJECT_TREE_OMITTED_LOWER_BOUND_PREFIX
         } else {
             PROJECT_TREE_OMITTED_PREFIX
         };
-        lines.push(format!(
-            "{prefix}{}{PROJECT_TREE_OMITTED_SUFFIX}",
-            tree.omitted
-        ));
+        lines.push(format!("{prefix}{omitted}{PROJECT_TREE_OMITTED_SUFFIX}"));
     }
     lines.join("\n")
 }
@@ -186,4 +218,66 @@ fn project_description(project: &Project) -> Option<String> {
         .take(PROJECT_DESCRIPTION_LIMIT)
         .collect();
     Some(format!("{truncated}{TRUNCATION_MARK}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tok2_ember_recebe_identidade_sem_bloco_da_arvore() {
+        let project = Project {
+            id: 1,
+            name: "Vokia".to_string(),
+            selected: true,
+            created_at: 0,
+            symbol: "folder".to_string(),
+            color: Some("amber".to_string()),
+            description: "Orquestrador de agentes".to_string(),
+            path: "C:/projetos/Vokia".to_string(),
+            pinned: true,
+            permission_level: crate::permissions::PermissionLevel::Edicao,
+            origin_kind: ORIGIN_GITHUB.to_string(),
+            origin_repo: Some("org/vokia".to_string()),
+            last_activity_at: None,
+            setup_command: None,
+        };
+        let ember = project_context_without_tree(&project);
+
+        assert!(ember.contains("Vokia"));
+        assert!(ember.contains("Orquestrador de agentes"));
+        assert!(ember.contains("org/vokia"));
+        assert!(!ember.contains("Estrutura da pasta do projeto"));
+    }
+
+    #[test]
+    fn tok2_arvore_respeita_profundidade_limite_de_entradas_e_soma_omissoes() {
+        let mut entries: Vec<String> = (0..75).map(|index| format!("arquivo-{index:02}.txt")).collect();
+        entries.push("desktop/src/App.vue".to_string());
+        let block = project_tree_block(&FolderTree {
+            entries,
+            omitted: 3,
+            omitted_is_lower_bound: false,
+        });
+        let lines: Vec<_> = block.lines().collect();
+
+        assert!(lines[0].contains("até 2 níveis"));
+        assert_eq!(lines.iter().filter(|line| line.starts_with("arquivo-")).count(), 60);
+        assert!(!block.contains("desktop/src/App.vue"));
+        assert!(block.contains("… e mais 19 entradas não listadas."));
+    }
+
+    #[test]
+    fn tok2_arvore_respeita_orcamento_total_de_1800_caracteres() {
+        let entries: Vec<String> = (0..70)
+            .map(|index| format!("diretorio-com-nome-longo-subdiretorio-{index:02}.txt"))
+            .collect();
+        let block = project_tree_block(&FolderTree {
+            entries,
+            omitted: 0,
+            omitted_is_lower_bound: false,
+        });
+
+        assert!(block.chars().count() <= PROMPT_TREE_MAX_CHARS);
+    }
 }

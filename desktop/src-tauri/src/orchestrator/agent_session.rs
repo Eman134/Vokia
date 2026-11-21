@@ -175,18 +175,29 @@ async fn run_step(
             base
         };
         let (program, user_args) = resolve_program_for(agent, &candidate.command, cli)?;
-        let call = AgentCall {
+        let mut call = AgentCall {
             adapter,
             program,
             user_args,
             role,
             model: candidate.model.clone(),
+            resume_session: None,
             item_id: exchange.item_id.map(str::to_string),
             channel_id: exchange.channel_id,
             mcp,
             has_variables: !exchange.definition.variables.is_empty(),
             collected: StdMutex::default(),
         };
+        if !call.adapter.supports_live_session() {
+            call.resume_session = store.load()?.and_then(|stored| {
+                decode_provider_session(
+                    &stored,
+                    &candidate.cli,
+                    &candidate.model,
+                    exchange.item_id,
+                )
+            });
+        }
         let first = sessions.opened.insert(agent.clone());
         let mut held = sessions.hold(agent).await;
         if first {
@@ -245,16 +256,42 @@ async fn run_step(
                         grant_per_session: false,
                         ..gate
                     };
-                    fresh_reply(
+                    let message = if call.resume_session.is_some() {
+                        &prompts.follow_up
+                    } else {
+                        &prompts.opening
+                    };
+                    match fresh_reply(
                         access,
-                        gate,
+                        gate.clone(),
                         &held.slot.pid,
                         &call,
-                        &prompts.opening,
+                        message,
                         console,
                     )
                     .await
                     .map_err(FlowError::Claude)
+                    {
+                        Err(error)
+                            if call.resume_session.is_some()
+                                && !error.is_limit()
+                                && !error.is_model_unavailable() =>
+                        {
+                            store.clear()?;
+                            call.resume_session = None;
+                            fresh_reply(
+                                access,
+                                gate,
+                                &held.slot.pid,
+                                &call,
+                                &prompts.opening,
+                                console,
+                            )
+                            .await
+                            .map_err(FlowError::Claude)
+                        }
+                        result => result,
+                    }
                 }
             }
         }
@@ -291,6 +328,16 @@ async fn run_step(
                         ),
                         now_millis().unwrap_or_else(|_| now_millis_u64()),
                     );
+                }
+                if !call.adapter.supports_live_session() {
+                    if let Some(session_id) = reply.session_id.as_deref() {
+                        store.save(&encode_provider_session(
+                            &candidate.cli,
+                            &candidate.model,
+                            exchange.item_id,
+                            session_id,
+                        ))?;
+                    }
                 }
                 report_limits(app, reply.limits)?;
                 let outcome = call
@@ -395,6 +442,29 @@ async fn fresh_reply(
     call.adapter
         .run_fresh(access, gate, pid, call, message, console)
         .await
+}
+
+fn encode_provider_session(
+    cli: &str,
+    model: &str,
+    item_id: Option<&str>,
+    session_id: &str,
+) -> String {
+    format!("{}:{}:{}:{session_id}", cli, model, item_id.unwrap_or(""))
+}
+
+fn decode_provider_session(
+    stored: &str,
+    cli: &str,
+    model: &str,
+    item_id: Option<&str>,
+) -> Option<String> {
+    let prefix = format!("{}:{}:{}:", cli, model, item_id.unwrap_or(""));
+    stored
+        .strip_prefix(&prefix)
+        .map(str::trim)
+        .filter(|session_id| !session_id.is_empty())
+        .map(str::to_string)
 }
 
 pub(super) struct SessionStore<'a> {
@@ -574,7 +644,7 @@ impl AgentSession {
         }
         if self.live.is_none() {
             if self.session_id.is_none() {
-                self.session_id = store.load()?;
+                self.session_id = store.load()?.filter(|id| !id.contains(':'));
             }
             let attempt = if self.session_id.is_some() {
                 Attempt::Resume
@@ -758,6 +828,73 @@ pub(super) fn preload_candidate(
     .next()
 }
 
+#[cfg(test)]
+mod provider_session_tests {
+    use super::*;
+    use crate::agents::Agent;
+    use crate::db::{DbState, NewProject};
+    use crate::mcp::support;
+    use tauri::Manager;
+
+    #[test]
+    fn tok4_provider_sessions_are_scoped_and_prefixed_ids_are_not_claude_resumes() {
+        let session_id = "sid:with:colon";
+        let stored = encode_provider_session("opencode", "model-a", Some("item-1"), session_id);
+
+        assert_eq!(stored, "opencode:model-a:item-1:sid:with:colon");
+        assert_eq!(
+            decode_provider_session(&stored, "opencode", "model-a", Some("item-1")),
+            Some(session_id.to_string())
+        );
+        assert_eq!(decode_provider_session(&stored, "opencode", "model-a", Some("item-2")), None);
+        assert_eq!(decode_provider_session(&stored, "opencode", "model-a", None), None);
+        assert_eq!(decode_provider_session(&stored, "antigravity", "model-a", Some("item-1")), None);
+        assert_eq!(decode_provider_session(&stored, "opencode", "model-b", Some("item-1")), None);
+
+        let data_dir = std::env::temp_dir().join(format!(
+            "vokia-claude-session-filter-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let app = support::build_app(&data_dir);
+        let project_id = app
+            .state::<DbState>()
+            .db()
+            .expect("banco de teste")
+            .insert_project(&NewProject {
+                name: "sessao",
+                symbol: "folder",
+                description: "",
+                path: "C:/test/project",
+                origin_kind: "folder",
+                origin_repo: None,
+            })
+            .expect("projeto de teste")
+            .id;
+        let store = SessionStore {
+            app: app.handle(),
+            key: SessionKey { project_id, agent: Agent::ember() },
+        };
+        store.save(&stored).expect("sessão prefixada deve ser gravada");
+        let mut session = AgentSession::default();
+        let place = Place::for_preload(PathBuf::from("C:/test/project"));
+        let provider_key = ("claude".to_string(), "model-a".to_string());
+
+        let attempt = support::run(session.first_attempt(&store, &place, &provider_key))
+            .expect("o filtro de sessão Claude deve ser avaliado");
+
+        assert!(matches!(attempt, Some(Attempt::Open)));
+        assert_eq!(session.session_id, None);
+        drop(store);
+        drop(app);
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+}
+
 pub(super) type PreloadedSession = (LiveSession, Option<String>, Place, (String, String));
 
 #[allow(clippy::too_many_arguments)]
@@ -848,6 +985,7 @@ pub(super) struct AgentCall {
     pub(super) user_args: Vec<String>,
     pub(super) role: String,
     pub(super) model: String,
+    pub(super) resume_session: Option<String>,
     item_id: Option<String>,
     channel_id: Option<i64>,
     mcp: Option<McpLaunch>,
@@ -869,6 +1007,7 @@ impl AgentCall {
             user_args,
             role,
             model,
+            resume_session: None,
             item_id: None,
             channel_id: None,
             mcp: None,

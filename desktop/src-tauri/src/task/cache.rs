@@ -186,6 +186,10 @@ impl Cache {
         self.task.as_ref()?.long_request.as_deref()
     }
 
+    pub fn has_running_task(&self) -> bool {
+        self.task.as_ref().is_some_and(|task| task.outcome.is_none())
+    }
+
     pub fn recent_conversation(&self, count: usize) -> Vec<String> {
         let Some(VarValue::List(items)) =
             self.find(CONVERSATION_VAR).map(|variable| &variable.value)

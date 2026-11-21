@@ -121,6 +121,7 @@ pub(crate) fn parse_output(
             limits: None,
             activity: TurnActivity::default(),
             usage: None,
+            session_id: None,
         });
     };
 
@@ -136,6 +137,7 @@ pub(crate) fn parse_output(
             limits: None,
             activity: TurnActivity::default(),
             usage: None,
+            session_id: None,
         });
     }
 
@@ -234,6 +236,7 @@ pub(crate) fn parse_output(
         limits: None,
         activity: TurnActivity::default(),
         usage,
+        session_id: None,
     })
 }
 

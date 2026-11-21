@@ -18,7 +18,9 @@ use super::agent_session::{
 };
 use super::fallback::{load_global_active_llm, load_global_fallback, resolve_program_for};
 use super::flow::{load_orchestration, profile_of};
-use super::project_context::{load_project, project_context, project_dir, scan_structure};
+use super::project_context::{
+    load_project, project_context, project_context_without_tree, project_dir, scan_structure,
+};
 use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS, SESSION_IDLE_LIMIT_SECS};
 
 pub(super) const NO_PID: u32 = 0;
@@ -209,11 +211,17 @@ impl SessionPool {
         if targets.is_empty() {
             return 0;
         }
-        let tree = scan_structure(&project_dir).await;
+        // Só agente técnico precisa da árvore; o Ember pré-carregado fica com a identidade do projeto.
+        let tree = if targets.iter().any(|target| *target != Agent::ember()) {
+            scan_structure(&project_dir).await
+        } else {
+            None
+        };
         if !is_selected_project(app, project_id) {
             return 0;
         }
         let context = project_context(&project, tree.as_ref());
+        let ember_context = project_context_without_tree(&project);
         let providers = app.state::<ProviderRegistry>();
         let global_active = load_global_active_llm(app);
         let global_fallback = load_global_fallback(app);
@@ -265,7 +273,7 @@ impl SessionPool {
                         &team,
                         orchestration.as_ref(),
                         &paused,
-                        &context,
+                        if agent == Agent::ember() { &ember_context } else { &context },
                         &candidate,
                         cli,
                     ) {

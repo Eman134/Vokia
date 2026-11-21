@@ -158,6 +158,7 @@ impl ProviderAdapter {
                     pid,
                     provider,
                     vokia_ref,
+                    call.resume_session.as_deref(),
                 )
                 .await;
                 finalize_vokia_cli(result, access, call, vokia_cli)
@@ -178,6 +179,7 @@ impl ProviderAdapter {
                     pid,
                     provider,
                     vokia_ref,
+                    call.resume_session.as_deref(),
                 )
                 .await;
                 finalize_vokia_cli(result, access, call, vokia_cli)

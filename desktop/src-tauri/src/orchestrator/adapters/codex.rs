@@ -178,5 +178,6 @@ pub(crate) fn parse_jsonl_output_with_provider(
         limits: None,
         activity: TurnActivity::default(),
         usage,
+        session_id: None,
     })
 }

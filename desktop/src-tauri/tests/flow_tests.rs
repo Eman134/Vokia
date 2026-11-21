@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn tok1_interpreter_fast_path_cobre_marcadores_e_variaveis_ativas() {
+    use crate::task::needs_llm_interpreter;
+
+    for request in ["Oi", "Crie um card de login", "@Vexa ajuste o botão"] {
+        assert!(!needs_llm_interpreter(request, false), "pedido sem marcador: {request}");
+    }
+    for request in [
+        "contem até 20 alternadamente",
+        "atualize $contador",
+        "pronto quando o relatório existir",
+    ] {
+        assert!(needs_llm_interpreter(request, false), "pedido com marcador: {request}");
+    }
+    assert!(needs_llm_interpreter("continue", true));
+}
+
+#[test]
+fn tok1_fast_definition_trunca_utf8_e_inclui_agente_mencionado_uma_vez() {
+    use crate::agents::{Agent, AgentRegistry};
+    use crate::task::fast_definition;
+
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-fast-definition-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let team = AgentRegistry::load(&dir).team().expect("time padrão");
+    let origin = Agent::ember();
+    let request = format!("@Vexa {}", "á".repeat(400));
+
+    let definition = fast_definition(&origin, &request, &team, true);
+
+    assert!(definition.nova_tarefa);
+    assert_eq!(definition.objetivo, definition.criterion);
+    assert_eq!(definition.objetivo.chars().count(), 300);
+    assert_eq!(definition.participants.first(), Some(&origin));
+    assert_eq!(definition.participants.get(1), Some(&team.named("Vexa").unwrap()));
+    assert_eq!(definition.participants.len(), 2);
+    assert!(!definition.verify);
+    assert!(!definition.alternate);
+    assert!(definition.variables.is_empty());
+    assert!(definition.stop.is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn pedido_sem_canal_chega_ao_agente_identico_byte_a_byte() {
     assert_eq!(
         with_channel_note("faça isso\ne aquilo", None),

@@ -425,6 +425,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             tool_transport: Some(ToolTransport::VokiaCli),
             supports_sandbox: false,
             reserved_flags: vec_str(&[
+                "--pure",
                 "--format",
                 "-m",
                 "--model",

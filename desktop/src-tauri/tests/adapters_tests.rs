@@ -190,11 +190,12 @@ fn opencode_build_command_text_only_e_leitura_e_edicao_e_recusa_liberado_conform
     let args_text = args_of(&cmd_text);
     assert_eq!(args_text[0], "--user-arg");
     assert_eq!(args_text[1], "run");
-    assert_eq!(args_text[2], "--format");
-    assert_eq!(args_text[3], "json");
-    assert_eq!(args_text[4], "-m");
-    assert_eq!(args_text[5], "openai/gpt-6-astra");
-    assert_eq!(args_text.len(), 6);
+    assert_eq!(args_text[2], "--pure");
+    assert_eq!(args_text[3], "--format");
+    assert_eq!(args_text[4], "json");
+    assert_eq!(args_text[5], "-m");
+    assert_eq!(args_text[6], "openai/gpt-6-astra");
+    assert_eq!(args_text.len(), 7);
 
     // Project: Leitura
     let cmd_leitura = opencode::build_command(
@@ -442,6 +443,55 @@ fn antigravity_parse_formato_antigo_por_type_continua_compativel() {
         Err(ClaudeError::Reported(msg)) => assert_eq!(msg, "erro antigo"),
         other => panic!("esperava Reported, veio {:?}", other.map(|r| r.text)),
     }
+}
+
+#[test]
+fn tok4_flags_de_retomada_e_extracao_de_sessao_em_opencode_e_antigravity() {
+    let program = Path::new("cli");
+    let no_args = Vec::new();
+    let opencode_resume = opencode::build_command_with_resume(
+        Path::new("opencode"),
+        &no_args,
+        "role",
+        "modelo",
+        Access::TextOnly,
+        "responder",
+        Some("opencode-session-7"),
+    )
+    .unwrap();
+    let opencode_args = args_of(&opencode_resume);
+    assert_eq!(opencode_args[0], "run");
+    assert_eq!(opencode_args[1], "--pure");
+    assert_eq!(opencode_args[position(&opencode_args, "-s") + 1], "opencode-session-7");
+
+    let antigravity_resume = antigravity::build_command_with_resume(
+        program,
+        &no_args,
+        "role",
+        "modelo",
+        Access::TextOnly,
+        "responder",
+        Some("agy-conversation-4"),
+    );
+    let antigravity_args = args_of(&antigravity_resume);
+    assert_eq!(
+        antigravity_args[position(&antigravity_args, "--conversation") + 1],
+        "agy-conversation-4"
+    );
+
+    let opencode_reply = opencode::parse_json_output(
+        br#"{"type":"text","sessionID":"opencode-session-7","part":{"text":"Resposta"}}"#,
+    )
+    .unwrap();
+    assert_eq!(opencode_reply.text, "Resposta");
+    assert_eq!(opencode_reply.session_id.as_deref(), Some("opencode-session-7"));
+
+    let antigravity_reply = antigravity::parse_stream_output(
+        br#"{"event":"result","result":{"status":"SUCCESS","response":"Resposta","conversation_id":"agy-conversation-4"}}"#,
+    )
+    .unwrap();
+    assert_eq!(antigravity_reply.text, "Resposta");
+    assert_eq!(antigravity_reply.session_id.as_deref(), Some("agy-conversation-4"));
 }
 
 // ==========================================

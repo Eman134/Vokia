@@ -11,13 +11,26 @@ use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
 
+#[allow(dead_code)]
 pub(crate) fn build_command(
+    program: &Path,
+    user_args: &[String],
+    role: &str,
+    model: &str,
+    access: Access<'_>,
+    message: &str,
+) -> Command {
+    build_command_with_resume(program, user_args, role, model, access, message, None)
+}
+
+pub(crate) fn build_command_with_resume(
     program: &Path,
     user_args: &[String],
     _role: &str,
     model: &str,
     access: Access<'_>,
     _message: &str,
+    resume_conversation: Option<&str>,
 ) -> Command {
     let mut command = base_command(program);
     command.kill_on_drop(true);
@@ -32,6 +45,9 @@ pub(crate) fn build_command(
         model,
         "--disable-slash-commands",
     ]);
+    if let Some(conv_id) = resume_conversation.map(str::trim).filter(|s| !s.is_empty()) {
+        command.args(["--conversation", conv_id]);
+    }
     match access {
         Access::TextOnly => {
             command.args(["--sandbox", "--mode", "plan"]);
@@ -67,8 +83,10 @@ pub(super) async fn run_turn(
     pid: &AtomicU32,
     provider: &ProviderConfig,
     vokia_cli: Option<(&McpSession, &Path)>,
+    resume_conversation: Option<&str>,
 ) -> Result<Reply, ClaudeError> {
-    let mut command = build_command(program, user_args, role, model, access, message);
+    let mut command =
+        build_command_with_resume(program, user_args, role, model, access, message, resume_conversation);
     if let Some((session, cli_path)) = vokia_cli {
         super::inject_vokia_cli_env(&mut command, session, cli_path);
     }
@@ -99,6 +117,7 @@ pub(crate) fn parse_stream_output_with_provider(
     let mut saw_json = false;
     let mut assistant_model: Option<String> = None;
     let mut usage: Option<TurnUsage> = None;
+    let mut found_session_id: Option<String> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -109,6 +128,19 @@ pub(crate) fn parse_stream_output_with_provider(
             continue;
         };
         saw_json = true;
+        if found_session_id.is_none() {
+            if let Some(sid) = value
+                .get("conversation_id")
+                .or_else(|| value.get("session_id"))
+                .or_else(|| value.pointer("/result/conversation_id"))
+                .or_else(|| value.pointer("/result/session_id"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                found_session_id = Some(sid.to_string());
+            }
+        }
         if let Some(event) = value.get("event").and_then(Json::as_str) {
             match event {
                 "step_update" => {
@@ -294,6 +326,7 @@ pub(crate) fn parse_stream_output_with_provider(
         limits: None,
         activity: TurnActivity::default(),
         usage,
+        session_id: found_session_id,
     })
 }
 

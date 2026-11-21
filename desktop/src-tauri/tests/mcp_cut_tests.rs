@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use super::super::prompts::role;
 use super::*;
 use crate::agents::{Agent, AgentRegistry};
+use crate::task::TaskKind;
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
@@ -33,6 +34,7 @@ fn axiom_and_vexa() -> (Agent, Agent) {
 
 fn empty_definition(participant: Agent) -> TaskDefinition {
     TaskDefinition {
+        kind: TaskKind::Demanda,
         nova_tarefa: true,
         objetivo: "teste".to_string(),
         criterion: String::new(),
@@ -116,8 +118,8 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     let without = StepPrompts::build(&cache, &definition, &axiom, "Faça", crate::orchestrator::prompts::ToolPromptMode::None);
 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
-        assert!(prompt.contains("set_variable"), "{prompt}");
-        assert!(prompt.contains("get_variables"), "{prompt}");
+        assert!(!prompt.contains("set_variable"), "sem variáveis, prompt MCP compacto: {prompt}");
+        assert!(!prompt.contains("get_variables"), "sem variáveis, prompt MCP compacto: {prompt}");
         assert!(prompt.contains(DELEGATE_TOOL_TEXT), "{prompt}");
         assert!(!prompt.contains("@Nome:"), "{prompt}");
         for marker in OLD_MARKERS {
@@ -126,8 +128,8 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     }
     for prompt in [&without.opening, &without.follow_up, &without.minimal] {
         assert!(!prompt.contains("set_variable"), "{prompt}");
-        assert!(prompt.contains("`$nome = valor`"), "{prompt}");
-        assert!(prompt.contains("compartilhadas por padrão"), "{prompt}");
+        assert!(!prompt.contains("`$nome = valor`"), "sem variáveis, prompt textual compacto: {prompt}");
+        assert!(!prompt.contains("compartilhadas por padrão"), "sem variáveis, prompt textual compacto: {prompt}");
     }
 }
 

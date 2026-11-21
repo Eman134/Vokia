@@ -26,7 +26,8 @@ use crate::state::{
     AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
 };
 use crate::task::{
-    long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome, Variable,
+    fast_definition, long_request_text, needs_llm_interpreter, parse_definition, ActiveTask, TaskDefinition,
+    TaskKind, TaskOutcome, Variable, CONVERSATION_VAR,
 };
 
 use super::agent_session::ask_step;
@@ -36,7 +37,8 @@ use super::emit::{
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
-    load_project, project_context, project_dir, project_id_from_choice, scan_structure,
+    load_project, project_context, project_context_without_tree, project_dir, project_id_from_choice,
+    scan_structure,
 };
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
@@ -1384,6 +1386,7 @@ fn parallel_definition(
     variables: Vec<Variable>,
 ) -> TaskDefinition {
     TaskDefinition {
+        kind: TaskKind::Demanda,
         nova_tarefa: false,
         objetivo: objective,
         criterion: String::new(),
@@ -1510,9 +1513,6 @@ async fn exchange_turns(
     let project_dir = project_dir(app, key.project_id)?;
     let attachments_dir = attachments_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
-    // Sem cache: a pasta é relida a cada exchange para refletir o estado atual.
-    let tree = scan_structure(&project_dir).await;
-    let context = project_context(&project, tree.as_ref());
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app)?;
     let working = working_dir(
@@ -1553,6 +1553,19 @@ async fn exchange_turns(
         std::mem::take(&mut definition.participants),
         &key.agent,
     );
+    // Pedido de um card, ou com participantes e regras de tarefa depois do posicionamento, é trabalho de verdade.
+    if item_id.is_some() || definition.has_task_structure() {
+        definition.promote_to_demand();
+    }
+    // Ember só orquestra: sem agente técnico na troca, nem lê a pasta. Sem cache: ela é relida a cada exchange.
+    let ember_only = key.agent == Agent::ember()
+        && definition.participants.iter().all(|participant| *participant == key.agent);
+    let context = if ember_only {
+        project_context_without_tree(&project)
+    } else {
+        let tree = scan_structure(&project_dir).await;
+        project_context(&project, tree.as_ref())
+    };
     if first_speaker(&definition, &key.agent) != key.agent {
         emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
     }
@@ -1639,12 +1652,23 @@ async fn interpret_task(
     orchestration: Option<&OrchestrationSnapshot>,
 ) -> Result<TaskDefinition, FlowError> {
     let origin = key.agent;
+    let (variable_names, has_running_task) = with_cache(state, key.project_id, |cache| {
+        let names: Vec<String> = cache
+            .names()
+            .into_iter()
+            .filter(|name| name != CONVERSATION_VAR)
+            .collect();
+        Ok((names, cache.has_running_task()))
+    })?;
+    // Pedido comum não gasta uma chamada ao modelo só para virar definição: o interpretador fica para revezamento e variáveis.
+    if !needs_llm_interpreter(request, !variable_names.is_empty()) {
+        return Ok(fast_definition(&origin, request, team, !has_running_task));
+    }
     let profile = profile_of(team, &origin)?;
-    let names = with_cache(state, key.project_id, |cache| Ok(cache.names().join(", ")))?;
-    let names = if names.is_empty() {
+    let names = if variable_names.is_empty() {
         NO_NAMES.to_string()
     } else {
-        names
+        variable_names.join(", ")
     };
     let message = format!(
         "{} Destinatário: {}. Variáveis existentes: {names}. Pedido: {request}",
