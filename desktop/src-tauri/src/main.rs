@@ -14,6 +14,7 @@ mod orchestrator;
 mod permissions;
 mod plan_proposal;
 mod projects;
+mod providers;
 mod roles;
 mod session_key;
 mod shell;
@@ -106,15 +107,30 @@ fn main() {
             commands::orchestration::set_final_validation,
             commands::orchestration::save_orchestration_settings,
             commands::orchestration::list_agent_activity,
-            commands::orchestration::list_agent_copies
+            commands::orchestration::list_agent_copies,
+            commands::agents::list_temporary_overrides,
+            commands::agents::set_temporary_override,
+            commands::agents::clear_temporary_override,
+            commands::agents::clear_all_temporary_overrides,
+            commands::agents::update_ember_llm,
+            commands::providers::list_providers,
+            commands::providers::save_provider,
+            commands::providers::delete_provider,
+            commands::providers::discover_provider_models,
+            commands::providers::inspect_cli,
+            commands::providers::build_setup_prompt,
+            commands::providers::test_provider_config,
+            commands::providers::auto_configure_provider
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            let providers = providers::ProviderRegistry::load(&data_dir);
             let agents = agents::AgentRegistry::load(&data_dir);
             app.manage(roles::RoleRegistry::load(&data_dir, &agents));
+            app.manage(providers);
             app.manage(agents);
             app.manage(DbState::open(&data_dir));
             {
