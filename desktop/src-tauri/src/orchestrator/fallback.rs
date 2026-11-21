@@ -6,12 +6,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
-use crate::agents::{Agent, AgentProfile};
+use crate::agents::{Agent, AgentProfile, Team};
 use crate::claude::{self, Access, Reply};
 use crate::db::{DbState, SETTING_ACTIVE_LLM, SETTING_LLM_FALLBACK};
 use crate::events::VokiaEvent;
 use crate::permissions::{PermissionBroker, PermissionGate, PermissionLevel};
-use crate::providers::{ModelTier, ProviderConfig, ProviderProtocol, ProviderRegistry};
+use crate::providers::{
+    ModelTier, ProviderConfig, ProviderProtocol, ProviderRegistry, ToolTransport,
+};
 use crate::state::AppState;
 
 use super::adapters::ProviderAdapter;
@@ -267,6 +269,37 @@ pub fn resolve_candidates(
     }
 
     result
+}
+
+pub(crate) fn effective_tool_transport_for(
+    app: &AppHandle,
+    state: &AppState,
+    team: &Team,
+    agent: &Agent,
+    permission_level: Option<PermissionLevel>,
+) -> ToolTransport {
+    let Some(profile) = team.profile(agent) else {
+        return ToolTransport::None;
+    };
+    let providers = app.state::<ProviderRegistry>();
+    let global_active = load_global_active_llm(app);
+    let global_fallback = load_global_fallback(app);
+    let candidates = resolve_candidates(
+        agent,
+        profile,
+        &providers,
+        state,
+        global_active.as_ref(),
+        &global_fallback,
+        permission_level,
+    );
+    if let Some(first) = candidates.first() {
+        return first.provider.effective_tool_transport();
+    }
+    providers
+        .get(&profile.cli)
+        .map(|provider| provider.effective_tool_transport())
+        .unwrap_or_default()
 }
 
 pub fn mark_cooldown(state: &AppState, cli: &str, model: &str) {

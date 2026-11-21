@@ -15,7 +15,7 @@ import type {
   TestProviderResult,
   ToolTransport,
 } from './providersApi'
-import { useProviders } from './useProviders'
+import { SETUP_ADD_PROVIDER_TOKEN, useProviders } from './useProviders'
 
 const PROTOCOL_OPTIONS: readonly { label: string; value: ProviderProtocol }[] = [
   { label: 'Generic CLI', value: 'generic-cli' },
@@ -149,6 +149,10 @@ watch(
     }
 
     const initial = providersStore.setupInitialProvider.trim()
+    if (initial === SETUP_ADD_PROVIDER_TOKEN) {
+      openAddModal('')
+      return
+    }
     if (initial) {
       const normalized = initial.toLowerCase()
       const existing = providersStore.providers.find(

@@ -1090,13 +1090,13 @@ async fn answer_once(
     let agent = exchange.key.agent.clone();
     let project_id = exchange.key.project_id;
     let has_mcp_server = exchange.app.state::<McpState>().server().is_some();
-    let providers = exchange.app.state::<crate::providers::ProviderRegistry>();
-    let transport = exchange
-        .team
-        .profile(&agent)
-        .and_then(|profile| providers.get(&profile.cli).ok())
-        .map(|provider| provider.effective_tool_transport())
-        .unwrap_or_default();
+    let transport = super::fallback::effective_tool_transport_for(
+        exchange.app,
+        exchange.state,
+        exchange.team,
+        &agent,
+        Some(exchange.project.level),
+    );
     let tool_mode = if !has_mcp_server {
         super::prompts::ToolPromptMode::None
     } else {

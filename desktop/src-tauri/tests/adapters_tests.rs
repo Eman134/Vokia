@@ -1045,6 +1045,77 @@ fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fal
 }
 
 #[test]
+fn mdl1_modelo_especifico_em_active_llm_propaga_para_ember_e_lider_e_faz_fallback_em_cooldown() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));
+
+    // Usuário escolheu um modelo específico no seletor da ActionBar (model_tier: None, model: Some(...))
+    let global_active = crate::orchestrator::fallback::LlmTarget {
+        cli: "opencode".to_string(),
+        model_tier: None,
+        model: Some("openai/gpt-5.4-mini".to_string()),
+    };
+    let global_fallback = vec![crate::orchestrator::fallback::LlmTarget {
+        cli: "antigravity".to_string(),
+        model_tier: None,
+        model: Some("gemini-4-argon-medium".to_string()),
+    }];
+
+    // 1. Ember (follow_default_llm: true) recebe o modelo específico do active_llm como 1º candidato
+    let ember = crate::agents::Agent::ember();
+    let ember_profile = crate::agents::AgentProfile {
+        id: ember.clone(),
+        name: "Ember".to_string(),
+        role: "Orquestrador geral".to_string(),
+        avatar: "ember".to_string(),
+        cli: "claude".to_string(),
+        model: "haiku".to_string(),
+        model_tier: None,
+        follow_default_llm: true,
+        fallback: Vec::new(),
+        command: "claude".to_string(),
+        builtin: true,
+        extra_instructions: String::new(),
+    };
+    let ember_candidates = crate::orchestrator::fallback::resolve_candidates(
+        &ember,
+        &ember_profile,
+        &providers,
+        &state,
+        Some(&global_active),
+        &global_fallback,
+        None,
+    );
+    assert_eq!(ember_candidates[0].cli, "opencode");
+    assert_eq!(ember_candidates[0].model, "openai/gpt-5.4-mini");
+    assert_eq!(
+        ember_candidates[0].provider.effective_tool_transport(),
+        crate::providers::ToolTransport::VokiaCli
+    );
+    assert_eq!(ember_candidates[1].cli, "claude");
+    assert_eq!(ember_candidates[1].model, "haiku");
+    assert_eq!(ember_candidates[2].cli, "antigravity");
+    assert_eq!(ember_candidates[2].model, "gemini-4-argon-medium");
+
+    // 2. Quando o modelo escolhido atinge limite/indisponibilidade e entra em cooldown,
+    // a cadeia cai automaticamente para o próximo candidato sem tentar o modelo bloqueado.
+    crate::orchestrator::fallback::mark_cooldown(&state, "opencode", "openai/gpt-5.4-mini");
+    let after_limit = crate::orchestrator::fallback::resolve_candidates(
+        &ember,
+        &ember_profile,
+        &providers,
+        &state,
+        Some(&global_active),
+        &global_fallback,
+        None,
+    );
+    assert_eq!(after_limit[0].cli, "claude");
+    assert_eq!(after_limit[0].model, "haiku");
+    assert_eq!(after_limit[1].cli, "antigravity");
+    assert_eq!(after_limit[1].model, "gemini-4-argon-medium");
+}
+
+#[test]
 fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker() {
     let providers = crate::providers::ProviderRegistry::seeded();
     let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));

@@ -49,6 +49,7 @@ export interface ProviderConfig {
   defaultCommand: string
   defaultModel: string
   models: string[]
+  freeModels?: string[]
   tiers: ModelTiers
   supportsMcp: boolean
   toolTransport?: ToolTransport | null

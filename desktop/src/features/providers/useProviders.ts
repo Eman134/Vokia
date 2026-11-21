@@ -17,18 +17,25 @@ import {
   type TestProviderResult,
 } from './providersApi'
 
+export const SETUP_ADD_PROVIDER_TOKEN = '__add__'
+
 export const useProviders = defineStore('providers', () => {
   const providers = ref<ProviderWithStatus[]>([])
   const loading = ref(false)
   const discovering = ref<Record<string, boolean>>({})
   const error = ref<string | null>(null)
 
+  const discoveredOnce = ref<Record<string, boolean>>({})
   const setupOpen = ref(false)
   const setupInitialProvider = ref('')
 
   function openSetup(provider?: string): void {
     setupInitialProvider.value = provider?.trim() ?? ''
     setupOpen.value = true
+  }
+
+  function openAddProvider(): void {
+    openSetup(SETUP_ADD_PROVIDER_TOKEN)
   }
 
   function closeSetup(): void {
@@ -64,6 +71,22 @@ export const useProviders = defineStore('providers', () => {
     } finally {
       discovering.value = { ...discovering.value, [id]: false }
     }
+  }
+
+  async function discoverAllInstalled(force = false): Promise<void> {
+    const targets = providers.value.filter(
+      (provider) =>
+        provider.installed &&
+        provider.discovery != null &&
+        (force || !discoveredOnce.value[provider.id]),
+    )
+    if (targets.length === 0) return
+    const nextFlags = { ...discoveredOnce.value }
+    for (const target of targets) {
+      nextFlags[target.id] = true
+    }
+    discoveredOnce.value = nextFlags
+    await Promise.allSettled(targets.map((target) => discover(target.id)))
   }
 
   async function save(config: ProviderConfig): Promise<ProviderConfig> {
@@ -110,12 +133,15 @@ export const useProviders = defineStore('providers', () => {
     loading,
     discovering,
     error,
+    discoveredOnce,
     setupOpen,
     setupInitialProvider,
     openSetup,
+    openAddProvider,
     closeSetup,
     load,
     discover,
+    discoverAllInstalled,
     save,
     remove,
     inspect,

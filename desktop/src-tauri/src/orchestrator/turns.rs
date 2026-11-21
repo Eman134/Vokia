@@ -105,12 +105,13 @@ pub(super) async fn run_turns(
                 None,
             );
         }
-        let providers = exchange.app.state::<crate::providers::ProviderRegistry>();
-        let speaker_transport = team
-            .profile(&turn.speaker)
-            .and_then(|profile| providers.get(&profile.cli).ok())
-            .map(|provider| provider.effective_tool_transport())
-            .unwrap_or_default();
+        let speaker_transport = super::fallback::effective_tool_transport_for(
+            exchange.app,
+            exchange.state,
+            team,
+            &turn.speaker,
+            Some(exchange.project.level),
+        );
         let tool_mode = if !has_mcp_server {
             ToolPromptMode::None
         } else {
