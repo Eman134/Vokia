@@ -1,18 +1,29 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
+use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use crate::agents::{replica_of, Agent};
+use crate::agents::{replica_of, Agent, AgentRegistry};
 use crate::claude::kill_process_tree;
-use crate::db::{Db, DbError};
+use crate::db::{Db, DbError, DbState};
+use crate::providers::{ProviderProtocol, ProviderRegistry};
 use crate::session_key::SessionKey;
+use crate::state::AppState;
 
-use super::agent_session::AgentSession;
-use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS};
+use super::agent_session::{
+    open_preloaded_session, preload_candidate, preload_targets, AgentSession,
+};
+use super::fallback::{load_global_active_llm, load_global_fallback, resolve_program_for};
+use super::flow::{load_orchestration, profile_of};
+use super::project_context::{load_project, project_context, project_dir, scan_structure};
+use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS, SESSION_IDLE_LIMIT_SECS};
 
 pub(super) const NO_PID: u32 = 0;
+const PRELOAD_DEBOUNCE: Duration = Duration::from_millis(300);
+const PRELOAD_TTL: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 
 // `closing` e `pid` ficam fora do lock da sessão: o fechamento pode ser marcado e o processo encerrado com uma mensagem em andamento.
 pub(super) struct SessionSlot {
@@ -154,6 +165,176 @@ impl SessionPool {
             idle.end().await;
         }
     }
+
+    fn live_count(&self) -> usize {
+        self.matching(|_| true)
+            .into_iter()
+            .filter(|slot| slot.is_live())
+            .count()
+    }
+
+    pub(super) fn has_preload_capacity(live_count: usize) -> bool {
+        live_count < MAX_LIVE_SESSIONS
+    }
+
+    pub(super) async fn preload_project(&self, app: &AppHandle, project_id: i64) -> usize {
+        let state = app.state::<AppState>();
+        let Ok(cli) = state.cli.as_ref() else {
+            return 0;
+        };
+        let Ok(project_dir) = project_dir(app, project_id) else {
+            return 0;
+        };
+        let Ok(project) = load_project(app, project_id) else {
+            return 0;
+        };
+        let Ok(data_dir) = app.path().app_data_dir() else {
+            return 0;
+        };
+        let Ok(attachments_dir) = crate::attachments::project_dir(&data_dir, project_id) else {
+            return 0;
+        };
+        let Ok(team) = app.state::<AgentRegistry>().team() else {
+            return 0;
+        };
+        let Ok(orchestration) = load_orchestration(app) else {
+            return 0;
+        };
+        let paused = app
+            .state::<DbState>()
+            .db()
+            .and_then(|db| db.project_paused_agents(project_id).ok())
+            .unwrap_or_default();
+        let targets = preload_targets(orchestration.as_ref(), &team, &paused);
+        if targets.is_empty() {
+            return 0;
+        }
+        let tree = scan_structure(&project_dir).await;
+        if !is_selected_project(app, project_id) {
+            return 0;
+        }
+        let context = project_context(&project, tree.as_ref());
+        let providers = app.state::<ProviderRegistry>();
+        let global_active = load_global_active_llm(app);
+        let global_fallback = load_global_fallback(app);
+        let mut adopted = 0;
+        for agent in targets {
+            let Ok(profile) = profile_of(&team, &agent) else {
+                continue;
+            };
+            let Some(candidate) = preload_candidate(
+                &agent,
+                profile,
+                &providers,
+                &state,
+                global_active.as_ref(),
+                &global_fallback,
+                project.permission_level,
+            ) else {
+                continue;
+            };
+            match candidate.provider.protocol {
+                ProviderProtocol::ClaudeLive if candidate.provider.has_tools() => {
+                    if !Self::has_preload_capacity(self.live_count()) {
+                        continue;
+                    }
+                    if !is_selected_project(app, project_id) {
+                        return adopted;
+                    }
+                    let slot = self.slot(SessionKey {
+                        project_id,
+                        agent: agent.clone(),
+                    });
+                    if slot.closing.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    let Ok(mut guard) = Arc::clone(&slot.session).try_lock_owned() else {
+                        continue;
+                    };
+                    if slot.closing.load(Ordering::SeqCst) || guard.live.is_some() {
+                        continue;
+                    }
+                    match open_preloaded_session(
+                        app,
+                        project_id,
+                        &project_dir,
+                        &attachments_dir,
+                        project.permission_level,
+                        &agent,
+                        profile,
+                        &team,
+                        orchestration.as_ref(),
+                        &paused,
+                        &context,
+                        &candidate,
+                        cli,
+                    ) {
+                        Ok((live, resume, place, provider_key)) => {
+                            guard.adopt_preload(live, resume, place, provider_key);
+                            adopted += 1;
+                        }
+                        Err(err) => {
+                            eprintln!("Não foi possível pré-carregar a sessão de {agent}: {err}");
+                        }
+                    }
+                }
+                ProviderProtocol::ClaudeLive
+                | ProviderProtocol::CodexJsonl
+                | ProviderProtocol::AntigravityStream
+                | ProviderProtocol::OpenCodeJson
+                | ProviderProtocol::GenericCli => {
+                    if let Err(err) = resolve_program_for(&agent, &candidate.command, cli) {
+                        eprintln!("CLI indisponível na pré-carga de {agent}: {err}");
+                    }
+                }
+            }
+        }
+        adopted
+    }
+
+    pub(super) async fn expire_unused_preloads(&self, project_id: i64) {
+        for slot in self.matching(|key| key.project_id == project_id) {
+            let Ok(mut guard) = Arc::clone(&slot.session).try_lock_owned() else {
+                continue;
+            };
+            if guard.is_unused_preload()
+                && guard
+                    .preloaded_at
+                    .is_some_and(|at| at.elapsed() >= PRELOAD_TTL)
+            {
+                guard.close_live().await;
+            }
+        }
+    }
+}
+
+fn is_selected_project(app: &AppHandle, project_id: i64) -> bool {
+    app.state::<DbState>()
+        .db()
+        .and_then(|db| db.selected_project().ok())
+        .is_some_and(|project| project.id == project_id)
+}
+
+pub(crate) fn schedule_preload(app: AppHandle, project_id: i64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(PRELOAD_DEBOUNCE).await;
+        if !is_selected_project(&app, project_id) {
+            return;
+        }
+        let adopted = app
+            .state::<AppState>()
+            .sessions
+            .preload_project(&app, project_id)
+            .await;
+        if adopted == 0 {
+            return;
+        }
+        tokio::time::sleep(PRELOAD_TTL).await;
+        app.state::<AppState>()
+            .sessions
+            .expire_unused_preloads(project_id)
+            .await;
+    });
 }
 
 async fn end_slots(slots: Vec<Arc<SessionSlot>>) {

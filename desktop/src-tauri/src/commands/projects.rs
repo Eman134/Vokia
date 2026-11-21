@@ -25,6 +25,9 @@ pub fn select_project(app: AppHandle, state: State<'_, DbState>, id: i64) -> Res
         Err(error) => return Err(error.to_string()),
     };
     db.select_project(id).map_err(|error| error.to_string())?;
+    if previous != Some(id) {
+        orchestrator::schedule_preload(app.clone(), id);
+    }
     if let Some(previous) = previous.filter(|previous| *previous != id) {
         app.state::<AppState>().permissions.deny_project(previous);
         // Fechar espera a mensagem em andamento do projeto anterior; a troca de seleção não deve esperar junto.

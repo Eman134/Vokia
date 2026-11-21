@@ -1,22 +1,27 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use crate::agents::Agent;
+use crate::agents::{Agent, AgentProfile, Team};
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity, TurnUsage};
-use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
+use crate::db::{
+    Db, DbError, DbState, OrchestrationSnapshot, GRANT_SESSION, SETTING_PERMISSION_GRANT,
+};
 use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
     tool_definitions, Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState,
     CONFIG_DIR,
 };
-use crate::orchestration::snapshot::agent_prompt;
-use crate::permissions::PermissionGate;
+use crate::orchestration::instances::display_name;
+use crate::orchestration::snapshot::{agent_prompt, leader_of};
+use crate::permissions::{PermissionGate, PermissionLevel};
+use crate::providers::ProviderRegistry;
 use crate::session_key::SessionKey;
+use crate::state::AppState;
 
 use super::adapters::ProviderAdapter;
 use super::console::ConsoleSink;
@@ -24,8 +29,8 @@ use super::emit::{emit, emit_feed_note, emit_state, now_millis, report_limits};
 use super::error::FlowError;
 use super::fallback::{
     emit_overrides_changed, load_global_active_llm, load_global_fallback, mark_cooldown,
-    now_millis_u64, resolve_candidates, resolve_program_for, OverrideReason, TemporaryOverride,
-    DEFAULT_COOLDOWN_SECS,
+    now_millis_u64, resolve_candidates, resolve_program_for, LlmTarget, OverrideReason,
+    ResolvedCandidate, TemporaryOverride, DEFAULT_COOLDOWN_SECS,
 };
 use super::flow::profile_of;
 use super::project_context::project_choices;
@@ -453,6 +458,10 @@ impl Place {
             item_id: call.item_id.clone(),
         }
     }
+
+    pub(super) fn for_preload(dir: PathBuf) -> Self {
+        Self { dir, item_id: None }
+    }
 }
 
 #[derive(Default)]
@@ -466,6 +475,8 @@ pub(super) struct AgentSession {
     pub(super) granted: Arc<StdMutex<HashSet<String>>>,
     pub(super) pid: Arc<AtomicU32>,
     pub(super) place: Option<Place>,
+    pub(super) provider_key: Option<(String, String)>,
+    pub(super) preloaded_at: Option<Instant>,
 }
 
 impl AgentSession {
@@ -499,8 +510,10 @@ impl AgentSession {
         console: &ConsoleSink<'_>,
     ) -> Result<Option<Reply>, FlowError> {
         let place = Place::of(project, call);
-        let mut next = self.first_attempt(store, &place).await?;
+        let provider_key = (call.adapter.config().id.clone(), call.model.clone());
+        let mut next = self.first_attempt(store, &place, &provider_key).await?;
         while let Some(attempt) = next {
+            let was_unused_preload = self.is_unused_preload();
             match self
                 .attempt(
                     project,
@@ -520,8 +533,11 @@ impl AgentSession {
                     return Ok(Some(reply));
                 }
                 // Morte no meio da resposta de um processo já em uso: reenviar poderia repetir um comando; o erro vai ao feed.
-                Err(error) if error.is_session_loss() && attempt != Attempt::Reuse => {
-                    if attempt == Attempt::Resume {
+                Err(error)
+                    if error.is_session_loss()
+                        && (attempt != Attempt::Reuse || was_unused_preload) =>
+                {
+                    if attempt == Attempt::Resume || was_unused_preload {
                         self.session_id = None;
                         store.clear()?;
                     }
@@ -537,6 +553,7 @@ impl AgentSession {
         &mut self,
         store: &SessionStore<'_>,
         place: &Place,
+        provider_key: &(String, String),
     ) -> Result<Option<Attempt>, FlowError> {
         // Sessão aberta em outro diretório ou de outro item não atende este pedido; o --resume só vale para o mesmo item.
         if let Some(known) = self.place.replace(place.clone()) {
@@ -547,6 +564,13 @@ impl AgentSession {
                     store.clear()?;
                 }
             }
+        }
+        if self
+            .provider_key
+            .as_ref()
+            .is_some_and(|known| known != provider_key)
+        {
+            self.close_live().await;
         }
         if self.live.is_none() {
             if self.session_id.is_none() {
@@ -624,11 +648,14 @@ impl AgentSession {
                     Attempt::Reuse | Attempt::Resume => self.messages + 1,
                 };
                 self.last_used = Some(Instant::now());
+                self.preloaded_at = None;
+                self.provider_key = Some((call.adapter.config().id.clone(), call.model.clone()));
                 Ok(reply)
             }
             Err(error) => {
                 live.close(SESSION_CLOSE_GRACE).await;
                 self.pid.store(NO_PID, Ordering::SeqCst);
+                self.provider_key = None;
                 Err(error)
             }
         }
@@ -658,12 +685,161 @@ impl AgentSession {
         self.close_live().await;
     }
 
-    async fn close_live(&mut self) {
+    pub(super) async fn close_live(&mut self) {
         if let Some(live) = self.live.take() {
             live.close(SESSION_CLOSE_GRACE).await;
             self.pid.store(NO_PID, Ordering::SeqCst);
+            self.provider_key = None;
+            self.preloaded_at = None;
         }
     }
+
+    pub(super) fn adopt_preload(
+        &mut self,
+        live: LiveSession,
+        session_id: Option<String>,
+        place: Place,
+        provider_key: (String, String),
+    ) {
+        self.pid
+            .store(live.pid().unwrap_or(NO_PID), Ordering::SeqCst);
+        self.live = Some(live);
+        self.session_id = session_id;
+        self.messages = 0;
+        self.last_used = None;
+        self.preloaded_at = Some(Instant::now());
+        self.place = Some(place);
+        self.provider_key = Some(provider_key);
+    }
+
+    pub(super) fn is_unused_preload(&self) -> bool {
+        self.live.is_some() && self.last_used.is_none()
+    }
+}
+
+pub(super) fn preload_targets(
+    orchestration: Option<&OrchestrationSnapshot>,
+    team: &Team,
+    paused: &[Agent],
+) -> Vec<Agent> {
+    let mut raw = vec![Agent::ember(), leader_of(orchestration)];
+    for t in orchestration.map_or(&[][..], |s| s.teams.as_slice()) {
+        if let Some(leader) = t.leader_agent.as_deref().and_then(Agent::from_stored) {
+            raw.push(leader);
+        }
+    }
+    let mut seen = HashSet::new();
+    raw.into_iter()
+        .filter(|agent| {
+            team.profile(agent).is_some() && !paused.contains(agent) && seen.insert(agent.clone())
+        })
+        .collect()
+}
+
+pub(super) fn preload_candidate(
+    agent: &Agent,
+    profile: &AgentProfile,
+    providers: &ProviderRegistry,
+    state: &AppState,
+    global_active: Option<&LlmTarget>,
+    global_fallback: &[LlmTarget],
+    permission_level: PermissionLevel,
+) -> Option<ResolvedCandidate> {
+    resolve_candidates(
+        agent,
+        profile,
+        providers,
+        state,
+        global_active,
+        global_fallback,
+        Some(permission_level),
+    )
+    .into_iter()
+    .next()
+}
+
+pub(super) type PreloadedSession = (LiveSession, Option<String>, Place, (String, String));
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn open_preloaded_session(
+    app: &AppHandle,
+    project_id: i64,
+    project_dir: &Path,
+    attachments_dir: &Path,
+    permission_level: PermissionLevel,
+    agent: &Agent,
+    profile: &AgentProfile,
+    team: &Team,
+    orchestration: Option<&OrchestrationSnapshot>,
+    paused: &[Agent],
+    project_context: &str,
+    candidate: &ResolvedCandidate,
+    cli: &Path,
+) -> Result<PreloadedSession, FlowError> {
+    let mcp = if candidate.provider.has_tools() {
+        McpLaunch::new(app, project_id, agent, &display_name(team, agent))?
+    } else {
+        None
+    };
+    let tool_mode = if mcp.is_some() {
+        ToolPromptMode::Mcp
+    } else {
+        ToolPromptMode::None
+    };
+    let prompt = agent_prompt(orchestration, team, agent);
+    let base = role(
+        profile,
+        &prompt.roster,
+        prompt.layer.as_ref(),
+        project_context,
+        tool_mode,
+    );
+    let role_text = if agent == &Agent::ember() {
+        let tools = if tool_mode != ToolPromptMode::None {
+            tool_definitions()
+        } else {
+            Vec::new()
+        };
+        maestro_role(
+            &base,
+            &tools,
+            &project_choices(app)?,
+            None,
+            orchestration,
+            team,
+            paused,
+            tool_mode,
+        )
+    } else {
+        base
+    };
+    let (program, user_args) = resolve_program_for(agent, &candidate.command, cli)?;
+    let store = SessionStore {
+        app,
+        key: SessionKey {
+            project_id,
+            agent: agent.clone(),
+        },
+    };
+    let resume = store.load()?;
+    let mcp_session = mcp.as_ref().map(McpLaunch::open).transpose()?;
+    let access = Access::Project(ProjectAccess {
+        dir: project_dir,
+        attachments: attachments_dir,
+        level: permission_level,
+    });
+    let live = LiveSession::open(
+        &program,
+        &user_args,
+        &role_text,
+        &candidate.model,
+        access,
+        resume.as_deref(),
+        mcp_session,
+    )?;
+    let place = Place::for_preload(project_dir.to_path_buf());
+    let provider_key = (candidate.cli.clone(), candidate.model.clone());
+    Ok((live, resume, place, provider_key))
 }
 
 pub(super) struct AgentCall {
