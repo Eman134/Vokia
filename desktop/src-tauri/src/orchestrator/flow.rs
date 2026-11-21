@@ -1125,7 +1125,7 @@ async fn answer_once(
     let mut reply = match ask_step(exchange, sessions, &agent, &prompts).await {
         Ok(reply) => reply,
         Err(error) => {
-            if error.is_limit() {
+            if error.is_limit() || error.is_cli_failure() {
                 let _ = super::emit::emit_error_message(
                     exchange.app,
                     project_id,
@@ -1515,7 +1515,7 @@ async fn exchange_turns(
     {
         Ok(definition) => definition,
         Err(error) => {
-            if error.is_limit() {
+            if error.is_limit() || error.is_cli_failure() {
                 let _ = super::emit::emit_error_message(
                     app,
                     key.project_id,

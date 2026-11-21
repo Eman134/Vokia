@@ -99,7 +99,14 @@ impl Db {
         rows.map(|row| -> Result<VokiaEvent, DbError> {
             let (from, to, text, time, channel_id, activity, request_proposal, usage) = row?;
             let from = parse_speaker(&from)?;
-            let is_error = from != Speaker::User && text == "Limite esgotado";
+            let is_error = from != Speaker::User
+                && (text == "Limite esgotado"
+                    || text.starts_with("A CLI ")
+                    || text.starts_with("Não foi possível iniciar a CLI ")
+                    || text.starts_with("Não foi possível executar a CLI ")
+                    || text.starts_with("Modelo ")
+                    || text.starts_with("A sessão da CLI ")
+                    || text.starts_with("Não foi possível preparar o MCP "));
             Ok(VokiaEvent::Message {
                 from,
                 to: parse_speaker(&to)?,

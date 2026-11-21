@@ -187,3 +187,75 @@ fn evento_serializa_request_proposal_em_camel_case_e_omite_quando_nao_ha() {
     assert_eq!(with["requestProposal"], serde_json::json!({ "title": "T", "detail": "D" }));
     assert!(without.get("requestProposal").is_none());
 }
+
+#[test]
+fn load_history_marca_is_error_apenas_em_mensagens_de_agente_de_limite_ou_falha_de_cli() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+
+    let casos = [
+        (agent("vexa"), "Limite esgotado", true),
+        (
+            agent("vexa"),
+            "A CLI antigravity saiu com código 2: Error: -p took --input-format as its prompt",
+            true,
+        ),
+        (
+            agent("vexa"),
+            "Não foi possível iniciar a CLI antigravity: arquivo não encontrado",
+            true,
+        ),
+        (agent("vexa"), "Resposta normal do agente", false),
+        (Speaker::User, "Limite esgotado", false),
+        (Speaker::User, "A CLI antigravity saiu com código 2", false),
+    ];
+
+    for (idx, (from, text, _)) in casos.iter().enumerate() {
+        db.insert_message(
+            project_id,
+            from.clone(),
+            Speaker::User,
+            text,
+            (idx + 1) as u64,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    }
+
+    let history = db.load_history(project_id).unwrap();
+    assert_eq!(history.len(), casos.len());
+    for (event, (_, expected_text, expected_error)) in history.iter().zip(casos.iter()) {
+        match event {
+            VokiaEvent::Message { text, is_error, .. } => {
+                assert_eq!(text, expected_text);
+                assert_eq!(
+                    *is_error, *expected_error,
+                    "is_error divergente para texto: {text}"
+                );
+            }
+            other => panic!("esperava VokiaEvent::Message, veio {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn frontend_balloon_oculta_origem_em_erro_e_use_feed_so_sugere_migracao_para_limite_esgotado() {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let balloon_vue = fs::read_to_string(manifest.join("../src/features/balloon/Balloon.vue"))
+        .expect("deve ler Balloon.vue");
+    assert!(
+        balloon_vue.contains("v-if=\"store.current.kind !== 'error'\""),
+        "Balloon.vue deve ocultar o rótulo de origem (conversa) quando kind === 'error'"
+    );
+
+    let use_feed = fs::read_to_string(manifest.join("../src/features/team/useFeed.ts"))
+        .expect("deve ler useFeed.ts");
+    assert!(
+        use_feed.contains("event.isError && event.from !== 'user' && event.text === 'Limite esgotado'"),
+        "useFeed.ts só deve sugerir migração de limite quando text === 'Limite esgotado'"
+    );
+}

@@ -147,4 +147,85 @@ mod dispatch {
         assert!(waiting_texts(&setup).is_empty());
         assert_eq!(running_count(&setup), 2);
     }
+
+    #[test]
+    fn flow_error_is_cli_failure_verdadeiro_apenas_para_claude_error() {
+        let cli_exit = FlowError::Claude(
+            crate::claude::ClaudeError::Exit {
+                code: Some(2),
+                message: "Error: -p took --input-format as its prompt".to_string(),
+            }
+            .with_cli("antigravity"),
+        );
+        assert!(cli_exit.is_cli_failure());
+        assert!(!cli_exit.is_limit());
+
+        let cli_reported = FlowError::Claude(
+            crate::claude::ClaudeError::Reported("falha de rede".to_string()).with_cli("antigravity"),
+        );
+        assert!(cli_reported.is_cli_failure());
+
+        assert!(!FlowError::CliUnavailable("sem cli".to_string()).is_cli_failure());
+        assert!(!FlowError::UnknownDecision.is_cli_failure());
+        assert!(!FlowError::QueuePoisoned.is_cli_failure());
+    }
+
+    #[test]
+    fn emit_error_message_persiste_erro_de_cli_no_historico_com_is_error_true() {
+        let setup = setup();
+        let db_state = setup.app.state::<crate::db::DbState>();
+        let db = db_state.db().expect("banco aberto");
+        let project_id = db
+            .insert_project(&crate::db::NewProject {
+                name: "proj-ui-err",
+                symbol: "folder",
+                description: "",
+                path: "C:/projetos/proj-ui-err",
+                origin_kind: "folder",
+                origin_repo: None,
+            })
+            .expect("projeto")
+            .id;
+
+        let err = FlowError::Claude(
+            crate::claude::ClaudeError::Exit {
+                code: Some(2),
+                message: "Error: -p took --input-format as its prompt".to_string(),
+            }
+            .with_cli("antigravity"),
+        );
+        assert!(err.is_cli_failure());
+
+        crate::orchestrator::emit::emit_error_message(
+            setup.app.handle(),
+            project_id,
+            Speaker::from(agent("vexa")),
+            Some(9),
+            &err.to_string(),
+        )
+        .expect("deve emitir e gravar mensagem de erro");
+
+        let history = db.load_history(project_id).expect("historico");
+        assert_eq!(history.len(), 1);
+        match &history[0] {
+            crate::events::VokiaEvent::Message {
+                from,
+                to,
+                text,
+                channel_id,
+                is_error,
+                ..
+            } => {
+                assert_eq!(*from, Speaker::from(agent("vexa")));
+                assert_eq!(*to, Speaker::User);
+                assert_eq!(
+                    text,
+                    "A CLI antigravity saiu com código 2: Error: -p took --input-format as its prompt"
+                );
+                assert_eq!(*channel_id, Some(9));
+                assert!(*is_error, "erro de CLI deve carregar com is_error = true");
+            }
+            other => panic!("esperava VokiaEvent::Message, veio {other:?}"),
+        }
+    }
 }

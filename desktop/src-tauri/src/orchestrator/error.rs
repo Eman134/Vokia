@@ -126,6 +126,10 @@ impl FlowError {
         }
     }
 
+    pub fn is_cli_failure(&self) -> bool {
+        matches!(self, FlowError::Claude(_))
+    }
+
     #[allow(dead_code)]
     pub fn is_model_unavailable(&self) -> bool {
         match self {

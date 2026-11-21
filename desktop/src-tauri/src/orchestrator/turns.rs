@@ -144,7 +144,7 @@ pub(super) async fn run_turns(
         } = match ask_step(exchange, sessions, &turn.speaker, &prompts).await {
             Ok(step) => step,
             Err(error) => {
-                if error.is_limit() {
+                if error.is_limit() || error.is_cli_failure() {
                     let _ = super::emit::emit_error_message(
                         app,
                         project_id,

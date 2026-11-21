@@ -27,7 +27,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <div class="flex items-start gap-2">
       <VokiaMascot v-if="store.current.mascot" :look="store.current.mascot" />
       <div class="min-w-0">
-        <p class="text-tiny text-muted">{{ store.current.origin ?? store.current.source }}</p>
+        <p v-if="store.current.kind !== 'error'" class="text-tiny text-muted">{{ store.current.origin ?? store.current.source }}</p>
         <p class="text-label font-semibold text-ink">{{ store.current.title }}</p>
       </div>
     </div>
