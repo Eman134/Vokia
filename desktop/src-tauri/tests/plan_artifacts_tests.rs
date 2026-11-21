@@ -483,3 +483,307 @@ fn migracao_converte_plano_e_micro_tarefas_sem_criar_etapas_e_nao_repete_ao_reab
     assert_eq!(progress(&reopened, project_id, &with_micro), Some((2, 1)));
     assert!(item(&reopened, project_id, &with_micro).micro.is_empty());
 }
+
+const RENAMED_PROPOSAL: &str = "Entrega o login completo.\n\
+#plano-pronto\n\
+#lote 1|Base|Base pronta|Criar tabela\n\
+#lote 2|Tela nova|Tela funcionando\n\
+#lote 3|Deploy|Em produção";
+const KEPT_AND_CHANGED_META: &str = "Entrega o login completo.\n\
+#lote 1|Base|Base pronta|Criar tabela; Criar API\n\
+#lote 2|Tela|Tela revisada";
+const WITHOUT_LOT_TWO: &str = "Entrega o login completo.\n#lote 1|Base|Base pronta|Criar tabela; Criar API";
+const WITHOUT_LOT_ONE: &str = "Entrega o login completo.\n#lote 2|Tela|Tela funcionando";
+const NO_LOTS_PROPOSAL: &str = "Só um texto livre, sem etapas.\n#plano-pronto\n#risco Nenhum";
+
+fn archived(dir: &TempDir, project_id: i64, id: &str) -> bool {
+    dir.raw()
+        .query_row(
+            "SELECT archived_at IS NOT NULL FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+            rusqlite::params![project_id, id],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| panic!("o card {id} deveria existir no banco"))
+}
+
+fn stored_plan_text(dir: &TempDir, project_id: i64, item_id: &str) -> String {
+    dir.raw()
+        .query_row(
+            "SELECT text FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+            rusqlite::params![project_id, item_id],
+            |row| row.get(0),
+        )
+        .expect("o item deveria ter plano gravado")
+}
+
+// Os fluxos de agente levam o card a In progress/In review; move_backlog_item só aceita colunas movíveis à mão.
+fn set_column(dir: &TempDir, project_id: i64, id: &str, column: &str) {
+    let changed = dir
+        .raw()
+        .execute(
+            "UPDATE backlog_items SET \"column\" = ?3 WHERE project_id = ?1 AND id = ?2",
+            rusqlite::params![project_id, id, column],
+        )
+        .unwrap();
+    assert_eq!(changed, 1, "o card {id} deveria existir");
+}
+
+fn accepted(db: &Db, project_id: i64, title: &str) -> (String, String) {
+    let item_id = card(db, project_id, title);
+    db.save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, Some(PROPOSAL)))
+        .unwrap();
+    let plan_id = format!("plano-{item_id}");
+    (item_id, plan_id)
+}
+
+#[test]
+fn editar_plano_mantem_marcacao_do_criterio_igual_e_desmarca_o_que_mudou_de_texto() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    let plan_id = format!("plano-{item_id}");
+    db.save_item_plan(project_id, &item_id, &proposed(PROPOSAL)).unwrap();
+    db.set_artifact_criterion(project_id, &plan_id, "c1", true).unwrap();
+    db.set_artifact_criterion(project_id, &plan_id, "c2", true).unwrap();
+
+    let artifact = db
+        .update_item_plan(project_id, &item_id, KEPT_AND_CHANGED_META, None)
+        .unwrap();
+
+    let marks: Vec<(String, String, bool)> = artifact
+        .criteria
+        .iter()
+        .map(|criterion| (criterion.id.clone(), criterion.text.clone(), criterion.done))
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            ("c1".to_string(), "Base pronta".to_string(), true),
+            ("c2".to_string(), "Tela revisada".to_string(), false),
+        ]
+    );
+    assert_eq!(
+        criteria(&db, project_id),
+        [("c1".to_string(), true), ("c2".to_string(), false)]
+    );
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), KEPT_AND_CHANGED_META);
+    assert!(plan_card_ids(&db, project_id, &item_id).is_empty(), "plano proposto não cria etapas");
+}
+
+#[test]
+fn editar_plano_aceito_renomeia_insere_e_arquiva_etapas_sem_duplicar() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+    set_column(&dir, project_id, &format!("{plan_id}.1.2"), "Ready");
+
+    db.update_item_plan(project_id, &item_id, RENAMED_PROPOSAL, None).unwrap();
+
+    assert_eq!(
+        plan_card_ids(&db, project_id, &item_id),
+        [
+            format!("{plan_id}.1"),
+            format!("{plan_id}.1.1"),
+            format!("{plan_id}.2"),
+            format!("{plan_id}.3"),
+        ]
+    );
+    assert_eq!(item(&db, project_id, &format!("{plan_id}.2")).title, "Tela nova");
+    let added = item(&db, project_id, &format!("{plan_id}.3"));
+    assert_eq!(added.title, "Deploy");
+    assert_eq!(added.parent.as_deref(), Some(item_id.as_str()));
+    assert_eq!(added.description.as_deref(), Some("Em produção"));
+    assert!(archived(&dir, project_id, &format!("{plan_id}.1.2")), "tarefa removida em Ready é arquivada");
+    assert_eq!(progress(&db, project_id, &item_id), Some((3, 0)));
+    assert_eq!(progress(&db, project_id, &format!("{plan_id}.1")), Some((1, 0)));
+
+    let total = items(&db, project_id).len();
+    db.update_item_plan(project_id, &item_id, RENAMED_PROPOSAL, None).unwrap();
+    assert_eq!(items(&db, project_id).len(), total, "repetir a edição não duplica cards");
+}
+
+#[test]
+fn remover_a_ultima_etapa_em_backlog_arquiva_a_etapa_e_suas_tarefas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+    let with_task = "Entrega o login completo.\n#lote 1|Base|Base pronta|Criar tabela; Criar API\n#lote 2|Tela|Tela funcionando|Montar form";
+    db.update_item_plan(project_id, &item_id, with_task, None).unwrap();
+    assert!(!archived(&dir, project_id, &format!("{plan_id}.2.1")));
+
+    db.update_item_plan(project_id, &item_id, WITHOUT_LOT_TWO, None).unwrap();
+
+    assert!(archived(&dir, project_id, &format!("{plan_id}.2")));
+    assert!(archived(&dir, project_id, &format!("{plan_id}.2.1")), "a tarefa da etapa removida também sai");
+    assert_eq!(
+        plan_card_ids(&db, project_id, &item_id),
+        [format!("{plan_id}.1"), format!("{plan_id}.1.1"), format!("{plan_id}.1.2")]
+    );
+    assert_eq!(progress(&db, project_id, &item_id), Some((1, 0)));
+}
+
+#[test]
+fn remover_a_primeira_etapa_arquiva_o_card_dela_e_nao_renomeia_o_card_iniciado() {
+    // #lote 2 sem o #lote 1 é "remover a etapa 1": o card plano-X.1 sai e plano-X.2 continua sendo a Tela.
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+    let first = format!("{plan_id}.1");
+    set_column(&dir, project_id, &first, "In progress");
+
+    let result = db.update_item_plan(project_id, &item_id, WITHOUT_LOT_ONE, None);
+
+    assert!(
+        matches!(result, Err(DbError::PlanStageStarted(ref id)) if id == &first),
+        "remover a etapa 1 em andamento deveria ser recusado: {:?}",
+        result.map(|artifact| artifact.points)
+    );
+    assert_eq!(item(&db, project_id, &first).title, "Base");
+    assert!(!archived(&dir, project_id, &format!("{plan_id}.2")), "a etapa 2 (Tela) não foi removida");
+}
+
+#[test]
+fn remover_etapa_iniciada_e_recusado_e_nada_do_plano_muda() {
+    for column in ["In progress", "In review", "Done"] {
+        let dir = TempDir::new();
+        let db = dir.open();
+        let project_id = project(&db, "a");
+        let (item_id, plan_id) = accepted(&db, project_id, "Login");
+        let stage = format!("{plan_id}.2");
+        set_column(&dir, project_id, &stage, column);
+        let updated_before = db.list_artifacts(project_id).unwrap()[0].updated_at;
+
+        let refused = db
+            .update_item_plan(project_id, &item_id, WITHOUT_LOT_TWO, None)
+            .unwrap_err();
+
+        assert!(
+            matches!(refused, DbError::PlanStageStarted(ref id) if id == &stage),
+            "{column}: {refused:?}"
+        );
+        assert!(!archived(&dir, project_id, &stage), "{column}: etapa iniciada não pode ser arquivada");
+        assert_eq!(stored_plan_text(&dir, project_id, &item_id), PROPOSAL, "{column}: o texto do plano deveria voltar atrás");
+        let artifact = &db.list_artifacts(project_id).unwrap()[0];
+        assert_eq!(artifact.points, ["Base", "Tela"], "{column}");
+        assert_eq!(artifact.updated_at, updated_before, "{column}");
+    }
+}
+
+#[test]
+fn remover_tarefa_iniciada_e_recusado_apontando_a_tarefa() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+    let task = format!("{plan_id}.1.2");
+    set_column(&dir, project_id, &task, "In progress");
+    let one_task = "Entrega o login completo.\n#lote 1|Base|Base pronta|Criar tabela\n#lote 2|Tela|Tela funcionando";
+
+    let refused = db.update_item_plan(project_id, &item_id, one_task, None).unwrap_err();
+
+    assert!(matches!(refused, DbError::PlanStageStarted(ref id) if id == &task), "{refused:?}");
+    assert!(!archived(&dir, project_id, &task));
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), PROPOSAL);
+}
+#[test]
+fn editar_com_updated_at_antigo_e_recusado_por_conflito_sem_gravar() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    let plan_id = format!("plano-{item_id}");
+    db.save_item_plan(project_id, &item_id, &proposed(PROPOSAL)).unwrap();
+    let read = db.list_artifacts(project_id).unwrap()[0].updated_at;
+
+    let first = db
+        .update_item_plan(project_id, &item_id, KEPT_AND_CHANGED_META, Some(read))
+        .unwrap();
+    assert!(first.updated_at > read, "a gravação deveria avançar updated_at");
+
+    let stale = db
+        .update_item_plan(project_id, &item_id, PROPOSAL, Some(read))
+        .unwrap_err();
+
+    assert!(matches!(stale, DbError::ArtifactConflict(ref id) if id == &plan_id), "{stale:?}");
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), KEPT_AND_CHANGED_META);
+    assert_eq!(db.list_artifacts(project_id).unwrap()[0].updated_at, first.updated_at);
+}
+
+#[test]
+fn editar_plano_inexistente_de_outro_item_ou_sem_lote_e_recusado() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let bare = card(&db, project_id, "Sem plano");
+    let item_id = card(&db, project_id, "Login");
+    let borrower = card(&db, project_id, "Usa plano alheio");
+    db.save_item_plan(project_id, &item_id, &proposed(PROPOSAL)).unwrap();
+    db.save_item_plan(project_id, &borrower, &linked(&borrower, &item_id, None)).unwrap();
+
+    let none = db.update_item_plan(project_id, &bare, PROPOSAL, None).unwrap_err();
+    assert!(matches!(none, DbError::PlanNotFound), "{none:?}");
+    let foreign = db.update_item_plan(project_id, &borrower, PROPOSAL, None).unwrap_err();
+    assert!(matches!(foreign, DbError::PlanNotFound), "{foreign:?}");
+    let no_lots = db.update_item_plan(project_id, &item_id, NO_LOTS_PROPOSAL, None).unwrap_err();
+    assert!(matches!(no_lots, DbError::PlanWithoutStages), "{no_lots:?}");
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), PROPOSAL);
+}
+
+#[test]
+fn importar_plano_cria_card_com_plano_proposto_sem_etapas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let before = items(&db, project_id).len();
+
+    let imported = db.import_plan(project_id, "  Login importado  ", PROPOSAL, Some("axiom")).unwrap();
+
+    assert_eq!(items(&db, project_id).len(), before + 1);
+    assert_eq!(imported.title, "Login importado");
+    let artifacts = db.list_artifacts(project_id).unwrap();
+    assert_eq!(artifacts.len(), 1);
+    assert_eq!(artifacts[0].id, format!("plano-{}", imported.id));
+    assert_eq!(artifacts[0].item_id, imported.id);
+    assert_eq!(artifacts[0].points, ["Base", "Tela"]);
+    assert_eq!(artifacts[0].author.as_deref(), Some("axiom"));
+    assert_eq!(stored_plan_text(&dir, project_id, &imported.id), PROPOSAL);
+    let plans = db.list_backlog(project_id).unwrap().plans;
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].state, "proposto");
+    assert!(plan_card_ids(&db, project_id, &imported.id).is_empty());
+}
+
+#[test]
+fn importar_plano_sem_lote_ou_em_projeto_inexistente_nao_deixa_card_orfao() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let before = items(&db, project_id).len();
+
+    let no_lots = db.import_plan(project_id, "Livre", NO_LOTS_PROPOSAL, None).unwrap_err();
+    assert!(matches!(no_lots, DbError::PlanWithoutStages), "{no_lots:?}");
+    let blank = db.import_plan(project_id, "Vazio", "   \n ", None).unwrap_err();
+    assert!(matches!(blank, DbError::InvalidBacklogPlan(_)), "{blank:?}");
+    let missing_project = db.import_plan(project_id + 99, "Outro", PROPOSAL, None).unwrap_err();
+    assert!(!matches!(missing_project, DbError::PlanWithoutStages), "{missing_project:?}");
+
+    assert_eq!(items(&db, project_id).len(), before);
+    let orphans: i64 = dir
+        .raw()
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM backlog_items) + (SELECT COUNT(*) FROM item_plans) \
+             + (SELECT COUNT(*) FROM artifacts) + (SELECT COUNT(*) FROM artifact_criteria)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(orphans, before as i64);
+
+    let ok = db.import_plan(project_id, "Válido", SINGLE_LOT_PROPOSAL, None).unwrap();
+    assert_eq!(items(&db, project_id).len(), before + 1);
+    assert_eq!(db.list_artifacts(project_id).unwrap()[0].item_id, ok.id);
+}

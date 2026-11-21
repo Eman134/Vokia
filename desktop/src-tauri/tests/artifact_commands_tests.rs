@@ -15,9 +15,21 @@ fn todo_comando_do_dominio_artifacts_responde_a_dispatch_e_recusa_argumentos_vaz
 
     assert_eq!(
         artifact_cmds.len(),
-        8,
-        "devem existir 8 comandos no domínio artifacts"
+        10,
+        "devem existir 10 comandos no domínio artifacts"
     );
+    for expected in ["update_item_plan", "import_plan"] {
+        assert!(
+            artifact_cmds.iter().any(|cmd| cmd["name"] == expected),
+            "{expected} deveria estar exposto no domínio artifacts"
+        );
+    }
+    for ui_only in ["save_plan_markdown", "pick_plan_file"] {
+        assert!(
+            !artifact_cmds.iter().any(|cmd| cmd["name"] == ui_only),
+            "{ui_only} abre diálogo nativo e não pode ser exposto"
+        );
+    }
 
     for cmd in &artifact_cmds {
         let name = cmd["name"].as_str().expect("nome do comando");

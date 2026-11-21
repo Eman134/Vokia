@@ -67,6 +67,10 @@ pub(crate) fn run() {
             commands::artifacts::update_artifact,
             commands::artifacts::delete_artifact,
             commands::artifacts::set_artifact_check,
+            commands::artifacts::update_item_plan,
+            commands::artifacts::import_plan,
+            commands::artifacts::save_plan_markdown,
+            commands::artifacts::pick_plan_file,
             commands::artifacts::set_artifact_criterion,
             // attachments
             commands::attachments::pick_attachment_files,

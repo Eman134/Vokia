@@ -19,6 +19,7 @@ mod settings;
 
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
+pub use artifacts::Artifact;
 pub use artifact_documents::{
     ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactSummary, NewArtifactDocument,
 };

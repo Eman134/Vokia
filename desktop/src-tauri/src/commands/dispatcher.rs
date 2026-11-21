@@ -298,6 +298,30 @@ fn schema_set_artifact_criterion() -> Value {
     )
 }
 
+fn schema_update_item_plan() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "itemId": { "type": "string" },
+            "proposal": { "type": "string", "description": "Texto completo do plano no protocolo #plano-pronto" },
+            "expectedUpdatedAt": { "type": "integer" },
+        }),
+        &["projectId", "itemId", "proposal"],
+    )
+}
+
+fn schema_import_plan() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "title": { "type": "string" },
+            "proposal": { "type": "string", "description": "Plano no protocolo, com ao menos um #lote" },
+            "author": { "type": "string" },
+        }),
+        &["projectId", "title", "proposal"],
+    )
+}
+
 fn schema_erase_all_data() -> Value {
     obj_schema(json!({ "confirm": { "type": "boolean" } }), &["confirm"])
 }
@@ -309,7 +333,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("team", "answer_decision", "Responde a uma decisão pendente do fluxo.", "Para responder uma decisão pendente pedida ao usuário; precisa do id da decisão e do texto da resposta.", empty_object_schema),
     exposed("team", "list_agent_pauses", "Lista os agentes pausados por projeto.", "Para saber quais agentes estão pausados em cada projeto antes de delegar trabalho.", empty_object_schema),
     exposed("team", "list_interrupted_runs", "Lista as execuções interrompidas.", "Para ver execuções interrompidas que ainda podem ser retomadas ou descartadas.", empty_object_schema),
-    exposed("team", "resume_interrupted_run", "Retoma uma execução interrompida.", "Para continuar uma execução interrompida; liste antes com list_interrupted_runs e use o id dela.", empty_object_schema),
+    exposed("team", "resume_interrupted_run", "Retoma uma execução interrompida de onde parou, sem reenviar o pedido: entrega ao agente original (ou ao Ember, se já houve delegações) o estado parcial com delegações, mensagens e ferramentas já registradas. Parâmetro: id (de list_interrupted_runs). Devolve o RequestOutcome.", "Para continuar uma execução interrompida; liste antes com list_interrupted_runs e use o id dela.", empty_object_schema),
     exposed("team", "discard_interrupted_run", "Descarta uma execução interrompida.", "Para abandonar uma execução interrompida que não deve mais continuar.", empty_object_schema),
     exposed("team", "set_agent_paused", "Pausa ou retoma um agente em um projeto.", "Para pausar ou retomar um agente em um projeto sem excluí-lo.", empty_object_schema),
     exposed("team", "check_connection", "Verifica se o provedor padrão está acessível.", "Para verificar se o provedor padrão responde antes de culpar o agente por uma falha.", empty_object_schema),
@@ -353,6 +377,10 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("artifacts", "delete_artifact", "Exclui um artefato livre. Parâmetros: projectId, id. Planos (plano-*) não podem ser excluídos.", "Para remover um artefato livre que não serve mais; ação destrutiva, confirme com o usuário.", schema_artifact_ref),
     exposed("artifacts", "set_artifact_check", "Marca ou desmarca um item de checklist do corpo de um artefato. Parâmetros: projectId, id, index (0 é o primeiro \"- [ ]\" fora de blocos de código), done. Devolve o artefato.", "Para acompanhar a entrega de um checklist item a item sem reescrever o corpo inteiro.", schema_artifact_check),
     exposed("artifacts", "set_artifact_criterion", "Marca ou desmarca um critério de aceite de um plano. Parâmetros: projectId, artifactId, criterionId, done.", "Para marcar um critério de aceite de um plano (artefato plano-*) como cumprido ou pendente.", schema_set_artifact_criterion),
+    exposed("artifacts", "update_item_plan", "Reescreve o texto de um plano proposto ou aceito (protocolo #plano-pronto, #lote, #roteiro...). Parâmetros: projectId, itemId, proposal e expectedUpdatedAt opcional. Mantém os critérios já marcados e, no plano aceito, atualiza, cria ou arquiva as etapas. Devolve o plano.", "Para corrigir um plano sem refazê-lo: leia antes com get_artifact (id plano-<card>), envie o texto completo e o updatedAt lido em expectedUpdatedAt. Recusa remover etapa já iniciada.", schema_update_item_plan),
+    exposed("artifacts", "import_plan", "Importa um plano pronto no protocolo do Vokia como um card novo com plano proposto. Parâmetros: projectId, title, proposal (precisa de ao menos um #lote) e author opcional. Devolve o card criado.", "Para trazer para o Vokia um plano já escrito no protocolo (por exemplo, exportado de outro projeto); texto livre deve ser convertido antes por um agente.", schema_import_plan),
+    ui_only("artifacts", "save_plan_markdown", "Salva o plano em Markdown num arquivo escolhido pelo usuário."),
+    ui_only("artifacts", "pick_plan_file", "Abre o seletor de arquivo para importar um plano em Markdown ou texto."),
     ui_only("attachments", "pick_attachment_files", "Abre o seletor de arquivos para anexos."),
     exposed("attachments", "save_attachment_files", "Salva arquivos locais como anexos de um projeto.", "Para anexar arquivos locais a um projeto a partir de caminhos no disco.", empty_object_schema),
     ui_only("attachments", "save_attachment_bytes", "Salva anexo enviado como bytes pela interface."),
@@ -583,6 +611,10 @@ async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, Str
         "set_artifact_check" => {
             json_result(artifacts::set_artifact_check_exec(app, parse_args(arguments)?))
         }
+        "update_item_plan" => {
+            json_result(artifacts::update_item_plan_exec(app, parse_args(arguments)?))
+        }
+        "import_plan" => json_result(artifacts::import_plan_exec(app, parse_args(arguments)?)),
         "set_artifact_criterion" => {
             json_result(artifacts::set_artifact_criterion_exec(app, parse_args(arguments)?))
         }

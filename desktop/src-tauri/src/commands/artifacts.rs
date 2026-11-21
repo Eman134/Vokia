@@ -1,9 +1,12 @@
-use serde::Deserialize;
+use std::fs;
+
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::db::{
-    ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactKind, ArtifactSummary, DbState,
-    NewArtifactDocument, ARTIFACT_KINDS,
+    Artifact, ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactKind, ArtifactSummary,
+    BacklogItem, DbError, DbState, NewArtifactDocument, ARTIFACT_KINDS,
 };
 use crate::orchestrator::emit_artifacts_changed;
 
@@ -55,6 +58,35 @@ pub(crate) struct SetArtifactCriterionArgs {
     pub artifact_id: String,
     pub criterion_id: String,
     pub done: bool,
+}
+
+const PLAN_FILE_FILTER_NAME: &str = "Markdown";
+const PLAN_SAVE_EXTENSIONS: [&str; 1] = ["md"];
+const PLAN_PICK_EXTENSIONS: [&str; 2] = ["md", "txt"];
+pub(crate) const PLAN_IMPORT_MAX_BYTES: u64 = 200_000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateItemPlanArgs {
+    pub project_id: i64,
+    pub item_id: String,
+    pub proposal: String,
+    pub expected_updated_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportPlanArgs {
+    pub project_id: i64,
+    pub title: String,
+    pub proposal: String,
+    pub author: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PlanFile {
+    pub name: String,
+    pub text: String,
 }
 
 // A gravação já está no banco; falha ao avisar o front não vira erro para quem chamou.
@@ -134,6 +166,29 @@ pub(crate) fn set_artifact_check_exec(
     Ok(document)
 }
 
+pub(crate) fn update_item_plan_exec(
+    app: &AppHandle,
+    args: UpdateItemPlanArgs,
+) -> Result<Artifact, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    let artifact = db
+        .update_item_plan(args.project_id, &args.item_id, &args.proposal, args.expected_updated_at)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(app, args.project_id);
+    Ok(artifact)
+}
+
+pub(crate) fn import_plan_exec(app: &AppHandle, args: ImportPlanArgs) -> Result<BacklogItem, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    let item = db
+        .import_plan(args.project_id, &args.title, &args.proposal, args.author.as_deref())
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(app, args.project_id);
+    Ok(item)
+}
+
 pub(crate) fn set_artifact_criterion_exec(
     app: &AppHandle,
     args: SetArtifactCriterionArgs,
@@ -149,6 +204,92 @@ pub(crate) fn set_artifact_criterion_exec(
     .map_err(|error| error.to_string())?;
     notify_backlog_changed(app, args.project_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn update_item_plan(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+    proposal: String,
+    expected_updated_at: Option<i64>,
+) -> Result<Artifact, String> {
+    update_item_plan_exec(
+        &app,
+        UpdateItemPlanArgs {
+            project_id,
+            item_id,
+            proposal,
+            expected_updated_at,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn import_plan(
+    app: AppHandle,
+    project_id: i64,
+    title: String,
+    proposal: String,
+    author: Option<String>,
+) -> Result<BacklogItem, String> {
+    import_plan_exec(
+        &app,
+        ImportPlanArgs {
+            project_id,
+            title,
+            proposal,
+            author,
+        },
+    )
+}
+
+// None quando o usuário cancela o diálogo.
+#[tauri::command]
+pub async fn save_plan_markdown(
+    app: AppHandle,
+    suggested_name: String,
+    content: String,
+) -> Result<Option<String>, String> {
+    let Some(chosen) = app
+        .dialog()
+        .file()
+        .add_filter(PLAN_FILE_FILTER_NAME, &PLAN_SAVE_EXTENSIONS)
+        .set_file_name(&suggested_name)
+        .blocking_save_file()
+    else {
+        return Ok(None);
+    };
+    let path = chosen.into_path().map_err(|error| error.to_string())?;
+    fs::write(&path, content).map_err(|error| error.to_string())?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn pick_plan_file(app: AppHandle) -> Result<Option<PlanFile>, String> {
+    let Some(chosen) = app
+        .dialog()
+        .file()
+        .add_filter(PLAN_FILE_FILTER_NAME, &PLAN_PICK_EXTENSIONS)
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = chosen.into_path().map_err(|error| error.to_string())?;
+    let size = fs::metadata(&path).map_err(|error| error.to_string())?.len();
+    if size > PLAN_IMPORT_MAX_BYTES {
+        return Err(DbError::PlanFileTooLarge {
+            max: PLAN_IMPORT_MAX_BYTES as usize,
+        }
+        .to_string());
+    }
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    let text = String::from_utf8(bytes).map_err(|_| DbError::PlanFileNotText.to_string())?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Ok(Some(PlanFile { name, text }))
 }
 
 #[tauri::command]

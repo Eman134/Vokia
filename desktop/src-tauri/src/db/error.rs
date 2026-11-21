@@ -95,6 +95,11 @@ pub enum DbError {
     ArtifactFieldTooLong { field: &'static str, max: usize },
     EmptyArtifactTitle,
     EmptyArtifactPatch,
+    PlanNotFound,
+    PlanWithoutStages,
+    PlanStageStarted(String),
+    PlanFileTooLarge { max: usize },
+    PlanFileNotText,
 }
 
 impl DbError {
@@ -133,6 +138,11 @@ impl DbError {
                 | DbError::ArtifactFieldTooLong { .. }
                 | DbError::EmptyArtifactTitle
                 | DbError::EmptyArtifactPatch
+                | DbError::PlanNotFound
+                | DbError::PlanWithoutStages
+                | DbError::PlanStageStarted(_)
+                | DbError::PlanFileTooLarge { .. }
+                | DbError::PlanFileNotText
         )
     }
 }
@@ -377,6 +387,17 @@ impl fmt::Display for DbError {
             DbError::EmptyArtifactPatch => {
                 write!(f, "Informe ao menos um campo para atualizar o artefato.")
             }
+            DbError::PlanNotFound => write!(f, "Este item não tem um plano próprio para editar."),
+            DbError::PlanWithoutStages => {
+                write!(f, "O plano precisa de ao menos uma etapa (linha #lote).")
+            }
+            DbError::PlanStageStarted(id) => {
+                write!(f, "A etapa {id} já foi iniciada e não pode ser removida do plano.")
+            }
+            DbError::PlanFileTooLarge { max } => {
+                write!(f, "O arquivo passa de {max} bytes; escolha um arquivo menor.")
+            }
+            DbError::PlanFileNotText => write!(f, "O arquivo não é um texto UTF-8 legível."),
         }
     }
 }

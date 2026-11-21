@@ -6,11 +6,26 @@ import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
 import { agentName } from '../team/agents'
 import { useFeed } from '../team/useFeed'
-import { EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
-import { DECISION_QUESTION_PREFIX, DEFAULT_COLUMN, READY_COLUMN, type BacklogItem, type BacklogState } from './backlogTypes'
+import { importPlan, updateItemPlan, type PlanArtifactDetail } from '../artifacts/artifactApi'
+import { createBacklogItem, EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
+import {
+  DECISION_QUESTION_PREFIX,
+  DEFAULT_COLUMN,
+  ORIGIN_USER,
+  READY_COLUMN,
+  type BacklogItem,
+  type BacklogState,
+} from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { useTriage } from './useTriage'
-import { buildAdjustPrompt, buildPlanPrompt, isFinalReply, parseProposal, type ParsedProposal } from './planProposal'
+import {
+  buildAdjustPrompt,
+  buildImportPrompt,
+  buildPlanPrompt,
+  isFinalReply,
+  parseProposal,
+  type ParsedProposal,
+} from './planProposal'
 
 export type PlanTab = 'vincular' | 'pedir'
 export type PlanDepth = 'rapido' | 'completo'
@@ -28,8 +43,9 @@ export const NO_PLAN_TEXT = 'Este item ainda não tem plano. Os agentes só come
 export const REVIEWED_PLAN_META = 'proposta aceita'
 const PLAN_LINE_SEPARATOR = ' · '
 const PLAN_LINE_PROPOSED = 'proposta'
-const PLAN_LINE_GENERATING = 'escrevendo o plano…'
+export const PLAN_LINE_GENERATING = 'escrevendo o plano…'
 const NO_REPLY_ERROR = 'O agente terminou sem mandar um plano.'
+const NO_PROJECT_ERROR = 'Nenhum projeto está selecionado.'
 
 export interface LinkedPlan {
   id: string
@@ -165,16 +181,19 @@ export const useItemPlan = defineStore('itemPlan', () => {
     persist(itemId)
   }
 
+  function selectedProjectId(): number {
+    const projectId = projects.selected?.id
+    if (projectId === undefined) throw new Error(NO_PROJECT_ERROR)
+    return projectId
+  }
+
   async function dispatch(item: BacklogItem, agent: Agent, prompt: string): Promise<void> {
     const itemId = item.id
     states.value[itemId] = { state: 'gerando', agent }
     const tracked = states.value[itemId]
     let outcome: RequestOutcome | undefined
     try {
-      if (projects.selected === null) {
-        throw new Error('Nenhum projeto está selecionado.')
-      }
-      outcome = await sendRequest(prompt, agent, projects.selected.id, undefined, itemId)
+      outcome = await sendRequest(prompt, agent, selectedProjectId(), undefined, itemId)
     } catch (error) {
       if (states.value[itemId] === tracked) {
         states.value[itemId] = tracked.cancelled ? { state: 'vazio' } : { state: 'vazio', error: String(error) }
@@ -202,6 +221,34 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (!item || current?.state !== 'proposto' || !current.agent || !current.proposal || text === '') return
     if (isAgentAwaiting(current.agent)) return
     await dispatch(item, current.agent, buildAdjustPrompt(item, current.proposal, text))
+  }
+
+  // O card nasce antes da resposta para o fluxo de geração acompanhar o estado; retryItemId reaproveita o card de uma triagem que falhou.
+  async function importFree(title: string, text: string, agent: Agent, retryItemId?: string): Promise<string | undefined> {
+    if (isAgentAwaiting(agent)) return undefined
+    const projectId = selectedProjectId()
+    let item = retryItemId === undefined ? undefined : backlog.items.find((current) => current.id === retryItemId)
+    if (!item) {
+      const created = await createBacklogItem(projectId, { title, origin: ORIGIN_USER, links: [] })
+      await backlog.reloadAfterAgentChange(projectId)
+      item = backlog.items.find((current) => current.id === created.id) ?? created
+    }
+    void dispatch(item, agent, buildImportPrompt(title, text))
+    return item.id
+  }
+
+  async function importExact(title: string, protocol: string): Promise<BacklogItem> {
+    const projectId = selectedProjectId()
+    const item = await importPlan(projectId, title, protocol)
+    await backlog.reloadAfterAgentChange(projectId)
+    return item
+  }
+
+  async function edit(itemId: string, proposal: string, expectedUpdatedAt?: number): Promise<PlanArtifactDetail> {
+    const artifact = await updateItemPlan(selectedProjectId(), itemId, proposal, expectedUpdatedAt)
+    const current = states.value[itemId]
+    if (current) current.proposal = proposal
+    return artifact
   }
 
   function cancel(itemId: string): void {
@@ -325,6 +372,9 @@ export const useItemPlan = defineStore('itemPlan', () => {
     hasPendingQuestion,
     promoteInterim,
     adjust,
+    importFree,
+    importExact,
+    edit,
     cancel,
     accept,
     discard,

@@ -6,7 +6,10 @@ use crate::agents::Team;
 use crate::events::Agent;
 use crate::plan_proposal::{parse_proposal, PlanDraft};
 
-use super::artifacts::{artifact_exists, artifact_id, delete_artifact, replace_artifact};
+use super::artifacts::{
+    artifact_exists, artifact_id, artifact_updated_at, delete_artifact, read_plan_artifact, replace_artifact,
+    upsert_artifact_row, upsert_plan_criteria, Artifact,
+};
 use super::connection::Db;
 use super::error::DbError;
 
@@ -49,6 +52,7 @@ const USER_CREATED_TEXT: &str = "Pedido criado por você.";
 const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
 const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
 const PLAN_CARD_CREATED_TEXT: &str = "Etapa criada pelo plano aceito do item";
+const PLAN_IMPORTED_TEXT: &str = "Plano importado";
 
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
@@ -708,58 +712,172 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
-        let item = find_card(&tx, project_id, item_id)?;
-        if plan.state == EMPTY_PLAN {
-            let previous: Option<String> = tx
-                .query_row(
-                    "SELECT state FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
-                    params![project_id, item_id],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            tx.execute(
-                "DELETE FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
-                params![project_id, item_id],
-            )?;
-            // Descartar a proposta apaga o plano; desvincular um plano aceito o mantém (D3).
-            if previous.as_deref() == Some(PROPOSED_PLAN) {
-                delete_artifact(&tx, project_id, item_id)?;
-            }
-            tx.commit()?;
-            return Ok(());
-        }
-        let linked = plan.plan.as_ref();
-        tx.execute(
-            UPSERT_PLAN_SQL,
-            params![
-                project_id,
-                item_id,
-                plan.state,
-                plan.proposal,
-                linked.map(|linked| linked.id.as_str()),
-                linked.map(|linked| linked.name.as_str()),
-                linked.map(|linked| linked.meta.as_str()),
-                plan.agent,
-            ],
-        )?;
-        let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
-        let own_plan = linked.is_none_or(|linked| linked.id == item_id);
-        if let (Some(text), true) = (proposal, own_plan) {
-            let draft = parse_proposal(text);
-            let author = plan.agent.as_deref();
-            if plan.state == PROPOSED_PLAN {
-                replace_artifact(&tx, project_id, item_id, &item.title, text, author, &draft)?;
-            } else {
-                validate_item(&item)?;
-                if !artifact_exists(&tx, project_id, item_id)? {
-                    replace_artifact(&tx, project_id, item_id, &item.title, text, author, &draft)?;
-                }
-                create_plan_cards(&tx, project_id, &item, author, &draft)?;
-            }
-        }
+        write_item_plan(&tx, project_id, item_id, plan)?;
         tx.commit()?;
         Ok(())
     }
+
+    // Edita o texto de um plano proposto ou aceito sem perder os critérios já marcados.
+    // Plano aceito também sincroniza as etapas: existentes são atualizadas, novas inseridas e removidas arquivadas.
+    pub fn update_item_plan(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        proposal: &str,
+        expected_updated_at: Option<i64>,
+    ) -> Result<Artifact, DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let item = find_card(&tx, project_id, item_id)?;
+        let saved = tx
+            .query_row(
+                "SELECT state, plan_id, agent FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((state, linked_id, agent)) = saved else {
+            return Err(DbError::PlanNotFound);
+        };
+        let own_plan = linked_id.as_deref().is_none_or(|linked| linked == item_id);
+        if !own_plan || (state != PROPOSED_PLAN && state != LINKED_PLAN) {
+            return Err(DbError::PlanNotFound);
+        }
+        if is_blank(proposal) {
+            return Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED));
+        }
+        let draft = parse_proposal(proposal);
+        if draft.lots.is_empty() {
+            return Err(DbError::PlanWithoutStages);
+        }
+        let plan_id = artifact_id(item_id);
+        if let (Some(expected), Some(current)) =
+            (expected_updated_at, artifact_updated_at(&tx, project_id, &plan_id)?)
+        {
+            if expected != current {
+                return Err(DbError::ArtifactConflict(plan_id));
+            }
+        }
+        tx.execute(
+            "UPDATE item_plans SET text = ?3 WHERE project_id = ?1 AND item_id = ?2",
+            params![project_id, item_id, proposal],
+        )?;
+        upsert_artifact_row(&tx, project_id, item_id, &item.title, proposal, agent.as_deref(), &draft)?;
+        upsert_plan_criteria(&tx, project_id, &plan_id, &draft, true)?;
+        if state == LINKED_PLAN {
+            validate_item(&item)?;
+            sync_plan_cards(&tx, project_id, &item, agent.as_deref(), &draft)?;
+        }
+        let artifact = read_plan_artifact(&tx, project_id, &plan_id)?.ok_or(DbError::PlanNotFound)?;
+        tx.commit()?;
+        Ok(artifact)
+    }
+
+    // Card e plano proposto nascem na mesma transação: plano recusado não deixa card órfão.
+    pub fn import_plan(
+        &self,
+        project_id: i64,
+        title: &str,
+        proposal: &str,
+        author: Option<&str>,
+    ) -> Result<BacklogItem, DbError> {
+        let title = normalized_title(title)?;
+        if is_blank(proposal) {
+            return Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED));
+        }
+        if parse_proposal(proposal).lots.is_empty() {
+            return Err(DbError::PlanWithoutStages);
+        }
+        let plan = ItemPlanInput {
+            state: PROPOSED_PLAN.to_string(),
+            proposal: Some(proposal.to_string()),
+            plan: None,
+            agent: author.map(str::to_string),
+        };
+        validate_plan(&plan)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let (id, position) = next_card_id(&tx, project_id)?;
+        let draft = CardDraft {
+            title,
+            kind: USER_CARD_TYPE,
+            owner: USER_OWNER,
+            description: None,
+            origin: ORIGIN_USER,
+            activity: vec![activity_entry(&id, 1, PLAN_IMPORTED_TEXT.to_string())],
+            links: Vec::new(),
+        };
+        insert_card(&tx, project_id, &fresh_card(&id, draft), position)?;
+        write_item_plan(&tx, project_id, &id, &plan)?;
+        let stored = find_card(&tx, project_id, &id)?;
+        tx.commit()?;
+        Ok(stored)
+    }
+}
+
+fn write_item_plan(
+    conn: &Connection,
+    project_id: i64,
+    item_id: &str,
+    plan: &ItemPlanInput,
+) -> Result<(), DbError> {
+    let item = find_card(conn, project_id, item_id)?;
+    if plan.state == EMPTY_PLAN {
+        let previous: Option<String> = conn
+            .query_row(
+                "SELECT state FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        conn.execute(
+            "DELETE FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+            params![project_id, item_id],
+        )?;
+        // Descartar a proposta apaga o plano; desvincular um plano aceito o mantém (D3).
+        if previous.as_deref() == Some(PROPOSED_PLAN) {
+            delete_artifact(conn, project_id, item_id)?;
+        }
+        return Ok(());
+    }
+    let linked = plan.plan.as_ref();
+    conn.execute(
+        UPSERT_PLAN_SQL,
+        params![
+            project_id,
+            item_id,
+            plan.state,
+            plan.proposal,
+            linked.map(|linked| linked.id.as_str()),
+            linked.map(|linked| linked.name.as_str()),
+            linked.map(|linked| linked.meta.as_str()),
+            plan.agent,
+        ],
+    )?;
+    let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
+    let own_plan = linked.is_none_or(|linked| linked.id == item_id);
+    if let (Some(text), true) = (proposal, own_plan) {
+        let draft = parse_proposal(text);
+        let author = plan.agent.as_deref();
+        if plan.state == PROPOSED_PLAN {
+            replace_artifact(conn, project_id, item_id, &item.title, text, author, &draft)?;
+        } else {
+            validate_item(&item)?;
+            if !artifact_exists(conn, project_id, item_id)? {
+                replace_artifact(conn, project_id, item_id, &item.title, text, author, &draft)?;
+            }
+            create_plan_cards(conn, project_id, &item, author, &draft)?;
+        }
+    }
+    Ok(())
 }
 
 fn is_blank(text: &str) -> bool {
@@ -1038,6 +1156,178 @@ fn create_plan_cards(
         refresh_children(conn, project_id, &stage.id)?;
     }
     refresh_children(conn, project_id, &item.id)?;
+    Ok(())
+}
+
+struct StoredPlanCard {
+    id: String,
+    title: String,
+    column: String,
+    archived: bool,
+}
+
+fn plan_children(conn: &Connection, project_id: i64, parent: &str) -> Result<Vec<StoredPlanCard>, DbError> {
+    let mut statement = conn.prepare(
+        "SELECT id, title, \"column\", archived_at IS NOT NULL FROM backlog_items WHERE project_id = ?1 AND parent = ?2",
+    )?;
+    let rows = statement.query_map(params![project_id, parent], |row| {
+        Ok(StoredPlanCard {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            column: row.get(2)?,
+            archived: row.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+// Só Backlog e Ready ainda não começaram; daí em diante a etapa tem trabalho feito e não sai do plano.
+fn is_unstarted(column: &str) -> bool {
+    column == DEFAULT_COLUMN || column == READY_COLUMN
+}
+
+fn is_numbered_child(id: &str, prefix: &str) -> bool {
+    id.strip_prefix(prefix)
+        .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn archive_plan_card(conn: &Connection, project_id: i64, card: &StoredPlanCard) -> Result<(), DbError> {
+    let children = plan_children(conn, project_id, &card.id)?;
+    let started = std::iter::once(card)
+        .chain(children.iter().filter(|child| !child.archived))
+        .find(|candidate| !is_unstarted(&candidate.column));
+    if let Some(started) = started {
+        return Err(DbError::PlanStageStarted(started.id.clone()));
+    }
+    let now = Local::now().to_rfc3339();
+    for id in std::iter::once(&card.id).chain(children.iter().map(|child| &child.id)) {
+        conn.execute(
+            "UPDATE backlog_items SET archived_at = ?3 WHERE project_id = ?1 AND id = ?2 AND archived_at IS NULL",
+            params![project_id, id, now],
+        )?;
+    }
+    Ok(())
+}
+
+// Mesmo id, mesma posição: título e descrição seguem o plano; o que sobra no banco é arquivado ou recusado.
+fn sync_plan_level(
+    conn: &Connection,
+    project_id: i64,
+    item: &BacklogItem,
+    author: &str,
+    parent: &str,
+    prefix: &str,
+    wanted: &[PlanCard<'_>],
+) -> Result<(), DbError> {
+    let stored = plan_children(conn, project_id, parent)?;
+    for card in wanted {
+        if stored.iter().any(|existing| existing.id == card.id) {
+            conn.execute(
+                "UPDATE backlog_items SET title = ?3, description = ?4, archived_at = NULL \
+                 WHERE project_id = ?1 AND id = ?2",
+                params![project_id, card.id, card.title, card.description],
+            )?;
+        } else {
+            insert_plan_card(conn, project_id, item, author, card)?;
+        }
+    }
+    for existing in stored
+        .iter()
+        .filter(|existing| !existing.archived && is_numbered_child(&existing.id, prefix))
+        .filter(|existing| !wanted.iter().any(|card| card.id == existing.id))
+    {
+        archive_plan_card(conn, project_id, existing)?;
+    }
+    refresh_children(conn, project_id, parent)?;
+    Ok(())
+}
+
+// Cada item novo (lote ou tarefa) ganha o id de um card existente sob o mesmo prefixo: primeiro o de mesmo título; depois,
+// para o que mudou de título, o card da mesma posição (só se nada saiu, ou se esse card ainda não começou); o resto recebe
+// um id novo. O card que sobra sem item é o removido, e quem decide entre arquivar e recusar é sync_plan_level.
+fn assign_child_ids(prefix: &str, stored: &[StoredPlanCard], titles: &[&str]) -> Vec<String> {
+    let owned: Vec<&StoredPlanCard> = stored.iter().filter(|card| is_numbered_child(&card.id, prefix)).collect();
+    let mut assigned: Vec<Option<&str>> = vec![None; titles.len()];
+    let is_free = |assigned: &[Option<&str>], id: &str| !assigned.contains(&Some(id));
+    for (index, title) in titles.iter().enumerate() {
+        let same_title = owned
+            .iter()
+            .filter(|card| is_free(&assigned, &card.id) && card.title.trim().eq_ignore_ascii_case(title.trim()))
+            .min_by_key(|card| card.archived);
+        assigned[index] = same_title.map(|card| card.id.as_str());
+    }
+    let removed = titles.len() < owned.iter().filter(|card| !card.archived).count();
+    for index in 0..titles.len() {
+        if assigned[index].is_some() {
+            continue;
+        }
+        let position = format!("{prefix}{}", index + 1);
+        let same_position = owned
+            .iter()
+            .find(|card| card.id == position && is_free(&assigned, &card.id))
+            .filter(|card| !removed || is_unstarted(&card.column));
+        assigned[index] = same_position.map(|card| card.id.as_str());
+    }
+    let mut last = owned
+        .iter()
+        .filter_map(|card| card.id.strip_prefix(prefix)?.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    assigned
+        .into_iter()
+        .map(|id| match id {
+            Some(id) => id.to_string(),
+            None => {
+                last += 1;
+                format!("{prefix}{last}")
+            }
+        })
+        .collect()
+}
+
+fn sync_plan_cards(
+    conn: &Connection,
+    project_id: i64,
+    item: &BacklogItem,
+    author: Option<&str>,
+    draft: &PlanDraft,
+) -> Result<(), DbError> {
+    let plan_id = artifact_id(&item.id);
+    let author = author.unwrap_or(item.who.as_str());
+    let stored = plan_children(conn, project_id, &item.id)?;
+    let stage_prefix = format!("{plan_id}.");
+    let stage_titles: Vec<&str> = draft.lots.iter().map(|lot| lot.title.as_str()).collect();
+    let stage_ids = assign_child_ids(&stage_prefix, &stored, &stage_titles);
+    let stages: Vec<PlanCard<'_>> = draft
+        .lots
+        .iter()
+        .zip(stage_ids)
+        .map(|(lot, id)| PlanCard {
+            id,
+            parent: &item.id,
+            title: &lot.title,
+            description: Some(lot.meta.as_str()).filter(|meta| !meta.is_empty()),
+        })
+        .collect();
+    sync_plan_level(conn, project_id, item, author, &item.id, &stage_prefix, &stages)?;
+    for (stage, lot) in stages.iter().zip(&draft.lots) {
+        let task_prefix = format!("{}.", stage.id);
+        let task_titles: Vec<&str> = lot.tasks.iter().map(String::as_str).collect();
+        let stored_tasks = plan_children(conn, project_id, &stage.id)?;
+        let task_ids = assign_child_ids(&task_prefix, &stored_tasks, &task_titles);
+        let subtasks: Vec<PlanCard<'_>> = lot
+            .tasks
+            .iter()
+            .zip(task_ids)
+            .map(|(task, id)| PlanCard {
+                id,
+                parent: &stage.id,
+                title: task,
+                description: None,
+            })
+            .collect();
+        sync_plan_level(conn, project_id, item, author, &stage.id, &task_prefix, &subtasks)?;
+    }
     Ok(())
 }
 

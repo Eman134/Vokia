@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 
 use crate::plan_proposal::PlanDraft;
@@ -17,10 +17,10 @@ const UPSERT_ARTIFACT_SQL: &str = "INSERT INTO artifacts (project_id, id, item_i
     ON CONFLICT(project_id, id) DO UPDATE SET title = excluded.title, summary = excluded.summary, \
     points = excluded.points, estimate = excluded.estimate, risks = excluded.risks, \
     tags = excluded.tags, detail = excluded.detail, author = excluded.author, \
-    updated_at = excluded.updated_at";
+    updated_at = MAX(excluded.updated_at, artifacts.updated_at + 1)";
 
 const INSERT_CRITERION_SQL: &str = "INSERT INTO artifact_criteria \
-    (project_id, artifact_id, id, position, text, done) VALUES (?1, ?2, ?3, ?4, ?5, 0)";
+    (project_id, artifact_id, id, position, text, done) VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 
 const ARTIFACT_COLUMNS: &str = "id, item_id, title, summary, points, estimate, risks, tags, detail, \
     author, created_at, updated_at";
@@ -146,13 +146,25 @@ pub(super) fn replace_artifact(
     author: Option<&str>,
     draft: &PlanDraft,
 ) -> rusqlite::Result<()> {
-    let id = artifact_id(item_id);
+    upsert_artifact_row(conn, project_id, item_id, title, text, author, draft)?;
+    upsert_plan_criteria(conn, project_id, &artifact_id(item_id), draft, false)
+}
+
+pub(super) fn upsert_artifact_row(
+    conn: &Connection,
+    project_id: i64,
+    item_id: &str,
+    title: &str,
+    text: &str,
+    author: Option<&str>,
+    draft: &PlanDraft,
+) -> rusqlite::Result<()> {
     let points: Vec<&str> = draft.lots.iter().map(|lot| lot.title.as_str()).collect();
     conn.execute(
         UPSERT_ARTIFACT_SQL,
         params![
             project_id,
-            id,
+            artifact_id(item_id),
             item_id,
             title,
             draft.summary,
@@ -164,17 +176,46 @@ pub(super) fn replace_artifact(
             author,
         ],
     )?;
+    Ok(())
+}
+
+// Com keep_marks, o critério de mesmo id e mesmo texto mantém o done; qualquer mudança nele volta desmarcado.
+pub(super) fn upsert_plan_criteria(
+    conn: &Connection,
+    project_id: i64,
+    id: &str,
+    draft: &PlanDraft,
+    keep_marks: bool,
+) -> rusqlite::Result<()> {
+    let previous = if keep_marks { read_criteria(conn, project_id, id)? } else { Vec::new() };
     conn.execute(
         "DELETE FROM artifact_criteria WHERE project_id = ?1 AND artifact_id = ?2",
         params![project_id, id],
     )?;
     for lot in draft.lots.iter().filter(|lot| !lot.meta.is_empty()) {
+        let criterion_id = format!("{CRITERION_ID_PREFIX}{}", lot.n);
+        let done = previous
+            .iter()
+            .any(|old| old.done && old.id == criterion_id && old.text == lot.meta);
         conn.execute(
             INSERT_CRITERION_SQL,
-            params![project_id, id, format!("{CRITERION_ID_PREFIX}{}", lot.n), lot.n, lot.meta],
+            params![project_id, id, criterion_id, lot.n, lot.meta, done],
         )?;
     }
     Ok(())
+}
+
+pub(super) fn artifact_updated_at(
+    conn: &Connection,
+    project_id: i64,
+    id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT updated_at FROM artifacts WHERE project_id = ?1 AND id = ?2",
+        params![project_id, id],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 // Os critérios saem junto pela chave estrangeira (ON DELETE CASCADE).
@@ -217,7 +258,7 @@ pub(super) fn json_list(row: &Row<'_>, column: &str, item_id: &str) -> Result<Ve
     })
 }
 
-fn read_criteria(conn: &Connection, project_id: i64, artifact_id: &str) -> Result<Vec<ArtifactCriterion>, DbError> {
+fn read_criteria(conn: &Connection, project_id: i64, artifact_id: &str) -> rusqlite::Result<Vec<ArtifactCriterion>> {
     let mut statement = conn.prepare(
         "SELECT id, text, done FROM artifact_criteria \
          WHERE project_id = ?1 AND artifact_id = ?2 ORDER BY position",
@@ -229,7 +270,7 @@ fn read_criteria(conn: &Connection, project_id: i64, artifact_id: &str) -> Resul
             done: row.get(2)?,
         })
     })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(DbError::from)
+    rows.collect()
 }
 
 #[cfg(test)]
