@@ -44,8 +44,8 @@ const emit = defineEmits<{
 const AT_ICON_SIZE = 12
 const RAISED_ICON_SIZE = 9
 
-// Deve casar com o px-3.5 do campo e do espelho, para o menu cair sobre o @.
-const FIELD_PADDING_X = 14
+// Deve casar com o pl-2 do campo e do espelho, para o menu cair sobre o @.
+const FIELD_PADDING_X = 8
 // Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
 const MENU_WIDTH_BY_KIND = { mention: 260, command: 300 } as const
 
@@ -188,19 +188,6 @@ defineExpose({ isFocused })
 </script>
 
 <template>
-  <UiButton
-    v-if="canAsk && !composerHidden"
-    variant="quiet"
-    size="sm"
-    :aria-label="ATTACH_LABEL"
-    :title="ATTACH_LABEL"
-    :disabled="attachments.saving.value || locked"
-    @press="attachments.pickFiles()"
-  >
-    <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
-    </svg>
-  </UiButton>
   <AttachmentChips
     v-if="canAsk && !composerHidden"
     :attachments="attachments.attachments.value"
@@ -209,56 +196,73 @@ defineExpose({ isFocused })
   />
   <div
     v-if="canAsk && !composerHidden"
-    ref="wrapperRef"
-    class="relative h-8.5 min-w-28 flex-1 overflow-hidden rounded-full bg-surface-2"
+    class="flex h-8.5 min-w-28 flex-1 items-center rounded-full bg-surface-2 pl-1.5 focus-within:outline-2 focus-within:outline-solid focus-within:outline-accent"
   >
-    <div
-      aria-hidden="true"
-      class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre px-3.5 text-label"
-      :style="{ transform: `translateX(${-scrollLeft}px)` }"
+    <UiButton
+      variant="quiet"
+      size="sm"
+      class="size-6.5 shrink-0 !px-0 text-muted hover:text-ink"
+      :aria-label="ATTACH_LABEL"
+      :title="ATTACH_LABEL"
+      :disabled="attachments.saving.value || locked"
+      @press="attachments.pickFiles()"
     >
-      <template v-for="(segment, index) in highlightSegments" :key="index">
-        <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
-        <span v-else :data-mention="segment.agent" class="relative text-accent">
-          <span
-            v-if="segment.text.startsWith(MENTION_TRIGGER)"
-            class="absolute top-1/2 left-0 -translate-y-1/2"
-            ><AgentPortrait :who="segment.agent" :size="AT_ICON_SIZE"
-          /></span>
-          <span v-else class="absolute bottom-full left-0"
-            ><AgentPortrait :who="segment.agent" :size="RAISED_ICON_SIZE"
-          /></span>
-          <span :class="segment.text.startsWith(MENTION_TRIGGER) ? 'text-transparent' : ''">{{
-            segment.text.startsWith(MENTION_TRIGGER) ? MENTION_TRIGGER : ''
-          }}</span
-          >{{ segment.text.startsWith(MENTION_TRIGGER) ? segment.text.slice(MENTION_TRIGGER.length) : segment.text }}
-        </span>
-      </template>
-      <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
-      <span ref="measureRef" class="invisible absolute whitespace-pre">{{
-        draft.slice(0, activeMatch?.start ?? 0)
-      }}</span>
+      <svg viewBox="0 0 24 24" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
+      </svg>
+    </UiButton>
+    <div
+      ref="wrapperRef"
+      class="relative h-full min-w-0 flex-1 overflow-hidden rounded-r-full"
+    >
+      <div
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-y-0 left-0 flex items-center whitespace-pre pl-2 pr-3.5 text-label"
+        :style="{ transform: `translateX(${-scrollLeft}px)` }"
+      >
+        <template v-for="(segment, index) in highlightSegments" :key="index">
+          <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
+          <span v-else :data-mention="segment.agent" class="relative text-accent">
+            <span
+              v-if="segment.text.startsWith(MENTION_TRIGGER)"
+              class="absolute top-1/2 left-0 -translate-y-1/2"
+              ><AgentPortrait :who="segment.agent" :size="AT_ICON_SIZE"
+            /></span>
+            <span v-else class="absolute bottom-full left-0"
+              ><AgentPortrait :who="segment.agent" :size="RAISED_ICON_SIZE"
+            /></span>
+            <span :class="segment.text.startsWith(MENTION_TRIGGER) ? 'text-transparent' : ''">{{
+              segment.text.startsWith(MENTION_TRIGGER) ? MENTION_TRIGGER : ''
+            }}</span
+            >{{ segment.text.startsWith(MENTION_TRIGGER) ? segment.text.slice(MENTION_TRIGGER.length) : segment.text }}
+          </span>
+        </template>
+        <span v-if="queueHint" class="text-muted">{{ queueHint }}</span>
+        <span ref="measureRef" class="invisible absolute whitespace-pre">{{
+          draft.slice(0, activeMatch?.start ?? 0)
+        }}</span>
+      </div>
+      <input
+        ref="inputRef"
+        v-model="draft"
+        role="combobox"
+        aria-autocomplete="list"
+        :aria-expanded="menuOpen"
+        :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
+        :aria-activedescendant="activeOptionId"
+        class="relative h-full w-full bg-transparent pl-2 pr-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent/25 selection:text-transparent disabled:opacity-40"
+        :placeholder="placeholder"
+        :disabled="locked"
+        @keydown="onKeydown"
+        @input="syncCaret"
+        @click="syncCaret"
+        @keyup="syncCaret"
+        @select="syncCaret"
+        @scroll="syncCaret"
+        @blur="dismissMenu"
+        @paste="onPaste"
+      />
     </div>
-    <input
-      ref="inputRef"
-      v-model="draft"
-      role="combobox"
-      aria-autocomplete="list"
-      :aria-expanded="menuOpen"
-      :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
-      :aria-activedescendant="activeOptionId"
-      class="relative h-full w-full bg-transparent px-3.5 text-label text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent/25 selection:text-transparent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-      :placeholder="placeholder"
-      :disabled="locked"
-      @keydown="onKeydown"
-      @input="syncCaret"
-      @click="syncCaret"
-      @keyup="syncCaret"
-      @select="syncCaret"
-      @scroll="syncCaret"
-      @blur="dismissMenu"
-      @paste="onPaste"
-    />
   </div>
   <CommandMenu
     v-if="menuOpen && menuKind === 'command'"
