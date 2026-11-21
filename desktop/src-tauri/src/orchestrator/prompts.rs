@@ -14,6 +14,8 @@ const MAESTRO_PINNED_LABEL: &str = "Projeto fixado pelo usuário:";
 const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
 const MAESTRO_EXTRA_LABEL: &str = "Instruções extras do agente:";
 const MAESTRO_COMMANDS_LABEL: &str = "Comandos disponíveis:";
+const MAESTRO_APP_COMMANDS_MCP: &str = " Você administra o Vokia: para gerenciar papéis, agentes, orquestração, provedores, canais, projetos ou configurações, descubra os comandos com app_commands_list (opcionalmente com domain; cada um traz when_to_use e o schema) e execute com app_command_call (name e arguments).";
+const MAESTRO_APP_COMMANDS_VOKIA_CLI: &str = " Use `vokia-cli` no terminal para acionar as ferramentas listadas abaixo. Você administra o Vokia: para gerenciar papéis, agentes, orquestração, provedores, canais, projetos ou configurações, liste os comandos com `vokia-cli commands [--domain <dom>]` (cada um traz when_to_use) e execute com `vokia-cli cmd <comando> --json <obj>`.";
 const NO_PROJECT_TEXT: &str = "nenhum";
 const CRITERIA_LABEL: &str = "Para concluir sua etapa:";
 const MAESTRO_TEAMS_LABEL: &str = "Times do Vokia:";
@@ -37,10 +39,10 @@ const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto,
 const DECISION_RULE: &str = "Quando precisar de uma decisão do usuário que não seja executar um comando (aprovar algo, escolher entre opções, responder uma pergunta ou revisar um lote), termine a resposta com uma linha exatamente assim: #decisao <tipo>|<título>|<detalhe>|<opção1>;<opção2>. O tipo é aprovacao, escolha, pergunta ou revisao; detalhe e opções podem ficar vazios. Não escreva nada depois dessa linha. Comandos o app já pergunta sozinho.";
 const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta set_variable (name, op, value) por variável alterada; use op append para listas; variáveis da tarefa são compartilhadas por padrão e todos podem ler e alterar, então use share false só para rascunho pessoal; get_variables para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request.";
 const TOOLS_RULE: &str =
-    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
+    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids. Para gerenciar papéis, agentes, orquestração, provedores, canais ou configurações do Vokia, descubra comandos com app_commands_list (opcionalmente filtrando domain) e execute com app_command_call.";
 const DELEGATION_TOOL_RULE: &str = "Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request. Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
 const PROMPT_RULES_VOKIA_CLI: &str = "Para registrar progresso, execute no terminal `vokia-cli set-variable --name <nome> --op <set|append> --value <valor>` (use `--int` para número inteiro; `--share` para compartilhar) e `vokia-cli get-variables` para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, execute `vokia-cli delegate --agent <nome> --request \"<pedido>\"`.";
-const TOOLS_RULE_VOKIA_CLI: &str = "Use a CLI `vokia-cli` no terminal para ler e mexer no backlog (`vokia-cli create-card`, `vokia-cli move-card`, `vokia-cli update-card`, `vokia-cli save-item-plan`), pedir uma decisão ao usuário (`vokia-cli request-decision`), ler/gravar variáveis ou listar todos os comandos (`vokia-cli tools`); nunca invente ids e não use marcadores de texto `#card`, `#decisao` ou `@Nome:`.";
+const TOOLS_RULE_VOKIA_CLI: &str = "Use a CLI `vokia-cli` no terminal para ler e mexer no backlog (`vokia-cli create-card`, `vokia-cli move-card`, `vokia-cli update-card`, `vokia-cli save-item-plan`), pedir uma decisão ao usuário (`vokia-cli request-decision`), ler/gravar variáveis ou listar todos os comandos (`vokia-cli tools`); nunca invente ids e não use marcadores de texto `#card`, `#decisao` ou `@Nome:`. Para gerenciar papéis, agentes, orquestração, provedores, canais ou configurações do Vokia, liste comandos com `vokia-cli commands [--domain <dom>]` e execute com `vokia-cli cmd <comando> --json <obj>`.";
 const DELEGATION_TOOL_RULE_VOKIA_CLI: &str = "Para pedir algo a outro agente do time, execute no terminal `vokia-cli delegate --agent <nome> --request \"<pedido>\"` (adicione `--item-id <id>` quando for card). Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar ou pedir decisão (`vokia-cli request-decision`), termine a resposta.";
 const INSTRUCTION_FILES_RULE: &str = "Antes de alterar um arquivo, leia o CLAUDE.md e o AGENTS.md da pasta desse arquivo, subindo até a raiz do projeto (o mais próximo primeiro); depois os da raiz do projeto; depois as instruções globais do usuário. A instrução mais específica vence em caso de conflito. Se a instrução do projeto contradizer o pedido, responda BLOQUEADO ao orquestrador.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
@@ -338,10 +340,10 @@ pub(super) fn maestro_role(
     let teams = maestro_teams_text(orchestration, team, paused)
         .map(|text| format!(" {text}"))
         .unwrap_or_default();
-    let cli_hint = if tool_mode == ToolPromptMode::VokiaCli {
-        " Use `vokia-cli` no terminal para acionar as ferramentas listadas abaixo."
-    } else {
-        ""
+    let cli_hint = match tool_mode {
+        ToolPromptMode::Mcp => MAESTRO_APP_COMMANDS_MCP,
+        ToolPromptMode::VokiaCli => MAESTRO_APP_COMMANDS_VOKIA_CLI,
+        ToolPromptMode::None => "",
     };
     let head =
         format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
@@ -427,4 +429,117 @@ pub(super) fn channel_note(name: &str, member_names: &[String]) -> String {
         "{CHANNEL_NOTE_PREFIX}{name} (membros: {}).",
         member_names.join(", ")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::{AgentProfile, AgentRegistry, Team};
+
+    fn with_test_context(check: impl FnOnce(&Team, &AgentProfile)) {
+        let dir = std::env::temp_dir().join(format!(
+            "vokia-prompts-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let team = AgentRegistry::load(&dir)
+            .team()
+            .expect("team padrão");
+        let profile = team.profiles().first().expect("profile").clone();
+        check(&team, &profile);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tools_rule_contem_orientacao_mcp_para_app_commands() {
+        assert!(TOOLS_RULE.contains("app_commands_list"));
+        assert!(TOOLS_RULE.contains("app_command_call"));
+        assert!(TOOLS_RULE.contains("opcionalmente filtrando domain"));
+    }
+
+    #[test]
+    fn tools_rule_vokia_cli_contem_orientacao_cli_para_commands() {
+        assert!(TOOLS_RULE_VOKIA_CLI.contains("vokia-cli commands [--domain <dom>]"));
+        assert!(TOOLS_RULE_VOKIA_CLI.contains("vokia-cli cmd <comando> --json <obj>"));
+    }
+
+    #[test]
+    fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
+        with_test_context(|team, _| {
+            let choices = ProjectChoices {
+                pinned: Some("projeto-a".to_string()),
+                labels: vec!["projeto-a".to_string()],
+            };
+
+            // Modo MCP
+            let prompt_mcp = maestro_role(
+                "Base Ember.",
+                &[],
+                &choices,
+                None,
+                None,
+                team,
+                &[],
+                ToolPromptMode::Mcp,
+            );
+            assert!(prompt_mcp.contains(MAESTRO_APP_COMMANDS_MCP));
+            assert!(prompt_mcp.contains("app_commands_list"));
+            assert!(prompt_mcp.contains("app_command_call"));
+            assert!(!prompt_mcp.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
+
+            // Modo VokiaCli
+            let prompt_cli = maestro_role(
+                "Base Ember.",
+                &[],
+                &choices,
+                None,
+                None,
+                team,
+                &[],
+                ToolPromptMode::VokiaCli,
+            );
+            assert!(prompt_cli.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
+            assert!(prompt_cli.contains("vokia-cli commands [--domain <dom>]"));
+            assert!(prompt_cli.contains("vokia-cli cmd <comando> --json <obj>"));
+            assert!(!prompt_cli.contains(MAESTRO_APP_COMMANDS_MCP));
+
+            // Modo None
+            let prompt_none = maestro_role(
+                "Base Ember.",
+                &[],
+                &choices,
+                None,
+                None,
+                team,
+                &[],
+                ToolPromptMode::None,
+            );
+            assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_MCP));
+            assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
+        });
+    }
+
+    #[test]
+    fn role_prompt_inclui_regras_de_ferramenta_conforme_tool_mode() {
+        with_test_context(|_, profile| {
+            // Modo MCP
+            let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp);
+            assert!(role_mcp.contains("app_commands_list"));
+            assert!(role_mcp.contains("app_command_call"));
+
+            // Modo VokiaCli
+            let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli);
+            assert!(role_cli.contains("vokia-cli commands"));
+            assert!(role_cli.contains("vokia-cli cmd"));
+
+            // Modo None
+            let role_none = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::None);
+            assert!(!role_none.contains("app_commands_list"));
+            assert!(!role_none.contains("vokia-cli commands"));
+        });
+    }
 }

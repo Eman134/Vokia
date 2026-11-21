@@ -949,3 +949,58 @@ fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes
     let card_id = world.create(&axiom, "Verificação regressão");
     assert!(!card_id.is_empty());
 }
+
+#[test]
+fn app_commands_list_e_commands_list_retornam_when_to_use_e_schema_com_filtro_domain() {
+    let world = world();
+    let project = world.project("mcp3");
+    let axiom = world.agent("axiom", "Axiom", project);
+
+    // 1. app_commands_list sem filtro devolve comandos com when_to_use preenchido
+    let outcome_todos = world.call(
+        &axiom,
+        "app_commands_list",
+        json!({}),
+    );
+    assert!(!outcome_todos.is_error);
+    let json_todos: Value = serde_json::from_str(&outcome_todos.text).expect("json app_commands_list");
+    let cmds = json_todos.as_array().expect("array commands");
+    assert!(!cmds.is_empty());
+    for cmd in cmds {
+        let when = cmd["when_to_use"].as_str().unwrap_or_default();
+        assert!(!when.is_empty(), "when_to_use vazio no comando {}", cmd["name"]);
+        assert!(cmd["inputSchema"].is_object(), "schema ausente no comando {}", cmd["name"]);
+    }
+
+    // 2. app_commands_list com filtro domain: roles devolve apenas os 4 comandos de roles
+    let outcome_roles = world.call(
+        &axiom,
+        "app_commands_list",
+        json!({ "domain": "roles" }),
+    );
+    assert!(!outcome_roles.is_error);
+    let json_roles: Value = serde_json::from_str(&outcome_roles.text).expect("json app_commands_list roles");
+    let roles_cmds = json_roles.as_array().expect("array roles");
+    assert_eq!(roles_cmds.len(), 4);
+    for cmd in roles_cmds {
+        assert_eq!(cmd["domain"], "roles");
+        let when = cmd["when_to_use"].as_str().unwrap_or_default();
+        assert!(!when.is_empty());
+    }
+
+    // 3. commands/list via JSON-RPC também retorna when_to_use
+    let body_list = json!({
+        "jsonrpc": "2.0",
+        "id": 99,
+        "method": "commands/list",
+        "params": { "domain": "agents" }
+    });
+    let reply_list = run(send(world.port, &Request::post(world.port, &axiom.token, body_list)));
+    assert_eq!(reply_list.status, 200);
+    let agents_cmds = reply_list.json()["result"]["commands"].as_array().cloned().expect("agents commands");
+    assert!(!agents_cmds.is_empty());
+    for cmd in &agents_cmds {
+        assert_eq!(cmd["domain"], "agents");
+        assert!(!cmd["when_to_use"].as_str().unwrap_or_default().is_empty());
+    }
+}

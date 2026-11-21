@@ -20,7 +20,7 @@ struct Endpoint {
 enum Action {
     Help,
     ListTools { json_raw: bool },
-    ListCommands { json_raw: bool },
+    ListCommands { json_raw: bool, domain: Option<String> },
     CallTool { name: String, arguments: Value },
     CallCommand { name: String, arguments: Value },
 }
@@ -71,11 +71,14 @@ fn main() -> ExitCode {
             "method": "tools/list",
             "params": {},
         }),
-        Action::ListCommands { .. } => json!({
+        Action::ListCommands { domain, .. } => json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "commands/list",
-            "params": {},
+            "params": match domain {
+                Some(domain) => json!({ "domain": domain }),
+                None => json!({}),
+            },
         }),
         Action::CallTool { name, arguments } => json!({
             "jsonrpc": "2.0",
@@ -139,7 +142,7 @@ fn main() -> ExitCode {
     };
 
     match action {
-        Action::ListTools { json_raw } | Action::ListCommands { json_raw } => {
+        Action::ListTools { json_raw } | Action::ListCommands { json_raw, .. } => {
             if json_raw {
                 println!(
                     "{}",
@@ -332,7 +335,13 @@ fn print_named_list(result: &Value, key: &str) {
     for item in items {
         let name = item.get("name").and_then(Value::as_str).unwrap_or("");
         let desc = item.get("description").and_then(Value::as_str).unwrap_or("");
-        println!("{name} — {desc}");
+        match item.get("domain").and_then(Value::as_str) {
+            Some(domain) => println!("[{domain}] {name} — {desc}"),
+            None => println!("{name} — {desc}"),
+        }
+        if let Some(when) = item.get("when_to_use").and_then(Value::as_str) {
+            println!("  Quando usar: {when}");
+        }
     }
 }
 
@@ -357,13 +366,20 @@ where
         }
         "commands" => {
             let mut json_raw = false;
-            for arg in rest {
-                match arg.as_str() {
+            let mut domain = None;
+            let mut i = 0;
+            while i < rest.len() {
+                match rest[i].as_str() {
                     "--json" => json_raw = true,
+                    "--domain" => {
+                        i += 1;
+                        domain = Some(next_val(rest, i, "--domain")?);
+                    }
                     other => return Err(format!("flag desconhecida em 'commands': {other}")),
                 }
+                i += 1;
             }
-            Ok(Action::ListCommands { json_raw })
+            Ok(Action::ListCommands { json_raw, domain })
         }
         "call" => parse_call(rest, read_stdin),
         "cmd" => parse_cmd(rest, read_stdin),
@@ -873,7 +889,7 @@ vokia-cli — cliente local das ferramentas do Vokia (requer {ENV_URL} e {ENV_TO
 Uso:
   vokia-cli tools [--json]
   vokia-cli call <tool_name> [--json <json_obj> | --stdin]
-  vokia-cli commands [--json]
+  vokia-cli commands [--domain <dom>] [--json]
   vokia-cli cmd <command_name> [--json <json_obj> | --stdin | --<flag> <valor>...]
   vokia-cli list-backlog [--column <col>]
   vokia-cli read-card --id <id>
@@ -995,5 +1011,90 @@ mod tests {
         let (status, body) = parse_http_response(raw).unwrap();
         assert_eq!(status, 200);
         assert_eq!(body, "hello world");
+    }
+
+    #[test]
+    fn parse_commands_com_domain_e_json() {
+        let com_domain = parse_args(
+            &s(&["commands", "--domain", "roles", "--json"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            com_domain,
+            Action::ListCommands {
+                json_raw: true,
+                domain: Some("roles".to_string()),
+            }
+        );
+
+        let ordem_invertida = parse_args(
+            &s(&["commands", "--json", "--domain", "channels"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            ordem_invertida,
+            Action::ListCommands {
+                json_raw: true,
+                domain: Some("channels".to_string()),
+            }
+        );
+
+        let sem_domain = parse_args(&s(&["commands", "--json"]), || Ok(String::new())).unwrap();
+        assert_eq!(
+            sem_domain,
+            Action::ListCommands {
+                json_raw: true,
+                domain: None,
+            }
+        );
+
+        let texto_puro = parse_args(&s(&["commands"]), || Ok(String::new())).unwrap();
+        assert_eq!(
+            texto_puro,
+            Action::ListCommands {
+                json_raw: false,
+                domain: None,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_commands_com_domain_sem_valor_retorna_erro() {
+        let err = parse_args(&s(&["commands", "--domain"]), || Ok(String::new())).unwrap_err();
+        assert!(err.contains("--domain"), "erro esperado: {err}");
+
+        let err_flag = parse_args(&s(&["commands", "--flag-invalida"]), || Ok(String::new())).unwrap_err();
+        assert!(err_flag.contains("--flag-invalida"), "erro esperado: {err_flag}");
+    }
+
+    #[test]
+    fn parse_cmd_com_json_e_flags() {
+        let cmd_json = parse_args(
+            &s(&["cmd", "role_create", "--json", r#"{"name":"Tester"}"#]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            cmd_json,
+            Action::CallCommand {
+                name: "role_create".to_string(),
+                arguments: json!({ "name": "Tester" }),
+            }
+        );
+
+        let cmd_flags = parse_args(
+            &s(&["cmd", "role_delete", "--id", "42"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            cmd_flags,
+            Action::CallCommand {
+                name: "role_delete".to_string(),
+                arguments: json!({ "id": 42 }),
+            }
+        );
     }
 }
