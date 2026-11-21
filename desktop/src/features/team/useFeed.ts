@@ -29,6 +29,8 @@ import { useBacklog } from '../backlog/useBacklog'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useAgentActivity } from '../teammap/useAgentActivity'
 import { useUsageLimit } from '../usage/useUsageLimit'
+import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
+import { useActiveLlm } from '../providers/useActiveLlm'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
 
@@ -188,6 +190,13 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'usage-limit':
         useUsageLimit().apply(event)
+        break
+      case 'model-unavailable':
+        useUsageLimit().suggestModelUnavailable(event)
+        break
+      case 'temporary-overrides-changed':
+        useTemporaryOverrides().apply(event.overrides)
+        useActiveLlm().syncOverrides(event.overrides)
         break
     }
   }

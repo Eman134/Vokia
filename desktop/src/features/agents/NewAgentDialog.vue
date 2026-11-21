@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCombobox from '../../ui/UiCombobox.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import { AVATAR_PROFILES } from '../identities/avatarProfiles'
 import AvatarPicker from '../identities/AvatarPicker.vue'
-import type { AgentDraft, AgentProfile } from '../team/teamApi'
+import { useProviders } from '../providers/useProviders'
+import type { AgentDraft, AgentProfile, LlmTarget, ModelTier } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import {
   AVATAR_LABEL,
   CANCEL_LABEL,
-  CLI_LABEL,
   CREATE_LABEL,
+  DEFAULT_PROVIDER_LABEL,
   DIALOG_TITLE,
   EDIT_TITLE,
+  EFFORT_LEVEL_LABEL,
+  EFFORT_LEVEL_OPTIONS,
+  FALLBACK_PROVIDER_LABEL,
   MODEL_LABEL,
   NAME_LABEL,
   NO_ROLES_HINT,
@@ -30,6 +36,7 @@ const emit = defineEmits<{ saved: [profile: AgentProfile]; close: [] }>()
 
 const roster = useRoster()
 const roles = useRoles()
+const providersStore = useProviders()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
 const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -49,13 +56,39 @@ const avatar = ref(
   props.agent?.avatar ?? (AVATAR_PROFILES.find((profile) => !usedAvatars.has(profile.id)) ?? AVATAR_PROFILES[0]).id,
 )
 const isBuiltin = computed(() => props.agent?.builtin ?? false)
+const followDefaultLlm = ref(props.agent?.followDefaultLlm ?? false)
 const cli = ref(props.agent?.cli ?? firstPreset?.id ?? '')
 const preset = computed(() => roster.presets.find((candidate) => candidate.id === cli.value))
+const modelMode = ref<'tier' | 'custom'>(
+  props.agent && props.agent.modelTier == null ? 'custom' : 'tier',
+)
+const modelTier = ref<ModelTier>(props.agent?.modelTier ?? 'intermediate')
 const model = ref(props.agent?.model ?? firstPreset?.defaultModel ?? '')
 const command = ref(props.agent?.command ?? preset.value?.defaultCommand ?? '')
+const fallbackCli = ref(props.agent?.fallback[0]?.cli ?? '')
+const fallbackTier = ref<ModelTier>(props.agent?.fallback[0]?.modelTier ?? 'intermediate')
 const commandId = `${titleId}-command`
 const submitting = ref(false)
 const failure = ref<string | null>(null)
+const discoverError = ref<string | null>(null)
+const discoveredModels = ref<string[]>([])
+
+const MODEL_MODE_OPTIONS = [
+  { label: 'Por nível', value: 'tier' },
+  { label: 'Modelo específico', value: 'custom' },
+] as const
+
+const discoveringModels = computed(() => Boolean(providersStore.discovering[cli.value]))
+
+const resolvedTierModel = computed(() => {
+  const tierModel = preset.value?.tiers?.[modelTier.value]?.trim()
+  if (tierModel) return tierModel
+  return preset.value?.defaultModel ?? ''
+})
+
+const effectiveModel = computed(() =>
+  modelMode.value === 'tier' ? resolvedTierModel.value : model.value.trim(),
+)
 
 const commandError = computed(() => {
   if (!failure.value) return undefined
@@ -80,23 +113,52 @@ const roleOptions = computed(() => {
   }
   return options
 })
-const cliOptions = computed(() => roster.presets.map((preset) => ({ label: preset.label, value: preset.id })))
-const modelOptions = computed(() => (preset.value?.models ?? []).map((candidate) => ({ label: candidate, value: candidate })))
-const canSave = computed(
-  () =>
-    name.value.trim() !== '' &&
-    role.value !== '' &&
-    cli.value !== '' &&
-    model.value !== '' &&
-    command.value.trim() !== '' &&
-    !isBuiltin.value &&
-    !submitting.value,
-)
+const cliOptions = computed(() => roster.presets.map((candidate) => ({ label: candidate.label, value: candidate.id })))
+const fallbackCliOptions = computed(() => {
+  const compatible = isBuiltin.value
+    ? roster.presets.filter((candidate) => candidate.supportsMcp)
+    : roster.presets
+  return [
+    { label: 'Usar fallback global', value: '' },
+    ...compatible.map((candidate) => ({ label: candidate.label, value: candidate.id })),
+  ]
+})
+const modelOptions = computed(() => {
+  const base = preset.value?.models ?? []
+  const merged = new Set([...base, ...discoveredModels.value])
+  return Array.from(merged)
+})
+
+const canSave = computed(() => {
+  if (submitting.value) return false
+  if (isBuiltin.value) {
+    return effectiveModel.value !== ''
+  }
+  if (name.value.trim() === '' || role.value === '') return false
+  if (followDefaultLlm.value) return true
+  return cli.value !== '' && effectiveModel.value !== '' && command.value.trim() !== ''
+})
 
 watch(cli, () => {
+  discoveredModels.value = []
+  discoverError.value = null
   model.value = preset.value?.defaultModel ?? ''
   command.value = preset.value?.defaultCommand ?? ''
 })
+
+async function refreshModels(): Promise<void> {
+  if (!cli.value || discoveringModels.value) return
+  discoverError.value = null
+  try {
+    const result = await providersStore.discover(cli.value)
+    discoveredModels.value = result.models
+    if (result.warning) {
+      discoverError.value = result.warning
+    }
+  } catch (err) {
+    discoverError.value = String(err)
+  }
+}
 
 function restoreDefaultCommand(): void {
   command.value = preset.value?.defaultCommand ?? ''
@@ -119,20 +181,48 @@ function close(): void {
   emit('close')
 }
 
+function buildFallbackList(): LlmTarget[] {
+  if (!fallbackCli.value) return []
+  const targetPreset = roster.presets.find((candidate) => candidate.id === fallbackCli.value)
+  const targetModel =
+    targetPreset?.tiers?.[fallbackTier.value]?.trim() || targetPreset?.defaultModel || ''
+  return [
+    {
+      cli: fallbackCli.value,
+      modelTier: fallbackTier.value,
+      model: targetModel,
+    },
+  ]
+}
+
 async function submit(): Promise<void> {
   if (!canSave.value) return
   submitting.value = true
   failure.value = null
-  const draft: AgentDraft = {
-    name: name.value,
-    role: role.value,
-    avatar: avatar.value,
-    cli: cli.value,
-    model: model.value,
-    command: command.value.trim(),
-  }
+  const fallback = buildFallbackList()
   try {
-    const profile = props.agent ? await roster.update(props.agent.id, draft) : await roster.create(draft)
+    let profile: AgentProfile
+    if (isBuiltin.value) {
+      profile = await roster.updateEmber({
+        cli: cli.value,
+        modelTier: modelMode.value === 'tier' ? modelTier.value : null,
+        model: effectiveModel.value,
+        fallback,
+      })
+    } else {
+      const draft: AgentDraft = {
+        name: name.value,
+        role: role.value,
+        avatar: avatar.value,
+        cli: cli.value,
+        model: effectiveModel.value,
+        modelTier: modelMode.value === 'tier' ? modelTier.value : null,
+        command: command.value.trim(),
+        followDefaultLlm: followDefaultLlm.value,
+        fallback,
+      }
+      profile = props.agent ? await roster.update(props.agent.id, draft) : await roster.create(draft)
+    }
     submitting.value = false
     previousFocus?.focus()
     emit('saved', profile)
@@ -161,34 +251,108 @@ onMounted(focusName)
       @keydown.tab="trapFocus($event, dialog)"
     >
       <h2 :id="titleId" class="text-control font-bold text-ink">{{ agent ? EDIT_TITLE : DIALOG_TITLE }}</h2>
-      <fieldset :disabled="submitting || isBuiltin" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+      <fieldset :disabled="submitting" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         <div class="flex flex-col gap-3" @keydown.enter.prevent="submit()">
-          <UiField v-model="name" :label="NAME_LABEL" />
+          <UiField v-model="name" :label="NAME_LABEL" :disabled="isBuiltin" />
           <label class="flex flex-col gap-1.5">
             <span class="text-label font-medium text-muted">{{ ROLE_LABEL }}</span>
-            <UiSelect v-model="role" :options="roleOptions" :label="ROLE_LABEL" placeholder="Escolha um papel" />
+            <UiSelect
+              v-model="role"
+              :options="roleOptions"
+              :label="ROLE_LABEL"
+              :disabled="isBuiltin"
+              placeholder="Escolha um papel"
+            />
           </label>
           <p v-if="roleOptions.length === 0" class="text-caption text-muted">{{ NO_ROLES_HINT }}</p>
         </div>
-        <div class="flex flex-col gap-1.5">
+        <div v-if="!isBuiltin" class="flex flex-col gap-1.5">
           <span :id="`${titleId}-avatar`" class="text-label font-medium text-muted">{{ AVATAR_LABEL }}</span>
           <AvatarPicker v-model="avatar" :label-id="`${titleId}-avatar`" :unavailable="avatarOwners" />
         </div>
-        <div class="flex gap-3">
+
+        <label v-if="!isBuiltin" class="flex cursor-pointer items-center gap-2 text-caption text-ink">
+          <input v-model="followDefaultLlm" type="checkbox" class="size-4 accent-accent" />
+          <span>Seguir padrão global do Vokia</span>
+        </label>
+
+        <template v-if="isBuiltin || !followDefaultLlm">
           <label class="flex flex-col gap-1.5">
-            <span class="text-label font-medium text-muted">{{ CLI_LABEL }}</span>
-            <UiSelect v-model="cli" :options="cliOptions" :label="CLI_LABEL" />
+            <span class="text-label font-medium text-muted">{{ DEFAULT_PROVIDER_LABEL }}</span>
+            <UiSelect
+              v-model="cli"
+              data-testid="agent-default-provider"
+              :options="cliOptions"
+              :label="DEFAULT_PROVIDER_LABEL"
+              :disabled="isBuiltin"
+            />
           </label>
-          <label class="flex flex-col gap-1.5">
-            <span class="text-label font-medium text-muted">{{ MODEL_LABEL }}</span>
-            <UiSelect v-model="model" :options="modelOptions" :label="MODEL_LABEL" />
+
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-label font-medium text-muted">{{ EFFORT_LEVEL_LABEL }}</span>
+              <UiSegmented
+                v-model="modelMode"
+                :options="MODEL_MODE_OPTIONS"
+                :label="EFFORT_LEVEL_LABEL"
+              />
+            </div>
+
+            <template v-if="modelMode === 'tier'">
+              <UiSelect
+                v-model="modelTier"
+                data-testid="agent-tier-select"
+                :options="EFFORT_LEVEL_OPTIONS"
+                :label="EFFORT_LEVEL_LABEL"
+              />
+              <p v-if="resolvedTierModel" class="text-small text-muted">
+                Resolve para: <span class="font-mono text-ink">{{ resolvedTierModel }}</span>
+              </p>
+            </template>
+
+            <template v-else>
+              <label class="flex flex-col gap-1.5">
+                <span class="text-label font-medium text-muted">{{ MODEL_LABEL }}</span>
+                <UiCombobox
+                  v-model="model"
+                  data-testid="agent-model-combobox"
+                  :options="modelOptions"
+                  :loading="discoveringModels"
+                  :show-refresh="true"
+                  refresh-label="Atualizar modelos"
+                  placeholder="Digite ou selecione um modelo"
+                  @refresh="refreshModels()"
+                />
+              </label>
+              <p v-if="discoverError" class="text-small text-warn-text">{{ discoverError }}</p>
+            </template>
+          </div>
+        </template>
+
+        <div class="flex gap-3">
+          <label class="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">{{ FALLBACK_PROVIDER_LABEL }}</span>
+            <UiSelect
+              v-model="fallbackCli"
+              data-testid="agent-fallback-provider"
+              :options="fallbackCliOptions"
+              :label="FALLBACK_PROVIDER_LABEL"
+            />
+          </label>
+          <label v-if="fallbackCli !== ''" class="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">{{ EFFORT_LEVEL_LABEL }}</span>
+            <UiSelect
+              v-model="fallbackTier"
+              :options="EFFORT_LEVEL_OPTIONS"
+              :label="EFFORT_LEVEL_LABEL"
+            />
           </label>
         </div>
-        <div class="flex flex-col gap-1.5">
+
+        <div v-if="!isBuiltin && !followDefaultLlm" class="flex flex-col gap-1.5">
           <div class="flex items-baseline justify-between gap-3">
             <label :for="commandId" class="text-label font-medium text-muted">{{ COMMAND_LABEL }}</label>
             <button
-              v-if="!isBuiltin"
               type="button"
               class="cursor-pointer text-caption text-muted hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="submitting || command === (preset?.defaultCommand ?? '')"
@@ -200,11 +364,10 @@ onMounted(focusName)
           <input
             :id="commandId"
             v-model="command"
-            :disabled="isBuiltin || submitting"
+            :disabled="submitting"
             :class="[
               'h-9 w-full min-w-0 rounded-control border bg-surface px-3 font-mono text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent',
               commandError ? 'border-danger' : 'border-line',
-              isBuiltin ? 'cursor-not-allowed opacity-60' : '',
             ]"
             :aria-invalid="Boolean(commandError)"
             @keydown.enter.prevent="submit()"

@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
 import type { Agent } from './events'
 import {
   createAgent,
@@ -7,9 +8,12 @@ import {
   listAgents,
   setAgentInstructions,
   updateAgent,
+  updateEmberLlm,
   type AgentDraft,
   type AgentProfile,
   type CliPreset,
+  type LlmTarget,
+  type ModelTier,
 } from './teamApi'
 
 export function normalizeName(text: string): string {
@@ -24,6 +28,7 @@ export const useRoster = defineStore('roster', () => {
     const listing = await listAgents()
     agents.value = listing.agents
     presets.value = listing.presets
+    void useTemporaryOverrides().load()
   }
 
   async function create(draft: AgentDraft): Promise<AgentProfile> {
@@ -35,6 +40,17 @@ export const useRoster = defineStore('roster', () => {
   async function update(id: Agent, draft: AgentDraft): Promise<AgentProfile> {
     const profile = await updateAgent(id, draft)
     agents.value = agents.value.map((agent) => (agent.id === id ? profile : agent))
+    return profile
+  }
+
+  async function updateEmber(params: {
+    cli?: string | null
+    modelTier?: ModelTier | null
+    model?: string | null
+    fallback?: LlmTarget[] | null
+  }): Promise<AgentProfile> {
+    const profile = await updateEmberLlm(params)
+    agents.value = agents.value.map((agent) => (agent.id === profile.id ? profile : agent))
     return profile
   }
 
@@ -75,6 +91,7 @@ export const useRoster = defineStore('roster', () => {
     load,
     create,
     update,
+    updateEmber,
     setInstructions,
     remove,
     profileOf,

@@ -1,8 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { VOKIA_EVENT, type Agent, type CliProblem, type VokiaEvent } from './events'
+import {
+  VOKIA_EVENT,
+  type Agent,
+  type CliProblem,
+  type OverrideReason,
+  type TemporaryOverride,
+  type VokiaEvent,
+} from './events'
 
-export type { UnlistenFn }
+export type { OverrideReason, TemporaryOverride, UnlistenFn }
 
 const CLI_PROBLEM_COMMAND = 'cli_problem'
 const SEND_REQUEST_COMMAND = 'send_request'
@@ -17,6 +24,11 @@ const CREATE_AGENT_COMMAND = 'create_agent'
 const UPDATE_AGENT_COMMAND = 'update_agent'
 const DELETE_AGENT_COMMAND = 'delete_agent'
 const SET_AGENT_INSTRUCTIONS_COMMAND = 'set_agent_instructions'
+const LIST_TEMPORARY_OVERRIDES_COMMAND = 'list_temporary_overrides'
+const SET_TEMPORARY_OVERRIDE_COMMAND = 'set_temporary_override'
+const CLEAR_TEMPORARY_OVERRIDE_COMMAND = 'clear_temporary_override'
+const CLEAR_ALL_TEMPORARY_OVERRIDES_COMMAND = 'clear_all_temporary_overrides'
+const UPDATE_EMBER_LLM_COMMAND = 'update_ember_llm'
 const LIST_INTERRUPTED_RUNS_COMMAND = 'list_interrupted_runs'
 const RESUME_INTERRUPTED_RUN_COMMAND = 'resume_interrupted_run'
 const DISCARD_INTERRUPTED_RUN_COMMAND = 'discard_interrupted_run'
@@ -37,6 +49,20 @@ export interface InterruptedRun {
   leader: boolean
 }
 
+export type ModelTier = 'basic' | 'intermediate' | 'advanced'
+
+export interface ModelTiers {
+  basic: string
+  intermediate: string
+  advanced: string
+}
+
+export interface LlmTarget {
+  cli: string
+  modelTier?: ModelTier | null
+  model?: string | null
+}
+
 export interface AgentProfile {
   id: Agent
   name: string
@@ -44,9 +70,12 @@ export interface AgentProfile {
   avatar: string
   cli: string
   model: string
+  modelTier?: ModelTier | null
   command: string
   builtin: boolean
   extraInstructions: string
+  followDefaultLlm: boolean
+  fallback: LlmTarget[]
 }
 
 export interface CliPreset {
@@ -55,6 +84,10 @@ export interface CliPreset {
   models: string[]
   defaultModel: string
   defaultCommand: string
+  tiers: ModelTiers
+  supportsMcp: boolean
+  supportsSandbox: boolean
+  builtinSeed: boolean
 }
 
 export interface TeamListing {
@@ -68,7 +101,10 @@ export interface AgentDraft {
   avatar: string
   cli: string
   model: string
+  modelTier?: ModelTier | null
   command: string
+  followDefaultLlm: boolean
+  fallback: LlmTarget[]
 }
 
 export function fetchCliProblem(): Promise<CliProblem | null> {
@@ -139,6 +175,50 @@ export function setAgentInstructions(id: Agent, text: string): Promise<AgentProf
 
 export function deleteAgent(id: Agent): Promise<void> {
   return invoke<void>(DELETE_AGENT_COMMAND, { id })
+}
+
+export function listTemporaryOverrides(): Promise<TemporaryOverride[]> {
+  return invoke<TemporaryOverride[]>(LIST_TEMPORARY_OVERRIDES_COMMAND)
+}
+
+export function setTemporaryOverride(params: {
+  agent: Agent
+  cli: string
+  modelTier?: ModelTier | null
+  model?: string | null
+  reason?: OverrideReason | null
+  expiresInMs?: number | null
+}): Promise<TemporaryOverride> {
+  return invoke<TemporaryOverride>(SET_TEMPORARY_OVERRIDE_COMMAND, {
+    agent: params.agent,
+    cli: params.cli,
+    modelTier: params.modelTier ?? null,
+    model: params.model ?? null,
+    reason: params.reason ?? null,
+    expiresInMs: params.expiresInMs ?? null,
+  })
+}
+
+export function clearTemporaryOverride(agent: Agent): Promise<void> {
+  return invoke<void>(CLEAR_TEMPORARY_OVERRIDE_COMMAND, { agent })
+}
+
+export function clearAllTemporaryOverrides(): Promise<void> {
+  return invoke<void>(CLEAR_ALL_TEMPORARY_OVERRIDES_COMMAND)
+}
+
+export function updateEmberLlm(params: {
+  cli?: string | null
+  modelTier?: ModelTier | null
+  model?: string | null
+  fallback?: LlmTarget[] | null
+}): Promise<AgentProfile> {
+  return invoke<AgentProfile>(UPDATE_EMBER_LLM_COMMAND, {
+    cli: params.cli ?? null,
+    modelTier: params.modelTier ?? null,
+    model: params.model ?? null,
+    fallback: params.fallback ?? null,
+  })
 }
 
 export function listenTeamEvents(onEvent: (event: VokiaEvent) => void): Promise<UnlistenFn> {

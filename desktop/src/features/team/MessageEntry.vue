@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
+import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
+import TemporaryOverrideBadge from '../agents/TemporaryOverrideBadge.vue'
 import type { AgentProfile } from './teamApi'
 import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
 import ActivityRow from './ActivityRow.vue'
@@ -21,6 +23,7 @@ import UiButton from '../../ui/UiButton.vue'
 const props = defineProps<{ entry: FeedEntry }>()
 
 const roster = useRoster()
+const overrides = useTemporaryOverrides()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
 
@@ -104,6 +107,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     <div class="flex flex-wrap items-center justify-end gap-1.5 text-caption text-muted">
       <UserAvatar :size="META_AVATAR_SIZE" :title="userProfile.displayName" />
       <span class="font-semibold text-ink">{{ speakerName(entry.from) }}</span>
+      <TemporaryOverrideBadge
+        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
+        :override="overrides.byAgent(entry.from)!"
+        :restoring="Boolean(overrides.restoring[entry.from])"
+        @restore="overrides.restore(entry.from)"
+      />
       <time>{{ TIME_FORMAT.format(entry.time) }}</time>
     </div>
   </div>
@@ -116,6 +125,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
       <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
       {{ speakerName(entry.from) }}
+      <TemporaryOverrideBadge
+        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
+        :override="overrides.byAgent(entry.from)!"
+        :restoring="Boolean(overrides.restoring[entry.from])"
+        @restore="overrides.restore(entry.from)"
+      />
     </span>
     <span aria-hidden="true" class="shrink-0 text-caption text-muted">→</span>
     <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
@@ -165,6 +180,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
       </span>
       <span class="font-semibold text-ink">{{ speakerName(entry.from) }}</span>
+      <TemporaryOverrideBadge
+        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
+        :override="overrides.byAgent(entry.from)!"
+        :restoring="Boolean(overrides.restoring[entry.from])"
+        @restore="overrides.restore(entry.from)"
+      />
       <time>{{ profile(entry.from)?.role }} · {{ TIME_FORMAT.format(entry.time) }}</time>
     </div>
   </div>

@@ -1,5 +1,11 @@
+export {
+  DEFAULT_PROVIDER_LABEL,
+  EFFORT_LEVEL_LABEL,
+  FALLBACK_PROVIDER_LABEL,
+} from './agentFormCopy'
 export const PAGE_TITLE = 'Agentes'
 export const PAGE_SUBTITLE = 'Quem trabalha no seu time e os papéis que eles assumem.'
+export const CONFIGURE_LLMS_LABEL = 'Configurar LLMs'
 export const TAB_AGENTS = 'Agentes'
 export const TAB_ROLES = 'Papéis'
 export const SEARCH_LABEL = 'Buscar por nome ou papel'
@@ -10,7 +16,7 @@ export const DELETE_LABEL = 'Excluir'
 export const DELETE_CONFIRM_LABEL = 'Excluir papel'
 export const NO_AGENTS_TEXT = 'Nenhum agente encontrado.'
 export const NO_ROLES_TEXT = 'Nenhum papel cadastrado ainda.'
-export const BUILTIN_TEXT = 'Agente embutido: não pode ser alterado.'
+export const BUILTIN_TEXT = 'Agente embutido: nome, papel, avatar e provedor principal são fixos.'
 export const DELETE_AGENT_CONFIRM_LABEL = 'Excluir agente'
 export const DELETE_AGENT_MESSAGE = 'Tira o agente do elenco. Os cards dele passam ao Ember; o histórico fica.'
 export const ROLE_NAME_LABEL = 'Nome'
