@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
@@ -136,6 +136,7 @@ impl ProviderAdapter {
                     pid,
                     provider,
                     mcp_session.as_ref(),
+                    console,
                 )
                 .await;
                 if let Some(session) = &mcp_session {
@@ -159,6 +160,7 @@ impl ProviderAdapter {
                     provider,
                     vokia_ref,
                     call.resume_session.as_deref(),
+                    console,
                 )
                 .await;
                 finalize_vokia_cli(result, access, call, vokia_cli)
@@ -180,6 +182,7 @@ impl ProviderAdapter {
                     provider,
                     vokia_ref,
                     call.resume_session.as_deref(),
+                    console,
                 )
                 .await;
                 finalize_vokia_cli(result, access, call, vokia_cli)
@@ -292,13 +295,17 @@ pub(crate) fn cli_has_tools(cli: &str, providers: &ProviderRegistry) -> bool {
         .is_ok_and(|provider| provider.has_tools())
 }
 
-pub(super) async fn run_cli_process(
+pub(super) async fn run_cli_process<F>(
     mut command: Command,
     access: Access<'_>,
     pid: &AtomicU32,
     stdin_input: Option<String>,
     classify: Option<(&ProviderConfig, &str)>,
-) -> Result<Vec<u8>, ClaudeError> {
+    mut on_line: F,
+) -> Result<Vec<u8>, ClaudeError>
+where
+    F: FnMut(&str),
+{
     if stdin_input.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -316,7 +323,37 @@ pub(super) async fn run_cli_process(
                 stdin.shutdown().await?;
             }
         }
-        child.wait_with_output().await
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        let stdout_fut = async {
+            let mut buf = Vec::new();
+            if let Some(out) = stdout {
+                let mut lines = BufReader::new(out).lines();
+                while let Some(line) = lines.next_line().await? {
+                    on_line(&line);
+                    buf.extend_from_slice(line.as_bytes());
+                    buf.push(b'\n');
+                }
+            }
+            Ok::<Vec<u8>, std::io::Error>(buf)
+        };
+
+        let stderr_fut = async {
+            let mut buf = Vec::new();
+            if let Some(mut err) = stderr {
+                err.read_to_end(&mut buf).await?;
+            }
+            Ok::<Vec<u8>, std::io::Error>(buf)
+        };
+
+        let (stdout_res, stderr_res) = tokio::join!(stdout_fut, stderr_fut);
+        let status = child.wait().await?;
+        Ok::<std::process::Output, std::io::Error>(std::process::Output {
+            status,
+            stdout: stdout_res?,
+            stderr: stderr_res?,
+        })
     };
 
     let output = match timeout(limit, io_future).await {

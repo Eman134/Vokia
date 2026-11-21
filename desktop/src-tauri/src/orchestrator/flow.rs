@@ -137,7 +137,12 @@ pub(super) async fn handle_request_from(
     if !start_or_enqueue(state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
-    run_flow(app, state, cli, key, request, context, &team).await
+    let item_id = context.item_id.clone();
+    let result = run_flow(app, state, cli, key.clone(), request, context, &team).await;
+    if result.is_err() {
+        abandon_flow(app, state, &key, item_id.as_deref());
+    }
+    result
 }
 
 pub async fn answer_decision(
@@ -644,8 +649,9 @@ fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: Reques
                 return;
             }
         };
-        if let Err(error) = run_flow(&app, &state, &cli, key, &request, context, &team).await {
+        if let Err(error) = run_flow(&app, &state, &cli, key.clone(), &request, context, &team).await {
             let _ = report_failure(&app, project_id, &error);
+            abandon_flow(&app, &state, &key, item_id.as_deref());
         }
     });
 }
@@ -1365,6 +1371,23 @@ async fn answer_once(
         .join("\n\n");
     if let Some(id) = batch {
         announce_batch(exchange.app, exchange.state, id);
+    } else {
+        if !text.is_empty() {
+            let _ = emit_message(
+                exchange.app,
+                project_id,
+                Speaker::from(agent.clone()),
+                Speaker::User,
+                &text,
+                exchange.channel_id,
+                None,
+                None,
+                None,
+            );
+        }
+        if let Some(item_id) = exchange.item_id {
+            let _ = mark_flow_end(exchange.state, project_id, item_id, &agent);
+        }
     }
     emit_state(exchange.app, project_id, agent, AgentState::Idle)?;
     Ok(text)
@@ -1428,6 +1451,8 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
             .as_ref()
             .and_then(|snapshot| placement_of(snapshot, &waiting.base))
             .map_or(1, |placement| placement.max_instances);
+        let item_id = waiting.context.item_id.clone();
+        let batch_id = waiting.context.batch;
         if let Err(error) = start_dispatch(
             app,
             state,
@@ -1440,6 +1465,12 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
             false,
         ) {
             let _ = report_failure(app, project_id, &error);
+            if let Some(item) = item_id.as_deref() {
+                close_branch(state, project_id, item, true);
+            }
+            if let Some(batch) = batch_id {
+                seal_batch(app, state, batch);
+            }
             return;
         }
     }

@@ -420,50 +420,57 @@ pub(super) async fn run_turns(
                     counters: counters.task.clone(),
                 },
             )?;
-            for (helper, request, found) in parallel_checked {
-                record_passage(
-                    app,
-                    exchange.run_id,
-                    project_id,
-                    *item_id,
-                    None,
-                    &turn.speaker,
-                    &helper,
-                    &found,
-                )?;
-                let max_instances = snapshot
-                    .and_then(|snapshot| placement_of(snapshot, &helper))
-                    .map_or(1, |placement| placement.max_instances);
-                let mut context = RequestContext::new(
-                    exchange.run_id,
-                    (*item_id).map(str::to_string),
-                    *channel_id,
-                );
-                context.batch = Some(batch);
-                count_branch(state, project_id, *item_id)?;
-                dispatch_request(
-                    app,
-                    state,
-                    project_id,
-                    &helper,
-                    &request,
-                    context,
-                    max_instances,
-                    max_parallel,
-                )?;
-                say(
-                    app,
-                    project_id,
-                    transcript,
-                    &turn.speaker,
-                    Speaker::from(helper.clone()),
-                    &request,
-                    team,
-                    *channel_id,
-                    None,
-                    None,
-                    None,
-                )?;
+            let fork_result: Result<(), FlowError> = (|| {
+                for (helper, request, found) in parallel_checked {
+                    record_passage(
+                        app,
+                        exchange.run_id,
+                        project_id,
+                        *item_id,
+                        None,
+                        &turn.speaker,
+                        &helper,
+                        &found,
+                    )?;
+                    let max_instances = snapshot
+                        .and_then(|snapshot| placement_of(snapshot, &helper))
+                        .map_or(1, |placement| placement.max_instances);
+                    let mut context = RequestContext::new(
+                        exchange.run_id,
+                        (*item_id).map(str::to_string),
+                        *channel_id,
+                    );
+                    context.batch = Some(batch);
+                    count_branch(state, project_id, *item_id)?;
+                    dispatch_request(
+                        app,
+                        state,
+                        project_id,
+                        &helper,
+                        &request,
+                        context,
+                        max_instances,
+                        max_parallel,
+                    )?;
+                    say(
+                        app,
+                        project_id,
+                        transcript,
+                        &turn.speaker,
+                        Speaker::from(helper.clone()),
+                        &request,
+                        team,
+                        *channel_id,
+                        None,
+                        None,
+                        None,
+                    )?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = fork_result {
+                seal_batch(app, state, batch);
+                return Err(error);
             }
             announce_batch(app, state, batch);
             seal_batch(app, state, batch);
@@ -621,6 +628,25 @@ pub(super) async fn run_turns(
         }
 
         if let Some((helper, helper_request)) = &delegation {
+            if let Some(motive) = policy::task_limit_reached(exchange.orchestration, &counters.task)
+            {
+                let escalation = Turn::new(
+                    turn.speaker.clone(),
+                    "",
+                    "",
+                    turn.requesters.clone(),
+                );
+                return escalate_limit(
+                    exchange,
+                    transcript,
+                    &escalation,
+                    motive,
+                    String::new(),
+                    None,
+                    None,
+                    None,
+                );
+            }
             say(
                 app,
                 project_id,
@@ -652,7 +678,11 @@ pub(super) async fn run_turns(
                     passage,
                 )?;
                 if passage.asynchronous {
-                    dispatch_async_branch(exchange, line_item, helper, helper_request)?;
+                    let target_item = intent
+                        .as_ref()
+                        .and_then(|intent| intent.item_id.as_deref())
+                        .or(line_item);
+                    dispatch_async_branch(exchange, target_item, helper, helper_request)?;
                     emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
                     return Ok(TaskOutcome::Finished);
                 }

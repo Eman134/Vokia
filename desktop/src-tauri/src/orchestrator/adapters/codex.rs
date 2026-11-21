@@ -64,12 +64,48 @@ pub(super) async fn run_turn(
     pid: &AtomicU32,
     provider: &ProviderConfig,
     mcp: Option<&McpSession>,
+    console: &super::ConsoleSink<'_>,
 ) -> Result<Reply, ClaudeError> {
     let command = build_command(program, user_args, model, access, mcp);
     let prompt = format!("{role}\n\n{message}");
-    let stdout =
-        super::run_cli_process(command, access, pid, Some(prompt), Some((provider, model)))
-            .await?;
+    let mut activity = TurnActivity::default();
+    let mut last_at = std::time::Instant::now();
+    let stdout = super::run_cli_process(
+        command,
+        access,
+        pid,
+        Some(prompt),
+        Some((provider, model)),
+        |line| {
+            let now = std::time::Instant::now();
+            let elapsed_ms = (now.saturating_duration_since(last_at).as_millis() as u64).max(100);
+            last_at = now;
+            let Ok(value) = serde_json::from_str::<Json>(line.trim()) else {
+                return;
+            };
+            let kind = value.get("type").and_then(Json::as_str).unwrap_or("");
+            if matches!(kind, "item.completed" | "item.updated" | "item.started") {
+                let item = &value["item"];
+                let item_type = item.get("type").and_then(Json::as_str).unwrap_or("");
+                if item_type == "reasoning" {
+                    if let Some(text) = item.get("text").and_then(Json::as_str).filter(|s| !s.is_empty()) {
+                        match &mut activity.thinking_text {
+                            Some(existing) => {
+                                existing.push('\n');
+                                existing.push_str(text);
+                            }
+                            None => activity.thinking_text = Some(text.to_string()),
+                        }
+                    }
+                    activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                    console.live_activity(activity.clone());
+                } else if matches!(item_type, "command_execution" | "mcp_tool_call" | "function_call" | "tool_use") {
+                    console.live_activity(activity.clone());
+                }
+            }
+        },
+    )
+    .await?;
     parse_jsonl_output_with_provider(&stdout, Some(provider), model)
 }
 

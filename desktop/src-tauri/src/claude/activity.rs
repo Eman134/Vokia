@@ -161,7 +161,7 @@ impl ActivityParser {
         }
     }
 
-    // Devolve true quando a linha abriu ou fechou uma ferramenta: só aí a atividade ao vivo muda.
+    // Devolve true quando a linha abriu/fechou uma ferramenta ou atualizou o thinking ao vivo.
     pub(super) fn push_line(&mut self, line: &[u8], now: Instant) -> bool {
         let since_last_line = now.saturating_duration_since(self.last_line_at);
         self.last_line_at = now;
@@ -171,6 +171,11 @@ impl ActivityParser {
         match value["type"].as_str() {
             Some(ASSISTANT_KIND) => self.assistant(&value, since_last_line.as_millis() as u64, now),
             Some(USER_KIND) => self.user(&value, now),
+            Some("system") if value["subtype"].as_str() == Some("thinking_tokens") => {
+                let spent = value["thinking_duration_ms"].as_u64().unwrap_or(0);
+                self.thinking_ms = Some(self.thinking_ms.unwrap_or(0).saturating_add(spent));
+                true
+            }
             _ => false,
         }
     }
@@ -208,16 +213,19 @@ impl ActivityParser {
                 _ => {}
             }
         }
+        let mut changed = opened;
         if thought {
             let spent = line["thinking_duration_ms"]
                 .as_u64()
                 .unwrap_or_else(|| since_last_line_ms.max(MIN_CLOCK_THINKING_MS));
             self.thinking_ms = Some(self.thinking_ms.unwrap_or(0).saturating_add(spent));
+            changed = true;
         }
         if !thinking_texts.is_empty() {
             self.append_thinking(&thinking_texts.join(THINKING_SEPARATOR));
+            changed = true;
         }
-        opened
+        changed
     }
 
     fn append_thinking(&mut self, text: &str) {

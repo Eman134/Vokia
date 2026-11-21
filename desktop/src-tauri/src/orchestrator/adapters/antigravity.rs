@@ -84,6 +84,7 @@ pub(super) async fn run_turn(
     provider: &ProviderConfig,
     vokia_cli: Option<(&McpSession, &Path)>,
     resume_conversation: Option<&str>,
+    console: &super::ConsoleSink<'_>,
 ) -> Result<Reply, ClaudeError> {
     let mut command =
         build_command_with_resume(program, user_args, role, model, access, message, resume_conversation);
@@ -95,8 +96,45 @@ pub(super) async fn run_turn(
         "{}\n",
         serde_json::json!({"event": "user", "message": {"content": format!("{role}\n\n{message}")}})
     );
-    let stdout =
-        super::run_cli_process(command, access, pid, Some(prompt), Some((provider, model))).await?;
+    let mut activity = TurnActivity::default();
+    let mut last_at = std::time::Instant::now();
+    let stdout = super::run_cli_process(
+        command,
+        access,
+        pid,
+        Some(prompt),
+        Some((provider, model)),
+        |line| {
+            let now = std::time::Instant::now();
+            let elapsed_ms = (now.saturating_duration_since(last_at).as_millis() as u64).max(100);
+            last_at = now;
+            let Ok(value) = serde_json::from_str::<Json>(line.trim()) else {
+                return;
+            };
+            if value.get("event").and_then(Json::as_str) == Some("step_update") {
+                let step = &value["step_update"];
+                let step_type = step.get("step_type").and_then(Json::as_str).unwrap_or("");
+                if matches!(step_type, "thinking" | "thought" | "reasoning") {
+                    if let Some(delta) = step
+                        .get("text_delta")
+                        .or_else(|| step.get("text"))
+                        .and_then(Json::as_str)
+                        .filter(|s| !s.is_empty())
+                    {
+                        match &mut activity.thinking_text {
+                            Some(existing) => existing.push_str(delta),
+                            None => activity.thinking_text = Some(delta.to_string()),
+                        }
+                    }
+                    activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                    console.live_activity(activity.clone());
+                } else if matches!(step_type, "tool_use" | "tool_call") {
+                    console.live_activity(activity.clone());
+                }
+            }
+        },
+    )
+    .await?;
     parse_stream_output_with_provider(&stdout, Some(provider), model)
 }
 

@@ -312,6 +312,7 @@ watch(
             :agent="feed.pendingAgent"
             :state="feed.stateOf(feed.pendingAgent.id)"
             :since="feed.pendingSince"
+            :activity="feed.liveActivityOf(feed.pendingAgent.id)"
           />
         </template>
       </div>

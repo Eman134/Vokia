@@ -104,7 +104,7 @@ pub(super) async fn run_turn(
     if let Some((session, cli_path)) = vokia_cli {
         super::inject_vokia_cli_env(&mut command, session, cli_path);
     }
-    let stdout = super::run_cli_process(command, access, pid, stdin_input, Some((provider, model)))
+    let stdout = super::run_cli_process(command, access, pid, stdin_input, Some((provider, model)), |_| {})
         .await?;
     parse_output(&stdout, provider, model)
 }

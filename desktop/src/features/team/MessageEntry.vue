@@ -9,7 +9,7 @@ import type { AgentProfile } from './teamApi'
 import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
-import { taskStartedRow } from './activitySummary'
+import { protocolMessageRow, taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
@@ -48,6 +48,12 @@ const runCard = computed(() => {
   const { text } = userContent.value
   const title = runTitleOf(text)
   return title === undefined ? null : taskStartedRow(title, text)
+})
+
+const protocolRow = computed(() => {
+  const { entry } = props
+  if (entry.type !== 'message') return null
+  return protocolMessageRow(entry.text)
 })
 
 const AVATAR_SIZE = PORTRAIT_SIZES.chat
@@ -106,6 +112,9 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
         <ActivityRow :row="runCard" />
       </ul>
+      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
+        <ActivityRow :row="protocolRow" />
+      </ul>
       <div
         v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
         class="w-fit max-w-full wrap-break-word rounded-card bg-surface-2 px-3.5 py-2.5"
@@ -153,7 +162,13 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     </span>
     <div class="min-w-64 flex-1">
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
-      <MarkdownText :text="entry.text" />
+      <ul v-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
+        <ActivityRow :row="protocolRow" />
+      </ul>
+      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
+        <ActivityRow :row="protocolRow" />
+      </ul>
+      <MarkdownText v-else :text="entry.text" />
     </div>
   </div>
   <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-3">
@@ -207,6 +222,9 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         </svg>
         <span class="wrap-break-word">{{ entry.text }}</span>
       </div>
+      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
+        <ActivityRow :row="protocolRow" />
+      </ul>
       <MarkdownText v-else :text="entry.text" />
       <UiButton
         v-if="entry.requestProposal"

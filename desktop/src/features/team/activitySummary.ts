@@ -1,6 +1,7 @@
 import { commandPhrase, friendlyCommand } from './appCommandLabel'
 import type { CommandDomain, ToolActivity, ToolCategory, ToolChange, ToolDetail, ToolStatus } from './events'
 import { fileIconOf, type FileIconKind } from './fileIcon'
+import { isFinalReply, parseProposal } from '../backlog/planProposal'
 
 type ReadDetail = Extract<ToolDetail, { kind: 'read' }>
 type FoundDetail = Extract<ToolDetail, { kind: 'found' }>
@@ -364,6 +365,57 @@ export function taskStartedRow(title: string, prompt: string): ActivityRowModel 
     items: prompt.split('\n').filter((line) => line.trim() !== ''),
     failed: false,
   }
+}
+
+const PROTOCOL_PREFIXES: ReadonlyArray<{ prefix: string; verb: string; quoted?: boolean }> = [
+  { prefix: 'Triagem do item ', verb: 'Triagem' },
+  { prefix: 'Ajuste o plano do item ', verb: 'Ajuste de plano' },
+  { prefix: 'Plano "', verb: 'Planejamento', quoted: true },
+]
+
+function extractProtocolTitle(firstLine: string, prefix: string, quoted?: boolean): string {
+  const rest = firstLine.slice(prefix.length).trim()
+  if (quoted) {
+    const endQuote = rest.indexOf('"')
+    return endQuote >= 0 ? rest.slice(0, endQuote).trim() : rest
+  }
+  return rest.replace(WRAPPING_QUOTES, '$2').trim()
+}
+
+export function protocolMessageRow(text: string): ActivityRowModel | null {
+  if (isFinalReply(text)) {
+    const parsed = parseProposal(text)
+    const lotCount = parsed.lots.length
+    const metaParts: string[] = []
+    if (lotCount > 0) metaParts.push(`${lotCount} ${lotCount === 1 ? 'lote' : 'lotes'}`)
+    if (parsed.estimate !== '') metaParts.push(parsed.estimate)
+    const items = parsed.lots.map((lot) => `${lot.n}. ${lot.title}${lot.meta ? ` · ${lot.meta}` : ''}`)
+    return {
+      id: 'protocol-plan-ready',
+      icon: 'artifact',
+      verb: 'Plano pronto',
+      text: parsed.summary || undefined,
+      meta: metaParts.length > 0 ? metaParts.join(' · ') : undefined,
+      items: items.length > 0 ? items : text.split(LINE_BREAK).filter((line) => line.trim() !== ''),
+      failed: false,
+    }
+  }
+
+  for (const { prefix, verb, quoted } of PROTOCOL_PREFIXES) {
+    if (!text.startsWith(prefix)) continue
+    const firstLine = text.split(LINE_BREAK, 1)[0] ?? ''
+    const title = extractProtocolTitle(firstLine, prefix, quoted)
+    return {
+      id: 'protocol-prompt',
+      icon: 'backlog',
+      verb,
+      chip: title !== '' ? { label: title, title, icon: 'generic' } : undefined,
+      items: text.split(LINE_BREAK).filter((line) => line.trim() !== ''),
+      failed: false,
+    }
+  }
+
+  return null
 }
 
 export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
-import type { AgentState } from '../team/events'
+import type { AgentState, TurnActivity } from '../team/events'
 import { formatClock } from '../team/activitySummary'
 import MarkdownText from '../team/MarkdownText.vue'
 import { currentTurn } from './consoleTurn'
 import { useConsole } from './useConsole'
 
-const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number }>()
+const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number; activity?: TurnActivity }>()
 
 const SENDING_LABEL = 'Enviando…'
 const THINKING_LABEL = 'Pensando…'
@@ -35,7 +35,9 @@ const written = computed(() => {
     .at(-1)?.text
 })
 
-// Calculado pela diferença com o relógio atual: a aba oculta pausa o timer, não o tempo.
+const preview = computed(() =>
+  props.state === 'thinking' ? props.activity?.thinkingText?.trim() || written.value : undefined,
+)
 const label = computed(() => {
   if (props.state !== 'thinking') {
     return SENDING_LABEL
@@ -57,8 +59,8 @@ const label = computed(() => {
         <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-3" />
       </span>
     </span>
-    <div v-if="written" class="line-clamp-4 min-w-0">
-      <MarkdownText :text="written" />
+    <div v-if="preview" class="line-clamp-4 min-w-0">
+      <MarkdownText :text="preview" />
     </div>
   </div>
 </template>

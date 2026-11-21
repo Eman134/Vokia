@@ -67,7 +67,7 @@ fn run_cli_process_com_exit_code_diferente_de_zero_retorna_claude_error_exit() {
         let mut cmd = tokio::process::Command::new("cmd.exe");
         cmd.args(["/C", "echo falha no processo 1>&2 & exit 42"]);
         let pid = std::sync::atomic::AtomicU32::new(0);
-        let res = run_cli_process(cmd, Access::TextOnly, &pid, None, None).await;
+        let res = run_cli_process(cmd, Access::TextOnly, &pid, None, None, |_| {}).await;
         match res {
             Err(ClaudeError::Exit { code, message }) => {
                 assert_eq!(code, Some(42));
@@ -76,6 +76,25 @@ fn run_cli_process_com_exit_code_diferente_de_zero_retorna_claude_error_exit() {
             Err(other) => panic!("esperava ClaudeError::Exit, obteve {:?}", other),
             Ok(_) => panic!("processo com exit 42 deveria ter retornado erro"),
         }
+    });
+}
+
+#[test]
+fn run_cli_process_ignora_linhas_jsonl_malformadas_sem_abortar() {
+    tauri::async_runtime::block_on(async {
+        let mut cmd = tokio::process::Command::new("cmd.exe");
+        cmd.args([
+            "/C",
+            "echo {malformed_json & echo {\"type\":\"result\",\"result\":\"ok\"}",
+        ]);
+        let pid = std::sync::atomic::AtomicU32::new(0);
+        let mut lines = Vec::new();
+        let res = run_cli_process(cmd, Access::TextOnly, &pid, None, None, |line| {
+            lines.push(line.to_string());
+        })
+        .await;
+        assert!(res.is_ok(), "não deveria abortar em JSONL malformado: {res:?}");
+        assert_eq!(lines.len(), 2);
     });
 }
 

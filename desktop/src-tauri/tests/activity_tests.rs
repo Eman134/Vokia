@@ -788,3 +788,26 @@ fn detalhe_de_app_command_sai_no_json_com_kind_command() {
         })
     );
 }
+
+#[test]
+fn system_thinking_tokens_atualiza_thinking_ms_com_e_sem_duracao_explicita() {
+    let t0 = Instant::now();
+    let mut parser = ActivityParser::new(t0);
+
+    let line_explicit = serde_json::to_vec(&json!({
+        "type": "system",
+        "subtype": "thinking_tokens",
+        "thinking_duration_ms": 250
+    }))
+    .unwrap();
+    assert!(parser.push_line(&line_explicit, t0 + Duration::from_millis(50)));
+    assert_eq!(parser.snapshot().thinking_ms, Some(250));
+
+    let line_clock = serde_json::to_vec(&json!({
+        "type": "system",
+        "subtype": "thinking_tokens"
+    }))
+    .unwrap();
+    assert!(parser.push_line(&line_clock, t0 + Duration::from_millis(100)));
+    assert_eq!(parser.finish().thinking_ms, Some(250));
+}
