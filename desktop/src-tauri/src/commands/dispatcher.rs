@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
+use crate::db::ARTIFACT_KINDS;
 use crate::projects::ProjectError;
 
 use super::{
@@ -232,6 +233,71 @@ fn schema_set_setting() -> Value {
     )
 }
 
+fn schema_artifact_ref() -> Value {
+    obj_schema(
+        json!({ "projectId": { "type": "integer" }, "id": { "type": "string" } }),
+        &["projectId", "id"],
+    )
+}
+
+fn artifact_kind_names() -> Vec<&'static str> {
+    ARTIFACT_KINDS.iter().map(|kind| kind.kind).collect()
+}
+
+fn schema_artifact_create() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "kind": { "type": "string", "enum": artifact_kind_names() },
+            "title": { "type": "string" },
+            "summary": { "type": "string" },
+            "body": { "type": "string", "description": "Markdown; sem body usa o template do tipo" },
+            "tags": { "type": "array", "items": { "type": "string" } },
+            "author": { "type": "string" },
+        }),
+        &["projectId", "kind", "title"],
+    )
+}
+
+fn schema_artifact_update() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "string" },
+            "expectedUpdatedAt": { "type": "integer" },
+            "title": { "type": "string" },
+            "summary": { "type": "string" },
+            "body": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } },
+        }),
+        &["projectId", "id"],
+    )
+}
+
+fn schema_artifact_check() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "string" },
+            "index": { "type": "integer", "minimum": 0 },
+            "done": { "type": "boolean" },
+        }),
+        &["projectId", "id", "index", "done"],
+    )
+}
+
+fn schema_set_artifact_criterion() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "artifactId": { "type": "string" },
+            "criterionId": { "type": "string" },
+            "done": { "type": "boolean" },
+        }),
+        &["projectId", "artifactId", "criterionId", "done"],
+    )
+}
+
 fn schema_erase_all_data() -> Value {
     obj_schema(json!({ "confirm": { "type": "boolean" } }), &["confirm"])
 }
@@ -279,8 +345,14 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "archive_backlog_item", "Arquiva um item do backlog.", "Para arquivar um card que saiu de uso sem apagá-lo.", empty_object_schema),
     exposed("backlog", "restore_backlog_item", "Restaura um item arquivado do backlog.", "Para trazer de volta um card arquivado.", empty_object_schema),
     exposed("backlog", "delete_backlog_item", "Exclui um item do backlog.", "Para excluir um card definitivamente; ação destrutiva.", empty_object_schema),
-    exposed("artifacts", "list_artifacts", "Lista os artefatos de um projeto.", "Para ver os artefatos de um projeto e os critérios de aceite de cada um.", empty_object_schema),
-    exposed("artifacts", "set_artifact_criterion", "Marca ou desmarca um critério de um artefato.", "Para marcar ou desmarcar um critério de aceite de um artefato.", empty_object_schema),
+    exposed("artifacts", "list_artifact_kinds", "Lista os 5 tipos de artefato livre com rótulo, descrição e template Markdown.", "Para descobrir os tipos válidos e o template de cada um antes de criar um artefato.", empty_object_schema),
+    exposed("artifacts", "list_artifacts", "Lista os artefatos de um projeto (planos e documentos). Parâmetro: projectId. Devolve id, kind, title, summary, tags, author, itemId e updatedAt.", "Para ver tudo o que existe de artefato num projeto, sem o corpo; leia um deles com get_artifact.", schema_project_id),
+    exposed("artifacts", "get_artifact", "Lê um artefato por id. Parâmetros: projectId, id. Devolve o plano com critérios (id plano-*) ou o documento com o corpo em Markdown.", "Para ler o conteúdo completo de um artefato antes de editá-lo ou de usá-lo como contexto.", schema_artifact_ref),
+    exposed("artifacts", "create_artifact", "Cria um artefato livre. kind: documento|especificacao|checklist|arquitetura|decisao; body em Markdown (sem body usa o template do tipo). Devolve o artefato com id <kind>-<n>.", "Para registrar uma especificação, decisão, checklist, arquitetura ou documento do projeto; consulte list_artifact_kinds para os templates.", schema_artifact_create),
+    exposed("artifacts", "update_artifact", "Edita título, resumo, corpo ou tags de um artefato livre. Parâmetros: projectId, id e ao menos um campo; expectedUpdatedAt recusa a gravação se outro alterou antes. Planos (plano-*) são só leitura.", "Para corrigir ou completar um artefato existente; leia antes com get_artifact e envie expectedUpdatedAt para não sobrescrever uma edição alheia.", schema_artifact_update),
+    exposed("artifacts", "delete_artifact", "Exclui um artefato livre. Parâmetros: projectId, id. Planos (plano-*) não podem ser excluídos.", "Para remover um artefato livre que não serve mais; ação destrutiva, confirme com o usuário.", schema_artifact_ref),
+    exposed("artifacts", "set_artifact_check", "Marca ou desmarca um item de checklist do corpo de um artefato. Parâmetros: projectId, id, index (0 é o primeiro \"- [ ]\" fora de blocos de código), done. Devolve o artefato.", "Para acompanhar a entrega de um checklist item a item sem reescrever o corpo inteiro.", schema_artifact_check),
+    exposed("artifacts", "set_artifact_criterion", "Marca ou desmarca um critério de aceite de um plano. Parâmetros: projectId, artifactId, criterionId, done.", "Para marcar um critério de aceite de um plano (artefato plano-*) como cumprido ou pendente.", schema_set_artifact_criterion),
     ui_only("attachments", "pick_attachment_files", "Abre o seletor de arquivos para anexos."),
     exposed("attachments", "save_attachment_files", "Salva arquivos locais como anexos de um projeto.", "Para anexar arquivos locais a um projeto a partir de caminhos no disco.", empty_object_schema),
     ui_only("attachments", "save_attachment_bytes", "Salva anexo enviado como bytes pela interface."),
@@ -502,13 +574,18 @@ async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, Str
             parse_args(arguments)?,
         )),
 
-        "list_artifacts" => {
-            json_result(artifacts::list_artifacts_exec(app, parse_args(arguments)?))
+        "list_artifact_kinds" => json_ok(artifacts::list_artifact_kinds_exec()),
+        "list_artifacts" => json_result(artifacts::list_artifacts_exec(app, parse_args(arguments)?)),
+        "get_artifact" => json_result(artifacts::get_artifact_exec(app, parse_args(arguments)?)),
+        "create_artifact" => json_result(artifacts::create_artifact_exec(app, parse_args(arguments)?)),
+        "update_artifact" => json_result(artifacts::update_artifact_exec(app, parse_args(arguments)?)),
+        "delete_artifact" => json_result(artifacts::delete_artifact_exec(app, parse_args(arguments)?)),
+        "set_artifact_check" => {
+            json_result(artifacts::set_artifact_check_exec(app, parse_args(arguments)?))
         }
-        "set_artifact_criterion" => json_result(artifacts::set_artifact_criterion_exec(
-            app,
-            parse_args(arguments)?,
-        )),
+        "set_artifact_criterion" => {
+            json_result(artifacts::set_artifact_criterion_exec(app, parse_args(arguments)?))
+        }
 
         "save_attachment_files" => {
             json_result(attachments::save_attachment_files_exec(app, parse_args(arguments)?).await)

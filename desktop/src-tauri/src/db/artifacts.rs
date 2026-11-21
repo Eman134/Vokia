@@ -53,6 +53,8 @@ pub struct Artifact {
 }
 
 impl Db {
+    // Só os testes leem os planos por aqui; a tela e o MCP usam list_artifact_summaries.
+    #[cfg(test)]
     pub fn list_artifacts(&self, project_id: i64) -> Result<Vec<Artifact>, DbError> {
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;

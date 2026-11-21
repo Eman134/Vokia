@@ -3,13 +3,15 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, AgentRegistry, Team};
+use crate::commands::artifacts::notify_artifacts_changed;
 use crate::commands::channels::post_agent_message;
 use crate::commands::dispatcher::list_commands_filtered;
 use crate::commands::orchestration::{read_movements, read_orchestration};
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, CardResponsible, DbError,
-    DbState, ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
-    BOARD_COLUMNS, REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
+    DbState, ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMNS, ARTIFACT_KINDS,
+    ArtifactDocumentPatch, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS, NewArtifactDocument,
+    REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestration::policy::check_intent;
@@ -41,6 +43,19 @@ const GET_ORCHESTRATION: &str = "get_orchestration";
 const LIST_AGENTS: &str = "list_agents";
 const SAVE_ITEM_PLAN: &str = "save_item_plan";
 const ARTIFACT_SET_CRITERION: &str = "artifact_set_criterion";
+const ARTIFACT: &str = "artifact";
+const ARTIFACT_OP_LIST: &str = "list";
+const ARTIFACT_OP_READ: &str = "read";
+const ARTIFACT_OP_CREATE: &str = "create";
+const ARTIFACT_OP_UPDATE: &str = "update";
+const ARTIFACT_OP_CHECK: &str = "check";
+const ARTIFACT_OPS: [&str; 5] = [
+    ARTIFACT_OP_LIST,
+    ARTIFACT_OP_READ,
+    ARTIFACT_OP_CREATE,
+    ARTIFACT_OP_UPDATE,
+    ARTIFACT_OP_CHECK,
+];
 const LIST_MOVEMENTS: &str = "list_movements";
 const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
 const APP_COMMANDS_LIST: &str = "app_commands_list";
@@ -219,6 +234,7 @@ pub fn definitions() -> Vec<Value> {
         .filter(|column| !AGENT_FORBIDDEN_COLUMNS.contains(column))
         .collect();
     let decision_kinds = decision_kind_names();
+    let artifact_kinds: Vec<&str> = ARTIFACT_KINDS.iter().map(|kind| kind.kind).collect();
     vec![
         tool(
             LIST_BACKLOG,
@@ -397,6 +413,23 @@ pub fn definitions() -> Vec<Value> {
             &["artifact_id", "criterion_id", "done"],
         ),
         tool(
+            ARTIFACT,
+            "Gerencia artefatos do projeto (documentos, especificações, checklists, decisões, arquiteturas). Opções de op: list, read, create, update, check.",
+            json!({
+                "op": { "type": "string", "enum": ARTIFACT_OPS },
+                "id": { "type": "string" },
+                "kind": { "type": "string", "enum": artifact_kinds },
+                "title": { "type": "string" },
+                "summary": { "type": "string" },
+                "body": { "type": "string" },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "index": { "type": "integer" },
+                "done": { "type": "boolean" },
+                "expected_updated_at": { "type": "integer" },
+            }),
+            &["op"],
+        ),
+        tool(
             LIST_MOVEMENTS,
             "Lista as passagens de trabalho recentes entre agentes do projeto.",
             json!({}),
@@ -478,6 +511,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         ARTIFACT_SET_CRITERION => {
             parse(name, arguments).and_then(|args| set_artifact_criterion(app, binding, args))
         }
+        ARTIFACT => parse(name, arguments).and_then(|args| artifact(app, binding, args)),
         LIST_MOVEMENTS => list_movements(app, binding),
         POST_CHANNEL_MESSAGE => {
             parse(name, arguments).and_then(|args| post_channel_message(app, binding, args))
@@ -1058,6 +1092,91 @@ fn set_artifact_criterion(app: &AppHandle, binding: &Binding, args: CriterionArg
     let message = format!("Critério {} do plano {} {mark}.", args.criterion_id, args.artifact_id);
     record_backlog_change(app, binding, vec![message.clone()]);
     Ok(message)
+}
+
+#[derive(Deserialize)]
+struct ArtifactArgs {
+    op: String,
+    id: Option<String>,
+    kind: Option<String>,
+    title: Option<String>,
+    summary: Option<String>,
+    body: Option<String>,
+    tags: Option<Vec<String>>,
+    index: Option<usize>,
+    done: Option<bool>,
+    expected_updated_at: Option<i64>,
+}
+
+fn missing_artifact_field(op: &str, field: &str) -> String {
+    format!("A operação '{op}' de artefato exige o campo '{field}'.")
+}
+
+fn artifact(app: &AppHandle, binding: &Binding, args: ArtifactArgs) -> ToolText {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    let project_id = binding.project_id;
+    let op = args.op.as_str();
+    let id = || args.id.clone().ok_or_else(|| missing_artifact_field(op, "id"));
+    match op {
+        ARTIFACT_OP_LIST => to_json(
+            &db.list_artifact_summaries(project_id)
+                .map_err(|error| refusal_or_system(&error))?,
+        ),
+        ARTIFACT_OP_READ => to_json(
+            &db.get_artifact(project_id, &id()?)
+                .map_err(|error| refusal_or_system(&error))?,
+        ),
+        ARTIFACT_OP_CREATE => {
+            let kind = args.kind.clone().ok_or_else(|| missing_artifact_field(op, "kind"))?;
+            let title = args.title.clone().ok_or_else(|| missing_artifact_field(op, "title"))?;
+            let document = db
+                .create_artifact_document(
+                    project_id,
+                    NewArtifactDocument {
+                        kind,
+                        title,
+                        summary: args.summary,
+                        body: args.body,
+                        tags: args.tags.unwrap_or_default(),
+                        author: Some(binding.agent.as_str().to_string()),
+                    },
+                )
+                .map_err(|error| refusal_or_system(&error))?;
+            notify_artifacts_changed(app, project_id);
+            to_json(&document)
+        }
+        ARTIFACT_OP_UPDATE => {
+            let document = db
+                .update_artifact_document(
+                    project_id,
+                    &id()?,
+                    ArtifactDocumentPatch {
+                        title: args.title,
+                        summary: args.summary,
+                        body: args.body,
+                        tags: args.tags,
+                        expected_updated_at: args.expected_updated_at,
+                    },
+                )
+                .map_err(|error| refusal_or_system(&error))?;
+            notify_artifacts_changed(app, project_id);
+            to_json(&document)
+        }
+        ARTIFACT_OP_CHECK => {
+            let index = args.index.ok_or_else(|| missing_artifact_field(op, "index"))?;
+            let done = args.done.ok_or_else(|| missing_artifact_field(op, "done"))?;
+            let document = db
+                .set_artifact_check(project_id, &id()?, index, done)
+                .map_err(|error| refusal_or_system(&error))?;
+            notify_artifacts_changed(app, project_id);
+            to_json(&document)
+        }
+        other => Err(format!(
+            "Operação de artefato desconhecida: {other}. Use {}.",
+            ARTIFACT_OPS.join(", ")
+        )),
+    }
 }
 
 fn list_movements(app: &AppHandle, binding: &Binding) -> ToolText {

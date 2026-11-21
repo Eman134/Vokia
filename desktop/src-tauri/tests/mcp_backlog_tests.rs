@@ -517,13 +517,14 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "list_agents",
             "save_item_plan",
             "artifact_set_criterion",
+            "artifact",
             "list_movements",
             "post_channel_message",
             "app_commands_list",
             "app_command_call"
         ]
     );
-    assert_eq!(names.len(), 24);
+    assert_eq!(names.len(), 25);
     assert!(tools
         .iter()
         .all(|tool| tool["inputSchema"]["additionalProperties"] == json!(false)));
@@ -557,6 +558,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__list_agents",
             "mcp__vokia__save_item_plan",
             "mcp__vokia__artifact_set_criterion",
+            "mcp__vokia__artifact",
             "mcp__vokia__list_movements",
             "mcp__vokia__post_channel_message",
             "mcp__vokia__app_commands_list",
@@ -918,7 +920,7 @@ fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes
     let tool_names = world.server.tool_names();
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_commands_list"));
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_command_call"));
-    assert_eq!(tool_names.len(), 24);
+    assert_eq!(tool_names.len(), 25);
 
     // 2. commands/list aceita filtro por domínio
     let body_list = json!({
@@ -1004,3 +1006,6 @@ fn app_commands_list_e_commands_list_retornam_when_to_use_e_schema_com_filtro_do
         assert!(!cmd["when_to_use"].as_str().unwrap_or_default().is_empty());
     }
 }
+
+include!("artifact_commands_tests.rs");
+

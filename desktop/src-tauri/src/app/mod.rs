@@ -60,7 +60,13 @@ pub(crate) fn run() {
             commands::backlog::restore_backlog_item,
             commands::backlog::delete_backlog_item,
             // artifacts
+            commands::artifacts::list_artifact_kinds,
             commands::artifacts::list_artifacts,
+            commands::artifacts::get_artifact,
+            commands::artifacts::create_artifact,
+            commands::artifacts::update_artifact,
+            commands::artifacts::delete_artifact,
+            commands::artifacts::set_artifact_check,
             commands::artifacts::set_artifact_criterion,
             // attachments
             commands::attachments::pick_attachment_files,

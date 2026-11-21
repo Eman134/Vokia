@@ -152,8 +152,6 @@ pub(crate) fn emit_backlog_changed(app: &AppHandle, project_id: i64) -> Result<(
 }
 
 // Só avisa a tela: um artefato novo não libera worktree nem delegação em espera.
-// Sem chamador até os comandos de artefato emitirem o aviso.
-#[allow(dead_code)]
 pub(crate) fn emit_artifacts_changed(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
     emit(app, VokiaEvent::ArtifactsChanged { project_id })
 }

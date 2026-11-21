@@ -496,6 +496,7 @@ where
                 }),
             })
         }
+        "artifact" => parse_artifact(rest, read_stdin),
         "list-movements" => no_args_cmd("list_movements", rest),
         "post-channel-message" => {
             let flags = parse_flags(rest, &["--channel", "--text"])?;
@@ -842,6 +843,128 @@ where
     })
 }
 
+const ARTIFACT_OPS: [&str; 5] = ["list", "read", "create", "update", "check"];
+const ARTIFACT_TEXT_FLAGS: [&str; 5] = ["--id", "--kind", "--title", "--summary", "--body"];
+const ARTIFACT_EDIT_FIELDS: [&str; 4] = ["title", "summary", "body", "tags"];
+
+// O corpo Markdown longo entra por --stdin; as demais flags e --json montam o resto dos argumentos da tool.
+fn parse_artifact<F>(rest: &[String], read_stdin: F) -> Result<Action, String>
+where
+    F: FnOnce() -> Result<String, String>,
+{
+    let mut op: Option<String> = None;
+    let mut raw_json: Option<String> = None;
+    let mut from_stdin = false;
+    let mut flags = Map::new();
+    let mut i = 0;
+    while i < rest.len() {
+        let flag = rest[i].as_str();
+        match flag {
+            "--op" => {
+                i += 1;
+                op = Some(next_val(rest, i, flag)?);
+            }
+            "--json" => {
+                i += 1;
+                raw_json = Some(next_val(rest, i, flag)?);
+            }
+            "--stdin" => from_stdin = true,
+            "--tags" => {
+                i += 1;
+                let tags: Vec<Value> = next_val(rest, i, flag)?
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|tag| !tag.is_empty())
+                    .map(|tag| json!(tag))
+                    .collect();
+                flags.insert("tags".to_string(), Value::Array(tags));
+            }
+            "--index" => {
+                i += 1;
+                let index: u64 = next_val(rest, i, flag)?
+                    .parse()
+                    .map_err(|_| "--index deve ser um inteiro não negativo.".to_string())?;
+                flags.insert("index".to_string(), json!(index));
+            }
+            "--done" => {
+                i += 1;
+                let done = match next_val(rest, i, flag)?.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!("--done deve ser true ou false, recebeu '{other}'")),
+                };
+                flags.insert("done".to_string(), json!(done));
+            }
+            "--expected-updated-at" => {
+                i += 1;
+                let expected: i64 = next_val(rest, i, flag)?
+                    .parse()
+                    .map_err(|_| "--expected-updated-at deve ser um inteiro.".to_string())?;
+                flags.insert("expected_updated_at".to_string(), json!(expected));
+            }
+            _ if ARTIFACT_TEXT_FLAGS.contains(&flag) => {
+                i += 1;
+                flags.insert(flag[2..].to_string(), json!(next_val(rest, i, flag)?));
+            }
+            other => return Err(format!("argumento desconhecido em 'artifact': {other}")),
+        }
+        i += 1;
+    }
+    let op = op.ok_or_else(|| "flag obrigatória ausente: --op".to_string())?;
+    if !ARTIFACT_OPS.contains(&op.as_str()) {
+        return Err(format!(
+            "--op deve ser {}, recebeu '{op}'",
+            ARTIFACT_OPS.join(", ")
+        ));
+    }
+    if raw_json.is_some() && from_stdin {
+        return Err("use apenas --json ou --stdin, não ambos.".to_string());
+    }
+    if from_stdin && flags.contains_key("body") {
+        return Err("use apenas --body ou --stdin, não ambos.".to_string());
+    }
+    let mut arguments = match raw_json {
+        Some(text) => match serde_json::from_str::<Value>(text.trim())
+            .map_err(|err| format!("JSON inválido: {err}"))?
+        {
+            Value::Object(map) => map,
+            _ => return Err("os argumentos do artefato devem ser um objeto JSON.".to_string()),
+        },
+        None => Map::new(),
+    };
+    if from_stdin {
+        // CRLF do terminal do Windows não pode entrar no corpo Markdown.
+        arguments.insert("body".to_string(), json!(read_stdin()?.replace("\r\n", "\n")));
+    }
+    arguments.extend(flags);
+    arguments.insert("op".to_string(), json!(op));
+    require_artifact_fields(&op, &arguments)?;
+    Ok(Action::CallTool {
+        name: "artifact".to_string(),
+        arguments: Value::Object(arguments),
+    })
+}
+
+fn require_artifact_fields(op: &str, arguments: &Map<String, Value>) -> Result<(), String> {
+    let required: &[&str] = match op {
+        "read" => &["id"],
+        "create" => &["kind", "title"],
+        "update" => &["id"],
+        "check" => &["id", "index", "done"],
+        _ => &[],
+    };
+    if let Some(missing) = required.iter().find(|field| !arguments.contains_key(**field)) {
+        return Err(format!("flag obrigatória ausente: --{}", missing.replace('_', "-")));
+    }
+    let has_edit = ARTIFACT_EDIT_FIELDS
+        .iter()
+        .any(|field| arguments.contains_key(*field));
+    if op == "update" && !has_edit {
+        return Err("informe ao menos um campo: --title, --summary, --body, --tags ou --stdin.".to_string());
+    }
+    Ok(())
+}
+
 fn optional_flag(rest: &[String], flag: &str) -> Result<Option<String>, String> {
     let flags = parse_flags(rest, &[flag])?;
     Ok(get_one(&flags, flag))
@@ -912,7 +1035,14 @@ Uso:
   vokia-cli save-item-plan --item-id <id> (--json <json> | --stdin)
   vokia-cli set-criterion --artifact-id <a> --criterion-id <c> --done <true|false>
   vokia-cli list-movements
-  vokia-cli post-channel-message --channel <c> --text <t>"
+  vokia-cli post-channel-message --channel <c> --text <t>
+  vokia-cli artifact --op <list|read|create|update|check> [--id <id>] [--kind <k>] [--title <t>]
+                     [--summary <s>] [--tags <a,b>] [--index <n>] [--done <true|false>]
+                     [--expected-updated-at <ms>] [--body <md> | --stdin | --json <json_obj>]
+
+Exemplos de artefato:
+  echo \"# Corpo\" | vokia-cli artifact --op update --id especificacao-1 --stdin
+  vokia-cli cmd create_artifact --json '{{\"projectId\":1,\"kind\":\"especificacao\",\"title\":\"Login\"}}'"
     );
 }
 
@@ -1094,6 +1224,190 @@ mod tests {
             Action::CallCommand {
                 name: "role_delete".to_string(),
                 arguments: json!({ "id": 42 }),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_artifact_flags_json_e_stdin() {
+        let list_cmd = parse_args(&s(&["artifact", "--op", "list"]), || Ok(String::new())).unwrap();
+        assert_eq!(
+            list_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({ "op": "list" }),
+            }
+        );
+
+        let create_cmd = parse_args(
+            &s(&[
+                "artifact",
+                "--op",
+                "create",
+                "--kind",
+                "checklist",
+                "--title",
+                "Meu Checklist",
+                "--tags",
+                "mvp,api",
+            ]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            create_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "create",
+                    "kind": "checklist",
+                    "title": "Meu Checklist",
+                    "tags": ["mvp", "api"],
+                }),
+            }
+        );
+
+        let update_cmd = parse_args(
+            &s(&["artifact", "--op", "update", "--id", "checklist-1", "--title", "Novo Titulo"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            update_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "update",
+                    "id": "checklist-1",
+                    "title": "Novo Titulo",
+                }),
+            }
+        );
+
+        let check_cmd = parse_args(
+            &s(&["artifact", "--op", "check", "--id", "checklist-1", "--index", "0", "--done", "true"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            check_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "check",
+                    "id": "checklist-1",
+                    "index": 0,
+                    "done": true,
+                }),
+            }
+        );
+
+        let json_cmd = parse_args(
+            &s(&["artifact", "--op", "create", "--json", r#"{"kind":"decisao","title":"Nova Arquitetura"}"#]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            json_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "create",
+                    "kind": "decisao",
+                    "title": "Nova Arquitetura",
+                }),
+            }
+        );
+
+        let stdin_cmd = parse_args(
+            &s(&["artifact", "--op", "update", "--id", "checklist-1", "--stdin"]),
+            || Ok("# Novo Markdown do artefato\n- [ ] Item 1".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            stdin_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "update",
+                    "id": "checklist-1",
+                    "body": "# Novo Markdown do artefato\n- [ ] Item 1",
+                }),
+            }
+        );
+
+        let crlf_cmd = parse_args(
+            &s(&["artifact", "--op", "update", "--id", "checklist-1", "--stdin"]),
+            || Ok("# T\r\n- [ ] a\r\n".to_string()),
+        )
+        .unwrap();
+        assert_eq!(
+            crlf_cmd,
+            Action::CallTool {
+                name: "artifact".to_string(),
+                arguments: json!({
+                    "op": "update",
+                    "id": "checklist-1",
+                    "body": "# T\n- [ ] a\n",
+                }),
+            }
+        );
+
+        let err_sem_id = parse_args(
+            &s(&["artifact", "--op", "update", "--stdin"]),
+            || Ok("# T".to_string()),
+        )
+        .unwrap_err();
+        assert_eq!(err_sem_id, "flag obrigatória ausente: --id");
+
+        let err_op = parse_args(&s(&["artifact", "--op", "desconhecida"]), || Ok(String::new())).unwrap_err();
+        assert!(err_op.contains("--op deve ser"), "erro: {err_op}");
+
+        let err_sem_op = parse_args(&s(&["artifact"]), || Ok(String::new())).unwrap_err();
+        assert!(err_sem_op.contains("--op"), "erro: {err_sem_op}");
+
+        let err_ambos = parse_args(
+            &s(&["artifact", "--op", "create", "--json", "{}", "--stdin"]),
+            || Ok("conteudo".to_string()),
+        )
+        .unwrap_err();
+        assert!(err_ambos.contains("não ambos"), "erro: {err_ambos}");
+    }
+
+    #[test]
+    fn parse_cmd_artifacts_kebab_case_to_camel_case() {
+        let cmd = parse_args(
+            &s(&["cmd", "list_artifacts", "--project-id", "12"]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            cmd,
+            Action::CallCommand {
+                name: "list_artifacts".to_string(),
+                arguments: json!({ "projectId": 12 }),
+            }
+        );
+
+        let cmd_create = parse_args(
+            &s(&[
+                "cmd",
+                "create_artifact",
+                "--json",
+                r#"{"projectId":1,"kind":"checklist","title":"CLI Teste"}"#,
+            ]),
+            || Ok(String::new()),
+        )
+        .unwrap();
+        assert_eq!(
+            cmd_create,
+            Action::CallCommand {
+                name: "create_artifact".to_string(),
+                arguments: json!({
+                    "projectId": 1,
+                    "kind": "checklist",
+                    "title": "CLI Teste",
+                }),
             }
         );
     }
