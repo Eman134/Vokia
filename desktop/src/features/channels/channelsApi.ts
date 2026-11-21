@@ -3,6 +3,7 @@ import type { Agent } from '../team/events'
 
 const LIST_CHANNELS_COMMAND = 'list_channels'
 const CREATE_CHANNEL_COMMAND = 'create_channel'
+const UPDATE_CHANNEL_COMMAND = 'update_channel'
 const DELETE_CHANNEL_COMMAND = 'delete_channel'
 
 export interface Channel {
@@ -19,6 +20,15 @@ export function listChannels(projectId: number): Promise<Channel[]> {
 
 export function createChannel(projectId: number, name: string, members: readonly Agent[]): Promise<Channel> {
   return invoke<Channel>(CREATE_CHANNEL_COMMAND, { projectId, name, members })
+}
+
+export function updateChannel(
+  projectId: number,
+  id: number,
+  name: string,
+  members: readonly Agent[],
+): Promise<Channel> {
+  return invoke<Channel>(UPDATE_CHANNEL_COMMAND, { projectId, id, name, members })
 }
 
 export function deleteChannel(projectId: number, id: number): Promise<void> {

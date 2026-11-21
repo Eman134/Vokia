@@ -142,6 +142,50 @@ fn criar_em_projeto_inexistente_falha_sem_gravar() {
 }
 
 #[test]
+fn editar_troca_nome_e_membros_sem_mexer_nos_outros_canais() {
+    let t = TempDb::open();
+    let project = t.project("a");
+    let target = t.channel(project, "um");
+    t.channel(project, "dois");
+
+    let edited =
+        t.db.update_channel(project, target.id, "novo", &members(&["vexa", "nox", "axiom"]))
+            .unwrap();
+
+    assert_eq!(edited.id, target.id);
+    assert_eq!(edited.name, "novo");
+    assert_eq!(edited.members, members(&["vexa", "nox", "axiom"]));
+    assert_eq!(t.names(project), vec!["novo", "dois"]);
+}
+
+#[test]
+fn editar_para_nome_de_outro_canal_falha_e_preserva_o_original() {
+    let t = TempDb::open();
+    let project = t.project("a");
+    let target = t.channel(project, "um");
+    t.channel(project, "dois");
+
+    let error = t.db.update_channel(project, target.id, "dois", &members(&["axiom"])).unwrap_err();
+
+    assert!(matches!(error, DbError::ChannelNameTaken(_)));
+    assert_eq!(t.names(project), vec!["um", "dois"]);
+}
+
+#[test]
+fn editar_canal_de_outro_projeto_ou_inexistente_falha() {
+    let t = TempDb::open();
+    let (owner, other) = (t.project("a"), t.project("b"));
+    let channel = t.channel(owner, "front");
+
+    let foreign = t.db.update_channel(other, channel.id, "x1", &members(&["axiom"])).unwrap_err();
+    let missing = t.db.update_channel(owner, 42, "x1", &members(&["axiom"])).unwrap_err();
+
+    assert_eq!(foreign.to_string(), "Canal não encontrado.");
+    assert_eq!(missing.to_string(), "Canal não encontrado.");
+    assert_eq!(t.names(owner), vec!["front"]);
+}
+
+#[test]
 fn excluir_remove_so_o_canal_pedido() {
     let t = TempDb::open();
     let project = t.project("a");

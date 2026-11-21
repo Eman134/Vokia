@@ -1,6 +1,6 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { createChannel, deleteChannel, listChannels, type Channel } from './channelsApi'
+import { createChannel, deleteChannel, listChannels, updateChannel, type Channel } from './channelsApi'
 import type { Agent } from '../team/events'
 import { useProjects } from '../projects/useProjects'
 
@@ -35,6 +35,13 @@ export const useChannels = defineStore('channels', () => {
     return channel
   }
 
+  async function update(id: number, name: string, members: readonly Agent[]): Promise<Channel> {
+    const projectId = requireProject()
+    const updated = await updateChannel(projectId, id, name, members)
+    channels.value = channels.value.map((channel) => (channel.id === id ? updated : channel))
+    return updated
+  }
+
   async function remove(id: number): Promise<void> {
     const projectId = requireProject()
     await deleteChannel(projectId, id)
@@ -51,5 +58,5 @@ export const useChannels = defineStore('channels', () => {
 
   watch(() => projects.selected?.id, load, { immediate: true })
 
-  return { channels, loadError, load, create, remove }
+  return { channels, loadError, load, create, update, remove }
 })

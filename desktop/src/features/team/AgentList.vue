@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -23,6 +23,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
+const EDIT_CHANNEL_LABEL = 'Editar canal'
 const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
 const CLOSE_LABEL = 'Fechar'
 const PANEL_CLASSES =
@@ -57,6 +58,8 @@ const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
 const creating = ref(false)
+const editing = ref<Channel | null>(null)
+const dialogTitle = computed(() => (editing.value ? EDIT_CHANNEL_LABEL : NEW_CHANNEL_LABEL))
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
 const stripCollapsed = ref(true)
 const channelError = ref<string | null>(null)
@@ -102,7 +105,8 @@ function toggleStrip(): void {
   stripCollapsed.value = !stripCollapsed.value
 }
 
-function openChannelDialog(): void {
+function openChannelDialog(channel: Channel | null = null): void {
+  editing.value = channel
   opener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
   creating.value = true
   void nextTick(() => dialog.value?.querySelector<HTMLElement>('input')?.focus())
@@ -110,6 +114,7 @@ function openChannelDialog(): void {
 
 function closeChannelDialog(): void {
   creating.value = false
+  editing.value = null
   opener.value?.focus()
 }
 </script>
@@ -128,7 +133,7 @@ function closeChannelDialog(): void {
     <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
-        <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog">
+        <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog()">
           +
         </UiButton>
       </div>
@@ -154,7 +159,7 @@ function closeChannelDialog(): void {
           >
             #{{ channel.name }}
           </button>
-          <ChannelMenu :name="channel.name" @remove="removeChannel(channel)" />
+          <ChannelMenu :name="channel.name" @edit="openChannelDialog(channel)" @remove="removeChannel(channel)" />
         </li>
       </ul>
       <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
@@ -244,8 +249,8 @@ function closeChannelDialog(): void {
       @keydown.esc.stop="closeChannelDialog"
       @keydown.tab="trapFocus($event, dialog)"
     >
-      <h2 :id="NEW_CHANNEL_TITLE_ID" class="text-control font-bold text-ink">{{ NEW_CHANNEL_LABEL }}</h2>
-      <ChannelForm @done="closeChannelDialog" />
+      <h2 :id="NEW_CHANNEL_TITLE_ID" class="text-control font-bold text-ink">{{ dialogTitle }}</h2>
+      <ChannelForm :key="editing?.id" :channel="editing ?? undefined" @done="closeChannelDialog" />
       <UiButton variant="quiet" size="sm" @press="closeChannelDialog">{{ CLOSE_LABEL }}</UiButton>
     </section>
   </div>

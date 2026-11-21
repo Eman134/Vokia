@@ -75,6 +75,35 @@ impl Db {
         Ok(channel)
     }
 
+    pub fn update_channel(
+        &self,
+        project_id: i64,
+        id: i64,
+        name: &str,
+        members: &[String],
+    ) -> Result<Channel, DbError> {
+        let members_json =
+            serde_json::to_string(members).expect("uma lista de textos sempre serializa para JSON");
+        let conn = self.conn()?;
+        let updated = conn
+            .execute(
+                "UPDATE channels SET name = ?3, members = ?4 WHERE project_id = ?1 AND id = ?2",
+                params![project_id, id, name, members_json],
+            )
+            .map_err(|error| match error.sqlite_error_code() {
+                Some(ErrorCode::ConstraintViolation) => DbError::ChannelNameTaken(name.to_string()),
+                _ => DbError::Sqlite(error),
+            })?;
+        if updated == 0 {
+            return Err(DbError::ChannelNotFound);
+        }
+        Ok(conn.query_row(
+            &format!("SELECT {CHANNEL_COLUMNS} FROM channels WHERE id = ?1"),
+            [id],
+            channel_from_row,
+        )?)
+    }
+
     pub fn delete_channel(&self, project_id: i64, id: i64) -> Result<(), DbError> {
         let conn = self.conn()?;
         let deleted = conn.execute(
