@@ -7,7 +7,7 @@ use super::backlog::ensure_project;
 use super::connection::Db;
 use super::error::DbError;
 
-const ARTIFACT_ID_PREFIX: &str = "plano-";
+pub(super) const ARTIFACT_ID_PREFIX: &str = "plano-";
 const CRITERION_ID_PREFIX: &str = "c";
 
 const UPSERT_ARTIFACT_SQL: &str = "INSERT INTO artifacts (project_id, id, item_id, title, summary, \
@@ -56,17 +56,7 @@ impl Db {
     pub fn list_artifacts(&self, project_id: i64) -> Result<Vec<Artifact>, DbError> {
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;
-        let mut statement = conn.prepare(&format!(
-            "SELECT {ARTIFACT_COLUMNS} FROM artifacts WHERE project_id = ?1 ORDER BY created_at"
-        ))?;
-        let rows = statement.query_map([project_id], |row| Ok(artifact_from_row(row)))?;
-        let mut artifacts = rows
-            .map(|row| -> Result<Artifact, DbError> { row? })
-            .collect::<Result<Vec<Artifact>, DbError>>()?;
-        for artifact in &mut artifacts {
-            artifact.criteria = read_criteria(&conn, project_id, &artifact.id)?;
-        }
-        Ok(artifacts)
+        read_plan_artifacts(&conn, project_id, None)
     }
 
     pub fn set_artifact_criterion(
@@ -102,6 +92,34 @@ impl Db {
         tx.commit()?;
         Ok(())
     }
+}
+
+// Com id, devolve só esse plano; sem id, todos na ordem de criação.
+fn read_plan_artifacts(
+    conn: &Connection,
+    project_id: i64,
+    id: Option<&str>,
+) -> Result<Vec<Artifact>, DbError> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT {ARTIFACT_COLUMNS} FROM artifacts \
+         WHERE project_id = ?1 AND (?2 IS NULL OR id = ?2) ORDER BY created_at"
+    ))?;
+    let rows = statement.query_map(params![project_id, id], |row| Ok(artifact_from_row(row)))?;
+    let mut artifacts = rows
+        .map(|row| -> Result<Artifact, DbError> { row? })
+        .collect::<Result<Vec<Artifact>, DbError>>()?;
+    for artifact in &mut artifacts {
+        artifact.criteria = read_criteria(conn, project_id, &artifact.id)?;
+    }
+    Ok(artifacts)
+}
+
+pub(super) fn read_plan_artifact(
+    conn: &Connection,
+    project_id: i64,
+    id: &str,
+) -> Result<Option<Artifact>, DbError> {
+    Ok(read_plan_artifacts(conn, project_id, Some(id))?.into_iter().next())
 }
 
 pub(super) fn artifact_id(item_id: &str) -> String {
@@ -166,7 +184,7 @@ pub(super) fn delete_artifact(conn: &Connection, project_id: i64, item_id: &str)
     Ok(())
 }
 
-fn json_text<T: Serialize + ?Sized>(value: &T) -> rusqlite::Result<String> {
+pub(super) fn json_text<T: Serialize + ?Sized>(value: &T) -> rusqlite::Result<String> {
     serde_json::to_string(value).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
 
@@ -189,7 +207,7 @@ fn artifact_from_row(row: &Row<'_>) -> Result<Artifact, DbError> {
     })
 }
 
-fn json_list(row: &Row<'_>, column: &str, item_id: &str) -> Result<Vec<String>, DbError> {
+pub(super) fn json_list(row: &Row<'_>, column: &str, item_id: &str) -> Result<Vec<String>, DbError> {
     let raw: String = row.get(column)?;
     serde_json::from_str(&raw).map_err(|error| DbError::BacklogItemData {
         item_id: item_id.to_string(),

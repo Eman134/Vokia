@@ -1,6 +1,11 @@
 mod agent_removal;
 mod agent_sessions;
 mod approvals;
+// Sem chamador até os comandos e as ferramentas de artefato usarem esta camada.
+#[allow(dead_code)]
+mod artifact_documents;
+#[allow(dead_code)]
+mod artifact_kinds;
 mod artifacts;
 mod attachments;
 mod backlog;
@@ -17,6 +22,12 @@ mod settings;
 
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
+#[allow(unused_imports)]
+pub use artifact_documents::{
+    ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactSummary, NewArtifactDocument,
+};
+#[allow(unused_imports)]
+pub use artifact_kinds::{ArtifactKind, ARTIFACT_KINDS};
 pub use artifacts::Artifact;
 pub use permission_rules::PermissionRule;
 pub use backlog::{

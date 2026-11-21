@@ -777,7 +777,7 @@ fn artifact_set_criterion_com_criterio_ou_plano_inexistente_volta_como_erro_com_
     assert!(wrong_criterion.is_error);
     assert_eq!(wrong_criterion.text, "O critério c9 não existe neste plano.");
     assert!(wrong_plan.is_error);
-    assert_eq!(wrong_plan.text, "O plano plano-item-99 não existe neste projeto.");
+    assert_eq!(wrong_plan.text, "O artefato plano-item-99 não existe neste projeto.");
     assert_eq!(
         criteria_of(&world, project),
         [("c1".to_string(), false), ("c2".to_string(), false)]
@@ -811,7 +811,7 @@ fn artifact_set_criterion_de_outro_projeto_e_recusado_e_done_invalido_volta_como
     );
 
     assert!(foreign.is_error);
-    assert_eq!(foreign.text, format!("O plano plano-{card} não existe neste projeto."));
+    assert_eq!(foreign.text, format!("O artefato plano-{card} não existe neste projeto."));
     for outcome in [bad_done, missing_done] {
         assert!(outcome.is_error);
         assert_eq!(

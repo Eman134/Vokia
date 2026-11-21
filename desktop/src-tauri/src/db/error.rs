@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::ErrorCode;
 use serde::Serialize;
 
+use super::artifact_kinds::ARTIFACT_KINDS;
 use super::backlog::BACKLOG_LABEL_MAX_CHARS;
 use super::orchestration::FlowProblem;
 
@@ -87,6 +88,13 @@ pub enum DbError {
     RunNotInterrupted(i64),
     ArtifactNotFound(String),
     CriterionNotFound(String),
+    UnknownArtifactKind(String),
+    ArtifactReadOnly(String),
+    ArtifactConflict(String),
+    ArtifactCheckNotFound(usize),
+    ArtifactFieldTooLong { field: &'static str, max: usize },
+    EmptyArtifactTitle,
+    EmptyArtifactPatch,
 }
 
 impl DbError {
@@ -118,6 +126,13 @@ impl DbError {
                 | DbError::InvalidBacklogPlan(_)
                 | DbError::ArtifactNotFound(_)
                 | DbError::CriterionNotFound(_)
+                | DbError::UnknownArtifactKind(_)
+                | DbError::ArtifactReadOnly(_)
+                | DbError::ArtifactConflict(_)
+                | DbError::ArtifactCheckNotFound(_)
+                | DbError::ArtifactFieldTooLong { .. }
+                | DbError::EmptyArtifactTitle
+                | DbError::EmptyArtifactPatch
         )
     }
 }
@@ -333,10 +348,34 @@ impl fmt::Display for DbError {
                 write!(f, "O pedido {id} não está mais interrompido.")
             }
             DbError::ArtifactNotFound(id) => {
-                write!(f, "O plano {id} não existe neste projeto.")
+                write!(f, "O artefato {id} não existe neste projeto.")
             }
             DbError::CriterionNotFound(id) => {
                 write!(f, "O critério {id} não existe neste plano.")
+            }
+            DbError::UnknownArtifactKind(kind) => {
+                let kinds: Vec<&str> = ARTIFACT_KINDS.iter().map(|known| known.kind).collect();
+                write!(
+                    f,
+                    "Tipo de artefato desconhecido: {kind}. Use {}.",
+                    kinds.join(", ")
+                )
+            }
+            DbError::ArtifactReadOnly(id) => {
+                write!(f, "O artefato {id} é um plano e não pode ser alterado aqui; edite o plano pelo card.")
+            }
+            DbError::ArtifactConflict(id) => {
+                write!(f, "O artefato {id} foi alterado depois da sua leitura; recarregue e tente de novo.")
+            }
+            DbError::ArtifactCheckNotFound(index) => {
+                write!(f, "O artefato não tem o item de checklist de índice {index}.")
+            }
+            DbError::ArtifactFieldTooLong { field, max } => {
+                write!(f, "O campo {field} do artefato passa de {max} caracteres.")
+            }
+            DbError::EmptyArtifactTitle => write!(f, "O título do artefato não pode ficar vazio."),
+            DbError::EmptyArtifactPatch => {
+                write!(f, "Informe ao menos um campo para atualizar o artefato.")
             }
         }
     }

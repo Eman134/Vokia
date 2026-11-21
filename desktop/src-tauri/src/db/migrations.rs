@@ -125,6 +125,26 @@ const ARTIFACTS_SCHEMA: &str = "
     );
 ";
 
+// Documentos livres do projeto; o tipo e o limite de cada campo valem também no banco.
+const ARTIFACT_DOCUMENTS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS artifact_documents (
+        project_id INTEGER NOT NULL,
+        id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('documento','especificacao','checklist','arquitetura','decisao')),
+        seq INTEGER NOT NULL,
+        title TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+        summary TEXT NOT NULL DEFAULT '' CHECK (length(summary) <= 500),
+        body TEXT NOT NULL DEFAULT '' CHECK (length(body) <= 100000),
+        tags TEXT NOT NULL DEFAULT '[]',
+        author TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, id),
+        UNIQUE (project_id, kind, seq),
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+";
+
 const ATTACHMENTS_SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS attachments (
         project_id INTEGER NOT NULL,
@@ -599,6 +619,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(RUNS_SCHEMA)?;
     tx.execute_batch(PERMISSION_SCHEMA)?;
     tx.execute_batch(ARTIFACTS_SCHEMA)?;
+    tx.execute_batch(ARTIFACT_DOCUMENTS_SCHEMA)?;
     tx.execute_batch(ATTACHMENTS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;

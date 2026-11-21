@@ -13,6 +13,7 @@ const PROJECT_COLUMNS: &str =
 // Critérios antes de artefatos, e os dois com item_plans antes de backlog_items: as chaves estrangeiras apontam nessa ordem.
 const PROJECT_CHILD_TABLES: &[&str] = &[
     "artifact_criteria",
+    "artifact_documents",
     "artifacts",
     "item_plans",
     "backlog_items",

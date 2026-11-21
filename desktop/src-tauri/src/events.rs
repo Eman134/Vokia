@@ -242,6 +242,10 @@ pub enum VokiaEvent {
     BacklogChanged {
         project_id: i64,
     },
+    #[serde(rename_all = "camelCase")]
+    ArtifactsChanged {
+        project_id: i64,
+    },
     OrchestrationChanged,
     #[serde(rename_all = "camelCase")]
     BatchProgress {
