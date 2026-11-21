@@ -86,3 +86,81 @@ fn titulo_que_comeca_com_digitos_e_texto_nao_e_tratado_como_numero_de_lote() {
     assert_eq!(draft.lots[0].title, "2fa");
     assert_eq!(draft.lots[0].meta, "Autenticação");
 }
+
+#[test]
+fn roteiro_nao_vai_para_o_resumo() {
+    let draft = parse_proposal(
+        "Resumo limpo.\nSegunda linha do resumo.\n#plano-pronto\n\
+         #roteiro 1|quem:ember~modelo:sonnet~ctx:Contexto~arq:a.ts\n\
+         #lote 1|Base|Meta\n\
+         #roteiro 2|quem:kairo~modelo:haiku~ctx:Segundo~arq:b.ts",
+    );
+
+    assert_eq!(draft.summary, "Resumo limpo.\nSegunda linha do resumo.");
+    assert_eq!(draft.lots.len(), 1);
+}
+
+#[test]
+fn roteiro_antes_do_lote_correspondente_nao_afeta_o_lote_nem_o_resumo() {
+    let draft = parse_proposal(
+        "Resumo inicial.\n#plano-pronto\n\
+         #roteiro 1|quem:ember~modelo:sonnet~ctx:Contexto~arq:a.ts~passo:P1~passo:P2~pronto:OK~nao:Nao\n\
+         #lote 1|Base|Meta|Tarefa 1; Tarefa 2",
+    );
+
+    assert_eq!(draft.summary, "Resumo inicial.");
+    assert_eq!(draft.lots.len(), 1);
+    assert_eq!(draft.lots[0].n, 1);
+    assert_eq!(draft.lots[0].title, "Base");
+    assert_eq!(draft.lots[0].meta, "Meta");
+    assert_eq!(draft.lots[0].tasks, ["Tarefa 1", "Tarefa 2"]);
+}
+
+#[test]
+fn roteiro_malformado_e_ignorado_e_nao_polui_resumo_nem_quebra_parser() {
+    let draft = parse_proposal(
+        "Resumo intacto.\n#plano-pronto\n\
+         #roteiro\n\
+         #roteiro   \n\
+         #roteiro |\n\
+         #roteiro sem-numero|invalido\n\
+         #roteiro 1|chave-sem-dois-pontos\n\
+         #roteiro 2|desconhecido:valor\n\
+         #lote 1|Titulo|Meta\n\
+         #lote 2|Outro|Meta2",
+    );
+
+    assert_eq!(draft.summary, "Resumo intacto.");
+    assert_eq!(draft.lots.len(), 2);
+    assert_eq!(draft.lots[0].title, "Titulo");
+    assert_eq!(draft.lots[1].title, "Outro");
+}
+
+#[test]
+fn proposta_antiga_sem_roteiro_mantem_regressao_exata() {
+    let draft = parse_proposal(
+        "Resumo legado do plano.\nSegunda linha do resumo.\n#plano-pronto\n\
+         #estimativa ~3 dias\n\
+         #lote 1|Backend|API pronta|Endpoint A; Endpoint B\n\
+         #lote 2|Frontend|Interface pronta|Tela 1\n\
+         #risco Dependência externa\n\
+         #etiquetas backend, frontend",
+    );
+
+    assert_eq!(
+        draft.summary,
+        "Resumo legado do plano.\nSegunda linha do resumo."
+    );
+    assert_eq!(draft.estimate, "~3 dias");
+    assert_eq!(draft.lots.len(), 2);
+    assert_eq!(draft.lots[0].n, 1);
+    assert_eq!(draft.lots[0].title, "Backend");
+    assert_eq!(draft.lots[0].meta, "API pronta");
+    assert_eq!(draft.lots[0].tasks, ["Endpoint A", "Endpoint B"]);
+    assert_eq!(draft.lots[1].n, 2);
+    assert_eq!(draft.lots[1].title, "Frontend");
+    assert_eq!(draft.lots[1].meta, "Interface pronta");
+    assert_eq!(draft.lots[1].tasks, ["Tela 1"]);
+    assert_eq!(draft.risks, ["Dependência externa"]);
+    assert_eq!(draft.tags, ["backend", "frontend"]);
+}

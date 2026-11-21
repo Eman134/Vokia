@@ -11,6 +11,7 @@ import { useDecisions } from '../decisions/useDecisions'
 import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { parseProposal } from './planProposal'
+import PlanAdjustForm from './PlanAdjustForm.vue'
 import { tagLabel } from './tags'
 import {
   DEFAULT_DEPTH,
@@ -31,7 +32,6 @@ const DEPTH_OPTIONS: { id: PlanDepth; label: string }[] = [
 ]
 const RECOMMENDED_LABEL = ' (recomendada)'
 const PENDING_QUESTION_TEXT = 'Há uma pergunta esperando você no painel de Decisões.'
-const ADJUST_LABEL = 'O que ajustar'
 const UNREVIEWED_PLAN_HINT = 'Plano ainda não revisado; ele só vai para Ready depois da revisão.'
 
 const lotsLabel = (count: number, estimate: string): string => {
@@ -51,7 +51,6 @@ const agent = ref<Agent>(DEFAULT_RECIPIENT)
 const depth = ref<PlanDepth>(DEFAULT_DEPTH)
 const chosenPlanId = ref<string | null>(null)
 const adjusting = ref(false)
-const adjustText = ref('')
 
 const current = computed(() => itemPlan.planOf(props.item.id))
 const canUnlink = computed(() => UNLINKABLE_COLUMNS.includes(props.item.column ?? DEFAULT_COLUMN))
@@ -76,9 +75,8 @@ function unlink(): void {
   chosenPlanId.value = null
 }
 
-function sendAdjust(): void {
-  void itemPlan.adjust(props.item.id, adjustText.value)
-  adjustText.value = ''
+function sendAdjust(text: string): void {
+  void itemPlan.adjust(props.item.id, text)
   adjusting.value = false
 }
 
@@ -180,7 +178,7 @@ function triage(): void {
       <UiButton class="self-start" variant="quiet" size="sm" @press="itemPlan.cancel(item.id)">Cancelar</UiButton>
     </template>
 
-    <template v-else-if="current.state === 'proposto'">
+    <template v-else-if="current.state === 'proposto' && !simplified">
       <template v-if="parsed.lots.length">
         <p class="text-label font-semibold text-ink">
           {{ agentName }} {{ lotsLabel(parsed.lots.length, parsed.estimate) }}
@@ -208,16 +206,7 @@ function triage(): void {
         <UiButton variant="quiet" size="lg" @press="adjusting = !adjusting">Ajustar</UiButton>
         <UiButton variant="quiet" size="lg" @press="itemPlan.discard(item.id)">Descartar</UiButton>
       </div>
-      <div v-if="adjusting" class="flex flex-col gap-1.5">
-        <textarea
-          v-model="adjustText"
-          :aria-label="ADJUST_LABEL"
-          :placeholder="ADJUST_LABEL"
-          rows="3"
-          class="w-full rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint"
-        />
-        <UiButton class="self-start" variant="primary" size="sm" :disabled="adjustText.trim() === ''" @press="sendAdjust">Enviar ajuste</UiButton>
-      </div>
+      <PlanAdjustForm v-if="adjusting" @submit="sendAdjust" />
     </template>
 
     <template v-else>

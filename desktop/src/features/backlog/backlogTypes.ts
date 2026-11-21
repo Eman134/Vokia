@@ -26,19 +26,6 @@ export interface ScriptBlock {
   limits: string[]
 }
 
-export type MicroTaskStatus = 'proposta' | 'ready' | 'em andamento' | 'em revisão' | 'feito'
-
-export interface MicroTask {
-  id: string
-  title: string
-  who: string
-  model: string
-  status: MicroTaskStatus
-  script: ScriptBlock
-  returned?: string[]
-  learned?: string[]
-}
-
 export interface BacklogCriterion {
   id: string
   text: string
@@ -124,7 +111,6 @@ export interface BacklogItem {
   priority?: string
   estimate?: string
   questions?: TriageQuestion[]
-  micro?: MicroTask[]
   criteria?: BacklogCriterion[]
   activity?: BacklogActivity[]
   links?: BacklogLink[]

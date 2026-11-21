@@ -12,7 +12,6 @@ import {
   DEFAULT_FEATURE_COLOR,
   DONE_COLUMN_NAME,
   FEATURE_COLOR,
-  MICRO_STATUS_BADGE,
   ORIGIN_LABEL,
   REOPEN_LABEL,
   REOPEN_MOTIVE_PLACEHOLDER,
@@ -29,8 +28,6 @@ import {
   isUnassigned,
   MAIN_ACTION,
   UNASSIGNED_TEXT,
-  MICRO_EXPLANATION,
-  MICRO_SUMMARY,
   MODAL_STATE_CHIP,
   MOVABLE_COLUMNS,
   OTHER_INPUT_LABEL,
@@ -45,21 +42,24 @@ import {
   type BacklogTag,
   type TriageQuestion,
 } from './backlogTypes'
-import MicroTaskScript, { isScriptValid } from './MicroTaskScript.vue'
+import AcceptanceCriteria from './AcceptanceCriteria.vue'
+import LinkedTo from './LinkedTo.vue'
+import PlanBreakdown from './PlanBreakdown.vue'
 import PlanPanel from './PlanPanel.vue'
+import PlanSummaryCard from './PlanSummaryCard.vue'
+import { stagesOf } from '../artifacts/planProgress'
+import { breakdownOf } from './planBreakdown'
 import { useBacklog } from './useBacklog'
 import { useItemQuestions } from './useItemQuestions'
 import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 import { useTriage } from './useTriage'
 import { trapFocus } from './dialogFocus'
-import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 
 const TAG_TINT_PERCENT = 13
-const MICRO_PORTRAIT_SIZE = 20
 const OTHER_INPUT_CLASSES = 'h-9 w-full rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint'
 const TRIAGE_PLAN_TEXT = 'Plano sai da triagem'
 const ARCHIVE_LABEL = 'Arquivar'
@@ -84,6 +84,7 @@ const dialog = ref<HTMLElement>()
 const addingTag = ref(false)
 const newTag = ref('')
 const expandedMicro = ref(new Set<string>())
+const parentStack = ref<string[]>([])
 const answerDrafts = ref<Record<string, string>>({})
 let previousFocus: HTMLElement | null = null
 
@@ -117,10 +118,15 @@ const suggestedTags = computed(() =>
     (tag) => !item.value?.tags.includes(tag),
   ),
 )
-const visibleMicro = computed(() => item.value?.micro?.filter((task) => isScriptValid(task.script)) ?? [])
-const microDone = computed(() => visibleMicro.value.filter((task) => task.status === 'feito').length)
+const itemStages = computed(() => (item.value ? stagesOf(backlog.items, `plano-${item.value.id}`) : []))
+const proposal = computed(() => (item.value ? itemPlan.proposalFor(item.value) : undefined))
+const breakdown = computed(() =>
+  item.value
+    ? breakdownOf(item.value, proposal.value, itemStages.value, (agentId) => roster.profileOf(agentId)?.model)
+    : undefined,
+)
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
-const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : item.value?.plan))
+const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : undefined))
 function responsibleLabel(current: BacklogItem): string {
   if (!isUnassigned(current)) return roster.nameOf(current.who)
   return triage.isWithoutLeader(current.id) ? NO_LEADER_TEXT : UNASSIGNED_TEXT
@@ -175,10 +181,24 @@ function onMainAction(): void {
   if (item.value) void runItem.run(item.value.id)
 }
 
-function toggleMicro(id: string): void {
-  const next = new Set(expandedMicro.value)
-  if (!next.delete(id)) next.add(id)
-  expandedMicro.value = next
+function openPlanArtifact(): void {
+  const id = item.value?.id
+  closeModal()
+  if (id) navigation.openPlanArtifact(id)
+}
+
+function openStage(stageId: string): void {
+  const currentId = item.value?.id
+  if (!currentId) return
+  parentStack.value = [...parentStack.value, currentId]
+  backlog.open(stageId)
+}
+
+function goBackToParent(): void {
+  const parentId = parentStack.value[parentStack.value.length - 1]
+  if (!parentId) return
+  parentStack.value = parentStack.value.slice(0, -1)
+  backlog.open(parentId)
 }
 
 function isOtherAnswer(question: TriageQuestion): boolean {
@@ -234,12 +254,13 @@ watch(
     addingTag.value = false
     newTag.value = ''
     if (id === null) {
+      parentStack.value = []
       previousFocus?.focus()
       previousFocus = null
       return
     }
-    const firstMicro = visibleMicro.value[0]
-    expandedMicro.value = new Set(firstMicro ? [firstMicro.id] : [])
+    const firstStep = breakdown.value?.steps[0]
+    expandedMicro.value = new Set(firstStep ? [firstStep.id] : [])
     answerDrafts.value = {}
     previousFocus ??= document.activeElement instanceof HTMLElement ? document.activeElement : null
     await nextTick()
@@ -268,6 +289,9 @@ watch(
       <div class="flex flex-col gap-2 border-b border-line px-6 pt-6 pb-4">
         <header class="flex flex-col gap-2">
           <div class="flex flex-wrap items-center gap-2 text-caption text-muted">
+            <UiButton v-if="parentStack.length > 0" variant="quiet" size="sm" data-testid="modal-back-to-parent" @press="goBackToParent">
+              ← Voltar ao item
+            </UiButton>
             <span>{{ item.id }}</span>
             <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
             <span v-if="item.feature" class="inline-flex items-center gap-1.5">
@@ -345,50 +369,19 @@ watch(
             </div>
           </section>
 
-          <section v-if="visibleMicro.length" class="flex flex-col gap-2">
-            <div class="flex items-baseline justify-between">
-              <h3 class="text-label font-semibold text-ink">Desdobramento</h3>
-              <span class="text-caption text-muted">{{ MICRO_SUMMARY(visibleMicro.length, microDone) }}</span>
-            </div>
-            <div v-for="task in visibleMicro" :key="task.id" class="flex flex-col gap-2 rounded-control-lg border border-line p-3">
-              <button
-                type="button"
-                class="flex cursor-pointer items-center gap-2 text-left text-control text-ink hover:opacity-80"
-                :aria-expanded="expandedMicro.has(task.id)"
-                @click="toggleMicro(task.id)"
-              >
-                <span aria-hidden="true">{{ expandedMicro.has(task.id) ? '▾' : '▸' }}</span>
-                <span class="font-mono text-meta text-muted">{{ task.id }}</span>
-                <span class="font-medium">{{ task.title }}</span>
-                <span class="ml-auto flex items-center gap-2">
-                  <AgentPortrait :who="task.who" :size="MICRO_PORTRAIT_SIZE" />
-                  <span class="text-caption text-muted">{{ task.model }}</span>
-                  <UiBadge :status="MICRO_STATUS_BADGE[task.status]" :label="task.status" />
-                </span>
-              </button>
-              <MicroTaskScript
-                v-if="expandedMicro.has(task.id)"
-                :script="task.script"
-                :model="task.model"
-                :leader="leaderName"
-                :returned="task.returned"
-                :learned="task.learned"
-              />
-            </div>
-            <p class="text-caption text-muted">{{ MICRO_EXPLANATION(leaderName) }}</p>
-          </section>
+          <PlanBreakdown
+            v-if="breakdown && breakdown.steps.length > 0"
+            v-model:expanded="expandedMicro"
+            :breakdown="breakdown"
+            :leader="leaderName"
+            @open-stage="openStage"
+          />
 
-          <section v-if="item.criteria?.length">
-            <h3 class="mb-1 text-label font-semibold text-ink">Critérios de aceite</h3>
-            <ul class="flex flex-col gap-1">
-              <li v-for="criterion in item.criteria" :key="criterion.id">
-                <label class="flex items-center gap-2 text-control text-ink">
-                  <input type="checkbox" :checked="criterion.done" @change="backlog.toggleCriterion(item.id, criterion.id)" />
-                  <span :class="criterion.done && 'text-muted line-through'">{{ criterion.text }}</span>
-                </label>
-              </li>
-            </ul>
-          </section>
+          <AcceptanceCriteria
+            v-if="item.criteria?.length"
+            :criteria="item.criteria"
+            @toggle="backlog.toggleCriterion(item.id, $event)"
+          />
 
           <section v-if="item.activity?.length">
             <h3 class="mb-1 text-label font-semibold text-ink">Atividade</h3>
@@ -409,19 +402,26 @@ watch(
             </dl>
           </section>
 
-          <section class="flex flex-col gap-1">
+          <PlanSummaryCard
+            v-if="breakdown && (planState === 'proposto' || planState === 'vinculado')"
+            :item="item"
+            :state="planState"
+            :breakdown="breakdown"
+          />
+          <section v-else class="flex flex-col gap-1">
             <h3 class="text-label font-semibold text-ink">Plano</h3>
             <p v-if="planText" class="whitespace-pre-wrap text-control text-ink">{{ planText }}</p>
             <p class="text-caption text-muted">{{ PLAN_HINT[planState] }}</p>
             <PlanPanel :item="item" simplified />
           </section>
 
-          <section v-if="item.links?.length">
-            <h3 class="mb-1 text-label font-semibold text-ink">Vínculos</h3>
-            <ul class="flex flex-col gap-1 text-caption text-muted">
-              <li v-for="link in item.links" :key="link.id">{{ link.label }}</li>
-            </ul>
-          </section>
+          <LinkedTo
+            :item-id="item.id"
+            :has-plan="planState === 'vinculado'"
+            :links="item.links"
+            @open-plan="openPlanArtifact()"
+            @open-link="openPlanArtifact()"
+          />
         </aside>
       </div>
 

@@ -9,6 +9,7 @@ export const useNavigation = defineStore('navigation', () => {
   const profile = useUserProfile()
   // Perfil incompleto abre o onboarding antes do resto do app; main.ts carrega o perfil antes de montar.
   const page = ref<AppPage>(profile.pendingStep === null ? DEFAULT_PAGE : 'onboarding')
+  const pendingArtifactPlanId = ref<string | null>(null)
   const projects = useProjects()
   // Só na sessão: a lembrança não é persistida no banco.
   const lastPageByProject = new Map<number, AppPage>()
@@ -38,5 +39,16 @@ export const useNavigation = defineStore('navigation', () => {
     goTo(rememberedPage(project.id))
   }
 
-  return { page, goTo, rememberedPage, enterProject }
+  function openPlanArtifact(itemId: string): void {
+    pendingArtifactPlanId.value = itemId
+    goTo('canvas')
+  }
+
+  function takePendingPlanId(): string | null {
+    const id = pendingArtifactPlanId.value
+    pendingArtifactPlanId.value = null
+    return id
+  }
+
+  return { page, pendingArtifactPlanId, goTo, openPlanArtifact, takePendingPlanId, rememberedPage, enterProject }
 })

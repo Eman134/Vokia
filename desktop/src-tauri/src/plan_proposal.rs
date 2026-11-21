@@ -1,6 +1,7 @@
 const PLAN_READY_MARKER: &str = "#plano-pronto";
 const ESTIMATE_MARKER: &str = "#estimativa";
 const LOT_MARKER: &str = "#lote";
+const SCRIPT_MARKER: &str = "#roteiro";
 const RISK_MARKER: &str = "#risco";
 const TAGS_MARKER: &str = "#etiquetas";
 const LOT_FIELD_SEPARATOR: char = '|';
@@ -41,6 +42,9 @@ pub fn parse_proposal(text: &str) -> PlanDraft {
             if let Some(lot) = parse_lot(rest, n) {
                 draft.lots.push(lot);
             }
+        } else if line.starts_with(SCRIPT_MARKER) {
+            // O roteiro detalhado é consumido só no front; o Rust ignora para não poluir o resumo.
+            continue;
         } else if let Some(rest) = line.strip_prefix(RISK_MARKER) {
             let risk = rest.trim();
             if !risk.is_empty() {

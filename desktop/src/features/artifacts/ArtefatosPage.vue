@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
@@ -7,6 +7,7 @@ import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import { PAGE_LABELS } from '../../shell/railNav'
+import { useNavigation } from '../../shell/useNavigation'
 import { useBacklog } from '../backlog/useBacklog'
 import { useItemPlan } from '../backlog/useItemPlan'
 import { useProjects } from '../projects/useProjects'
@@ -28,6 +29,7 @@ type PageFilter = typeof ALL_FILTER | typeof PLANS_FILTER
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
 const projectsStore = useProjects()
+const navigation = useNavigation()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 const plans = computed(() =>
@@ -46,7 +48,13 @@ const filterOptions = computed<{ value: PageFilter; label: string }[]>(() => [
 ])
 const countLabel = computed(() => `${plans.value.length} ${plans.value.length === 1 ? 'artefato' : 'artefatos'}`)
 
-const openedPlanId = ref<string | null>(null)
+const openedPlanId = ref<string | null>(navigation.takePendingPlanId())
+watch(
+  () => navigation.pendingArtifactPlanId,
+  (nextId) => {
+    if (nextId !== null) openedPlanId.value = navigation.takePendingPlanId()
+  },
+)
 const openedPlan = computed(() => plans.value.find((plan) => plan.item.id === openedPlanId.value))
 </script>
 
