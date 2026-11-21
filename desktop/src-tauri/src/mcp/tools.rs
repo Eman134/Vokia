@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, AgentRegistry, Team};
 use crate::commands::channels::post_agent_message;
+use crate::commands::dispatcher::list_commands_filtered;
 use crate::commands::orchestration::{read_movements, read_orchestration};
 use crate::db::{
     board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, CardResponsible, DbError,
@@ -42,6 +43,21 @@ const SAVE_ITEM_PLAN: &str = "save_item_plan";
 const ARTIFACT_SET_CRITERION: &str = "artifact_set_criterion";
 const LIST_MOVEMENTS: &str = "list_movements";
 const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
+const APP_COMMANDS_LIST: &str = "app_commands_list";
+pub(super) const APP_COMMAND_CALL: &str = "app_command_call";
+const COMMAND_DOMAINS: [&str; 11] = [
+    "team",
+    "projects",
+    "channels",
+    "backlog",
+    "artifacts",
+    "attachments",
+    "agents",
+    "roles",
+    "orchestration",
+    "providers",
+    "settings",
+];
 const OP_SET: &str = "set";
 const OP_APPEND: &str = "append";
 
@@ -166,6 +182,11 @@ struct ProposalArgs {
 }
 
 #[derive(Deserialize)]
+struct CommandsListArgs {
+    domain: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct PostChannelArgs {
     channel: String,
     text: String,
@@ -183,6 +204,12 @@ struct CriterionArgs {
     artifact_id: String,
     criterion_id: String,
     done: bool,
+}
+
+pub(crate) fn is_tool(name: &str) -> bool {
+    definitions()
+        .iter()
+        .any(|definition| definition["name"].as_str() == Some(name))
 }
 
 pub fn definitions() -> Vec<Value> {
@@ -384,6 +411,21 @@ pub fn definitions() -> Vec<Value> {
             }),
             &["channel", "text"],
         ),
+        tool(
+            APP_COMMANDS_LIST,
+            "Lista os comandos administrativos do Vokia (papéis, agentes, orquestração, provedores, canais, projetos, configurações) com o schema de cada um.",
+            json!({ "domain": { "type": "string", "enum": COMMAND_DOMAINS } }),
+            &[],
+        ),
+        tool(
+            APP_COMMAND_CALL,
+            "Executa um comando administrativo do Vokia pelo nome, com os argumentos do schema listado por app_commands_list.",
+            json!({
+                "name": { "type": "string" },
+                "arguments": { "type": "object" },
+            }),
+            &["name"],
+        ),
     ]
 }
 
@@ -440,6 +482,7 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         POST_CHANNEL_MESSAGE => {
             parse(name, arguments).and_then(|args| post_channel_message(app, binding, args))
         }
+        APP_COMMANDS_LIST => parse(name, arguments).and_then(app_commands_list),
         _ => return None,
     };
     Some(match outcome {
@@ -1023,6 +1066,10 @@ fn list_movements(app: &AppHandle, binding: &Binding) -> ToolText {
     let movements =
         read_movements(db, binding.project_id).map_err(|_| SYSTEM_FAILURE.to_string())?;
     to_json(&movements)
+}
+
+fn app_commands_list(args: CommandsListArgs) -> ToolText {
+    to_json(&list_commands_filtered(args.domain.as_deref()))
 }
 
 fn post_channel_message(app: &AppHandle, binding: &Binding, args: PostChannelArgs) -> ToolText {

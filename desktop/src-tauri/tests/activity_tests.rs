@@ -580,3 +580,211 @@ fn detalhe_de_inicio_sai_no_json_com_card_id() {
     let detail = ToolDetail::Started { card_id: "item-7".to_string() };
     assert_eq!(serde_json::to_value(detail).unwrap(), json!({ "kind": "started", "cardId": "item-7" }));
 }
+
+#[test]
+fn app_command_call_com_role_create_e_name_identifica_app_command() {
+    let tool = run_tool(
+        "mcp__vokia__app_command_call",
+        json!({
+            "name": "role_create",
+            "arguments": { "name": "Tester" }
+        }),
+    );
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(tool.target, "role_create");
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "role_create".to_string(),
+            domain: Some("roles".to_string()),
+            subject: Some("Tester".to_string()),
+        })
+    );
+}
+
+#[test]
+fn app_command_call_create_agent_com_draft_name_extrai_subject_aninhado() {
+    let tool = run_tool(
+        "mcp__vokia__app_command_call",
+        json!({
+            "name": "create_agent",
+            "arguments": {
+                "draft": { "name": "Hefesto" }
+            }
+        }),
+    );
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(tool.target, "create_agent");
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "create_agent".to_string(),
+            domain: Some("agents".to_string()),
+            subject: Some("Hefesto".to_string()),
+        })
+    );
+}
+
+#[test]
+fn chamada_direta_mcp_vokia_role_create_tem_mesma_identificacao() {
+    let tool = run_tool(
+        "mcp__vokia__role_create",
+        json!({ "name": "Revisor" }),
+    );
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(tool.target, "role_create");
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "role_create".to_string(),
+            domain: Some("roles".to_string()),
+            subject: Some("Revisor".to_string()),
+        })
+    );
+}
+
+#[test]
+fn mcp_vokia_list_backlog_continua_mcp_sem_detalhe() {
+    let tool = run_tool(
+        "mcp__vokia__list_backlog",
+        json!({}),
+    );
+    assert_eq!(tool.category, ToolCategory::Mcp);
+    assert_eq!(tool.detail, None);
+}
+
+#[test]
+fn is_error_mantem_detalhe_de_app_command() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use(
+        "t1",
+        "mcp__vokia__app_command_call",
+        json!({
+            "name": "delete_channel",
+            "arguments": { "id": "geral" }
+        }),
+    )]));
+    feed.push(user(vec![result_block("t1", true)]));
+
+    let tool = &feed.parser.snapshot().tools[0];
+    assert_eq!(tool.status, ToolStatus::Failed);
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "delete_channel".to_string(),
+            domain: Some("channels".to_string()),
+            subject: Some("geral".to_string()),
+        })
+    );
+}
+
+#[test]
+fn app_command_call_sem_name_cai_no_generico_sem_panico() {
+    let tool = run_tool(
+        "mcp__vokia__app_command_call",
+        json!({ "arguments": {} }),
+    );
+    assert_eq!(tool.category, ToolCategory::Mcp);
+    assert_eq!(tool.detail, None);
+}
+
+#[test]
+fn project_id_nao_vira_subject() {
+    let tool = run_tool(
+        "mcp__vokia__app_command_call",
+        json!({
+            "name": "select_project",
+            "arguments": { "projectId": 42 }
+        }),
+    );
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "select_project".to_string(),
+            domain: Some("projects".to_string()),
+            subject: None,
+        })
+    );
+}
+
+#[test]
+fn texto_longo_em_instructions_nao_vira_subject() {
+    let tool = run_tool(
+        "mcp__vokia__app_command_call",
+        json!({
+            "name": "set_agent_instructions",
+            "arguments": {
+                "agent": "hefesto",
+                "instructions": "Você é o agente responsável por construir a arquitetura do projeto com atenção total a detalhes e padrões limpos."
+            }
+        }),
+    );
+    assert_eq!(tool.category, ToolCategory::App);
+    assert_eq!(
+        tool.detail,
+        Some(ToolDetail::AppCommand {
+            command: "set_agent_instructions".to_string(),
+            domain: Some("agents".to_string()),
+            subject: Some("hefesto".to_string()),
+        })
+    );
+}
+
+#[test]
+fn desserializacao_de_turn_activity_antigo_sem_app_command() {
+    let antigo_json = r#"{
+        "startedAt": "2026-03-01T10:00:00Z",
+        "thinkingMs": 350,
+        "thinkingText": "Analisando arquivos...",
+        "tools": [
+            {
+                "callId": "t1",
+                "name": "Read",
+                "category": "read",
+                "target": "src/main.rs",
+                "status": "ok",
+                "durationMs": 120
+            },
+            {
+                "callId": "t2",
+                "name": "Bash",
+                "category": "command",
+                "target": "cargo check",
+                "status": "ok",
+                "durationMs": 450
+            }
+        ],
+        "tokensIn": 1000,
+        "tokensOut": 200,
+        "cacheReadTokens": 50,
+        "cacheCreationTokens": 0,
+        "costUsd": 0.005,
+        "model": "sonnet"
+    }"#;
+    let activity: TurnActivity = serde_json::from_str(antigo_json).expect("desserializa TurnActivity antigo");
+    assert_eq!(activity.tools.len(), 2);
+    assert_eq!(activity.tools[0].category, ToolCategory::Read);
+    assert_eq!(activity.tools[0].detail, None);
+    assert_eq!(activity.tools[1].category, ToolCategory::Command);
+    assert_eq!(activity.tools[1].detail, None);
+}
+
+#[test]
+fn detalhe_de_app_command_sai_no_json_com_kind_command() {
+    let detail = ToolDetail::AppCommand {
+        command: "role_create".to_string(),
+        domain: Some("roles".to_string()),
+        subject: Some("Tester".to_string()),
+    };
+    assert_eq!(
+        serde_json::to_value(detail).unwrap(),
+        json!({
+            "kind": "command",
+            "command": "role_create",
+            "domain": "roles",
+            "subject": "Tester"
+        })
+    );
+}

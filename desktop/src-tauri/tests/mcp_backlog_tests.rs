@@ -518,9 +518,12 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "save_item_plan",
             "artifact_set_criterion",
             "list_movements",
-            "post_channel_message"
+            "post_channel_message",
+            "app_commands_list",
+            "app_command_call"
         ]
     );
+    assert_eq!(names.len(), 24);
     assert!(tools
         .iter()
         .all(|tool| tool["inputSchema"]["additionalProperties"] == json!(false)));
@@ -555,7 +558,9 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__save_item_plan",
             "mcp__vokia__artifact_set_criterion",
             "mcp__vokia__list_movements",
-            "mcp__vokia__post_channel_message"
+            "mcp__vokia__post_channel_message",
+            "mcp__vokia__app_commands_list",
+            "mcp__vokia__app_command_call"
         ]
     );
 }
@@ -815,4 +820,132 @@ fn artifact_set_criterion_de_outro_projeto_e_recusado_e_done_invalido_volta_como
         );
     }
     assert_eq!(criteria_of(&world, project_a)[0], ("c1".to_string(), false));
+}
+
+#[test]
+fn app_commands_list_com_dominio_roles_retorna_apenas_os_quatro_comandos_com_schemas() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+
+    let outcome = world.call(
+        &axiom,
+        "app_commands_list",
+        json!({ "domain": "roles" }),
+    );
+
+    assert!(!outcome.is_error, "{}", outcome.text);
+    let list: Vec<Value> = serde_json::from_str(&outcome.text).expect("JSON array");
+    assert_eq!(list.len(), 4);
+
+    let names: Vec<&str> = list
+        .iter()
+        .map(|cmd| cmd["name"].as_str().expect("name"))
+        .collect();
+    assert_eq!(
+        names,
+        ["role_list", "role_create", "role_update", "role_delete"]
+    );
+
+    for cmd in &list {
+        assert_eq!(cmd["domain"], "roles");
+        assert!(cmd["description"].is_string());
+        assert_eq!(cmd["inputSchema"]["type"], "object");
+    }
+}
+
+#[test]
+fn app_command_call_sem_name_ou_uionly_ou_inexistente_retorna_erro_e_comando_valido_executa() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+
+    // 1. tools/call para app_command_call sem name -> erro claro (-32602)
+    let body_sem_name = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "app_command_call",
+            "arguments": {}
+        }
+    });
+    let reply_sem_name = run(send(world.port, &Request::post(world.port, &axiom.token, body_sem_name)));
+    let json_sem_name = reply_sem_name.json();
+    assert_eq!(json_sem_name["error"]["code"], -32602);
+    assert_eq!(
+        json_sem_name["error"]["message"],
+        "falta o nome do comando em app_command_call"
+    );
+
+    // 2. tools/call para app_command_call com name: "pick_folder" (UiOnly) -> isError: true
+    let outcome_uionly = world.call(
+        &axiom,
+        "app_command_call",
+        json!({ "name": "pick_folder" }),
+    );
+    assert!(outcome_uionly.is_error);
+    assert_eq!(
+        outcome_uionly.text,
+        "Comando exclusivo da interface gráfica (não disponível via MCP/CLI)."
+    );
+
+    // 3. tools/call para app_command_call com name: "inexistente" -> isError: true
+    let outcome_inexistente = world.call(
+        &axiom,
+        "app_command_call",
+        json!({ "name": "inexistente" }),
+    );
+    assert!(outcome_inexistente.is_error);
+    assert_eq!(outcome_inexistente.text, "comando desconhecido: inexistente");
+
+    // 4. Execução de comando administrativo válido via app_command_call
+    let outcome_valido = world.call(
+        &axiom,
+        "app_command_call",
+        json!({ "name": "role_list" }),
+    );
+    assert!(!outcome_valido.is_error, "{}", outcome_valido.text);
+}
+
+#[test]
+fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.agent("axiom", "Axiom", project);
+
+    // 1. McpServer::tool_names() inclui mcp__vokia__app_commands_list e mcp__vokia__app_command_call
+    let tool_names = world.server.tool_names();
+    assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_commands_list"));
+    assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_command_call"));
+    assert_eq!(tool_names.len(), 24);
+
+    // 2. commands/list aceita filtro por domínio
+    let body_list = json!({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "commands/list",
+        "params": { "domain": "roles" }
+    });
+    let reply_list = run(send(world.port, &Request::post(world.port, &axiom.token, body_list)));
+    let commands = reply_list.json()["result"]["commands"].as_array().cloned().expect("commands");
+    assert_eq!(commands.len(), 4);
+
+    // 3. commands/call direto continua funcionando
+    let body_call = json!({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "commands/call",
+        "params": {
+            "name": "role_list",
+            "arguments": {}
+        }
+    });
+    let reply_call = run(send(world.port, &Request::post(world.port, &axiom.token, body_call)));
+    assert_eq!(reply_call.status, 200);
+    assert_eq!(reply_call.json()["result"]["isError"], false);
+
+    // 4. Tool existente de backlog continua funcionando
+    let card_id = world.create(&axiom, "Verificação regressão");
+    assert!(!card_id.is_empty());
 }

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -5,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::console::{ConsoleKind, ConsoleLine};
+use crate::commands::dispatcher::{command_domain, APP_PREFIX};
+use crate::mcp::tools::is_tool;
 
 const MAX_TOOLS: usize = 100;
 const TEXT_MAX_CHARS: usize = 300;
@@ -24,6 +27,14 @@ const THINKING_SEPARATOR: &str = "\n\n";
 const TOOL_USE_BLOCK: &str = "tool_use";
 const TOOL_RESULT_BLOCK: &str = "tool_result";
 const MCP_PREFIX: &str = "mcp__";
+const VOKIA_TOOL_PREFIX: &str = "mcp__vokia__";
+const APP_COMMAND_CALL_TOOL: &str = "app_command_call";
+const COMMAND_NAME_FIELD: &str = "name";
+const COMMAND_ARGUMENTS_FIELD: &str = "arguments";
+const SUBJECT_FIELDS: [&str; 8] = [
+    "name", "title", "label", "agent", "channel", "itemId", "id", "key",
+];
+const NESTED_SUBJECT_FIELDS: [&str; 3] = ["draft", "edit", "role"];
 const PATCH_ADDED: char = '+';
 const PATCH_REMOVED: char = '-';
 const FOUND_NAMES_MAX: usize = 20;
@@ -42,6 +53,7 @@ pub enum ToolCategory {
     List,
     Web,
     Mcp,
+    App,
     Agent,
     Plan,
     Other,
@@ -74,6 +86,13 @@ pub enum ToolDetail {
     Started {
         #[serde(rename = "cardId")]
         card_id: String,
+    },
+    #[serde(rename = "command")]
+    AppCommand {
+        command: String,
+        domain: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject: Option<String>,
     },
 }
 
@@ -220,7 +239,7 @@ impl ActivityParser {
         }
         let name = block["name"].as_str().unwrap_or_default();
         let input = &block["input"];
-        let category = category_of(name);
+        let category = category_of(name, input);
         let (added, removed) = written_lines(name, input);
         let change = change_of(name, input);
         self.open.insert(
@@ -235,7 +254,7 @@ impl ActivityParser {
             call_id: cut(call_id),
             name: clean(name),
             category,
-            target: clean(target_of(name, input)),
+            target: clean(&target_of(name, input)),
             status: ToolStatus::Running,
             added,
             removed,
@@ -278,7 +297,9 @@ impl ActivityParser {
                 tool.added = None;
                 tool.removed = None;
                 tool.change = None;
-                tool.detail = None;
+                if !matches!(tool.detail, Some(ToolDetail::AppCommand { .. })) {
+                    tool.detail = None;
+                }
                 continue;
             }
             tool.status = ToolStatus::Ok;
@@ -319,6 +340,13 @@ fn result_text(content: &Value) -> Option<String> {
 }
 
 fn entry_detail(name: &str, input: &Value) -> Option<ToolDetail> {
+    if let Some((command, arguments)) = app_command(name, input) {
+        return Some(ToolDetail::AppCommand {
+            domain: command_domain(&command).map(str::to_string),
+            subject: subject_of(arguments),
+            command,
+        });
+    }
     match name.to_ascii_lowercase().as_str() {
         "read" => read_range(input),
         "taskcreate" => Some(ToolDetail::Created { id: None }),
@@ -394,7 +422,43 @@ fn name_of(text: &str) -> String {
     clean(text).chars().take(NAME_MAX_CHARS).collect()
 }
 
-fn category_of(name: &str) -> ToolCategory {
+// Comando do app chamado pelo agente: via a meta-tool `app_command_call` ou direto pelo nome do comando.
+// Tool própria do MCP vem primeiro, porque pode ter o mesmo nome de um comando (ex.: list_agents).
+fn app_command<'a>(name: &str, input: &'a Value) -> Option<(String, &'a Value)> {
+    let bare = name.strip_prefix(VOKIA_TOOL_PREFIX)?;
+    if bare == APP_COMMAND_CALL_TOOL {
+        let command = input[COMMAND_NAME_FIELD].as_str()?;
+        let canonical = command.strip_prefix(APP_PREFIX).unwrap_or(command);
+        return Some((canonical.to_string(), &input[COMMAND_ARGUMENTS_FIELD]));
+    }
+    let canonical = bare.strip_prefix(APP_PREFIX).unwrap_or(bare);
+    (command_domain(canonical).is_some() && !is_tool(bare))
+        .then(|| (canonical.to_string(), input))
+}
+
+fn subject_of(arguments: &Value) -> Option<String> {
+    subject_in(arguments).or_else(|| {
+        NESTED_SUBJECT_FIELDS
+            .iter()
+            .find_map(|field| subject_in(&arguments[*field]))
+    })
+}
+
+fn subject_in(object: &Value) -> Option<String> {
+    SUBJECT_FIELDS.iter().find_map(|field| {
+        let text = match &object[*field] {
+            Value::String(text) => text.trim().to_string(),
+            Value::Number(number) => number.to_string(),
+            _ => return None,
+        };
+        Some(name_of(&text)).filter(|subject| !subject.is_empty())
+    })
+}
+
+fn category_of(name: &str, input: &Value) -> ToolCategory {
+    if app_command(name, input).is_some() {
+        return ToolCategory::App;
+    }
     let lower = name.to_ascii_lowercase();
     if lower.starts_with(MCP_PREFIX) {
         return ToolCategory::Mcp;
@@ -412,7 +476,10 @@ fn category_of(name: &str) -> ToolCategory {
     }
 }
 
-fn target_of<'a>(name: &str, input: &'a Value) -> &'a str {
+fn target_of<'a>(name: &str, input: &'a Value) -> Cow<'a, str> {
+    if let Some((command, _)) = app_command(name, input) {
+        return Cow::Owned(command);
+    }
     let field = match name.to_ascii_lowercase().as_str() {
         "read" | "edit" | "multiedit" | "write" => "file_path",
         "notebookedit" => "notebook_path",
@@ -423,9 +490,9 @@ fn target_of<'a>(name: &str, input: &'a Value) -> &'a str {
         "websearch" => "query",
         "task" | "agent" => "description",
         "taskcreate" => "subject",
-        _ => return "",
+        _ => return Cow::Borrowed(""),
     };
-    input[field].as_str().unwrap_or_default()
+    Cow::Borrowed(input[field].as_str().unwrap_or_default())
 }
 
 fn cut(text: &str) -> String {

@@ -1,10 +1,12 @@
-import type { ToolActivity, ToolCategory, ToolChange, ToolDetail, ToolStatus } from './events'
+import { commandPhrase, friendlyCommand } from './appCommandLabel'
+import type { CommandDomain, ToolActivity, ToolCategory, ToolChange, ToolDetail, ToolStatus } from './events'
 import { fileIconOf, type FileIconKind } from './fileIcon'
 
 type ReadDetail = Extract<ToolDetail, { kind: 'read' }>
 type FoundDetail = Extract<ToolDetail, { kind: 'found' }>
 type TaskUpdatedDetail = Extract<ToolDetail, { kind: 'updated' }>
 type StartedDetail = Extract<ToolDetail, { kind: 'started' }>
+type CommandDetail = Extract<ToolDetail, { kind: 'command' }>
 
 const MS_PER_SECOND = 1000
 const SECONDS_PER_MINUTE = 60
@@ -32,8 +34,9 @@ const DELEGATION_DONE = '· concluída'
 const THINKING_VERB = 'Pensou'
 const THINKING_ROW_ID = 'thinking'
 export type CardTitleOf = (cardId: string) => string | undefined
+export type AgentNameOf = (id: string) => string | undefined
 
-type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'agent' | 'tool'
+type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'app' | 'agent' | 'tool'
 
 const GROUP_OF: Record<ToolCategory, ClauseGroup> = {
   read: 'read',
@@ -43,6 +46,7 @@ const GROUP_OF: Record<ToolCategory, ClauseGroup> = {
   edit: 'edit',
   web: 'web',
   mcp: 'mcp',
+  app: 'app',
   agent: 'agent',
   plan: 'tool',
   other: 'tool',
@@ -56,6 +60,7 @@ const CLAUSE: Record<ClauseGroup, (count: number) => string> = {
   edit: (count) => `editou ${count} ${count === 1 ? 'arquivo' : 'arquivos'}`,
   web: (count) => `buscou na web ${count} ${count === 1 ? 'vez' : 'vezes'}`,
   mcp: (count) => `usou ${count} ${count === 1 ? 'integração' : 'integrações'}`,
+  app: (count) => `executou ${count} ${count === 1 ? 'ação' : 'ações'} no Vokia`,
   agent: (count) => `executou ${count} ${count === 1 ? 'agente' : 'agentes'}`,
   tool: (count) => `usou ${count} ${count === 1 ? 'ferramenta' : 'ferramentas'}`,
 }
@@ -74,12 +79,33 @@ const ROW_VERBS: Record<ToolCategory, RowVerbs> = {
   list: { running: 'Listando', done: 'Listou', failed: 'Tentou listar' },
   web: { running: 'Buscando na web', done: 'Buscou na web', failed: 'Tentou buscar na web' },
   mcp: { running: 'Usando', done: 'Usou', failed: 'Tentou usar' },
+  app: { running: 'Usando', done: 'Usou', failed: 'Tentou usar' },
   agent: { running: 'Executando agente', done: 'Executou agente', failed: 'Tentou executar agente' },
   plan: { running: 'Atualizando o plano', done: 'Atualizou o plano', failed: 'Tentou atualizar o plano' },
   other: { running: 'Usando', done: 'Usou', failed: 'Tentou usar' },
 }
 
-export type RowIconKind = FileIconKind | 'folder' | 'search' | 'edit' | 'command' | 'delegate' | 'web' | 'thinking' | 'other'
+export type RowIconKind =
+  | FileIconKind
+  | 'folder'
+  | 'search'
+  | 'edit'
+  | 'command'
+  | 'delegate'
+  | 'web'
+  | 'thinking'
+  | 'other'
+  | 'role'
+  | 'agent'
+  | 'flow'
+  | 'channel'
+  | 'settings'
+  | 'backlog'
+  | 'project'
+  | 'provider'
+  | 'artifact'
+  | 'attachment'
+  | 'team'
 
 const ROW_ICON: Record<ToolCategory, RowIconKind> = {
   read: 'document',
@@ -89,9 +115,24 @@ const ROW_ICON: Record<ToolCategory, RowIconKind> = {
   list: 'folder',
   web: 'web',
   mcp: 'other',
+  app: 'other',
   agent: 'other',
   plan: 'other',
   other: 'other',
+}
+
+const DOMAIN_ICON: Record<CommandDomain, RowIconKind> = {
+  team: 'team',
+  projects: 'project',
+  channels: 'channel',
+  backlog: 'backlog',
+  artifacts: 'artifact',
+  attachments: 'attachment',
+  agents: 'agent',
+  roles: 'role',
+  orchestration: 'flow',
+  providers: 'provider',
+  settings: 'settings',
 }
 
 const FILE_CATEGORIES: readonly ToolCategory[] = ['read', 'edit']
@@ -239,6 +280,28 @@ function delegationRow(tool: ToolActivity, delegation: Delegation): ActivityRowM
   }
 }
 
+// Domínio que o front ainda não conhece (catálogo mais novo) cai no ícone genérico.
+function domainIcon(domain: string | undefined): RowIconKind {
+  return domain !== undefined && Object.hasOwn(DOMAIN_ICON, domain) ? DOMAIN_ICON[domain as CommandDomain] : ROW_ICON.app
+}
+
+// O subject é o id do agente quando o comando é do domínio agents ou tem agent no nome; id fora do elenco fica como veio.
+function subjectLabel(detail: CommandDetail, nameOf: AgentNameOf): string | undefined {
+  if (detail.subject === undefined) return undefined
+  const aboutAgent = detail.domain === 'agents' || detail.command.split('_').includes('agent')
+  return aboutAgent ? (nameOf(detail.subject) ?? detail.subject) : detail.subject
+}
+
+function commandRow(tool: ToolActivity, detail: CommandDetail, nameOf: AgentNameOf): ActivityRowModel {
+  return {
+    id: tool.callId,
+    icon: domainIcon(detail.domain),
+    verb: commandPhrase(detail.command, tool.status),
+    chip: { label: subjectLabel(detail, nameOf) ?? detail.command, title: friendlyCommand(detail.command), icon: 'generic' },
+    failed: tool.status === 'failed',
+  }
+}
+
 function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
   const target = tool.target === '' && NAMED_CATEGORIES.includes(tool.category) ? shownName(tool) : tool.target
   const showChanges = tool.status === 'ok' && tool.added !== undefined && tool.removed !== undefined
@@ -303,7 +366,7 @@ export function taskStartedRow(title: string, prompt: string): ActivityRowModel 
   }
 }
 
-export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf): ActivityRowModel[] {
+export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
   // Criação conta desde a entrada da ferramenta: a linha nasce uma vez e só cresce com o contador.
   const created = tools.filter((tool) => tool.detail?.kind === 'created')
   return tools.flatMap((tool) => {
@@ -313,6 +376,7 @@ export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleO
     if (tool.detail?.kind === 'updated') return [taskUpdatedRow(tool, tool.detail, created)]
     if (tool.detail?.kind === 'read') return [readRow(tool, tool.detail, icon)]
     if (tool.detail?.kind === 'found') return [foundRow(tool, tool.detail, icon)]
+    if (tool.detail?.kind === 'command') return [commandRow(tool, tool.detail, nameOf)]
     const delegation = delegationOf(tool)
     if (delegation) return [delegationRow(tool, delegation)]
     return [defaultRow(tool, icon, tool.status === 'failed')]

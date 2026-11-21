@@ -6,9 +6,22 @@ export type Speaker = 'user' | Agent
 
 export type AgentState = 'sending' | 'thinking' | 'waiting' | 'idle'
 
-export type ToolCategory = 'read' | 'edit' | 'command' | 'search' | 'list' | 'web' | 'mcp' | 'agent' | 'plan' | 'other'
+export type ToolCategory = 'read' | 'edit' | 'command' | 'search' | 'list' | 'web' | 'mcp' | 'app' | 'agent' | 'plan' | 'other'
 
 export type ToolStatus = 'running' | 'ok' | 'failed'
+
+export type CommandDomain =
+  | 'team'
+  | 'projects'
+  | 'channels'
+  | 'backlog'
+  | 'artifacts'
+  | 'attachments'
+  | 'agents'
+  | 'roles'
+  | 'orchestration'
+  | 'providers'
+  | 'settings'
 
 export type ToolDetail =
   | { kind: 'read'; from: number; to: number }
@@ -16,6 +29,7 @@ export type ToolDetail =
   | { kind: 'created'; id?: string }
   | { kind: 'updated'; taskId: string; status: string }
   | { kind: 'started'; cardId: string }
+  | { kind: 'command'; command: string; domain?: CommandDomain; subject?: string }
 
 export interface ToolChange {
   added: string

@@ -17,6 +17,18 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
   web: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M3 12h18',
   thinking: 'M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 3-3V7a3 3 0 0 0-3-3z M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z',
   other: 'M12 4v16 M4 12h16',
+  role: 'M6 4h12v16H6z M10 4v2h4V4 M9 12h6 M9 16h4',
+  agent: 'M12 3v3 M6 7h12v11H6z M9 11h2v2H9z M13 11h2v2h-2z',
+  flow: 'M3 4h6v5H3z M15 4h6v5h-6z M9 15h6v5H9z M6 9v3h12V9 M12 12v3',
+  channel: 'M9 4L7 20 M17 4l-2 16 M4 9h16 M3 15h16',
+  settings:
+    'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M18.4 5.6l-2.1 2.1 M7.7 16.3l-2.1 2.1',
+  backlog: 'M4 4h16v16H4z M9 4v16 M15 4v16 M6.5 7v5 M12 7v8 M17.5 7v3',
+  project: 'M3 6h6l2 2h10v11H3z M12 10.5l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4z',
+  provider: 'M9 3v5 M15 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v3',
+  artifact: 'M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6',
+  attachment: 'M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7',
+  team: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20a6 6 0 0 1 12 0 M17 11a2.5 2.5 0 1 0 0-5 M17 14a5 5 0 0 1 4 6',
 }
 
 const SVG_CLASSES = 'size-3.5 shrink-0 fill-none stroke-current stroke-2'

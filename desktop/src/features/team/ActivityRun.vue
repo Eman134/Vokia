@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue'
 import type { TurnActivity } from './events'
-import { activityRows, activitySentence, thinkingRow, type CardTitleOf } from './activitySummary'
+import { activityRows, activitySentence, thinkingRow, type AgentNameOf, type CardTitleOf } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
 import MarkdownText from './MarkdownText.vue'
 import { useBacklog } from '../backlog/useBacklog'
+import { useRoster } from './useRoster'
 
 const props = defineProps<{ activity: TurnActivity; live?: boolean }>()
 
 const backlog = useBacklog()
+const roster = useRoster()
 const open = ref(false)
 const listId = useId()
 const thinkingOpen = ref(false)
 const thinkingListId = useId()
 const sentence = computed(() => activitySentence(props.activity.tools))
 const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
-const rows = computed(() => activityRows(props.activity.tools, cardTitleOf))
+const agentNameOf: AgentNameOf = (id) => roster.profileOf(id)?.name
+const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agentNameOf))
 </script>
 
 <template>

@@ -51,10 +51,17 @@ pub async fn handle(
         "ping" => success(id, json!({})),
         "tools/list" => success(id, json!({ "tools": tools.definitions() })),
         "tools/call" => call_tool(id, request.params.as_ref(), binding, app).await,
-        "commands/list" => success(
-            id,
-            json!({ "commands": crate::commands::dispatcher::list_commands() }),
-        ),
+        "commands/list" => {
+            let domain = request
+                .params
+                .as_ref()
+                .and_then(|params| params.get("domain"))
+                .and_then(Value::as_str);
+            success(
+                id,
+                json!({ "commands": dispatcher::list_commands_filtered(domain) }),
+            )
+        }
         "commands/call" => call_app_command(id, request.params.as_ref(), app).await,
         other => failure(
             id,
@@ -98,6 +105,9 @@ async fn call_tool(
     let Some(app) = app else {
         return failure(id, INVALID_PARAMS, &format!("ferramenta desconhecida: {name}"));
     };
+    if name == tools::APP_COMMAND_CALL {
+        return call_meta_app_command(id, arguments, app).await;
+    }
     if let Some(result) = tools::call(app, binding, name, arguments) {
         return success(id, result);
     }
@@ -107,6 +117,28 @@ async fn call_tool(
             id,
             INVALID_PARAMS,
             &format!("ferramenta desconhecida: {name}"),
+        ),
+    }
+}
+
+async fn call_meta_app_command(id: Value, arguments: &Value, app: &AppHandle) -> Reply {
+    let Some(target_name) = arguments.get("name").and_then(Value::as_str) else {
+        return failure(
+            id,
+            INVALID_PARAMS,
+            "falta o nome do comando em app_command_call",
+        );
+    };
+    let target_args = arguments
+        .get("arguments")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    match dispatcher::dispatch(app, target_name, target_args).await {
+        Some(outcome) => success(id, command_reply(outcome)),
+        None => success(
+            id,
+            command_reply(Err(format!("comando desconhecido: {target_name}"))),
         ),
     }
 }

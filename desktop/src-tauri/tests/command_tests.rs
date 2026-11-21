@@ -225,7 +225,7 @@ fn comando_base_e_de_agente_definem_no_proxy_para_o_loopback() {
     assert_eq!(no_proxy(&agent).as_deref(), Some("127.0.0.1,localhost"));
 }
 
-const VOKIA_TOOLS: [&str; 22] = [
+const VOKIA_TOOLS: [&str; 24] = [
     "mcp__vokia__list_backlog",
     "mcp__vokia__read_card",
     "mcp__vokia__create_card",
@@ -248,6 +248,8 @@ const VOKIA_TOOLS: [&str; 22] = [
     "mcp__vokia__artifact_set_criterion",
     "mcp__vokia__list_movements",
     "mcp__vokia__post_channel_message",
+    "mcp__vokia__app_commands_list",
+    "mcp__vokia__app_command_call",
 ];
 
 #[test]
@@ -320,4 +322,28 @@ fn argumentos_do_usuario_entram_antes_de_tools_allowed_tools_e_append_system_pro
     assert!(pos_user < pos_tools, "user_args ({pos_user}) deve vir antes de --tools ({pos_tools})");
     assert!(pos_user < pos_allowed, "user_args ({pos_user}) deve vir antes de --allowedTools ({pos_allowed})");
     assert!(pos_user < pos_append, "user_args ({pos_user}) deve vir antes de --append-system-prompt ({pos_append})");
+}
+
+#[test]
+fn command_domain_cobre_todos_os_commands_e_retorna_none_para_desconhecido() {
+    use crate::commands::dispatcher::{command_domain, list_commands};
+
+    let commands = list_commands();
+    assert!(!commands.is_empty());
+    for cmd in &commands {
+        let name = cmd["name"].as_str().expect("name");
+        let domain = cmd["domain"].as_str().expect("domain");
+        assert_eq!(
+            command_domain(name),
+            Some(domain),
+            "comando {name}"
+        );
+    }
+
+    assert_eq!(command_domain("role_create"), Some("roles"));
+    assert_eq!(command_domain("create_agent"), Some("agents"));
+    assert_eq!(command_domain("get_settings"), Some("settings"));
+    assert_eq!(command_domain("delete_channel"), Some("channels"));
+    assert_eq!(command_domain("comando_inexistente_xyz"), None);
+    assert_eq!(command_domain(""), None);
 }

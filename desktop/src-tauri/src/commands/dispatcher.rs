@@ -17,257 +17,722 @@ pub enum Exposure {
 }
 
 pub struct CommandMeta {
+    pub domain: &'static str,
     pub name: &'static str,
     pub description: &'static str,
     pub exposure: Exposure,
+    pub schema: fn() -> Value,
 }
 
 const UI_ONLY_ERROR: &str = "Comando exclusivo da interface gráfica (não disponível via MCP/CLI).";
-const APP_PREFIX: &str = "app:";
+pub(crate) const APP_PREFIX: &str = "app:";
 
-const fn exposed(name: &'static str, description: &'static str) -> CommandMeta {
+const fn exposed(
+    domain: &'static str,
+    name: &'static str,
+    description: &'static str,
+    schema: fn() -> Value,
+) -> CommandMeta {
     CommandMeta {
+        domain,
         name,
         description,
         exposure: Exposure::AppAndCli,
+        schema,
     }
 }
 
-const fn ui_only(name: &'static str, description: &'static str) -> CommandMeta {
+const fn ui_only(
+    domain: &'static str,
+    name: &'static str,
+    description: &'static str,
+) -> CommandMeta {
     CommandMeta {
+        domain,
         name,
         description,
         exposure: Exposure::UiOnly,
+        schema: empty_object_schema,
     }
+}
+
+fn empty_object_schema() -> Value {
+    json!({ "type": "object" })
+}
+
+fn obj_schema(properties: Value, required: &[&str]) -> Value {
+    json!({ "type": "object", "properties": properties, "required": required })
+}
+
+fn schema_id() -> Value {
+    obj_schema(json!({ "id": { "type": "string" } }), &["id"])
+}
+
+fn schema_draft() -> Value {
+    obj_schema(json!({ "draft": { "type": "object" } }), &["draft"])
+}
+
+fn schema_agent() -> Value {
+    obj_schema(json!({ "agent": { "type": "string" } }), &["agent"])
+}
+
+fn schema_project_id() -> Value {
+    obj_schema(
+        json!({ "projectId": { "type": "integer" } }),
+        &["projectId"],
+    )
+}
+
+fn schema_role_create() -> Value {
+    obj_schema(
+        json!({ "draft": {
+            "type": "object",
+            "description": "Objeto RoleDraft (name, description, instructions)",
+        } }),
+        &["draft"],
+    )
+}
+
+fn schema_id_edit() -> Value {
+    obj_schema(
+        json!({ "id": { "type": "string" }, "edit": { "type": "object" } }),
+        &["id", "edit"],
+    )
+}
+
+fn schema_id_draft() -> Value {
+    obj_schema(
+        json!({ "id": { "type": "string" }, "draft": { "type": "object" } }),
+        &["id", "draft"],
+    )
+}
+
+fn schema_set_agent_instructions() -> Value {
+    obj_schema(
+        json!({ "id": { "type": "string" }, "text": { "type": "string" } }),
+        &["id", "text"],
+    )
+}
+
+fn schema_set_temporary_override() -> Value {
+    obj_schema(
+        json!({
+            "agent": { "type": "string" },
+            "cli": { "type": "string" },
+            "modelTier": { "type": "string" },
+            "model": { "type": "string" },
+            "reason": { "type": "string" },
+            "expiresInMs": { "type": "integer" },
+        }),
+        &["agent", "cli"],
+    )
+}
+
+fn schema_update_ember_llm() -> Value {
+    obj_schema(
+        json!({
+            "cli": { "type": "string" },
+            "modelTier": { "type": "string" },
+            "model": { "type": "string" },
+            "fallback": { "type": "array" },
+        }),
+        &[],
+    )
+}
+
+fn schema_reorder_layers() -> Value {
+    obj_schema(
+        json!({ "ids": { "type": "array", "items": { "type": "string" } } }),
+        &["ids"],
+    )
+}
+
+fn schema_save_team() -> Value {
+    obj_schema(
+        json!({ "draft": { "type": "object" }, "leaderAgent": { "type": "string" } }),
+        &["draft"],
+    )
+}
+
+fn schema_unplace_agent() -> Value {
+    obj_schema(json!({ "agentId": { "type": "string" } }), &["agentId"])
+}
+
+fn schema_save_team_flow() -> Value {
+    obj_schema(
+        json!({ "teamId": { "type": "string" }, "draft": { "type": "object" } }),
+        &["teamId", "draft"],
+    )
+}
+
+fn schema_set_final_validation() -> Value {
+    obj_schema(
+        json!({ "teamId": { "type": "string" }, "mode": { "type": "string" } }),
+        &["teamId", "mode"],
+    )
+}
+
+fn schema_save_orchestration_settings() -> Value {
+    obj_schema(json!({ "settings": { "type": "object" } }), &["settings"])
+}
+
+fn schema_save_provider() -> Value {
+    obj_schema(json!({ "config": { "type": "object" } }), &["config"])
+}
+
+fn schema_inspect_cli() -> Value {
+    obj_schema(json!({ "command": { "type": "string" } }), &["command"])
+}
+
+fn schema_test_provider_config() -> Value {
+    obj_schema(
+        json!({ "config": { "type": "object" }, "model": { "type": "string" } }),
+        &["config"],
+    )
+}
+
+fn schema_create_channel() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "name": { "type": "string" },
+            "members": { "type": "array", "items": { "type": "string" } },
+        }),
+        &["projectId", "name", "members"],
+    )
+}
+
+fn schema_update_channel() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "integer" },
+            "name": { "type": "string" },
+            "members": { "type": "array", "items": { "type": "string" } },
+        }),
+        &["projectId", "id", "name", "members"],
+    )
+}
+
+fn schema_delete_channel() -> Value {
+    obj_schema(
+        json!({ "projectId": { "type": "integer" }, "id": { "type": "integer" } }),
+        &["projectId", "id"],
+    )
+}
+
+fn schema_set_setting() -> Value {
+    obj_schema(
+        json!({ "key": { "type": "string" }, "value": { "type": "string" } }),
+        &["key", "value"],
+    )
+}
+
+fn schema_erase_all_data() -> Value {
+    obj_schema(json!({ "confirm": { "type": "boolean" } }), &["confirm"])
 }
 
 const COMMANDS: &[CommandMeta] = &[
     exposed(
+        "team",
         "cli_problem",
         "Problema detectado ao localizar a CLI do Claude, se houver.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "send_request",
         "Envia um pedido de texto a um agente de um projeto.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "answer_permission",
         "Responde a um pedido de permissão pendente.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "answer_decision",
         "Responde a uma decisão pendente do fluxo.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "list_agent_pauses",
         "Lista os agentes pausados por projeto.",
+        empty_object_schema,
     ),
-    exposed("list_interrupted_runs", "Lista as execuções interrompidas."),
     exposed(
+        "team",
+        "list_interrupted_runs",
+        "Lista as execuções interrompidas.",
+        empty_object_schema,
+    ),
+    exposed(
+        "team",
         "resume_interrupted_run",
         "Retoma uma execução interrompida.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "discard_interrupted_run",
         "Descarta uma execução interrompida.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "set_agent_paused",
         "Pausa ou retoma um agente em um projeto.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "check_connection",
         "Verifica se o provedor padrão está acessível.",
+        empty_object_schema,
     ),
     exposed(
+        "team",
         "agent_console",
         "Devolve o console recente de um agente em um projeto.",
-    ),
-    exposed("list_projects", "Lista os projetos."),
-    exposed("select_project", "Seleciona o projeto ativo."),
-    ui_only("pick_folder", "Abre o seletor de pasta do sistema."),
-    exposed(
-        "inspect_folder",
-        "Inspeciona uma pasta local para criar um projeto.",
+        empty_object_schema,
     ),
     exposed(
-        "inspect_github_repo",
-        "Inspeciona um repositório do GitHub para criar um projeto.",
-    ),
-    exposed("create_project", "Cria um projeto."),
-    exposed("update_project", "Edita um projeto."),
-    exposed("delete_project", "Exclui um projeto."),
-    exposed("pin_project", "Fixa ou desafixa um projeto."),
-    exposed("clear_conversation", "Apaga a conversa de um projeto."),
-    exposed(
-        "load_history",
-        "Carrega o histórico de eventos de um projeto.",
+        "projects",
+        "list_projects",
+        "Lista os projetos.",
+        empty_object_schema,
     ),
     exposed(
-        "set_permission_level",
-        "Define o nível de permissão de um projeto.",
-    ),
-    exposed(
-        "list_permission_rules",
-        "Lista as regras de permissão de um projeto.",
-    ),
-    exposed(
-        "delete_permission_rule",
-        "Remove uma regra de permissão de um projeto.",
-    ),
-    exposed("list_channels", "Lista os canais de um projeto."),
-    exposed("create_channel", "Cria um canal em um projeto."),
-    exposed("update_channel", "Edita o nome e os agentes de um canal."),
-    exposed("delete_channel", "Exclui um canal de um projeto."),
-    exposed("list_backlog", "Lista o backlog de um projeto."),
-    exposed("save_backlog_item", "Grava um item do backlog."),
-    exposed("create_backlog_item", "Cria um card no backlog."),
-    exposed(
-        "create_request_from_proposal",
-        "Cria um card de origem agente a partir de uma proposta.",
-    ),
-    exposed(
-        "move_backlog_item",
-        "Move um item do backlog para outra coluna.",
-    ),
-    exposed(
-        "return_task",
-        "Devolve uma task concluída ao líder com um motivo.",
-    ),
-    exposed("save_item_plan", "Grava o plano de um item do backlog."),
-    exposed(
-        "add_backlog_label",
-        "Adiciona um rótulo a um item do backlog.",
-    ),
-    exposed(
-        "remove_backlog_label",
-        "Remove um rótulo de um item do backlog.",
-    ),
-    exposed(
-        "set_backlog_responsible",
-        "Define o agente responsável por um item do backlog.",
-    ),
-    exposed("archive_backlog_item", "Arquiva um item do backlog."),
-    exposed(
-        "restore_backlog_item",
-        "Restaura um item arquivado do backlog.",
-    ),
-    exposed("delete_backlog_item", "Exclui um item do backlog."),
-    exposed("list_artifacts", "Lista os artefatos de um projeto."),
-    exposed(
-        "set_artifact_criterion",
-        "Marca ou desmarca um critério de um artefato.",
+        "projects",
+        "select_project",
+        "Seleciona o projeto ativo.",
+        empty_object_schema,
     ),
     ui_only(
+        "projects",
+        "pick_folder",
+        "Abre o seletor de pasta do sistema.",
+    ),
+    exposed(
+        "projects",
+        "inspect_folder",
+        "Inspeciona uma pasta local para criar um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "inspect_github_repo",
+        "Inspeciona um repositório do GitHub para criar um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "create_project",
+        "Cria um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "update_project",
+        "Edita um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "delete_project",
+        "Exclui um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "pin_project",
+        "Fixa ou desafixa um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "clear_conversation",
+        "Apaga a conversa de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "load_history",
+        "Carrega o histórico de eventos de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "set_permission_level",
+        "Define o nível de permissão de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "list_permission_rules",
+        "Lista as regras de permissão de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "projects",
+        "delete_permission_rule",
+        "Remove uma regra de permissão de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "channels",
+        "list_channels",
+        "Lista os canais de um projeto.",
+        schema_project_id,
+    ),
+    exposed(
+        "channels",
+        "create_channel",
+        "Cria um canal em um projeto.",
+        schema_create_channel,
+    ),
+    exposed(
+        "channels",
+        "update_channel",
+        "Edita o nome e os agentes de um canal.",
+        schema_update_channel,
+    ),
+    exposed(
+        "channels",
+        "delete_channel",
+        "Exclui um canal de um projeto.",
+        schema_delete_channel,
+    ),
+    exposed(
+        "backlog",
+        "list_backlog",
+        "Lista o backlog de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "save_backlog_item",
+        "Grava um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "create_backlog_item",
+        "Cria um card no backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "create_request_from_proposal",
+        "Cria um card de origem agente a partir de uma proposta.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "move_backlog_item",
+        "Move um item do backlog para outra coluna.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "return_task",
+        "Devolve uma task concluída ao líder com um motivo.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "save_item_plan",
+        "Grava o plano de um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "add_backlog_label",
+        "Adiciona um rótulo a um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "remove_backlog_label",
+        "Remove um rótulo de um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "set_backlog_responsible",
+        "Define o agente responsável por um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "archive_backlog_item",
+        "Arquiva um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "restore_backlog_item",
+        "Restaura um item arquivado do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "backlog",
+        "delete_backlog_item",
+        "Exclui um item do backlog.",
+        empty_object_schema,
+    ),
+    exposed(
+        "artifacts",
+        "list_artifacts",
+        "Lista os artefatos de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "artifacts",
+        "set_artifact_criterion",
+        "Marca ou desmarca um critério de um artefato.",
+        empty_object_schema,
+    ),
+    ui_only(
+        "attachments",
         "pick_attachment_files",
         "Abre o seletor de arquivos para anexos.",
     ),
     exposed(
+        "attachments",
         "save_attachment_files",
         "Salva arquivos locais como anexos de um projeto.",
+        empty_object_schema,
     ),
     ui_only(
+        "attachments",
         "save_attachment_bytes",
         "Salva anexo enviado como bytes pela interface.",
     ),
-    exposed("discard_attachment", "Descarta um anexo de um projeto."),
-    exposed("list_agents", "Lista o elenco de agentes."),
     exposed(
+        "attachments",
+        "discard_attachment",
+        "Descarta um anexo de um projeto.",
+        empty_object_schema,
+    ),
+    exposed(
+        "agents",
+        "list_agents",
+        "Lista o elenco de agentes.",
+        empty_object_schema,
+    ),
+    exposed(
+        "agents",
         "available_providers",
         "Lista os provedores instalados na máquina.",
+        empty_object_schema,
     ),
-    exposed("create_agent", "Cria um agente."),
-    exposed("update_agent", "Edita um agente."),
-    exposed("delete_agent", "Exclui um agente."),
+    exposed("agents", "create_agent", "Cria um agente.", schema_draft),
     exposed(
+        "agents",
+        "update_agent",
+        "Edita um agente.",
+        schema_id_draft,
+    ),
+    exposed("agents", "delete_agent", "Exclui um agente.", schema_id),
+    exposed(
+        "agents",
         "set_agent_instructions",
         "Define as instruções de um agente.",
+        schema_set_agent_instructions,
     ),
     exposed(
+        "agents",
         "list_temporary_overrides",
         "Lista as trocas temporárias de LLM.",
+        empty_object_schema,
     ),
     exposed(
+        "agents",
         "set_temporary_override",
         "Aplica uma troca temporária de LLM a um agente.",
+        schema_set_temporary_override,
     ),
     exposed(
+        "agents",
         "clear_temporary_override",
         "Remove a troca temporária de LLM de um agente.",
+        schema_agent,
     ),
     exposed(
+        "agents",
         "clear_all_temporary_overrides",
         "Remove todas as trocas temporárias de LLM.",
+        empty_object_schema,
     ),
-    exposed("update_ember_llm", "Atualiza o LLM do agente Ember."),
-    exposed("role_list", "Lista os papéis."),
-    exposed("role_create", "Cria um papel."),
-    exposed("role_update", "Edita um papel."),
-    exposed("role_delete", "Exclui um papel."),
     exposed(
+        "agents",
+        "update_ember_llm",
+        "Atualiza o LLM do agente Ember.",
+        schema_update_ember_llm,
+    ),
+    exposed(
+        "roles",
+        "role_list",
+        "Lista os papéis.",
+        empty_object_schema,
+    ),
+    exposed("roles", "role_create", "Cria um papel.", schema_role_create),
+    exposed("roles", "role_update", "Edita um papel.", schema_id_edit),
+    exposed("roles", "role_delete", "Exclui um papel.", schema_id),
+    exposed(
+        "orchestration",
         "get_orchestration",
         "Devolve a orquestração (camadas, times e posições).",
+        empty_object_schema,
     ),
-    exposed("save_layer", "Grava uma camada da orquestração."),
-    exposed("delete_layer", "Exclui uma camada da orquestração."),
-    exposed("reorder_layers", "Reordena as camadas da orquestração."),
-    exposed("save_team", "Grava um time da orquestração."),
-    exposed("delete_team", "Exclui um time da orquestração."),
-    exposed("place_agent", "Posiciona um agente na orquestração."),
     exposed(
+        "orchestration",
+        "save_layer",
+        "Grava uma camada da orquestração.",
+        schema_draft,
+    ),
+    exposed(
+        "orchestration",
+        "delete_layer",
+        "Exclui uma camada da orquestração.",
+        schema_id,
+    ),
+    exposed(
+        "orchestration",
+        "reorder_layers",
+        "Reordena as camadas da orquestração.",
+        schema_reorder_layers,
+    ),
+    exposed(
+        "orchestration",
+        "save_team",
+        "Grava um time da orquestração.",
+        schema_save_team,
+    ),
+    exposed(
+        "orchestration",
+        "delete_team",
+        "Exclui um time da orquestração.",
+        schema_id,
+    ),
+    exposed(
+        "orchestration",
+        "place_agent",
+        "Posiciona um agente na orquestração.",
+        schema_draft,
+    ),
+    exposed(
+        "orchestration",
         "unplace_agent",
         "Remove a posição de um agente na orquestração.",
+        schema_unplace_agent,
     ),
-    exposed("save_team_flow", "Grava o fluxo de um time."),
     exposed(
+        "orchestration",
+        "save_team_flow",
+        "Grava o fluxo de um time.",
+        schema_save_team_flow,
+    ),
+    exposed(
+        "orchestration",
         "set_final_validation",
         "Define o modo de validação final de um time.",
+        schema_set_final_validation,
     ),
     exposed(
+        "orchestration",
         "save_orchestration_settings",
         "Grava as configurações da orquestração.",
+        schema_save_orchestration_settings,
     ),
     exposed(
+        "orchestration",
         "list_agent_activity",
         "Lista as execuções em andamento por agente.",
+        empty_object_schema,
     ),
     exposed(
+        "orchestration",
         "list_agent_copies",
         "Lista as réplicas de agentes em execução em um projeto.",
+        schema_project_id,
     ),
-    exposed("list_providers", "Lista os provedores configurados."),
-    exposed("save_provider", "Grava a configuração de um provedor."),
-    exposed("delete_provider", "Remove um provedor."),
     exposed(
+        "providers",
+        "list_providers",
+        "Lista os provedores configurados.",
+        empty_object_schema,
+    ),
+    exposed(
+        "providers",
+        "save_provider",
+        "Grava a configuração de um provedor.",
+        schema_save_provider,
+    ),
+    exposed(
+        "providers",
+        "delete_provider",
+        "Remove um provedor.",
+        schema_id,
+    ),
+    exposed(
+        "providers",
         "discover_provider_models",
         "Descobre os modelos disponíveis de um provedor.",
+        schema_id,
     ),
     exposed(
+        "providers",
         "inspect_cli",
         "Inspeciona uma CLI e devolve seu texto de ajuda.",
+        schema_inspect_cli,
     ),
     exposed(
+        "providers",
         "build_setup_prompt",
         "Monta o prompt para configurar uma CLI como provedor.",
+        empty_object_schema,
     ),
     exposed(
+        "providers",
         "test_provider_config",
         "Testa a configuração de um provedor.",
+        schema_test_provider_config,
     ),
     exposed(
+        "providers",
         "auto_configure_provider",
         "Configura um provedor automaticamente com um agente.",
+        empty_object_schema,
     ),
     exposed(
+        "settings",
         "db_problem",
         "Problema detectado ao abrir o banco, se houver.",
+        empty_object_schema,
     ),
     exposed(
+        "settings",
         "erase_all_data",
         "Apaga todos os dados; exige { \"confirm\": true }.",
+        schema_erase_all_data,
     ),
-    exposed("get_settings", "Devolve as configurações."),
-    exposed("set_setting", "Grava uma configuração."),
+    exposed(
+        "settings",
+        "get_settings",
+        "Devolve as configurações.",
+        empty_object_schema,
+    ),
+    exposed(
+        "settings",
+        "set_setting",
+        "Grava uma configuração.",
+        schema_set_setting,
+    ),
 ];
 
 #[derive(Deserialize, Default)]
@@ -276,15 +741,30 @@ struct ConfirmArgs {
     confirm: bool,
 }
 
+// Sem chamador interno: o protocolo MCP usa a versão filtrada; mantida como API sem filtro.
+#[allow(dead_code)]
 pub fn list_commands() -> Vec<Value> {
+    list_commands_filtered(None)
+}
+
+pub fn command_domain(name: &str) -> Option<&'static str> {
+    COMMANDS
+        .iter()
+        .find(|command| command.name == name)
+        .map(|command| command.domain)
+}
+
+pub fn list_commands_filtered(domain: Option<&str>) -> Vec<Value> {
     COMMANDS
         .iter()
         .filter(|command| command.exposure == Exposure::AppAndCli)
+        .filter(|command| domain.is_none_or(|domain| command.domain == domain))
         .map(|command| {
             json!({
                 "name": command.name,
+                "domain": command.domain,
                 "description": command.description,
-                "inputSchema": { "type": "object" },
+                "inputSchema": (command.schema)(),
             })
         })
         .collect()

@@ -2,7 +2,7 @@ mod protocol;
 mod registry;
 mod server;
 mod slot;
-mod tools;
+pub(crate) mod tools;
 
 use std::fmt;
 use std::fs;
