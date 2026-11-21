@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { useUsage } from './useUsage'
 import { TONE_BG, TONE_TEXT, clampPercent, renewsLabel, stateOf, toneOf, updatedLabel } from './usagePlans'
 
@@ -25,14 +26,7 @@ const { claude, now, openable, startupError } = storeToRefs(useUsage())
     <div class="flex items-baseline gap-2">
       <b class="text-control">Uso dos planos</b>
       <span v-if="claude" class="text-meta text-muted">{{ updatedLabel(claude.updatedAt, now) }}</span>
-      <button
-        type="button"
-        aria-label="Fechar"
-        class="ml-auto cursor-pointer border-0 bg-transparent py-0.25 px-1.5 text-small text-muted"
-        @click="emit('close')"
-      >
-        Fechar
-      </button>
+      <UiCloseButton class="ml-auto" @press="emit('close')" />
     </div>
 
     <template v-if="claude">

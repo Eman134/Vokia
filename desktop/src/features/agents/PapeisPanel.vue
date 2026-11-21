@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import {
@@ -58,7 +59,7 @@ async function removeSelected(): Promise<void> {
 <template>
   <div :class="COLUMNS_CLASSES">
     <div :class="LIST_CLASSES">
-      <UiButton variant="primary" size="lg" @press="dialog = {}">{{ NEW_ROLE_LABEL }}</UiButton>
+      <UiCreateButton class="self-start" @press="dialog = {}">{{ NEW_ROLE_LABEL }}</UiCreateButton>
       <p v-if="roles.roles.length === 0" class="text-caption text-muted">{{ NO_ROLES_TEXT }}</p>
       <button
         v-for="role in roles.roles"

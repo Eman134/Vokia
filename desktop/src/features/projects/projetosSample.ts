@@ -1,5 +1,5 @@
 export const PROJECTS_TITLE = 'Seus projetos'
-export const NEW_PROJECT_LABEL = '+ Novo projeto'
+export const NEW_PROJECT_LABEL = 'Novo projeto'
 export const OPEN_LABEL = 'Abrir'
 export const EDIT_LABEL = 'Editar'
 export const SAVE_LABEL = 'Salvar'

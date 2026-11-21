@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiCombobox from '../../ui/UiCombobox.vue'
 import UiCommandBlock from '../../ui/UiCommandBlock.vue'
 import UiField from '../../ui/UiField.vue'
@@ -473,8 +475,8 @@ async function saveAddWithoutTest(): Promise<void> {
           <p class="text-caption text-muted">Gerencie os modelos disponíveis ou adicione novas CLIs.</p>
         </div>
         <div class="flex items-center gap-2">
-          <UiButton variant="primary" size="sm" @press="openAddModal()">Novo provedor</UiButton>
-          <UiButton variant="quiet" size="sm" @press="closeMain()">Fechar</UiButton>
+          <UiCreateButton @press="openAddModal()">Novo provedor</UiCreateButton>
+          <UiCloseButton @press="closeMain()" />
         </div>
       </header>
 
@@ -581,7 +583,7 @@ async function saveAddWithoutTest(): Promise<void> {
             <h3 :id="editTitleId" class="text-control font-bold text-ink">Editar {{ editingDraft.label }}</h3>
             <p class="font-mono text-small text-muted">{{ editingDraft.defaultCommand }}</p>
           </div>
-          <UiButton variant="quiet" size="sm" @press="closeEditModal()">Fechar</UiButton>
+          <UiCloseButton @press="closeEditModal()" />
         </div>
 
         <div class="flex flex-col gap-3">
@@ -697,7 +699,7 @@ async function saveAddWithoutTest(): Promise<void> {
       >
         <div class="flex items-center justify-between gap-3">
           <h3 :id="addTitleId" class="text-control font-bold text-ink">Adicionar provedor de LLM</h3>
-          <UiButton variant="quiet" size="sm" @press="closeAddModal()">Fechar</UiButton>
+          <UiCloseButton @press="closeAddModal()" />
         </div>
 
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

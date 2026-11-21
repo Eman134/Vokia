@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import {
@@ -275,7 +276,7 @@ watch(
             </span>
             <UiBadge v-if="autoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
             <UiBadge class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
-            <UiButton variant="quiet" size="sm" @press="closeModal()">Fechar</UiButton>
+            <UiCloseButton @press="closeModal()" />
           </div>
           <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
         </header>

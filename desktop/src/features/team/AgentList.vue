@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -11,21 +11,17 @@ import { presenceOf } from './agentStateStyle'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import type { Channel } from '../channels/channelsApi'
-import ChannelForm from '../channels/ChannelForm.vue'
+import ChannelDialog from '../channels/ChannelDialog.vue'
 import ChannelMenu from '../channels/ChannelMenu.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useProjects } from '../projects/useProjects'
-import { trapFocus } from '../backlog/dialogFocus'
-import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
-const EDIT_CHANNEL_LABEL = 'Editar canal'
-const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
-const CLOSE_LABEL = 'Fechar'
 const PANEL_CLASSES =
   'flex min-h-0 w-full shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 max-md:max-h-72 md:w-52'
 const QUEUE_BADGE_CLASSES =
@@ -59,11 +55,9 @@ const agentCopies = useAgentCopies()
 const projects = useProjects()
 const creating = ref(false)
 const editing = ref<Channel | null>(null)
-const dialogTitle = computed(() => (editing.value ? EDIT_CHANNEL_LABEL : NEW_CHANNEL_LABEL))
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
 const stripCollapsed = ref(true)
 const channelError = ref<string | null>(null)
-const dialog = ref<HTMLElement>()
 const opener = ref<HTMLElement | null>(null)
 
 // Cópias surgem e somem com os turnos: recarrega quando o projeto ou o estado de algum agente muda.
@@ -109,7 +103,6 @@ function openChannelDialog(channel: Channel | null = null): void {
   editing.value = channel
   opener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
   creating.value = true
-  void nextTick(() => dialog.value?.querySelector<HTMLElement>('input')?.focus())
 }
 
 function closeChannelDialog(): void {
@@ -133,9 +126,7 @@ function closeChannelDialog(): void {
     <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
-        <UiButton variant="quiet" size="sm" :aria-label="NEW_CHANNEL_LABEL" :title="NEW_CHANNEL_LABEL" @press="openChannelDialog()">
-          +
-        </UiButton>
+        <UiCreateButton @press="openChannelDialog()">{{ NEW_CHANNEL_LABEL }}</UiCreateButton>
       </div>
       <ul class="mb-4 flex flex-col gap-2">
         <li>
@@ -234,24 +225,5 @@ function closeChannelDialog(): void {
       </ul>
     </div>
   </aside>
-  <div
-    v-if="creating"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-    @click.self="closeChannelDialog"
-  >
-    <section
-      ref="dialog"
-      role="dialog"
-      aria-modal="true"
-      :aria-labelledby="NEW_CHANNEL_TITLE_ID"
-      tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
-      @keydown.esc.stop="closeChannelDialog"
-      @keydown.tab="trapFocus($event, dialog)"
-    >
-      <h2 :id="NEW_CHANNEL_TITLE_ID" class="text-control font-bold text-ink">{{ dialogTitle }}</h2>
-      <ChannelForm :key="editing?.id" :channel="editing ?? undefined" @done="closeChannelDialog" />
-      <UiButton variant="quiet" size="sm" @press="closeChannelDialog">{{ CLOSE_LABEL }}</UiButton>
-    </section>
-  </div>
+  <ChannelDialog v-if="creating" :key="editing?.id" :channel="editing ?? undefined" @close="closeChannelDialog" />
 </template>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import type { ModelTier, ModelTiers } from '../team/teamApi'
@@ -590,50 +592,10 @@ function refreshCatalog(): void {
           <header class="flex items-center justify-between gap-3 px-5 pt-4 pb-3">
             <h2 :id="titleId" class="text-control font-bold text-ink">Selecionar modelo</h2>
             <div class="flex items-center gap-2">
-              <button
-                type="button"
-                data-testid="model-selector-connect-provider"
-                class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-caption font-medium text-ink transition-colors hover:bg-hover focus:outline-2 focus:outline-solid focus:outline-accent"
-                @click="openConnectProvider()"
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span>Conectar provedor</span>
-              </button>
-              <button
-                type="button"
-                aria-label="Fechar"
-                data-testid="model-selector-close"
-                class="inline-flex size-8 cursor-pointer items-center justify-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
-                @click="closeModal()"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              <UiCreateButton data-testid="model-selector-connect-provider" @press="openConnectProvider()">
+                Conectar provedor
+              </UiCreateButton>
+              <UiCloseButton data-testid="model-selector-close" @press="closeModal()" />
             </div>
           </header>
 

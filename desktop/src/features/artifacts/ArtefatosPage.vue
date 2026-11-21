@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
@@ -18,7 +19,7 @@ const PLAN_GRID_CLASSES = 'grid grid-cols-[repeat(auto-fill,minmax(min(280px,100
 const EMPTY_AREA_CLASSES = 'flex flex-1 items-center justify-center'
 const EMPTY_TITLE = 'Nenhum artefato'
 const BACK_LABEL = 'Voltar'
-const NEW_ARTIFACT_LABEL = '+ Novo artefato'
+const NEW_ARTIFACT_LABEL = 'Novo artefato'
 const ALL_FILTER = 'todos'
 const PLANS_FILTER = 'planos'
 
@@ -53,9 +54,9 @@ const openedPlan = computed(() => plans.value.find((plan) => plan.item.id === op
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="PAGE_LABELS.canvas" :project-name="projectName">
       <template #actions>
-        <UiButton v-if="!openedPlan" variant="primary" size="lg" disabled aria-disabled="true">
+        <UiCreateButton v-if="!openedPlan" disabled aria-disabled="true">
           {{ NEW_ARTIFACT_LABEL }}
-        </UiButton>
+        </UiCreateButton>
       </template>
     </UiPageHeader>
 

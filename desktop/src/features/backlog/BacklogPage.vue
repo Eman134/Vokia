@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
@@ -150,15 +151,9 @@ watch(
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="BACKLOG_TITLE" :project-name="projectName">
       <template #actions>
-        <UiButton
-          variant="quiet"
-          size="lg"
-          class="border border-line bg-surface"
-          :disabled="!projectsStore.selected"
-          @press="backlog.startRequest()"
-        >
+        <UiCreateButton :disabled="!projectsStore.selected" @press="backlog.startRequest()">
           {{ NEW_REQUEST_LABEL }}
-        </UiButton>
+        </UiCreateButton>
         <UiButton variant="primary" size="lg" disabled aria-disabled="true">{{ planAllLabel }}</UiButton>
       </template>
     </UiPageHeader>

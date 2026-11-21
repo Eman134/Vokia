@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
@@ -86,14 +86,9 @@ onMounted(async () => {
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="PROJECTS_TITLE">
       <template #actions>
-        <UiButton
-          variant="primary"
-          size="lg"
-          data-testid="new-project"
-          @press="navigation.goTo('novo-projeto')"
-        >
+        <UiCreateButton data-testid="new-project" @press="navigation.goTo('novo-projeto')">
           {{ NEW_PROJECT_LABEL }}
-        </UiButton>
+        </UiCreateButton>
       </template>
     </UiPageHeader>
 

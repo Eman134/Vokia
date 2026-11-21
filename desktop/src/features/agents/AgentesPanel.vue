@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
@@ -103,7 +104,7 @@ async function removeSelected(): Promise<void> {
         <UiField v-model="query" class="min-w-[200px] flex-1" :label="SEARCH_LABEL" />
         <div class="flex flex-wrap items-center gap-2">
           <UiButton variant="quiet" size="lg" @press="providers.openSetup()">{{ CONFIGURE_LLMS_LABEL }}</UiButton>
-          <UiButton variant="primary" size="lg" @press="dialog = {}">{{ NEW_AGENT_LABEL }}</UiButton>
+          <UiCreateButton @press="dialog = {}">{{ NEW_AGENT_LABEL }}</UiCreateButton>
         </div>
       </div>
       <p v-if="visible.length === 0" class="text-caption text-muted">{{ NO_AGENTS_TEXT }}</p>

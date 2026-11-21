@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
-import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { PLAN_DIALOG_CHIP, STATE_BADGE } from './backlogLabels'
 import { trapFocus } from './dialogFocus'
 import PlanPanel from './PlanPanel.vue'
@@ -74,7 +74,7 @@ watch(
         <b :id="titleId" class="text-control text-ink">Plano</b>
         <span class="text-caption text-muted">{{ item.id }} · {{ item.title }}</span>
         <UiBadge :status="STATE_BADGE[state]" :label="PLAN_DIALOG_CHIP[state]" />
-        <UiButton class="ml-auto" variant="quiet" size="sm" @press="itemPlan.closeDialog()">Fechar</UiButton>
+        <UiCloseButton class="ml-auto" @press="itemPlan.closeDialog()" />
       </header>
       <PlanPanel :item="item" />
     </section>
