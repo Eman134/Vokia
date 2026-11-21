@@ -2,10 +2,11 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{replica_of, Agent, AgentError};
 use crate::claude::UsageLimit;
-use crate::db::{DbState, InterruptedRun, RunHandoff};
+use crate::db::{DbState, InterruptedRun, RunHandoff, RunMessage, RunProgress};
 use crate::events::{AgentState, VokiaEvent};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, RequestContext};
+use crate::task::truncate;
 
 use super::emit::{emit, emit_state, now_millis};
 use super::error::{FlowError, RequestOutcome};
@@ -14,7 +15,17 @@ use super::flow::handle_request;
 const JOURNAL_ERROR_PREFIX: &str = "Não foi possível registrar o pedido: ";
 const JOURNAL_CLOSE_ERROR_PREFIX: &str = "Não foi possível fechar o registro do pedido: ";
 const JOURNAL_PAUSE_ERROR_PREFIX: &str = "Não foi possível registrar a pausa do pedido: ";
-const RUN_CONTEXT_HEADING: &str = "Contexto do run interrompido (delegações já feitas):";
+pub(super) const RESUME_NOTE: &str = "Retomando o pedido interrompido de onde parou.";
+const RESUME_HEADING: &str = "Retomada de pedido interrompido: o app fechou antes do fim. Continue de onde parou: não refaça o que já foi feito nem repita respostas já dadas.";
+const ORIGINAL_REQUEST_LABEL: &str = "Pedido original:";
+const ORIGINAL_AGENT_LABEL: &str = "Agente que atendia:";
+const CARD_LABEL: &str = "Card:";
+const HANDOFFS_HEADING: &str = "Delegações já feitas:";
+const MESSAGES_HEADING: &str = "Mensagens já trocadas (mais antigas primeiro):";
+const TOOLS_LABEL: &str = "ferramentas:";
+const NOTHING_RECORDED: &str = "Nada foi registrado antes da interrupção: comece pelo pedido original.";
+const EMBER_COORDINATION: &str = "Coordene a continuação: confira o estado dos cards e das delegações acima e delegue de novo só o que ficou pela metade.";
+const PROGRESS_TEXT_MAX_CHARS: usize = 1500;
 
 // Réplica grava o registro no nome do agente base: é ele que existe no time e pode ser retomado.
 fn base_agent(agent: &Agent) -> &str {
@@ -114,25 +125,42 @@ pub async fn resume_run(
     id: i64,
 ) -> Result<RequestOutcome, FlowError> {
     let run = claim(app, id)?;
-    let agent = Agent::from_stored(&run.agent)
-        .ok_or_else(|| FlowError::Team(AgentError::UnknownAgent(run.agent.clone())))?;
-    let text = if run.leader {
-        with_run_context(app, &run)?
-    } else {
-        run.request.clone()
-    };
-    let context = RequestContext::new(
-        run.run_id.and_then(|id| u64::try_from(id).ok()),
-        run.item_id.clone(),
-        None,
-    );
-    match handle_request(app, state, &text, agent, run.project_id, context).await {
+    match continue_run(app, state, &run).await {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
             release(app, id)?;
             Err(error)
         }
     }
+}
+
+async fn continue_run(
+    app: &AppHandle,
+    state: &AppState,
+    run: &InterruptedRun,
+) -> Result<RequestOutcome, FlowError> {
+    let agent = Agent::from_stored(&run.agent)
+        .ok_or_else(|| FlowError::Team(AgentError::UnknownAgent(run.agent.clone())))?;
+    let db_state = app.state::<DbState>();
+    let progress = db_state
+        .require()
+        .and_then(|db| db.run_progress(run))
+        .map_err(FlowError::Runs)?;
+    // Fluxo que já delegou não cabe a um agente só: o Ember recebe o estado parcial e coordena a continuação.
+    let to_ember = !progress.handoffs.is_empty() && agent != Agent::ember();
+    let (recipient, item_id) = if to_ember {
+        (Agent::ember(), None)
+    } else {
+        (agent, run.item_id.clone())
+    };
+    let text = continuation(run, &progress, to_ember);
+    let mut context = RequestContext::new(
+        run.run_id.and_then(|id| u64::try_from(id).ok()),
+        item_id,
+        None,
+    );
+    context.resumed_run = Some(run.id);
+    handle_request(app, state, &text, recipient, run.project_id, context).await
 }
 
 fn claim(app: &AppHandle, id: i64) -> Result<InterruptedRun, FlowError> {
@@ -151,21 +179,30 @@ fn release(app: &AppHandle, id: i64) -> Result<(), FlowError> {
         .map_err(FlowError::Runs)
 }
 
-fn with_run_context(app: &AppHandle, run: &InterruptedRun) -> Result<String, FlowError> {
-    let state = app.state::<DbState>();
-    let handoffs = state
-        .require()
-        .and_then(|db| db.run_handoffs(run))
-        .map_err(FlowError::Runs)?;
-    if handoffs.is_empty() {
-        return Ok(run.request.clone());
+fn continuation(run: &InterruptedRun, progress: &RunProgress, to_ember: bool) -> String {
+    let mut lines = vec![
+        RESUME_HEADING.to_string(),
+        format!("{ORIGINAL_REQUEST_LABEL} {}", run.request),
+        format!("{ORIGINAL_AGENT_LABEL} {}", run.agent),
+    ];
+    if let Some(item) = &run.item_id {
+        lines.push(format!("{CARD_LABEL} {item}"));
     }
-    let lines: Vec<String> = handoffs.iter().map(handoff_line).collect();
-    Ok(format!(
-        "{}\n\n{RUN_CONTEXT_HEADING}\n{}",
-        run.request,
-        lines.join("\n")
-    ))
+    if progress.is_empty() {
+        lines.push(NOTHING_RECORDED.to_string());
+    }
+    if !progress.handoffs.is_empty() {
+        lines.push(HANDOFFS_HEADING.to_string());
+        lines.extend(progress.handoffs.iter().map(handoff_line));
+    }
+    if !progress.messages.is_empty() {
+        lines.push(MESSAGES_HEADING.to_string());
+        lines.extend(progress.messages.iter().flat_map(message_lines));
+    }
+    if to_ember {
+        lines.push(EMBER_COORDINATION.to_string());
+    }
+    lines.join("\n")
 }
 
 fn handoff_line(handoff: &RunHandoff) -> String {
@@ -175,3 +212,26 @@ fn handoff_line(handoff: &RunHandoff) -> String {
         None => format!("- {route} ({})", handoff.kind),
     }
 }
+
+fn message_lines(message: &RunMessage) -> Vec<String> {
+    let mut lines = vec![format!(
+        "- {} → {}: {}",
+        message.from_agent,
+        message.to_agent,
+        truncate(&message.text, PROGRESS_TEXT_MAX_CHARS)
+    )];
+    let tools: Vec<String> = message
+        .activity
+        .iter()
+        .flat_map(|activity| activity.tools.iter())
+        .map(|tool| format!("{} {}", tool.name, tool.target).trim_end().to_string())
+        .collect();
+    if !tools.is_empty() {
+        lines.push(format!("  {TOOLS_LABEL} {}", tools.join("; ")));
+    }
+    lines
+}
+
+#[cfg(test)]
+#[path = "../../tests/resume_tests.rs"]
+mod tests;

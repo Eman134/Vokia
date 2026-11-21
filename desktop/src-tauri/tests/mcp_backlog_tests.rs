@@ -1009,3 +1009,4 @@ fn app_commands_list_e_commands_list_retornam_when_to_use_e_schema_com_filtro_do
 
 include!("artifact_commands_tests.rs");
 
+include!("resume_flow_tests.rs");

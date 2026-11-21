@@ -40,7 +40,7 @@ use super::project_context::{
 };
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
-use super::runs::{begin_run, end_run, pause_run};
+use super::runs::{begin_run, end_run, pause_run, RESUME_NOTE};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext};
 use super::turns::{
@@ -96,22 +96,37 @@ pub(super) async fn handle_request_from(
         .team()
         .map_err(FlowError::Team)?;
     project_dir(app, project_id)?;
-    emit_message(
-        app,
-        project_id,
-        from,
-        Speaker::from(recipient.clone()),
-        request,
-        context.channel_id,
-        None,
-        None,
-        None,
-    )?;
-    // Só depois da mensagem gravada: antes disso o anexo ainda é rascunho e pode ser descartado.
-    if !context.attachments.is_empty() {
-        app.state::<DbState>()
-            .require()?
-            .mark_attachments_sent(project_id, &context.attachments)?;
+    // Retomada não repete o pedido no feed: o pedido original já está gravado; só avisa quem continua.
+    if context.resumed_run.is_some() {
+        emit_message(
+            app,
+            project_id,
+            Speaker::from(recipient.clone()),
+            Speaker::User,
+            RESUME_NOTE,
+            None,
+            None,
+            None,
+            None,
+        )?;
+    } else {
+        emit_message(
+            app,
+            project_id,
+            from,
+            Speaker::from(recipient.clone()),
+            request,
+            context.channel_id,
+            None,
+            None,
+            None,
+        )?;
+        // Só depois da mensagem gravada: antes disso o anexo ainda é rascunho e pode ser descartado.
+        if !context.attachments.is_empty() {
+            app.state::<DbState>()
+                .require()?
+                .mark_attachments_sent(project_id, &context.attachments)?;
+        }
     }
     let key = SessionKey {
         project_id,
@@ -840,6 +855,7 @@ async fn run_flow(
     let mut parallel = context.parallel;
     let parallel_run = context.run_id;
     let mut batch = context.batch;
+    let mut resumed_run = context.resumed_run;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
@@ -852,7 +868,11 @@ async fn run_flow(
         } else {
             current_run
         };
-        let journal = begin_run(app, &key, &request, item_id.as_deref(), journal_run)?;
+        // A retomada continua no registro original: o started_at antigo mantém a janela do que já foi feito.
+        let journal = match resumed_run.take() {
+            Some(id) => Some(id),
+            None => begin_run(app, &key, &request, item_id.as_deref(), journal_run)?,
+        };
         let exchange = if parallel {
             let item = run_parallel_item(
                 app,
@@ -935,6 +955,7 @@ async fn run_flow(
                 channel_id = job.context.channel_id;
                 parallel = job.context.parallel;
                 batch = job.context.batch;
+                resumed_run = job.context.resumed_run;
             }
             None => {
                 drain_waiting(app, state, key.project_id);

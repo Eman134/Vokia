@@ -66,6 +66,8 @@ pub struct RequestContext {
     pub batch: Option<u64>,
     // Anexos que a mensagem do usuário referencia; são marcados como enviados ao gravar a mensagem.
     pub attachments: Vec<String>,
+    // Pedido interrompido em retomada: reaproveita o registro original e não regrava a mensagem do usuário.
+    pub resumed_run: Option<i64>,
 }
 
 impl RequestContext {
@@ -80,6 +82,7 @@ impl RequestContext {
             parallel: false,
             batch: None,
             attachments: Vec::new(),
+            resumed_run: None,
         }
     }
 }
