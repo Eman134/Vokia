@@ -1,12 +1,12 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use crate::agents::{Agent, AgentProfile};
+use crate::agents::Agent;
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
@@ -20,8 +20,13 @@ use crate::session_key::SessionKey;
 
 use super::adapters::ProviderAdapter;
 use super::console::ConsoleSink;
-use super::emit::{emit, emit_state, report_limits};
+use super::emit::{emit, emit_feed_note, emit_state, now_millis, report_limits};
 use super::error::FlowError;
+use super::fallback::{
+    emit_overrides_changed, load_global_active_llm, load_global_fallback, mark_cooldown,
+    now_millis_u64, resolve_candidates, resolve_program_for, OverrideReason, TemporaryOverride,
+    DEFAULT_COOLDOWN_SECS,
+};
 use super::flow::profile_of;
 use super::project_context::project_choices;
 use super::prompts::{maestro_role, role, StepPrompts};
@@ -81,84 +86,24 @@ async fn run_step(
         ..
     } = exchange;
     let profile = profile_of(team, agent)?;
-    let adapter = ProviderAdapter::from_cli(&profile.cli)?;
-    if agent == &Agent::ember() && adapter != ProviderAdapter::Claude {
-        return Err(FlowError::CliUnavailable(
-            "O agente Ember deve usar a CLI claude.".to_string(),
-        ));
-    }
-    let mcp = if adapter.supports_mcp() {
-        McpLaunch::new(
-            app,
-            key.project_id,
-            agent,
-            &crate::orchestration::instances::display_name(team, agent),
-        )?
-    } else {
-        None
-    };
-    let prompt = agent_prompt(*orchestration, team, agent);
-    let base = role(
+    let providers = app.state::<crate::providers::ProviderRegistry>();
+    let global_active = load_global_active_llm(app);
+    let global_fallback = load_global_fallback(app);
+    let candidates = resolve_candidates(
+        agent,
         profile,
-        &prompt.roster,
-        prompt.layer.as_ref(),
-        project_context,
-        mcp.is_some(),
+        &providers,
+        state,
+        global_active.as_ref(),
+        &global_fallback,
+        Some(project.level),
     );
-    let role = if agent == &Agent::ember() {
-        let tools = if mcp.is_some() {
-            tool_definitions()
-        } else {
-            Vec::new()
-        };
-        // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
-        let paused = paused_agents(app, key.project_id)?;
-        maestro_role(
-            &base,
-            &tools,
-            &project_choices(app)?,
-            None,
-            *orchestration,
-            team,
-            &paused,
-        )
-    } else {
-        base
-    };
-    let (program, user_args) = resolve_agent_command(agent, profile, cli)?;
-    let call = AgentCall {
-        adapter,
-        program,
-        user_args,
-        role,
-        model: profile.model.clone(),
-        item_id: exchange.item_id.map(str::to_string),
-        channel_id: exchange.channel_id,
-        mcp,
-        has_variables: !exchange.definition.variables.is_empty(),
-        collected: StdMutex::default(),
-    };
-    let first = sessions.opened.insert(agent.clone());
-    let mut held = sessions.hold(agent).await;
-    if first {
-        held.guard.begin_exchange();
-    }
-    if held.guard.live.is_none() {
-        state.sessions.make_room(&held.slot).await;
+    if candidates.is_empty() {
+        return Err(FlowError::CliUnavailable(format!(
+            "Nenhum provedor disponível para {agent}."
+        )));
     }
     let grant_per_session = grants_per_session(app)?;
-    if !grant_per_session {
-        held.guard.forget_grants();
-    }
-    let granted = Arc::clone(&held.guard.granted);
-    let gate = PermissionGate {
-        app,
-        broker: &state.permissions,
-        agent: agent.clone(),
-        project_id: key.project_id,
-        granted: &granted,
-        grant_per_session,
-    };
     let store = SessionStore {
         app,
         key: SessionKey {
@@ -166,63 +111,227 @@ async fn run_step(
             agent: agent.clone(),
         },
     };
-    let access = if adapter.supports_mcp() {
-        Access::Project(*project)
-    } else {
-        Access::TextOnly
-    };
-    let live = if adapter.supports_live_session() {
-        match call_mode(held.guard.fresh_only) {
-            CallMode::Live => {
-                adapter
-                    .run_live(
-                        &mut held.guard,
+    let mut fallback_reason: Option<OverrideReason> = None;
+    let mut fallback_expires_at: Option<u64> = None;
+    for (idx, candidate) in candidates.iter().enumerate() {
+        let adapter = ProviderAdapter::from_cli(&candidate.cli, &providers)?;
+        if agent == &Agent::ember() && !adapter.is_claude() {
+            continue;
+        }
+        let mcp = if adapter.supports_mcp() {
+            McpLaunch::new(
+                app,
+                key.project_id,
+                agent,
+                &crate::orchestration::instances::display_name(team, agent),
+            )?
+        } else {
+            None
+        };
+        let prompt = agent_prompt(*orchestration, team, agent);
+        let base = role(
+            profile,
+            &prompt.roster,
+            prompt.layer.as_ref(),
+            project_context,
+            mcp.is_some(),
+        );
+        let role = if agent == &Agent::ember() {
+            let tools = if mcp.is_some() {
+                tool_definitions()
+            } else {
+                Vec::new()
+            };
+            // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
+            let paused = paused_agents(app, key.project_id)?;
+            maestro_role(
+                &base,
+                &tools,
+                &project_choices(app)?,
+                None,
+                *orchestration,
+                team,
+                &paused,
+            )
+        } else {
+            base
+        };
+        let (program, user_args) = resolve_program_for(agent, &candidate.command, cli)?;
+        let call = AgentCall {
+            adapter,
+            program,
+            user_args,
+            role,
+            model: candidate.model.clone(),
+            item_id: exchange.item_id.map(str::to_string),
+            channel_id: exchange.channel_id,
+            mcp,
+            has_variables: !exchange.definition.variables.is_empty(),
+            collected: StdMutex::default(),
+        };
+        let first = sessions.opened.insert(agent.clone());
+        let mut held = sessions.hold(agent).await;
+        if first {
+            held.guard.begin_exchange();
+        }
+        if idx > 0 {
+            held.guard.degrade().await;
+        }
+        if held.guard.live.is_none() {
+            state.sessions.make_room(&held.slot).await;
+        }
+        if !grant_per_session {
+            held.guard.forget_grants();
+        }
+        let granted = Arc::clone(&held.guard.granted);
+        let gate = PermissionGate {
+            app,
+            broker: &state.permissions,
+            agent: agent.clone(),
+            project_id: key.project_id,
+            granted: &granted,
+            grant_per_session,
+        };
+        let access = if call.adapter.supports_mcp() {
+            Access::Project(*project)
+        } else {
+            Access::TextOnly
+        };
+        let attempt: Result<Reply, FlowError> = async {
+            let live = if call.adapter.supports_live_session() {
+                match call_mode(held.guard.fresh_only) {
+                    CallMode::Live => {
+                        call.adapter
+                            .run_live(
+                                &mut held.guard,
+                                access,
+                                gate.clone(),
+                                &store,
+                                &call,
+                                prompts,
+                                first,
+                                console,
+                            )
+                            .await?
+                    }
+                    CallMode::Fresh => None,
+                }
+            } else {
+                None
+            };
+            match live {
+                Some(reply) => Ok(reply),
+                None => {
+                    // Sem sessão viva não há onde acumular aprovações: cada comando pergunta de novo.
+                    let gate = PermissionGate {
+                        grant_per_session: false,
+                        ..gate
+                    };
+                    fresh_reply(
                         access,
-                        gate.clone(),
-                        &store,
+                        gate,
+                        &held.slot.pid,
                         &call,
-                        prompts,
-                        first,
+                        &prompts.opening,
                         console,
                     )
-                    .await?
+                    .await
+                    .map_err(FlowError::Claude)
+                }
             }
-            CallMode::Fresh => None,
         }
-    } else {
-        None
-    };
-    let reply = match live {
-        Some(reply) => reply,
-        None => {
-            // Sem sessão viva não há onde acumular aprovações: cada comando pergunta de novo.
-            let gate = PermissionGate {
-                grant_per_session: false,
-                ..gate
-            };
-            fresh_reply(
-                access,
-                gate,
-                &held.slot.pid,
-                &call,
-                &prompts.opening,
-                console,
-            )
-            .await?
+        .await;
+        match attempt {
+            Ok(reply) => {
+                if let Some(reason) = fallback_reason {
+                    let ov = TemporaryOverride {
+                        agent: agent.clone(),
+                        cli: candidate.cli.clone(),
+                        model: candidate.model.clone(),
+                        model_tier: candidate.model_tier,
+                        command: candidate.command.clone(),
+                        original_cli: profile.cli.clone(),
+                        original_model: profile.model.clone(),
+                        original_tier: profile.model_tier,
+                        reason,
+                        applied_at: now_millis_u64(),
+                        expires_at: fallback_expires_at,
+                    };
+                    state
+                        .temporary_overrides
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(agent.clone(), ov);
+                    emit_overrides_changed(app, state);
+                    let _ = emit_feed_note(
+                        app,
+                        key.project_id,
+                        crate::events::Speaker::Agent(agent.clone()),
+                        &format!(
+                            "Fallback automático para {} ({})",
+                            candidate.cli, candidate.model
+                        ),
+                        now_millis().unwrap_or_else(|_| now_millis_u64()),
+                    );
+                }
+                report_limits(app, reply.limits)?;
+                let outcome = call
+                    .collected
+                    .lock()
+                    .map(|mut collected| std::mem::take(&mut *collected))
+                    .unwrap_or_default();
+                return Ok(StepReply {
+                    text: reply.text,
+                    outcome,
+                    activity: Some(reply.activity)
+                        .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
+                });
+            }
+            Err(err) => {
+                let is_limit = err.is_limit();
+                let is_unavail = err.is_model_unavailable();
+                if (is_limit || is_unavail) && idx + 1 < candidates.len() {
+                    mark_cooldown(state, &candidate.cli, &candidate.model);
+                    held.guard.degrade().await;
+                    let now_ms = now_millis_u64();
+                    let default_exp = now_ms.saturating_add(DEFAULT_COOLDOWN_SECS * 1000);
+                    fallback_expires_at = Some(match &err {
+                        FlowError::Claude(ClaudeError::UsageLimit(limit)) if limit.resets_at > 0 => {
+                            let reset_ms = limit.resets_at.saturating_mul(1000);
+                            if reset_ms > now_ms { reset_ms } else { default_exp }
+                        }
+                        _ => default_exp,
+                    });
+                    fallback_reason = Some(if is_limit {
+                        OverrideReason::UsageLimit
+                    } else {
+                        OverrideReason::ModelUnavailable
+                    });
+                    continue;
+                }
+                if let FlowError::Claude(ClaudeError::ModelUnavailable {
+                    provider,
+                    model,
+                    detail,
+                }) = &err
+                {
+                    let _ = emit(
+                        app,
+                        VokiaEvent::ModelUnavailable {
+                            agent: agent.clone(),
+                            provider: provider.clone(),
+                            model: model.clone(),
+                            detail: detail.clone(),
+                        },
+                    );
+                }
+                return Err(err);
+            }
         }
-    };
-    report_limits(app, reply.limits)?;
-    let outcome = call
-        .collected
-        .lock()
-        .map(|mut collected| std::mem::take(&mut *collected))
-        .unwrap_or_default();
-    Ok(StepReply {
-        text: reply.text,
-        outcome,
-        activity: Some(reply.activity)
-            .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
-    })
+    }
+    Err(FlowError::CliUnavailable(format!(
+        "Nenhum provedor disponível para {agent}."
+    )))
 }
 
 // Banco ausente vira lista vazia, como nas demais leituras do prompt; só as pausas do projeto da troca contam.
@@ -547,33 +656,27 @@ pub(super) struct AgentCall {
     collected: StdMutex<ExchangeOutcome>,
 }
 
-fn resolve_agent_command(
-    agent: &Agent,
-    profile: &AgentProfile,
-    default_cli: &Path,
-) -> Result<(PathBuf, Vec<String>), FlowError> {
-    if agent == &Agent::ember() {
-        return Ok((default_cli.to_path_buf(), Vec::new()));
+impl AgentCall {
+    pub(super) fn for_text_ask(
+        adapter: ProviderAdapter,
+        program: PathBuf,
+        user_args: Vec<String>,
+        role: String,
+        model: String,
+    ) -> Self {
+        Self {
+            adapter,
+            program,
+            user_args,
+            role,
+            model,
+            item_id: None,
+            channel_id: None,
+            mcp: None,
+            has_variables: false,
+            collected: StdMutex::default(),
+        }
     }
-    let parts = shlex::split(profile.command.trim()).ok_or_else(|| {
-        FlowError::CliUnavailable(format!(
-            "Comando inválido para {}: {}.",
-            profile.name, profile.command
-        ))
-    })?;
-    let Some((bin, args)) = parts.split_first() else {
-        return Err(FlowError::CliUnavailable(format!(
-            "Comando vazio para {}.",
-            profile.name
-        )));
-    };
-    let program = which::which(bin).map_err(|_| {
-        FlowError::CliUnavailable(format!(
-            "CLI {bin} não encontrada para {} (comando: {}).",
-            profile.name, profile.command
-        ))
-    })?;
-    Ok((program, args.to_vec()))
 }
 
 // Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.

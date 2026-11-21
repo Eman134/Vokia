@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
 use crate::events::Agent;
+use crate::orchestrator::fallback::{CooldownTracker, TemporaryOverride};
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
 use crate::session_key::SessionKey;
@@ -21,6 +22,8 @@ pub struct AppState {
     pub decisions: Mutex<HashMap<u64, PendingDecision>>,
     pub next_decision_id: AtomicU64,
     pub console: ConsoleLog,
+    pub cooldowns: Mutex<CooldownTracker>,
+    pub temporary_overrides: Mutex<HashMap<Agent, TemporaryOverride>>,
 }
 
 impl AppState {
@@ -35,6 +38,8 @@ impl AppState {
             decisions: Mutex::new(HashMap::new()),
             next_decision_id: AtomicU64::new(0),
             console: ConsoleLog::default(),
+            cooldowns: Mutex::new(CooldownTracker::default()),
+            temporary_overrides: Mutex::new(HashMap::new()),
         }
     }
 }

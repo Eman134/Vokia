@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::claude::{ConsoleKind, LimitName, TurnActivity};
+use crate::orchestrator::fallback::TemporaryOverride;
 use crate::orchestrator::RequestOutcome;
 
 pub use crate::agents::Agent;
@@ -254,5 +255,16 @@ pub enum VokiaEvent {
         project_id: i64,
         agent: Agent,
         name: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    TemporaryOverridesChanged {
+        overrides: Vec<TemporaryOverride>,
+    },
+    #[serde(rename_all = "camelCase")]
+    ModelUnavailable {
+        agent: Agent,
+        provider: String,
+        model: String,
+        detail: String,
     },
 }

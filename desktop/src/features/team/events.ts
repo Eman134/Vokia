@@ -228,6 +228,35 @@ export interface VokiaAgentActivity {
   activity: TurnActivity
 }
 
+export type OverrideReason = 'usage-limit' | 'model-unavailable' | 'manual-temp'
+
+export interface TemporaryOverride {
+  agent: Agent
+  cli: string
+  model: string
+  modelTier?: string | null
+  command: string
+  originalCli: string
+  originalModel: string
+  originalTier?: string | null
+  reason: OverrideReason
+  appliedAt: number
+  expiresAt?: number | null
+}
+
+export interface VokiaTemporaryOverridesChanged {
+  type: 'temporary-overrides-changed'
+  overrides: TemporaryOverride[]
+}
+
+export interface VokiaModelUnavailable {
+  type: 'model-unavailable'
+  agent: Agent
+  provider: string
+  model: string
+  detail: string
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -247,6 +276,8 @@ export type VokiaEvent =
   | VokiaOrchestrationChanged
   | VokiaAgentNamed
   | VokiaBatchProgress
+  | VokiaTemporaryOverridesChanged
+  | VokiaModelUnavailable
 
 export interface CliProblem {
   reason: string

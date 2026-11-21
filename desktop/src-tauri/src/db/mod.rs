@@ -38,4 +38,4 @@ pub(crate) use orchestration::{
 };
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use runs::{InterruptedRun, RunHandoff};
-pub use settings::{GRANT_SESSION, SETTING_PERMISSION_GRANT};
+pub use settings::{GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT};

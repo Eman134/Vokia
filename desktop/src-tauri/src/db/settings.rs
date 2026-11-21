@@ -9,6 +9,8 @@ const SETTING_THEME: &str = "theme";
 // Espelha THEME_CHOICES de src/features/theme/useTheme.ts.
 const THEME_VALUES: &[&str] = &["light", "dark", "system"];
 pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
+pub const SETTING_ACTIVE_LLM: &str = "active_llm";
+pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
@@ -42,6 +44,8 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
         },
     ),
     (SETTING_USER_AVATAR, SettingRule::Json),
+    (SETTING_ACTIVE_LLM, SettingRule::Json),
+    (SETTING_LLM_FALLBACK, SettingRule::Json),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.

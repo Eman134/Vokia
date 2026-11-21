@@ -4,6 +4,7 @@ mod archive;
 mod console;
 mod emit;
 mod error;
+pub(crate) mod fallback;
 mod flow;
 mod goal;
 mod loop_guard;

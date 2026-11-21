@@ -1,6 +1,5 @@
 use tauri::AppHandle;
 
-use crate::claude::{self, DEFAULT_MODEL};
 use crate::events::{GoalState, VokiaEvent};
 use crate::task::{truncate, TaskDefinition};
 
@@ -242,7 +241,18 @@ async fn check_goal(
         advanced,
         &passes.history(team),
     );
-    let reply = match claude::ask(cli, &message, GOAL_VERIFIER_ROLE, DEFAULT_MODEL).await {
+    let profile = super::flow::profile_of(team, &key.agent)?;
+    let reply = match super::fallback::ask_with_fallback(
+        app,
+        state,
+        cli,
+        &key.agent,
+        profile,
+        &message,
+        GOAL_VERIFIER_ROLE,
+    )
+    .await
+    {
         Ok(reply) => reply,
         Err(error) => {
             notify_unavailable(

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use tauri::{AppHandle, Manager, State};
 
-use crate::db::{DbProblem, DbState};
+use crate::agents::AgentRegistry;
+use crate::db::{DbProblem, DbState, SETTING_ACTIVE_LLM};
 use crate::orchestrator;
 use crate::state::AppState;
 
@@ -40,8 +41,25 @@ pub fn get_settings(state: State<'_, DbState>) -> Result<HashMap<String, String>
 }
 
 #[tauri::command]
-pub fn set_setting(state: State<'_, DbState>, key: String, value: String) -> Result<(), String> {
+pub async fn set_setting(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
     let db = state.require().map_err(|error| error.to_string())?;
     db.save_setting(&key, &value)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if key == SETTING_ACTIVE_LLM {
+        if let Ok(team) = registry.team() {
+            let app_state = app.state::<AppState>();
+            for profile in team.profiles() {
+                if profile.follow_default_llm {
+                    app_state.sessions.retire_agent(&profile.id).await;
+                }
+            }
+        }
+    }
+    Ok(())
 }

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::replica_of;
 use crate::attachments;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
-use crate::claude::{self, ProjectAccess};
+use crate::claude::ProjectAccess;
 use crate::db::{
     DbError, DbState, FlowEdge, OrchestrationSnapshot, FLOW_END, GATEWAY_PARALLEL, LINK_FLOW,
 };
@@ -1603,11 +1603,14 @@ async fn interpret_task(
         team.roster_line(),
         team.name_of(&origin)
     );
-    let reply = claude::ask(
+    let reply = super::fallback::ask_with_fallback(
+        app,
+        state,
         cli,
+        &origin,
+        profile,
         &message,
         &interpreter_role(team, orchestration),
-        &profile.model,
     )
     .await?;
     report_limits(app, reply.limits)?;
