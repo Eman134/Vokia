@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ModelTier, ModelTiers } from '../team/teamApi'
+import type { ModelTier, ModelTiers, ToolTransport } from '../team/teamApi'
 
-export type { ModelTier, ModelTiers }
+export type { ModelTier, ModelTiers, ToolTransport }
 
 const LIST_PROVIDERS_COMMAND = 'list_providers'
 const SAVE_PROVIDER_COMMAND = 'save_provider'
@@ -51,6 +51,7 @@ export interface ProviderConfig {
   models: string[]
   tiers: ModelTiers
   supportsMcp: boolean
+  toolTransport?: ToolTransport | null
   supportsSandbox: boolean
   reservedFlags: string[]
   rateLimitPatterns: string[]

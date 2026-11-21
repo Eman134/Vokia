@@ -55,7 +55,7 @@ impl LiveSession {
             role,
             model,
             access,
-            mcp.as_ref().map(McpSession::config),
+            mcp.as_ref().and_then(McpSession::config),
         );
         command.args([
             "--permission-prompts",

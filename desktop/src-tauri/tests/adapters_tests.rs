@@ -51,7 +51,7 @@ fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconheci
     );
 
     assert!(claude.supports_mcp());
-    assert!(!codex.supports_mcp());
+    assert!(codex.supports_mcp());
     assert!(!opencode.supports_mcp());
     assert!(!antigravity.supports_mcp());
 
@@ -90,7 +90,7 @@ fn codex_build_command_text_only_e_project_levels_com_user_args_antes_das_flags(
     let model = "gpt-6-luna";
 
     // TextOnly
-    let cmd_text = codex::build_command(program, &user_args, model, Access::TextOnly);
+    let cmd_text = codex::build_command(program, &user_args, model, Access::TextOnly, None);
     let args_text = args_of(&cmd_text);
     assert_eq!(args_text[0], "--user-flag");
     assert_eq!(args_text[1], "custom_val");
@@ -109,6 +109,7 @@ fn codex_build_command_text_only_e_project_levels_com_user_args_antes_das_flags(
         &user_args,
         model,
         Access::Project(project_access(PermissionLevel::Leitura)),
+        None,
     );
     let args_leitura = args_of(&cmd_leitura);
     assert!(position(&args_leitura, "--user-flag") < position(&args_leitura, "exec"));
@@ -120,6 +121,7 @@ fn codex_build_command_text_only_e_project_levels_com_user_args_antes_das_flags(
         &user_args,
         model,
         Access::Project(project_access(PermissionLevel::Edicao)),
+        None,
     );
     let args_edicao = args_of(&cmd_edicao);
     assert_eq!(args_edicao[position(&args_edicao, "-s") + 1], "workspace-write");
@@ -130,6 +132,7 @@ fn codex_build_command_text_only_e_project_levels_com_user_args_antes_das_flags(
         &user_args,
         model,
         Access::Project(project_access(PermissionLevel::Liberado)),
+        None,
     );
     let args_liberado = args_of(&cmd_liberado);
     assert_eq!(args_liberado[position(&args_liberado, "-s") + 1], "danger-full-access");
@@ -191,8 +194,7 @@ fn opencode_build_command_text_only_e_leitura_e_edicao_e_recusa_liberado_conform
     assert_eq!(args_text[3], "json");
     assert_eq!(args_text[4], "-m");
     assert_eq!(args_text[5], "openai/gpt-6-astra");
-    assert_eq!(args_text[6], "--");
-    assert_eq!(args_text[7], "Backend Lead\n\nanalise o código");
+    assert_eq!(args_text.len(), 6);
 
     // Project: Leitura
     let cmd_leitura = opencode::build_command(
@@ -205,9 +207,7 @@ fn opencode_build_command_text_only_e_leitura_e_edicao_e_recusa_liberado_conform
     ).unwrap();
     let args_leitura = args_of(&cmd_leitura);
     assert!(args_leitura.contains(&"--dir".to_string()));
-    let pos_dashdash = position(&args_leitura, "--");
-    assert_eq!(pos_dashdash, args_leitura.len() - 2);
-    assert_eq!(args_leitura[pos_dashdash + 1], "Backend Lead\n\nanalise o código");
+    assert!(!args_leitura.iter().any(|arg| arg.contains('\n')));
 
     // Project: Edicao
     let cmd_edicao = opencode::build_command(
@@ -280,15 +280,17 @@ fn antigravity_build_command_text_only_leitura_edicao_e_liberado() {
     let args_text = args_of(&cmd_text);
     assert_eq!(args_text[0], "--user-agy");
     assert_eq!(args_text[1], "-p");
-    assert_eq!(args_text[2], "Tech Lead\n\ncrie o plano");
-    assert_eq!(args_text[3], "--output-format");
-    assert_eq!(args_text[4], "stream-json");
-    assert_eq!(args_text[5], "--model");
-    assert_eq!(args_text[6], "gemini-4-hydrogen-medium");
-    assert_eq!(args_text[7], "--disable-slash-commands");
-    assert_eq!(args_text[8], "--sandbox");
-    assert_eq!(args_text[9], "--mode");
-    assert_eq!(args_text[10], "plan");
+    assert_eq!(args_text[2], "--input-format");
+    assert_eq!(args_text[3], "text");
+    assert_eq!(args_text[4], "--output-format");
+    assert_eq!(args_text[5], "stream-json");
+    assert_eq!(args_text[6], "--model");
+    assert_eq!(args_text[7], "gemini-4-hydrogen-medium");
+    assert_eq!(args_text[8], "--disable-slash-commands");
+    assert_eq!(args_text[9], "--sandbox");
+    assert_eq!(args_text[10], "--mode");
+    assert_eq!(args_text[11], "plan");
+    assert!(!args_text.iter().any(|arg| arg.contains('\n')));
 
     // Project: Leitura
     let cmd_leitura = antigravity::build_command(
@@ -407,6 +409,7 @@ fn llm1_seed_de_providers_json_em_diretorio_vazio_cria_quatro_provedores_iniciai
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
 #[test]
 fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
     let dir = std::env::temp_dir().join(format!(
@@ -432,6 +435,7 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
             advanced: "modelo-avancado".to_string(),
         },
         supports_mcp: false,
+        tool_transport: None,
         supports_sandbox: false,
         reserved_flags: vec!["--danger".to_string()],
         rate_limit_patterns: vec!["quota_error".to_string()],
@@ -445,6 +449,10 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
             json_output_args: vec![],
             text_json_paths: vec![],
             error_json_paths: vec![],
+            model_json_path: None,
+            input_tokens_json_path: None,
+            output_tokens_json_path: None,
+            cost_usd_json_path: None,
             sandbox_args: std::collections::BTreeMap::new(),
         }),
         builtin_seed: false,
@@ -466,6 +474,7 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
 
 #[test]
 fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
@@ -530,6 +539,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
 
 #[test]
 fn llm1_model_tier_basic_intermediate_advanced_resolvido_via_tiers() {
@@ -628,6 +638,10 @@ fn llm2_generic_build_command_sem_shell_e_recusa_liberado_quando_sandbox_false()
         json_output_args: vec!["--json".to_string()],
         text_json_paths: vec!["text".to_string()],
         error_json_paths: vec![],
+        model_json_path: None,
+        input_tokens_json_path: None,
+        output_tokens_json_path: None,
+        cost_usd_json_path: None,
         sandbox_args: std::collections::BTreeMap::new(),
     });
 
@@ -867,6 +881,7 @@ fn llm3_delete_provider_claude_recusado() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
 // ==========================================
 // 8. LLM-4: resolve_candidates prioridades, filtros Ember MCP, sandbox Liberado, CooldownTracker, expiração, update_ember_llm
 // ==========================================
@@ -974,9 +989,9 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         follow_default_llm: false,
         fallback: vec![
             crate::orchestrator::fallback::LlmTarget {
-                cli: "codex".to_string(), // supports_mcp: false
+                cli: "opencode".to_string(), // supports_mcp: false
                 model_tier: None,
-                model: Some("gpt-6-luna".to_string()),
+                model: Some("openai/gpt-6-astra".to_string()),
             },
             crate::orchestrator::fallback::LlmTarget {
                 cli: "claude".to_string(), // supports_mcp: true
@@ -998,9 +1013,9 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         &[],
         None,
     );
-    // Codex foi descartado porque não tem MCP!
-    assert!(ember_candidates.iter().all(|c| c.provider.supports_mcp));
-    assert_eq!(ember_candidates.len(), 2); // haiku e sonnet do Claude
+    // OpenCode tem VokiaCli (has_tools == true), então é aceito para Ember conforme P1!
+    assert!(ember_candidates.iter().all(|c| c.provider.has_tools()));
+    assert_eq!(ember_candidates.len(), 3); // haiku, opencode e sonnet
 
     // 2. Filtro Sandbox no nível Liberado:
     // OpenCode tem supports_sandbox: false, então deve ser filtrado no Liberado
@@ -1170,26 +1185,50 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
         .expect("update_ember_llm com Claude deve ter sucesso");
     assert_eq!(updated.model, "opus");
 
-    // 2. Provedor sem MCP (codex): recusa explícita
+    // 2. Provedor sem ferramentas (ToolTransport::None): recusa explícita
+    let no_tools = crate::providers::ProviderConfig {
+        id: "sem-tools".to_string(),
+        label: "Sem Tools".to_string(),
+        protocol: crate::providers::ProviderProtocol::GenericCli,
+        default_command: "sem-tools".to_string(),
+        default_model: "base".to_string(),
+        models: vec!["base".to_string()],
+        tiers: crate::providers::ModelTiers {
+            basic: "base".to_string(),
+            intermediate: "base".to_string(),
+            advanced: "base".to_string(),
+        },
+        supports_mcp: false,
+        tool_transport: Some(crate::providers::ToolTransport::None),
+        supports_sandbox: false,
+        reserved_flags: vec![],
+        rate_limit_patterns: vec![],
+        model_unavailable_patterns: vec![],
+        discovery: None,
+        generic: None,
+        builtin_seed: false,
+    };
+    providers.save_provider(no_tools).expect("salvar provedor sem tools");
     let err = agents
         .update_ember_llm(
-            Some("codex".to_string()),
+            Some("sem-tools".to_string()),
             None,
-            Some("gpt-6-luna".to_string()),
+            Some("base".to_string()),
             vec![],
             &providers,
         )
-        .expect_err("update_ember_llm com Codex deve falhar");
+        .expect_err("update_ember_llm com ToolTransport::None deve falhar");
 
     match err {
         crate::agents::AgentError::SaveFailed(msg) => {
             assert!(
-                msg.contains("O agente Ember exige um provedor com suporte a MCP"),
+                msg.contains("O agente Ember exige um provedor com suporte a ferramentas"),
                 "mensagem inesperada: {msg}"
             );
         }
-        other => panic!("esperava SaveFailed com recusa de MCP, obteve: {other:?}"),
+        other => panic!("esperava SaveFailed com recusa de ferramentas, obteve: {other:?}"),
     }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+

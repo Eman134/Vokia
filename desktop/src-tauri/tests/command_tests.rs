@@ -125,7 +125,7 @@ fn position(args: &[String], flag: &str) -> usize {
 #[test]
 fn com_mcp_o_arquivo_vem_antes_do_append_e_o_strict_logo_depois_nos_tres_niveis() {
     let fixture = mcp_fixture("mcp");
-    let config = fixture.session.config();
+    let config = fixture.session.config().expect("config");
 
     for level in LEVELS {
         let args = args_of(Access::Project(project_access(level)), Some(config));
@@ -141,7 +141,7 @@ fn com_mcp_o_arquivo_vem_antes_do_append_e_o_strict_logo_depois_nos_tres_niveis(
 #[test]
 fn caminho_do_arquivo_com_espaco_segue_como_um_unico_argumento() {
     let fixture = mcp_fixture("pasta com espaço");
-    let config = fixture.session.config();
+    let config = fixture.session.config().expect("config");
 
     let args = args_of(
         Access::Project(project_access(PermissionLevel::Edicao)),
@@ -172,7 +172,7 @@ fn sem_mcp_nenhum_argumento_de_mcp_aparece_nos_tres_niveis() {
 fn em_text_only_o_mcp_e_ignorado_mesmo_quando_fornecido() {
     let fixture = mcp_fixture("mcp");
 
-    let args = args_of(Access::TextOnly, Some(fixture.session.config()));
+    let args = args_of(Access::TextOnly, Some(fixture.session.config().expect("config")));
 
     assert!(!args
         .iter()
@@ -188,7 +188,7 @@ fn o_curinga_mcp_vokia_sozinho_nunca_entra_em_allowed_tools() {
     for level in LEVELS {
         let args = args_of(
             Access::Project(project_access(level)),
-            Some(fixture.session.config()),
+            Some(fixture.session.config().expect("config")),
         );
 
         let allowed = &args[position(&args, ALLOWED_FLAG) + 1];
@@ -218,7 +218,7 @@ fn comando_base_e_de_agente_definem_no_proxy_para_o_loopback() {
         "papel",
         "haiku",
         Access::Project(project_access(PermissionLevel::Leitura)),
-        Some(fixture.session.config()),
+        Some(fixture.session.config().expect("config")),
     );
 
     assert_eq!(no_proxy(&base).as_deref(), Some("127.0.0.1,localhost"));
@@ -257,7 +257,7 @@ fn cada_ferramenta_do_vokia_aparece_em_allowed_tools_nos_tres_niveis() {
     for level in LEVELS {
         let args = args_of(
             Access::Project(project_access(level)),
-            Some(fixture.session.config()),
+            Some(fixture.session.config().expect("config")),
         );
 
         let allowed = &args[position(&args, ALLOWED_FLAG) + 1];
@@ -269,7 +269,7 @@ fn cada_ferramenta_do_vokia_aparece_em_allowed_tools_nos_tres_niveis() {
             );
         }
     }
-    assert_eq!(fixture.session.config().allowed_tools(), VOKIA_TOOLS);
+    assert_eq!(fixture.session.config().expect("config").allowed_tools(), VOKIA_TOOLS);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn as_ferramentas_do_mcp_entram_depois_das_do_nivel_sem_remover_nenhuma() {
         let without = args_of(Access::Project(project_access(level)), None);
         let with = args_of(
             Access::Project(project_access(level)),
-            Some(fixture.session.config()),
+            Some(fixture.session.config().expect("config")),
         );
 
         let base = without[position(&without, ALLOWED_FLAG) + 1].clone();
@@ -304,7 +304,7 @@ fn argumentos_do_usuario_entram_antes_de_tools_allowed_tools_e_append_system_pro
         "Tech Lead",
         "sonnet",
         Access::Project(project_access(PermissionLevel::Edicao)),
-        Some(fixture.session.config()),
+        Some(fixture.session.config().expect("config")),
     );
     let args: Vec<String> = command
         .as_std()

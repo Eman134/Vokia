@@ -4,6 +4,7 @@ mod codex;
 mod generic;
 mod opencode;
 
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -15,8 +16,9 @@ use crate::claude::{
     classify_provider_error, cli_message, kill_process_tree, timeout_for, Access, ClaudeError,
     Reply,
 };
-use crate::permissions::PermissionGate;
-use crate::providers::{ProviderConfig, ProviderProtocol, ProviderRegistry};
+use crate::mcp::McpSession;
+use crate::permissions::{PermissionGate, PermissionLevel};
+use crate::providers::{ProviderConfig, ProviderProtocol, ProviderRegistry, ToolTransport};
 
 use super::agent_session::{AgentCall, AgentSession, SessionStore};
 use super::console::ConsoleSink;
@@ -64,12 +66,23 @@ impl ProviderAdapter {
         }
     }
 
+    #[allow(dead_code)]
     pub(in crate::orchestrator) fn is_claude(&self) -> bool {
         matches!(self, Self::Claude(_))
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::orchestrator) fn supports_mcp(&self) -> bool {
         self.config().supports_mcp
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::orchestrator) fn tool_transport(&self) -> ToolTransport {
+        self.config().effective_tool_transport()
+    }
+
+    pub(in crate::orchestrator) fn has_tools(&self) -> bool {
+        self.config().has_tools()
     }
 
     pub(in crate::orchestrator) fn supports_live_session(&self) -> bool {
@@ -109,7 +122,11 @@ impl ProviderAdapter {
         match self {
             Self::Claude(_) => claude::run_fresh(access, gate, pid, call, message, console).await,
             Self::Codex(provider) => {
-                codex::run_turn(
+                let mcp_session = super::agent_session::open_mcp_headless(call)?;
+                if let Some(session) = &mcp_session {
+                    call.begin_mcp_slot(session);
+                }
+                let result = codex::run_turn(
                     &call.program,
                     &call.user_args,
                     &call.role,
@@ -118,11 +135,20 @@ impl ProviderAdapter {
                     message,
                     pid,
                     provider,
+                    mcp_session.as_ref(),
                 )
-                .await
+                .await;
+                if let Some(session) = &mcp_session {
+                    call.finish_mcp_slot(session);
+                }
+                result.map_err(|err| err.with_cli(&provider.id))
             }
             Self::OpenCode(provider) => {
-                opencode::run_turn(
+                let vokia_cli = prepare_vokia_cli(self.tool_transport(), call)?;
+                let vokia_ref = vokia_cli
+                    .as_ref()
+                    .map(|(session, path)| (session, path.as_path()));
+                let result = opencode::run_turn(
                     &call.program,
                     &call.user_args,
                     &call.role,
@@ -131,11 +157,18 @@ impl ProviderAdapter {
                     message,
                     pid,
                     provider,
+                    vokia_ref,
                 )
-                .await
+                .await;
+                finalize_vokia_cli(result, access, call, vokia_cli)
+                    .map_err(|err| err.with_cli(&provider.id))
             }
             Self::Antigravity(provider) => {
-                antigravity::run_turn(
+                let vokia_cli = prepare_vokia_cli(self.tool_transport(), call)?;
+                let vokia_ref = vokia_cli
+                    .as_ref()
+                    .map(|(session, path)| (session, path.as_path()));
+                let result = antigravity::run_turn(
                     &call.program,
                     &call.user_args,
                     &call.role,
@@ -144,11 +177,18 @@ impl ProviderAdapter {
                     message,
                     pid,
                     provider,
+                    vokia_ref,
                 )
-                .await
+                .await;
+                finalize_vokia_cli(result, access, call, vokia_cli)
+                    .map_err(|err| err.with_cli(&provider.id))
             }
             Self::Generic(provider) => {
-                generic::run_turn(
+                let vokia_cli = prepare_vokia_cli(self.tool_transport(), call)?;
+                let vokia_ref = vokia_cli
+                    .as_ref()
+                    .map(|(session, path)| (session, path.as_path()));
+                let result = generic::run_turn(
                     &call.program,
                     &call.user_args,
                     &call.role,
@@ -157,18 +197,97 @@ impl ProviderAdapter {
                     message,
                     pid,
                     provider,
+                    vokia_ref,
                 )
-                .await
+                .await;
+                finalize_vokia_cli(result, access, call, vokia_cli)
+                    .map_err(|err| err.with_cli(&provider.id))
             }
         }
     }
 }
 
-pub(crate) fn cli_supports_mcp(cli: &str) -> bool {
-    crate::providers::initial_providers()
-        .into_iter()
-        .find(|provider| provider.id == cli)
-        .is_some_and(|provider| provider.supports_mcp)
+fn prepare_vokia_cli(
+    transport: ToolTransport,
+    call: &AgentCall,
+) -> Result<Option<(McpSession, PathBuf)>, ClaudeError> {
+    if transport != ToolTransport::VokiaCli || !call.has_mcp() {
+        return Ok(None);
+    }
+    let Some(cli_path) = resolve_vokia_cli_path() else {
+        return Ok(None);
+    };
+    let Some(session) = super::agent_session::open_mcp_headless(call)? else {
+        return Ok(None);
+    };
+    call.begin_mcp_slot(&session);
+    Ok(Some((session, cli_path)))
+}
+
+fn finalize_vokia_cli(
+    result: Result<Reply, ClaudeError>,
+    access: Access<'_>,
+    call: &AgentCall,
+    vokia_cli: Option<(McpSession, PathBuf)>,
+) -> Result<Reply, ClaudeError> {
+    let used_vokia_cli = vokia_cli.is_some();
+    if let Some((session, _)) = vokia_cli {
+        call.finish_mcp_slot(&session);
+    }
+    if used_vokia_cli && matches!(access, Access::Project(p) if p.level == PermissionLevel::Leitura) {
+        if let Err(err) = result {
+            let msg = err.to_string();
+            let lower = msg.to_ascii_lowercase();
+            if lower.contains("127.0.0.1")
+                || lower.contains("connection refused")
+                || lower.contains("permission denied")
+                || lower.contains("sandbox")
+                || lower.contains("network")
+            {
+                return Err(ClaudeError::Reported(format!(
+                    "{msg} (Em modo Leitura o sandbox pode bloquear a conexão local do vokia-cli; tente modo Edição ou um provedor com MCP nativo.)"
+                )));
+            }
+            return Err(err);
+        }
+    }
+    result
+}
+
+pub(crate) fn resolve_vokia_cli_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let bin = if cfg!(windows) {
+        "vokia-cli.exe"
+    } else {
+        "vokia-cli"
+    };
+    let candidate = dir.join(bin);
+    candidate.is_file().then_some(candidate)
+}
+
+pub(crate) fn inject_vokia_cli_env(
+    command: &mut Command,
+    session: &McpSession,
+    cli_path: &Path,
+) {
+    command.env("VOKIA_URL", session.url());
+    command.env("VOKIA_TOKEN", session.token());
+    command.env("VOKIA_CLI", cli_path);
+    if let Some(bin_dir) = cli_path.parent() {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths = vec![bin_dir.to_path_buf()];
+        paths.extend(std::env::split_paths(&existing));
+        if let Ok(joined) = std::env::join_paths(paths) {
+            command.env("PATH", joined);
+        }
+    }
+}
+
+pub(crate) fn cli_has_tools(cli: &str, providers: &ProviderRegistry) -> bool {
+    providers
+        .get(cli)
+        .is_ok_and(|provider| provider.has_tools())
 }
 
 pub(super) async fn run_cli_process(

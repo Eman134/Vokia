@@ -50,6 +50,7 @@ export interface InterruptedRun {
 }
 
 export type ModelTier = 'basic' | 'intermediate' | 'advanced'
+export type ToolTransport = 'none' | 'mcp-native' | 'vokia-cli'
 
 export interface ModelTiers {
   basic: string
@@ -86,6 +87,7 @@ export interface CliPreset {
   defaultCommand: string
   tiers: ModelTiers
   supportsMcp: boolean
+  toolTransport?: ToolTransport
   supportsSandbox: boolean
   builtinSeed: boolean
 }

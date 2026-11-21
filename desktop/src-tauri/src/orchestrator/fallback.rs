@@ -241,7 +241,7 @@ pub fn resolve_candidates(
         let Ok(provider) = providers.get(&cli) else {
             continue;
         };
-        if is_ember && !provider.supports_mcp {
+        if is_ember && !provider.has_tools() {
             continue;
         }
         if requires_sandbox && !provider.supports_sandbox {

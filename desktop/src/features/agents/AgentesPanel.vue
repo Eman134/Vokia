@@ -149,7 +149,22 @@ async function removeSelected(): Promise<void> {
         <div class="flex gap-2"><dt class="w-36 shrink-0 text-muted">{{ ROLE_LABEL }}</dt><dd class="text-ink">{{ selected.role }}</dd></div>
         <div class="flex gap-2">
           <dt class="w-36 shrink-0 text-muted">{{ DEFAULT_PROVIDER_LABEL }}</dt>
-          <dd class="text-ink">{{ selected.followDefaultLlm ? 'Padrão global' : selected.cli }}</dd>
+          <dd class="flex flex-wrap items-center gap-1.5 text-ink">
+            <span>{{ selected.followDefaultLlm ? 'Padrão global' : selected.cli }}</span>
+            <span
+              v-if="!selected.followDefaultLlm"
+              class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-small font-medium text-muted"
+            >
+              {{
+                (roster.presets.find((p) => p.id === selected.cli)?.toolTransport ??
+                  (roster.presets.find((p) => p.id === selected.cli)?.supportsMcp ? 'mcp-native' : 'none')) === 'mcp-native'
+                  ? 'MCP nativo'
+                  : roster.presets.find((p) => p.id === selected.cli)?.toolTransport === 'vokia-cli'
+                    ? 'Vokia CLI'
+                    : 'Só texto'
+              }}
+            </span>
+          </dd>
         </div>
         <div class="flex gap-2">
           <dt class="w-36 shrink-0 text-muted">{{ EFFORT_LEVEL_LABEL }}</dt>

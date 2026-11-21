@@ -20,18 +20,35 @@ pub enum ClaudeError {
     Timeout(Duration),
     SessionClosed(String),
     Mcp(String),
+    ForCli {
+        cli: String,
+        inner: Box<ClaudeError>,
+    },
 }
 
 impl ClaudeError {
+    pub fn with_cli(self, cli: impl Into<String>) -> Self {
+        let cli = cli.into();
+        match self {
+            ClaudeError::ForCli { inner, .. } => ClaudeError::ForCli { cli, inner },
+            other => ClaudeError::ForCli {
+                cli,
+                inner: Box::new(other),
+            },
+        }
+    }
+
     pub fn is_session_loss(&self) -> bool {
-        matches!(
-            self,
-            ClaudeError::SessionClosed(_) | ClaudeError::Timeout(_)
-        )
+        match self {
+            ClaudeError::ForCli { inner, .. } => inner.is_session_loss(),
+            ClaudeError::SessionClosed(_) | ClaudeError::Timeout(_) => true,
+            _ => false,
+        }
     }
 
     pub fn usage_limit(&self) -> Option<UsageLimit> {
         match self {
+            ClaudeError::ForCli { inner, .. } => inner.usage_limit(),
             ClaudeError::UsageLimit(limit) => Some(*limit),
             _ => None,
         }
@@ -39,6 +56,7 @@ impl ClaudeError {
 
     pub fn is_limit(&self) -> bool {
         match self {
+            ClaudeError::ForCli { inner, .. } => inner.is_limit(),
             ClaudeError::UsageLimit(_) | ClaudeError::LimitExhausted => true,
             ClaudeError::Reported(message) | ClaudeError::Exit { message, .. } => {
                 is_limit_message(message)
@@ -49,12 +67,17 @@ impl ClaudeError {
 
     #[allow(dead_code)]
     pub fn is_model_unavailable(&self) -> bool {
-        matches!(self, ClaudeError::ModelUnavailable { .. })
+        match self {
+            ClaudeError::ForCli { inner, .. } => inner.is_model_unavailable(),
+            ClaudeError::ModelUnavailable { .. } => true,
+            _ => false,
+        }
     }
 
     #[allow(dead_code)]
     pub fn model_unavailable(&self) -> Option<(&str, &str, &str)> {
         match self {
+            ClaudeError::ForCli { inner, .. } => inner.model_unavailable(),
             ClaudeError::ModelUnavailable {
                 provider,
                 model,
@@ -102,11 +125,12 @@ fn is_limit_message(text: &str) -> bool {
         || lower.contains("limite esgotado")
 }
 
-impl fmt::Display for ClaudeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl ClaudeError {
+    fn fmt_with_cli(&self, cli: &str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ClaudeError::ForCli { cli, inner } => inner.fmt_with_cli(cli, f),
             ClaudeError::Spawn(error) => {
-                write!(f, "Não foi possível executar a CLI claude: {error}")
+                write!(f, "Não foi possível executar a CLI {cli}: {error}")
             }
             ClaudeError::Exit { message, .. } if is_limit_message(message) => {
                 f.write_str("Limite esgotado")
@@ -115,32 +139,34 @@ impl fmt::Display for ClaudeError {
                 code: Some(code),
                 message,
             } => {
-                write!(f, "A CLI claude saiu com código {code}: {message}")
+                write!(f, "A CLI {cli} saiu com código {code}: {message}")
             }
             ClaudeError::Exit {
                 code: None,
                 message,
             } => {
-                write!(f, "A CLI claude foi interrompida: {message}")
+                write!(f, "A CLI {cli} foi interrompida: {message}")
             }
             ClaudeError::InvalidJson(error) => {
-                write!(f, "A CLI claude devolveu um JSON inválido: {error}")
+                write!(f, "A CLI {cli} devolveu um JSON inválido: {error}")
             }
             ClaudeError::MissingResult => write!(
                 f,
-                "A CLI claude terminou sem a linha de resultado do stream-json."
+                "A CLI {cli} terminou sem a linha de resultado do stream-json."
             ),
             ClaudeError::Timeout(limit) => {
                 write!(
                     f,
-                    "A CLI claude não respondeu em {} s e foi encerrada.",
+                    "A CLI {cli} não respondeu em {} s e foi encerrada.",
                     limit.as_secs()
                 )
             }
             ClaudeError::Reported(message) if is_limit_message(message) => {
                 f.write_str("Limite esgotado")
             }
-            ClaudeError::Reported(message) => write!(f, "A CLI claude devolveu um erro: {message}"),
+            ClaudeError::Reported(message) => {
+                write!(f, "A CLI {cli} devolveu um erro: {message}")
+            }
             ClaudeError::UsageLimit(_) | ClaudeError::LimitExhausted => {
                 f.write_str("Limite esgotado")
             }
@@ -150,11 +176,17 @@ impl fmt::Display for ClaudeError {
                 detail,
             } => write!(f, "Modelo {model} indisponível em {provider}: {detail}"),
             ClaudeError::SessionClosed(reason) => {
-                write!(f, "A sessão da CLI claude foi encerrada: {reason}")
+                write!(f, "A sessão da CLI {cli} foi encerrada: {reason}")
             }
             ClaudeError::Mcp(reason) => {
                 write!(f, "Não foi possível preparar o MCP do Vokia: {reason}")
             }
         }
+    }
+}
+
+impl fmt::Display for ClaudeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_with_cli("claude", f)
     }
 }

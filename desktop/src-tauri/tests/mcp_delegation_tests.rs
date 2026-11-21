@@ -435,7 +435,7 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
             .update(&agent("vexa"), &draft, &providers)
             .expect("update vexa");
 
-        // 1. Com item_id (delegação de card) -> DEVE RECUSAR CONFORME D2
+        // 1. Com item_id (delegação de card) -> MCP-1: provedores com MCP nativo ou Vokia CLI aceitam delegação de card
         axiom.slot.begin(None, None);
         let outcome_card = world.call(
             &axiom,
@@ -443,12 +443,9 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
             json!({ "agent": "Vexa", "request": "Faça o card", "item_id": card }),
         );
         let after = axiom.slot.end();
-        assert!(outcome_card.is_error, "deveria recusar delegação de card para {cli}");
-        assert_eq!(
-            outcome_card.text,
-            "Vexa usa uma CLI sem suporte a MCP e não pode receber delegação de card."
-        );
-        assert!(after.delegation.is_none());
+        assert!(!outcome_card.is_error, "deveria aceitar delegação de card para {cli}: {}", outcome_card.text);
+        assert_eq!(outcome_card.text, REGISTERED);
+        assert_eq!(request_of(&after.delegation), Some("Faça o card"));
 
         // 2. Sem item_id (conversa pura de texto) -> DEVE ACEITAR
         axiom.slot.begin(None, None);

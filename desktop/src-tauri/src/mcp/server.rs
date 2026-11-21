@@ -59,13 +59,25 @@ impl McpConfigFile {
 pub struct McpSession {
     shared: Arc<Shared>,
     token: Token,
-    config: McpConfigFile,
+    #[allow(dead_code)]
+    url: String,
+    config: Option<McpConfigFile>,
     slot: ExchangeSlot,
 }
 
 impl McpSession {
-    pub fn config(&self) -> &McpConfigFile {
-        &self.config
+    pub fn config(&self) -> Option<&McpConfigFile> {
+        self.config.as_ref()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn url(&self) -> &str {
+        &self.url
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn token(&self) -> &str {
+        self.token.as_str()
     }
 
     pub fn slot(&self) -> &ExchangeSlot {
@@ -76,8 +88,10 @@ impl McpSession {
 impl Drop for McpSession {
     fn drop(&mut self) {
         self.shared.sessions.revoke(&self.token);
-        // O arquivo pode nunca ter sido gravado (falha no meio da abertura); ausente é o resultado desejado.
-        let _ = fs::remove_file(&self.config.path);
+        // O arquivo pode nunca ter sido gravado (sessão headless ou falha no meio); ausente é o resultado desejado.
+        if let Some(config) = &self.config {
+            let _ = fs::remove_file(&config.path);
+        }
     }
 }
 
@@ -141,22 +155,45 @@ impl McpServer {
             .sessions
             .register(binding)
             .map_err(McpError::Randomness)?;
+        let url = self.url();
+        let config = McpConfigFile {
+            path: dir.join(format!("{file_name}.json")),
+            allowed_tools: self.tool_names(),
+        };
         let session = McpSession {
             shared: self.shared.clone(),
-            config: McpConfigFile {
-                path: dir.join(format!("{file_name}.json")),
-                allowed_tools: self.tool_names(),
-            },
+            url: url.clone(),
+            config: Some(config),
             token,
             slot,
         };
-        session.write_config(&self.url())?;
+        session.write_config(&url)?;
         Ok(session)
+    }
+
+    #[allow(dead_code)]
+    pub fn open_headless(&self, binding: Binding) -> Result<McpSession, McpError> {
+        let slot = binding.slot.clone();
+        let token = self
+            .shared
+            .sessions
+            .register(binding)
+            .map_err(McpError::Randomness)?;
+        Ok(McpSession {
+            shared: self.shared.clone(),
+            token,
+            url: self.url(),
+            config: None,
+            slot,
+        })
     }
 }
 
 impl McpSession {
     fn write_config(&self, url: &str) -> Result<(), McpError> {
+        let Some(config_file) = &self.config else {
+            return Ok(());
+        };
         let config = json!({
             "mcpServers": {
                 SERVER_NAME: {
@@ -166,10 +203,10 @@ impl McpSession {
                 }
             }
         });
-        if let Some(dir) = self.config.path.parent() {
+        if let Some(dir) = config_file.path.parent() {
             fs::create_dir_all(dir).map_err(McpError::ConfigFile)?;
         }
-        fs::write(&self.config.path, config.to_string()).map_err(McpError::ConfigFile)
+        fs::write(&config_file.path, config.to_string()).map_err(McpError::ConfigFile)
     }
 }
 

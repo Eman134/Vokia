@@ -77,8 +77,8 @@ fn regra_de_ferramentas_so_entra_no_papel_quando_ha_mcp() {
         let (axiom, _) = axiom_and_vexa();
         let profile = team.profile(&axiom).expect("perfil");
 
-        let with = role(profile, &team.roster_line(), None, "contexto", true);
-        let without = role(profile, &team.roster_line(), None, "contexto", false);
+        let with = role(profile, &team.roster_line(), None, "contexto", crate::orchestrator::prompts::ToolPromptMode::Mcp);
+        let without = role(profile, &team.roster_line(), None, "contexto", crate::orchestrator::prompts::ToolPromptMode::None);
 
         assert!(with.contains(TOOLS_RULE_TEXT), "{with}");
         assert!(with.contains(DELEGATE_TOOL_TEXT), "{with}");
@@ -94,8 +94,8 @@ fn papel_ensina_a_sintaxe_de_texto_so_sem_mcp() {
         let (axiom, _) = axiom_and_vexa();
         let profile = team.profile(&axiom).expect("perfil");
 
-        let with = role(profile, &team.roster_line(), None, "contexto", true);
-        let without = role(profile, &team.roster_line(), None, "contexto", false);
+        let with = role(profile, &team.roster_line(), None, "contexto", crate::orchestrator::prompts::ToolPromptMode::Mcp);
+        let without = role(profile, &team.roster_line(), None, "contexto", crate::orchestrator::prompts::ToolPromptMode::None);
 
         for marker in OLD_MARKERS {
             assert!(!with.contains(marker), "com MCP {marker}: {with}");
@@ -112,8 +112,8 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     let definition = empty_definition(axiom.clone());
     let cache = Cache::default();
 
-    let with = StepPrompts::build(&cache, &definition, &axiom, "Faça", true);
-    let without = StepPrompts::build(&cache, &definition, &axiom, "Faça", false);
+    let with = StepPrompts::build(&cache, &definition, &axiom, "Faça", crate::orchestrator::prompts::ToolPromptMode::Mcp);
+    let without = StepPrompts::build(&cache, &definition, &axiom, "Faça", crate::orchestrator::prompts::ToolPromptMode::None);
 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(prompt.contains("set_variable"), "{prompt}");

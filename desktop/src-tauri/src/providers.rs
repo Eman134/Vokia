@@ -8,6 +8,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::{write_atomic, CliPreset};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToolTransport {
+    #[default]
+    None,
+    McpNative,
+    VokiaCli,
+}
+
 const PROVIDERS_FILE: &str = "providers.json";
 const PROVIDERS_FILE_TMP: &str = "providers.json.tmp";
 const FILE_VERSION: u32 = 1;
@@ -77,6 +86,14 @@ pub struct GenericCliSpec {
     #[serde(default)]
     pub error_json_paths: Vec<String>,
     #[serde(default)]
+    pub model_json_path: Option<String>,
+    #[serde(default)]
+    pub input_tokens_json_path: Option<String>,
+    #[serde(default)]
+    pub output_tokens_json_path: Option<String>,
+    #[serde(default)]
+    pub cost_usd_json_path: Option<String>,
+    #[serde(default)]
     pub sandbox_args: BTreeMap<String, Vec<String>>,
 }
 
@@ -94,6 +111,8 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub supports_mcp: bool,
     #[serde(default)]
+    pub tool_transport: Option<ToolTransport>,
+    #[serde(default)]
     pub supports_sandbox: bool,
     #[serde(default)]
     pub reserved_flags: Vec<String>,
@@ -110,7 +129,29 @@ pub struct ProviderConfig {
 }
 
 impl ProviderConfig {
+    pub fn effective_tool_transport(&self) -> ToolTransport {
+        if let Some(transport) = self.tool_transport {
+            return transport;
+        }
+        if self.supports_mcp {
+            return ToolTransport::McpNative;
+        }
+        match self.protocol {
+            ProviderProtocol::ClaudeLive | ProviderProtocol::CodexJsonl => {
+                ToolTransport::McpNative
+            }
+            ProviderProtocol::OpenCodeJson
+            | ProviderProtocol::AntigravityStream
+            | ProviderProtocol::GenericCli => ToolTransport::VokiaCli,
+        }
+    }
+
+    pub fn has_tools(&self) -> bool {
+        !matches!(self.effective_tool_transport(), ToolTransport::None)
+    }
+
     pub fn into_preset(self) -> CliPreset {
+        let tool_transport = self.effective_tool_transport();
         CliPreset {
             id: self.id,
             label: self.label,
@@ -119,6 +160,7 @@ impl ProviderConfig {
             default_command: self.default_command,
             tiers: self.tiers,
             supports_mcp: self.supports_mcp,
+            tool_transport,
             supports_sandbox: self.supports_sandbox,
             builtin_seed: self.builtin_seed,
         }
@@ -266,14 +308,23 @@ pub(crate) fn initial_presets() -> Vec<CliPreset> {
         .collect()
 }
 
-pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
-    let default_rate_limits = vec_str(&[
+fn default_rate_limit_patterns() -> Vec<String> {
+    vec_str(&[
         "usage_limit_reached",
         "hit your limit",
         "out of extra usage",
         "rate_limit_error",
         "limite esgotado",
-    ]);
+        "429",
+        "quota",
+        "resource_exhausted",
+        "rate limit",
+        "too many requests",
+    ])
+}
+
+pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
+    let default_rate_limits = default_rate_limit_patterns();
     let default_model_unavailable = vec_str(&[
         "model_not_found",
         "does not have access to",
@@ -295,6 +346,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 advanced: "opus".to_string(),
             },
             supports_mcp: true,
+            tool_transport: Some(ToolTransport::McpNative),
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "-p",
@@ -326,7 +378,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 intermediate: "gpt-5.6-terra".to_string(),
                 advanced: "gpt-6-luna".to_string(),
             },
-            supports_mcp: false,
+            supports_mcp: true,
+            tool_transport: Some(ToolTransport::McpNative),
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "--json",
@@ -369,6 +422,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 advanced: "openai/gpt-6-astra".to_string(),
             },
             supports_mcp: false,
+            tool_transport: Some(ToolTransport::VokiaCli),
             supports_sandbox: false,
             reserved_flags: vec_str(&[
                 "--format",
@@ -409,6 +463,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 advanced: "gemini-4-hydrogen-medium".to_string(),
             },
             supports_mcp: false,
+            tool_transport: Some(ToolTransport::VokiaCli),
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "-p",
@@ -465,7 +520,24 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
             format!("versão {} desconhecida", parsed.version),
         ));
     }
-    Ok(parsed.providers)
+    let mut providers = parsed.providers;
+    let defaults = default_rate_limit_patterns();
+    let mut updated = false;
+    for provider in &mut providers {
+        if !provider.builtin_seed {
+            continue;
+        }
+        for pattern in &defaults {
+            if !provider.rate_limit_patterns.iter().any(|p| p == pattern) {
+                provider.rate_limit_patterns.push(pattern.clone());
+                updated = true;
+            }
+        }
+    }
+    if updated {
+        write_file(file, &providers).map_err(|detail| load_failed(file, detail))?;
+    }
+    Ok(providers)
 }
 
 fn write_file(file: &Path, providers: &[ProviderConfig]) -> Result<(), String> {

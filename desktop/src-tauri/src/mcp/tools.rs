@@ -839,12 +839,13 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         .filter(|item| !item.is_empty())
         .map(str::to_string);
     if item_id.is_some() {
-        let supports_mcp = team
+        let providers = app.state::<crate::providers::ProviderRegistry>();
+        let has_tools = team
             .profile(&helper)
-            .is_some_and(|profile| crate::orchestrator::cli_supports_mcp(&profile.cli));
-        if !supports_mcp {
+            .is_some_and(|profile| crate::orchestrator::cli_has_tools(&profile.cli, &providers));
+        if !has_tools {
             return Err(format!(
-                "{} usa uma CLI sem suporte a MCP e não pode receber delegação de card.",
+                "{} usa uma CLI sem suporte a ferramentas (MCP ou Vokia CLI) e não pode receber delegação de card.",
                 team.name_of(&helper)
             ));
         }

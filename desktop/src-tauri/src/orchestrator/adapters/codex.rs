@@ -5,16 +5,20 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity,
+    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
 };
+use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
+
+const MCP_TOKEN_ENV: &str = "VOKIA_MCP_TOKEN";
 
 pub(crate) fn build_command(
     program: &Path,
     user_args: &[String],
     model: &str,
     access: Access<'_>,
+    mcp: Option<&McpSession>,
 ) -> Command {
     let mut command = base_command(program);
     command.kill_on_drop(true);
@@ -37,10 +41,19 @@ pub(crate) fn build_command(
             command.args(["-s", sandbox]);
         }
     }
+    if let Some(session) = mcp {
+        command.env(MCP_TOKEN_ENV, session.token());
+        command.args(["-c", &format!("mcp_servers.vokia.url=\"{}\"", session.url())]);
+        command.args([
+            "-c",
+            &format!("mcp_servers.vokia.bearer_token_env_var=\"{MCP_TOKEN_ENV}\""),
+        ]);
+    }
     command.arg("-");
     command
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_turn(
     program: &Path,
     user_args: &[String],
@@ -50,8 +63,9 @@ pub(super) async fn run_turn(
     message: &str,
     pid: &AtomicU32,
     provider: &ProviderConfig,
+    mcp: Option<&McpSession>,
 ) -> Result<Reply, ClaudeError> {
-    let command = build_command(program, user_args, model, access);
+    let command = build_command(program, user_args, model, access, mcp);
     let prompt = format!("{role}\n\n{message}");
     let stdout =
         super::run_cli_process(command, access, pid, Some(prompt), Some((provider, model)))
@@ -72,6 +86,7 @@ pub(crate) fn parse_jsonl_output_with_provider(
     let raw = String::from_utf8_lossy(stdout);
     let mut agent_messages: Vec<String> = Vec::new();
     let mut saw_json = false;
+    let mut usage: Option<TurnUsage> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -94,6 +109,38 @@ pub(crate) fn parse_jsonl_output_with_provider(
                             agent_messages.push(text.to_string());
                         }
                     }
+                }
+            }
+            "turn.completed" => {
+                let input_tokens = value.pointer("/usage/input_tokens").and_then(Json::as_u64);
+                let cached_input_tokens = value
+                    .pointer("/usage/cached_input_tokens")
+                    .and_then(Json::as_u64);
+                let output_tokens = value.pointer("/usage/output_tokens").and_then(Json::as_u64);
+                let cost_usd = value
+                    .get("cost_usd")
+                    .or_else(|| value.pointer("/usage/cost_usd"))
+                    .and_then(Json::as_f64);
+                let parsed_model = value
+                    .get("model")
+                    .and_then(Json::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| (!model.trim().is_empty()).then(|| model.to_string()));
+                if input_tokens.is_some()
+                    || output_tokens.is_some()
+                    || cached_input_tokens.is_some()
+                    || cost_usd.is_some()
+                {
+                    usage = Some(TurnUsage {
+                        provider: provider.map(|p| p.id.clone()),
+                        model: parsed_model,
+                        input_tokens,
+                        output_tokens,
+                        cached_input_tokens,
+                        cost_usd,
+                    });
                 }
             }
             "turn.failed" | "error" => {
@@ -130,5 +177,6 @@ pub(crate) fn parse_jsonl_output_with_provider(
         text,
         limits: None,
         activity: TurnActivity::default(),
+        usage,
     })
 }

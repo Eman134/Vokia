@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
-use crate::claude::{ProjectAccess, TurnActivity};
+use crate::claude::{ProjectAccess, TurnActivity, TurnUsage};
 use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
@@ -31,7 +31,7 @@ use super::loop_guard::{
     LOOP_MESSAGE, LOOP_REPEAT_LIMIT, PASS_REPEAT_LIMIT, REJECTION_LIMIT, SEM_AVANCO_LIMIT,
 };
 use super::markers::ParsedDecision;
-use super::prompts::{StepPrompts, ALTERNATE_INSTRUCTION, REJECTION_PREFIX};
+use super::prompts::{StepPrompts, ToolPromptMode, ALTERNATE_INSTRUCTION, REJECTION_PREFIX};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext, TextReply};
 
@@ -102,24 +102,44 @@ pub(super) async fn run_turns(
                 String::new(),
                 None,
                 None,
+                None,
             );
         }
-        let speaker_supports_mcp = team
+        let providers = exchange.app.state::<crate::providers::ProviderRegistry>();
+        let speaker_transport = team
             .profile(&turn.speaker)
-            .is_some_and(|profile| super::cli_supports_mcp(&profile.cli));
-        let with_tools = has_mcp_server && speaker_supports_mcp;
+            .and_then(|profile| providers.get(&profile.cli).ok())
+            .map(|provider| provider.effective_tool_transport())
+            .unwrap_or_default();
+        let tool_mode = if !has_mcp_server {
+            ToolPromptMode::None
+        } else {
+            match speaker_transport {
+                crate::providers::ToolTransport::McpNative => ToolPromptMode::Mcp,
+                crate::providers::ToolTransport::VokiaCli => {
+                    if super::adapters::resolve_vokia_cli_path().is_some() {
+                        ToolPromptMode::VokiaCli
+                    } else {
+                        ToolPromptMode::None
+                    }
+                }
+                crate::providers::ToolTransport::None => ToolPromptMode::None,
+            }
+        };
+        let with_tools = tool_mode != ToolPromptMode::None;
         let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,
                 definition,
                 &turn.speaker,
                 &turn.instruction(),
-                with_tools,
+                tool_mode,
             ))
         })?;
         let StepReply {
             text: reply,
             activity,
+            mut usage,
             outcome,
         } = match ask_step(exchange, sessions, &turn.speaker, &prompts).await {
             Ok(step) => step,
@@ -173,7 +193,14 @@ pub(super) async fn run_turns(
             let shown = Some(shown).filter(|shown| !shown.is_empty());
             let shown = with_confirmations(shown, &confirmations).unwrap_or_default();
             return raise_decision(
-                exchange, transcript, &turn, decision, shown, activity, proposal,
+                exchange,
+                transcript,
+                &turn,
+                decision,
+                shown,
+                activity,
+                proposal,
+                usage,
             );
         }
         let intent = delegation_intent.filter(|_| registered_delegation.is_some());
@@ -260,6 +287,7 @@ pub(super) async fn run_turns(
                     *channel_id,
                     activity.take(),
                     None,
+                    usage.take(),
                 )?;
             }
             rejections += 1;
@@ -313,6 +341,7 @@ pub(super) async fn run_turns(
                     *channel_id,
                     activity.take(),
                     proposal.take(),
+                    usage.take(),
                 )?;
             }
             if cards.changed {
@@ -414,6 +443,7 @@ pub(super) async fn run_turns(
                     *channel_id,
                     None,
                     None,
+                    None,
                 )?;
             }
             announce_batch(app, state, batch);
@@ -431,6 +461,7 @@ pub(super) async fn run_turns(
                         *channel_id,
                         activity.take(),
                         proposal.take(),
+                        usage.take(),
                     )?;
                 }
                 emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
@@ -446,6 +477,7 @@ pub(super) async fn run_turns(
                 visible,
                 activity.take(),
                 proposal.take(),
+                usage.take(),
             );
         }
         counters.goal.register_turn(advanced);
@@ -468,6 +500,7 @@ pub(super) async fn run_turns(
                 *channel_id,
                 activity.take(),
                 proposal.take(),
+                usage.take(),
             )?;
         }
         if cards.changed {
@@ -500,6 +533,7 @@ pub(super) async fn run_turns(
                     &turn,
                     decision,
                     String::new(),
+                    None,
                     None,
                     None,
                 );
@@ -579,6 +613,7 @@ pub(super) async fn run_turns(
                 *channel_id,
                 activity.take(),
                 proposal.take(),
+                usage.take(),
             )?;
             if let Some(passage) = &passage {
                 // Consulta não é entrega de etapa: não abre lote nem muda a revisão do fim da cadeia.
@@ -765,6 +800,7 @@ fn conclude(
         channel_id,
         None,
         None,
+        None,
     )
 }
 
@@ -819,6 +855,7 @@ fn raise_decision(
     visible: String,
     activity: Option<TurnActivity>,
     proposal: Option<RequestProposal>,
+    usage: Option<TurnUsage>,
 ) -> Result<TaskOutcome, FlowError> {
     let Exchange {
         app,
@@ -850,6 +887,7 @@ fn raise_decision(
             *channel_id,
             activity,
             proposal,
+            usage,
         )?;
     }
     open_decision(
@@ -882,6 +920,7 @@ fn escalate_limit(
     visible: String,
     activity: Option<TurnActivity>,
     proposal: Option<RequestProposal>,
+    usage: Option<TurnUsage>,
 ) -> Result<TaskOutcome, FlowError> {
     let decision = SlotDecision {
         kind: DecisionKind::Pergunta,
@@ -890,7 +929,7 @@ fn escalate_limit(
         options: Vec::new(),
     };
     raise_decision(
-        exchange, transcript, turn, decision, visible, activity, proposal,
+        exchange, transcript, turn, decision, visible, activity, proposal, usage,
     )
 }
 
@@ -1139,6 +1178,7 @@ fn say(
     channel_id: Option<i64>,
     activity: Option<TurnActivity>,
     request_proposal: Option<RequestProposal>,
+    usage: Option<TurnUsage>,
 ) -> Result<(), FlowError> {
     emit_message(
         app,
@@ -1149,6 +1189,7 @@ fn say(
         channel_id,
         activity,
         request_proposal,
+        usage,
     )?;
     transcript.push(format!(
         "{}: {text}",

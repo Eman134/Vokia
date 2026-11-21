@@ -13,6 +13,7 @@ import type {
   ProviderProtocol,
   ProviderWithStatus,
   TestProviderResult,
+  ToolTransport,
 } from './providersApi'
 import { useProviders } from './useProviders'
 
@@ -23,6 +24,25 @@ const PROTOCOL_OPTIONS: readonly { label: string; value: ProviderProtocol }[] = 
   { label: 'OpenCode JSON', value: 'open-code-json' },
   { label: 'Antigravity Stream', value: 'antigravity-stream' },
 ]
+
+const TRANSPORT_OPTIONS: readonly { label: string; value: ToolTransport }[] = [
+  { label: 'MCP nativo', value: 'mcp-native' },
+  { label: 'Vokia CLI', value: 'vokia-cli' },
+  { label: 'Só texto', value: 'none' },
+]
+
+const TRANSPORT_LABELS: Record<ToolTransport, string> = {
+  'mcp-native': 'MCP nativo',
+  'vokia-cli': 'Vokia CLI',
+  none: 'Só texto',
+}
+
+function effectiveTransport(provider: ProviderConfig): ToolTransport {
+  if (provider.toolTransport) return provider.toolTransport
+  if (provider.supportsMcp) return 'mcp-native'
+  if (provider.protocol === 'open-code-json' || provider.protocol === 'generic-cli') return 'vokia-cli'
+  return 'none'
+}
 
 const providersStore = useProviders()
 const titleId = useId()
@@ -79,6 +99,7 @@ function createEmptyConfig(): ProviderConfig {
     models: [],
     tiers: { basic: '', intermediate: '', advanced: '' },
     supportsMcp: false,
+    toolTransport: 'vokia-cli',
     supportsSandbox: false,
     reservedFlags: [],
     rateLimitPatterns: [],
@@ -180,7 +201,9 @@ async function testFromList(provider: ProviderWithStatus): Promise<void> {
 }
 
 async function openEditModal(provider: ProviderWithStatus): Promise<void> {
-  editingDraft.value = cloneConfig(provider)
+  const cloned = cloneConfig(provider)
+  cloned.toolTransport = effectiveTransport(provider)
+  editingDraft.value = cloned
   editDiscoverWarning.value = null
   editTestResult.value = null
   actionError.value = null
@@ -483,6 +506,12 @@ async function saveAddWithoutTest(): Promise<void> {
                   >
                     {{ provider.installed ? 'Instalado' : 'Ausente' }}
                   </span>
+                  <span
+                    data-testid="provider-tool-transport"
+                    class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-small font-medium text-muted"
+                  >
+                    {{ TRANSPORT_LABELS[effectiveTransport(provider)] }}
+                  </span>
                 </div>
                 <p class="truncate text-small text-muted">
                   <code class="font-mono">{{ provider.defaultCommand }}</code>
@@ -578,6 +607,15 @@ async function saveAddWithoutTest(): Promise<void> {
               v-model="editingDraft.tiers.advanced"
               :options="editingDraft.models"
               placeholder="Modelo avançado"
+            />
+          </label>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">Transporte de ferramentas</span>
+            <UiSelect
+              :model-value="editingDraft.toolTransport ?? 'none'"
+              :options="TRANSPORT_OPTIONS"
+              label="Transporte de ferramentas"
+              @update:model-value="editingDraft.toolTransport = $event as ToolTransport"
             />
           </label>
         </div>
@@ -740,6 +778,15 @@ async function saveAddWithoutTest(): Promise<void> {
           <label class="flex flex-col gap-1.5">
             <span class="text-label font-medium text-muted">Protocolo</span>
             <UiSelect v-model="addDraft.protocol" :options="PROTOCOL_OPTIONS" label="Protocolo" />
+          </label>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">Transporte de ferramentas</span>
+            <UiSelect
+              :model-value="addDraft.toolTransport ?? 'vokia-cli'"
+              :options="TRANSPORT_OPTIONS"
+              label="Transporte de ferramentas"
+              @update:model-value="addDraft.toolTransport = $event as ToolTransport"
+            />
           </label>
           <UiField v-model="addDraft.defaultCommand" label="Comando" />
         </div>

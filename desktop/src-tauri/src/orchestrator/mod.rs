@@ -18,7 +18,7 @@ mod text_fallback;
 mod turns;
 mod validation;
 
-pub(crate) use adapters::cli_supports_mcp;
+pub(crate) use adapters::cli_has_tools;
 pub(crate) use archive::remove_archive;
 pub(crate) use emit::{emit_backlog_changed, emit_feed_note, emit_message};
 pub(crate) use prompts::variables_listing;

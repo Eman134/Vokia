@@ -5,8 +5,9 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity,
+    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
 };
+use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
 
@@ -86,6 +87,7 @@ pub(crate) fn build_command(
     Ok((command, stdin_input))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_turn(
     program: &Path,
     user_args: &[String],
@@ -95,9 +97,13 @@ pub(super) async fn run_turn(
     message: &str,
     pid: &AtomicU32,
     provider: &ProviderConfig,
+    vokia_cli: Option<(&McpSession, &Path)>,
 ) -> Result<Reply, ClaudeError> {
-    let (command, stdin_input) =
+    let (mut command, stdin_input) =
         build_command(program, user_args, role, model, access, message, provider)?;
+    if let Some((session, cli_path)) = vokia_cli {
+        super::inject_vokia_cli_env(&mut command, session, cli_path);
+    }
     let stdout = super::run_cli_process(command, access, pid, stdin_input, Some((provider, model)))
         .await?;
     parse_output(&stdout, provider, model)
@@ -114,19 +120,31 @@ pub(crate) fn parse_output(
             text: raw.trim().to_string(),
             limits: None,
             activity: TurnActivity::default(),
+            usage: None,
         });
     };
 
-    if spec.text_json_paths.is_empty() && spec.error_json_paths.is_empty() {
+    if spec.text_json_paths.is_empty()
+        && spec.error_json_paths.is_empty()
+        && spec.model_json_path.is_none()
+        && spec.input_tokens_json_path.is_none()
+        && spec.output_tokens_json_path.is_none()
+        && spec.cost_usd_json_path.is_none()
+    {
         return Ok(Reply {
             text: raw.trim().to_string(),
             limits: None,
             activity: TurnActivity::default(),
+            usage: None,
         });
     }
 
     let mut texts: Vec<String> = Vec::new();
     let mut saw_json = false;
+    let mut found_model: Option<String> = None;
+    let mut input_tokens: Option<u64> = None;
+    let mut output_tokens: Option<u64> = None;
+    let mut cost_usd: Option<f64> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -160,6 +178,30 @@ pub(crate) fn parse_output(
                 }
             }
         }
+
+        if let Some(path) = &spec.model_json_path {
+            if let Some(m) = extract_json_path(&value, path) {
+                let trimmed_m = m.trim();
+                if !trimmed_m.is_empty() {
+                    found_model = Some(trimmed_m.to_string());
+                }
+            }
+        }
+        if let Some(path) = &spec.input_tokens_json_path {
+            if let Some(n) = extract_json_u64(&value, path) {
+                input_tokens = Some(n);
+            }
+        }
+        if let Some(path) = &spec.output_tokens_json_path {
+            if let Some(n) = extract_json_u64(&value, path) {
+                output_tokens = Some(n);
+            }
+        }
+        if let Some(path) = &spec.cost_usd_json_path {
+            if let Some(c) = extract_json_f64(&value, path) {
+                cost_usd = Some(c);
+            }
+        }
     }
 
     let text = if !texts.is_empty() {
@@ -170,17 +212,52 @@ pub(crate) fn parse_output(
         String::new()
     };
 
+    let usage = if found_model.is_some()
+        || input_tokens.is_some()
+        || output_tokens.is_some()
+        || cost_usd.is_some()
+    {
+        Some(TurnUsage {
+            provider: Some(provider.id.clone()),
+            model: found_model.or_else(|| (!model.trim().is_empty()).then(|| model.to_string())),
+            input_tokens,
+            output_tokens,
+            cached_input_tokens: None,
+            cost_usd,
+        })
+    } else {
+        None
+    };
+
     Ok(Reply {
         text,
         limits: None,
         activity: TurnActivity::default(),
+        usage,
     })
 }
 
-fn extract_json_path(value: &Json, path: &str) -> Option<String> {
+fn extract_json_value<'a>(value: &'a Json, path: &str) -> Option<&'a Json> {
     let mut current = value;
     for segment in path.split('.') {
         current = current.get(segment)?;
     }
+    Some(current)
+}
+
+fn extract_json_u64(value: &Json, path: &str) -> Option<u64> {
+    let val = extract_json_value(value, path)?;
+    val.as_u64()
+        .or_else(|| val.as_str().and_then(|s| s.trim().parse().ok()))
+}
+
+fn extract_json_f64(value: &Json, path: &str) -> Option<f64> {
+    let val = extract_json_value(value, path)?;
+    val.as_f64()
+        .or_else(|| val.as_str().and_then(|s| s.trim().parse().ok()))
+}
+
+fn extract_json_path(value: &Json, path: &str) -> Option<String> {
+    let current = extract_json_value(value, path)?;
     current.as_str().map(str::to_string)
 }

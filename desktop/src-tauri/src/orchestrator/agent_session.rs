@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::Agent;
-use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity};
+use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity, TurnUsage};
 use crate::db::{Db, DbError, DbState, GRANT_SESSION, SETTING_PERMISSION_GRANT};
 use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
@@ -29,7 +29,7 @@ use super::fallback::{
 };
 use super::flow::profile_of;
 use super::project_context::project_choices;
-use super::prompts::{maestro_role, role, StepPrompts};
+use super::prompts::{maestro_role, role, StepPrompts, ToolPromptMode};
 use super::session_policy::{
     call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
     SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
@@ -44,6 +44,7 @@ pub(super) struct StepReply {
     pub(super) text: String,
     pub(super) outcome: ExchangeOutcome,
     pub(super) activity: Option<TurnActivity>,
+    pub(super) usage: Option<TurnUsage>,
 }
 
 pub(super) async fn ask_step(
@@ -115,10 +116,10 @@ async fn run_step(
     let mut fallback_expires_at: Option<u64> = None;
     for (idx, candidate) in candidates.iter().enumerate() {
         let adapter = ProviderAdapter::from_cli(&candidate.cli, &providers)?;
-        if agent == &Agent::ember() && !adapter.is_claude() {
+        if agent == &Agent::ember() && !adapter.has_tools() {
             continue;
         }
-        let mcp = if adapter.supports_mcp() {
+        let mcp = if adapter.has_tools() {
             McpLaunch::new(
                 app,
                 key.project_id,
@@ -128,16 +129,27 @@ async fn run_step(
         } else {
             None
         };
+        let tool_mode = match adapter.tool_transport() {
+            crate::providers::ToolTransport::McpNative if mcp.is_some() => ToolPromptMode::Mcp,
+            crate::providers::ToolTransport::VokiaCli if mcp.is_some() => {
+                if super::adapters::resolve_vokia_cli_path().is_some() {
+                    ToolPromptMode::VokiaCli
+                } else {
+                    ToolPromptMode::None
+                }
+            }
+            _ => ToolPromptMode::None,
+        };
         let prompt = agent_prompt(*orchestration, team, agent);
         let base = role(
             profile,
             &prompt.roster,
             prompt.layer.as_ref(),
             project_context,
-            mcp.is_some(),
+            tool_mode,
         );
         let role = if agent == &Agent::ember() {
-            let tools = if mcp.is_some() {
+            let tools = if tool_mode != ToolPromptMode::None {
                 tool_definitions()
             } else {
                 Vec::new()
@@ -152,6 +164,7 @@ async fn run_step(
                 *orchestration,
                 team,
                 &paused,
+                tool_mode,
             )
         } else {
             base
@@ -192,7 +205,7 @@ async fn run_step(
             granted: &granted,
             grant_per_session,
         };
-        let access = if call.adapter.supports_mcp() {
+        let access = if call.adapter.has_tools() {
             Access::Project(*project)
         } else {
             Access::TextOnly
@@ -280,11 +293,21 @@ async fn run_step(
                     .lock()
                     .map(|mut collected| std::mem::take(&mut *collected))
                     .unwrap_or_default();
+                let mut normalized_usage = reply.usage.unwrap_or_default();
+                normalized_usage.provider = Some(candidate.cli.clone());
+                if normalized_usage
+                    .model
+                    .as_deref()
+                    .is_none_or(|m| m.trim().is_empty())
+                {
+                    normalized_usage.model = Some(candidate.model.clone());
+                }
                 return Ok(StepReply {
                     text: reply.text,
                     outcome,
                     activity: Some(reply.activity)
                         .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
+                    usage: Some(normalized_usage),
                 });
             }
             Err(err) => {
@@ -677,6 +700,25 @@ impl AgentCall {
             collected: StdMutex::default(),
         }
     }
+
+    pub(super) fn has_mcp(&self) -> bool {
+        self.mcp.is_some()
+    }
+
+    pub(super) fn begin_mcp_slot(&self, session: &McpSession) {
+        let slot = session.slot();
+        slot.begin(self.item_id.as_deref(), self.channel_id);
+        if self.has_variables {
+            slot.enable_variables();
+        }
+    }
+
+    pub(super) fn finish_mcp_slot(&self, session: &McpSession) {
+        let outcome = session.slot().end();
+        if let Ok(mut collected) = self.collected.lock() {
+            *collected = outcome;
+        }
+    }
 }
 
 // Cada abertura de sessão da CLI ganha Binding, token e arquivo próprios; `--resume` nunca reaproveita o token antigo.
@@ -721,10 +763,26 @@ impl McpLaunch {
             .open_session(&self.dir, binding)
             .map_err(|error| ClaudeError::Mcp(error.to_string()))
     }
+
+    fn open_headless(&self) -> Result<McpSession, ClaudeError> {
+        let binding = Binding {
+            project_id: self.project_id,
+            agent: self.agent.clone(),
+            agent_name: self.agent_name.clone(),
+            slot: ExchangeSlot::default(),
+        };
+        self.server
+            .open_headless(binding)
+            .map_err(|error| ClaudeError::Mcp(error.to_string()))
+    }
 }
 
 pub(super) fn open_mcp(call: &AgentCall) -> Result<Option<McpSession>, ClaudeError> {
     call.mcp.as_ref().map(McpLaunch::open).transpose()
+}
+
+pub(super) fn open_mcp_headless(call: &AgentCall) -> Result<Option<McpSession>, ClaudeError> {
+    call.mcp.as_ref().map(McpLaunch::open_headless).transpose()
 }
 
 pub(super) async fn send_in_slot(

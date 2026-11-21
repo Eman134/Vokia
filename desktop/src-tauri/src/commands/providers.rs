@@ -202,6 +202,7 @@ pub fn build_setup_prompt(cli_name: String, command: String, help_text: String) 
 Regras obrigatórias:
 - Nunca use shell (`sh -c`, `cmd /C`) nem pipe. Todas as flags devem ser explícitas em arrays.
 - Use `"protocol": "generic-cli"` para novas CLIs (ou `"claude-live"`, `"codex-jsonl"`, `"open-code-json"`, `"antigravity-stream"` se for compatível).
+- Defina `"toolTransport"`: `"mcp-native"` (se a CLI aceitar MCP por flag de sessão), `"vokia-cli"` (padrão para novas CLIs sem flag MCP por sessão) ou `"none"`.
 - Preencha `tiers` (`basic`, `intermediate`, `advanced`) com modelos válidos sugeridos ou compatíveis com a CLI.
 - Preencha `rateLimitPatterns` e `modelUnavailablePatterns` com trechos de erro esperados.
 
@@ -219,6 +220,7 @@ Schema JSON esperado:
     "advanced": "modelo-avancado"
   }},
   "supportsMcp": false,
+  "toolTransport": "vokia-cli",
   "supportsSandbox": false,
   "reservedFlags": [],
   "rateLimitPatterns": ["rate_limit", "usage_limit", "quota"],

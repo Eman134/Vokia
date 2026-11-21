@@ -5,26 +5,27 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity,
+    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
 };
+use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
 
 pub(crate) fn build_command(
     program: &Path,
     user_args: &[String],
-    role: &str,
+    _role: &str,
     model: &str,
     access: Access<'_>,
-    message: &str,
+    _message: &str,
 ) -> Command {
     let mut command = base_command(program);
     command.kill_on_drop(true);
     command.args(user_args);
-    let prompt = format!("{role}\n\n{message}");
     command.args([
         "-p",
-        &prompt,
+        "--input-format",
+        "text",
         "--output-format",
         "stream-json",
         "--model",
@@ -55,6 +56,7 @@ pub(crate) fn build_command(
     command
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_turn(
     program: &Path,
     user_args: &[String],
@@ -64,10 +66,15 @@ pub(super) async fn run_turn(
     message: &str,
     pid: &AtomicU32,
     provider: &ProviderConfig,
+    vokia_cli: Option<(&McpSession, &Path)>,
 ) -> Result<Reply, ClaudeError> {
-    let command = build_command(program, user_args, role, model, access, message);
+    let mut command = build_command(program, user_args, role, model, access, message);
+    if let Some((session, cli_path)) = vokia_cli {
+        super::inject_vokia_cli_env(&mut command, session, cli_path);
+    }
+    let prompt = format!("{role}\n\n{message}");
     let stdout =
-        super::run_cli_process(command, access, pid, None, Some((provider, model))).await?;
+        super::run_cli_process(command, access, pid, Some(prompt), Some((provider, model))).await?;
     parse_stream_output_with_provider(&stdout, Some(provider), model)
 }
 
@@ -85,6 +92,8 @@ pub(crate) fn parse_stream_output_with_provider(
     let mut result_text: Option<String> = None;
     let mut assistant_chunks: Vec<String> = Vec::new();
     let mut saw_json = false;
+    let mut assistant_model: Option<String> = None;
+    let mut usage: Option<TurnUsage> = None;
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -127,8 +136,56 @@ pub(crate) fn parse_stream_output_with_provider(
                 if !text.is_empty() {
                     result_text = Some(text.to_string());
                 }
+                let parsed_model = value
+                    .get("model")
+                    .and_then(Json::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| assistant_model.clone());
+                let input_tokens = value
+                    .pointer("/usage/input_tokens")
+                    .or_else(|| value.pointer("/usage/promptTokenCount"))
+                    .and_then(Json::as_u64);
+                let output_tokens = value
+                    .pointer("/usage/output_tokens")
+                    .or_else(|| value.pointer("/usage/candidatesTokenCount"))
+                    .and_then(Json::as_u64);
+                let cached_input_tokens = value
+                    .pointer("/usage/cache_read_input_tokens")
+                    .or_else(|| value.pointer("/usage/cachedContentTokenCount"))
+                    .and_then(Json::as_u64);
+                let cost_usd = value
+                    .get("total_cost_usd")
+                    .or_else(|| value.get("cost_usd"))
+                    .and_then(Json::as_f64);
+                if parsed_model.is_some()
+                    || input_tokens.is_some()
+                    || output_tokens.is_some()
+                    || cached_input_tokens.is_some()
+                    || cost_usd.is_some()
+                {
+                    usage = Some(TurnUsage {
+                        provider: provider.map(|p| p.id.clone()),
+                        model: parsed_model.or_else(|| {
+                            (!model.trim().is_empty()).then(|| model.to_string())
+                        }),
+                        input_tokens,
+                        output_tokens,
+                        cached_input_tokens,
+                        cost_usd,
+                    });
+                }
             }
             "assistant" => {
+                if let Some(m) = value
+                    .pointer("/message/model")
+                    .and_then(Json::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    assistant_model = Some(m.to_string());
+                }
                 if let Some(text) = extract_assistant_text(&value) {
                     if !text.trim().is_empty() {
                         assistant_chunks.push(text);
@@ -167,10 +224,19 @@ pub(crate) fn parse_stream_output_with_provider(
         String::new()
     };
 
+    if usage.is_none() && assistant_model.is_some() {
+        usage = Some(TurnUsage {
+            provider: provider.map(|p| p.id.clone()),
+            model: assistant_model,
+            ..Default::default()
+        });
+    }
+
     Ok(Reply {
         text,
         limits: None,
         activity: TurnActivity::default(),
+        usage,
     })
 }
 

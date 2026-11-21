@@ -24,6 +24,13 @@ const NO_TEAM_MEMBERS: &str = "nenhum agente posicionado";
 use super::project_context::{ProjectChoices, PROJECT_RULE};
 use super::turns::NO_CONVERSATION;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ToolPromptMode {
+    None,
+    Mcp,
+    VokiaCli,
+}
+
 const PROMPT_RULES: &str = "Para registrar progresso, escreva uma linha `$nome = valor` por variável alterada. Variáveis da tarefa são compartilhadas por padrão e todos os agentes podem ler e alterar. Use `$nome += item` para listas. Execute a instrução agora: não se apresente nem comente o processo.";
 const DELEGATION_RULE: &str = "Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nesse caso termine a resposta com uma linha exatamente assim: @<Nome>: <pedido>. Nunca delegue para confirmar o que você já respondeu, nem uma resposta que você já deu, e nunca escreva uma delegação vazia como \"@<Nome>: nenhum pedido adicional\". Quando a tarefa estiver concluída, responda sem essa linha.";
 const CARD_RULE: &str = "Para registrar ou mover trabalho no backlog do projeto, escreva uma linha por operação: #card criar <título>|<descrição> ou #card mover <id>|<coluna>. As colunas são Backlog, In progress e In review; nunca use Ready nem Done: quem conclui a task é o usuário ou a validação final. Mova só cards seus ou o card do pedido atual. Não repita um card que já existe e não misture linhas #card com #decisao. O app confirma cada operação na conversa.";
@@ -32,6 +39,9 @@ const PROMPT_RULES_TOOLS: &str = "Para registrar progresso, chame a ferramenta s
 const TOOLS_RULE: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
 const DELEGATION_TOOL_RULE: &str = "Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request. Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar, termine a resposta.";
+const PROMPT_RULES_VOKIA_CLI: &str = "Para registrar progresso, execute no terminal `vokia-cli set-variable --name <nome> --op <set|append> --value <valor>` (use `--int` para número inteiro; `--share` para compartilhar) e `vokia-cli get-variables` para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, execute `vokia-cli delegate --agent <nome> --request \"<pedido>\"`.";
+const TOOLS_RULE_VOKIA_CLI: &str = "Use a CLI `vokia-cli` no terminal para ler e mexer no backlog (`vokia-cli create-card`, `vokia-cli move-card`, `vokia-cli update-card`, `vokia-cli save-item-plan`), pedir uma decisão ao usuário (`vokia-cli request-decision`), ler/gravar variáveis ou listar todos os comandos (`vokia-cli tools`); nunca invente ids e não use marcadores de texto `#card`, `#decisao` ou `@Nome:`.";
+const DELEGATION_TOOL_RULE_VOKIA_CLI: &str = "Para pedir algo a outro agente do time, execute no terminal `vokia-cli delegate --agent <nome> --request \"<pedido>\"` (adicione `--item-id <id>` quando for card). Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Depois de delegar ou pedir decisão (`vokia-cli request-decision`), termine a resposta.";
 const INSTRUCTION_FILES_RULE: &str = "Antes de alterar um arquivo, leia o CLAUDE.md e o AGENTS.md da pasta desse arquivo, subindo até a raiz do projeto (o mais próximo primeiro); depois os da raiz do projeto; depois as instruções globais do usuário. A instrução mais específica vence em caso de conflito. Se a instrução do projeto contradizer o pedido, responda BLOQUEADO ao orquestrador.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
@@ -205,7 +215,7 @@ impl StepPrompts {
         definition: &TaskDefinition,
         agent: &Agent,
         instruction: &str,
-        with_tools: bool,
+        tool_mode: ToolPromptMode,
     ) -> Self {
         let prompt = |conversation_items, with_request| {
             step_prompt(
@@ -215,7 +225,7 @@ impl StepPrompts {
                 instruction,
                 conversation_items,
                 with_request,
-                with_tools,
+                tool_mode,
             )
         };
         Self {
@@ -233,7 +243,7 @@ fn step_prompt(
     instruction: &str,
     conversation_items: usize,
     with_request: bool,
-    with_tools: bool,
+    tool_mode: ToolPromptMode,
 ) -> String {
     let mut sections = vec![format!("Objetivo: {}", definition.objetivo)];
     if let Some(request) = cache.long_request().filter(|_| with_request) {
@@ -256,10 +266,10 @@ fn step_prompt(
     }
     sections.push(format!("Instrução: {instruction}"));
     sections.push(
-        if with_tools {
-            PROMPT_RULES_TOOLS
-        } else {
-            PROMPT_RULES
+        match tool_mode {
+            ToolPromptMode::Mcp => PROMPT_RULES_TOOLS,
+            ToolPromptMode::VokiaCli => PROMPT_RULES_VOKIA_CLI,
+            ToolPromptMode::None => PROMPT_RULES,
         }
         .to_string(),
     );
@@ -311,6 +321,7 @@ pub(super) fn maestro_role(
     orchestration: Option<&OrchestrationSnapshot>,
     team: &Team,
     paused: &[Agent],
+    tool_mode: ToolPromptMode,
 ) -> String {
     let pinned = choices.pinned.as_deref().unwrap_or(NO_PROJECT_TEXT);
     let labels = if choices.labels.is_empty() {
@@ -327,8 +338,13 @@ pub(super) fn maestro_role(
     let teams = maestro_teams_text(orchestration, team, paused)
         .map(|text| format!(" {text}"))
         .unwrap_or_default();
+    let cli_hint = if tool_mode == ToolPromptMode::VokiaCli {
+        " Use `vokia-cli` no terminal para acionar as ferramentas listadas abaixo."
+    } else {
+        ""
+    };
     let head =
-        format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}");
+        format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
     let commands: Vec<String> = tools.iter().filter_map(command_line).collect();
     if commands.is_empty() {
         return head;
@@ -349,13 +365,13 @@ pub(super) fn role(
     roster: &str,
     layer: Option<&LayerContext>,
     project_context: &str,
-    with_tools: bool,
+    tool_mode: ToolPromptMode,
 ) -> String {
-    // Sem o servidor MCP a sessão volta a ensinar os marcadores de texto.
-    let tools_rules = if with_tools {
-        format!("{DELEGATION_TOOL_RULE} {TOOLS_RULE}")
-    } else {
-        format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}")
+    // Sem o servidor MCP/Vokia CLI a sessão volta a ensinar os marcadores de texto.
+    let tools_rules = match tool_mode {
+        ToolPromptMode::Mcp => format!("{DELEGATION_TOOL_RULE} {TOOLS_RULE}"),
+        ToolPromptMode::VokiaCli => format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {TOOLS_RULE_VOKIA_CLI}"),
+        ToolPromptMode::None => format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}"),
     };
     let layer_sections = layer_sections(layer);
     let extra = extra_instructions(profile);

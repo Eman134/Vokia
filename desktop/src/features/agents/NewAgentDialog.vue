@@ -113,10 +113,15 @@ const roleOptions = computed(() => {
   }
   return options
 })
-const cliOptions = computed(() => roster.presets.map((candidate) => ({ label: candidate.label, value: candidate.id })))
+const cliOptions = computed(() => {
+  const candidates = isBuiltin.value
+    ? roster.presets.filter((candidate) => (candidate.toolTransport ?? (candidate.supportsMcp ? 'mcp-native' : 'none')) !== 'none')
+    : roster.presets
+  return candidates.map((candidate) => ({ label: candidate.label, value: candidate.id }))
+})
 const fallbackCliOptions = computed(() => {
   const compatible = isBuiltin.value
-    ? roster.presets.filter((candidate) => candidate.supportsMcp)
+    ? roster.presets.filter((candidate) => (candidate.toolTransport ?? (candidate.supportsMcp ? 'mcp-native' : 'none')) !== 'none')
     : roster.presets
   return [
     { label: 'Usar fallback global', value: '' },
@@ -284,8 +289,10 @@ onMounted(focusName)
               data-testid="agent-default-provider"
               :options="cliOptions"
               :label="DEFAULT_PROVIDER_LABEL"
-              :disabled="isBuiltin"
             />
+            <p v-if="isBuiltin && cli !== 'claude'" class="text-small text-muted">
+              Fora do Claude, permissões seguem o nível de sandbox da CLI sem confirmação comando a comando.
+            </p>
           </label>
 
           <div class="flex flex-col gap-2">

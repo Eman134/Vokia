@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::claude::DEFAULT_MODEL;
 use crate::db::DbError;
 use crate::orchestrator::fallback::LlmTarget;
-use crate::providers::{ModelTier, ModelTiers, ProviderConfig, ProviderRegistry};
+use crate::providers::{ModelTier, ModelTiers, ProviderConfig, ProviderRegistry, ToolTransport};
 
 const NAME_MIN_CHARS: usize = 2;
 const NAME_MAX_CHARS: usize = 20;
@@ -169,6 +169,7 @@ pub struct CliPreset {
     pub default_command: String,
     pub tiers: ModelTiers,
     pub supports_mcp: bool,
+    pub tool_transport: ToolTransport,
     pub supports_sandbox: bool,
     pub builtin_seed: bool,
 }
@@ -272,7 +273,7 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         cli: CLAUDE_CLI.to_string(),
         model: DEFAULT_MODEL.to_string(),
         model_tier: None,
-        follow_default_llm: false,
+        follow_default_llm: true,
         fallback: Vec::new(),
         command: CLAUDE_CLI.to_string(),
         builtin: true,
@@ -701,9 +702,10 @@ impl AgentRegistry {
         let provider = providers
             .get(&cli_id)
             .map_err(|_| AgentError::UnknownCli(cli_id.clone()))?;
-        if !provider.supports_mcp {
+        if !provider.has_tools() {
             return Err(AgentError::SaveFailed(
-                "O agente Ember exige um provedor com suporte a MCP.".to_string(),
+                "O agente Ember exige um provedor com suporte a ferramentas (MCP ou Vokia CLI)."
+                    .to_string(),
             ));
         }
         let resolved_model = crate::orchestrator::fallback::resolve_model_for_provider(

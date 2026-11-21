@@ -105,6 +105,7 @@ pub(super) async fn handle_request_from(
         context.channel_id,
         None,
         None,
+        None,
     )?;
     // Só depois da mensagem gravada: antes disso o anexo ainda é rascunho e pode ser descartado.
     if !context.attachments.is_empty() {
@@ -491,6 +492,7 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
         Speaker::User,
         &text,
         batch.channel_id,
+        None,
         None,
         None,
     )?;
@@ -1087,17 +1089,40 @@ async fn answer_once(
 ) -> Result<String, FlowError> {
     let agent = exchange.key.agent.clone();
     let project_id = exchange.key.project_id;
-    let with_tools = exchange.app.state::<McpState>().server().is_some();
+    let has_mcp_server = exchange.app.state::<McpState>().server().is_some();
+    let providers = exchange.app.state::<crate::providers::ProviderRegistry>();
+    let transport = exchange
+        .team
+        .profile(&agent)
+        .and_then(|profile| providers.get(&profile.cli).ok())
+        .map(|provider| provider.effective_tool_transport())
+        .unwrap_or_default();
+    let tool_mode = if !has_mcp_server {
+        super::prompts::ToolPromptMode::None
+    } else {
+        match transport {
+            crate::providers::ToolTransport::McpNative => super::prompts::ToolPromptMode::Mcp,
+            crate::providers::ToolTransport::VokiaCli => {
+                if super::adapters::resolve_vokia_cli_path().is_some() {
+                    super::prompts::ToolPromptMode::VokiaCli
+                } else {
+                    super::prompts::ToolPromptMode::None
+                }
+            }
+            crate::providers::ToolTransport::None => super::prompts::ToolPromptMode::None,
+        }
+    };
+    let with_tools = tool_mode != super::prompts::ToolPromptMode::None;
     let prompts = with_cache(exchange.state, project_id, |cache| {
         Ok(StepPrompts::build(
             cache,
             exchange.definition,
             &agent,
             exchange.request,
-            with_tools,
+            tool_mode,
         ))
     })?;
-    let reply = match ask_step(exchange, sessions, &agent, &prompts).await {
+    let mut reply = match ask_step(exchange, sessions, &agent, &prompts).await {
         Ok(reply) => reply,
         Err(error) => {
             if error.is_limit() {
@@ -1157,6 +1182,7 @@ async fn answer_once(
             exchange.channel_id,
             None,
             Some(proposal),
+            reply.usage.take(),
         )?;
         shown = String::new();
     }
@@ -1300,6 +1326,7 @@ async fn answer_once(
                 exchange.channel_id,
                 None,
                 None,
+                reply.usage.take(),
             )?;
         }
     }

@@ -143,8 +143,11 @@ pub async fn set_temporary_override(
         .profile(&agent)
         .ok_or_else(|| format!("Agente desconhecido: {agent}"))?;
     let provider = providers.get(&cli).map_err(|error| error.to_string())?;
-    if agent == Agent::ember() && !provider.supports_mcp {
-        return Err("O agente Ember exige um provedor com suporte a MCP.".to_string());
+    if agent == Agent::ember() && !provider.has_tools() {
+        return Err(
+            "O agente Ember exige um provedor com suporte a ferramentas (MCP ou Vokia CLI)."
+                .to_string(),
+        );
     }
     let resolved_model = match model {
         Some(m) if !m.trim().is_empty() => m.trim().to_string(),
