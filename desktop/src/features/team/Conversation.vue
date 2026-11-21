@@ -24,7 +24,7 @@ import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
-import UiConfirm from '../../ui/UiConfirm.vue'
+import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
@@ -45,6 +45,10 @@ const TAB_CLASSES = 'cursor-pointer whitespace-nowrap border-b-2 pb-1 text-label
 const TAB_ON = 'border-ink text-ink'
 const TAB_OFF = 'border-transparent text-muted hover:text-ink'
 const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
+const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
+const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico.'
+const CLEAR_BUTTON_CLASSES =
+  'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 
 const feed = useFeed()
 
@@ -88,9 +92,6 @@ const screenLabel = computed(() => {
   }
   return ALL_SCREEN_LABEL
 })
-const clearable = computed(
-  () => feed.screen.kind === 'all' || (feed.screen.kind === 'channel' && feed.screen.channel === GENERAL_CHANNEL_NAME),
-)
 const screenRole = computed(() => (feed.screen.kind === 'agent' ? (roster.profileOf(feed.screen.agent)?.role ?? '') : ''))
 
 const projectsStore = useProjects()
@@ -103,12 +104,14 @@ const pendingLabel = computed(() =>
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
+const confirmingClear = ref(false)
 
 function countLabel(count: number): string {
   return count === 1 ? '1 mensagem' : `${count} mensagens`
 }
 
 async function clearConversation(): Promise<void> {
+  confirmingClear.value = false
   clearFailure.value = null
   try {
     await feed.clearFeed()
@@ -129,6 +132,12 @@ watch(
   followEnd,
 )
 onMounted(followEnd)
+watch(
+  () => feed.screen,
+  () => {
+    confirmingClear.value = false
+  },
+)
 watch(temTerminal, (disponivel) => {
   if (!disponivel && aba.value === 'terminal') aba.value = 'conversa'
 }, { flush: 'sync' })
@@ -176,13 +185,43 @@ watch(temTerminal, (disponivel) => {
             {{ TAB_LABELS.fila }}
           </button>
         </div>
-        <UiConfirm
-          v-if="clearable && feed.feed.length > 0"
-          label="Limpar"
-          message="Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico."
-          confirm-label="Limpar conversa"
-          @confirm="clearConversation"
-        />
+        <div v-if="feed.feed.length > 0" class="flex min-w-0 flex-wrap items-center gap-2">
+          <button
+            v-if="!confirmingClear"
+            type="button"
+            :class="CLEAR_BUTTON_CLASSES"
+            :title="CLEAR_CONVERSATION_LABEL"
+            :aria-label="CLEAR_CONVERSATION_LABEL"
+            data-testid="confirm-open"
+            @click="confirmingClear = true"
+          >
+            <svg
+              class="size-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 6h18" />
+              <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+              <path d="M19 6v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+              <path d="M10 11v6" />
+              <path d="M14 11v6" />
+            </svg>
+          </button>
+          <template v-else>
+            <p class="min-w-0 flex-1 text-caption text-muted">{{ CLEAR_CONVERSATION_MESSAGE }}</p>
+            <UiButton variant="quiet" size="sm" data-testid="confirm-cancel" @press="confirmingClear = false">
+              Cancelar
+            </UiButton>
+            <UiButton variant="danger" size="sm" data-testid="confirm-accept" @press="clearConversation">
+              {{ CLEAR_CONVERSATION_LABEL }}
+            </UiButton>
+          </template>
+        </div>
       </div>
     </header>
     <section v-show="aba !== 'terminal'" ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
