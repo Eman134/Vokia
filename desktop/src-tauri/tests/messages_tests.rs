@@ -243,6 +243,69 @@ fn load_history_marca_is_error_apenas_em_mensagens_de_agente_de_limite_ou_falha_
 }
 
 #[test]
+fn task_result_persiste_ordem_canal_e_clear_messages() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "task-result");
+    let result = |objective: &str| crate::db::StoredTaskResult {
+        objective: objective.to_string(),
+        concluded: true,
+        turns: 3,
+        agents: vec![Agent::from_stored("ember").unwrap(), Agent::from_stored("vexa").unwrap()],
+    };
+
+    db.insert_task_result(project_id, Speaker::Agent(Agent::from_stored("ember").unwrap()), 20, None, &result("Sem canal"))
+        .unwrap();
+    db.insert_task_result(project_id, Speaker::Agent(Agent::from_stored("vexa").unwrap()), 10, Some(5), &result("Canal 5"))
+        .unwrap();
+
+    let history = db.load_history(project_id).unwrap();
+    assert_eq!(history.len(), 2);
+    assert!(matches!(
+        &history[0],
+        VokiaEvent::TaskResult { objective, channel_id: None, .. } if objective == "Sem canal"
+    ));
+    assert!(matches!(
+        &history[1],
+        VokiaEvent::TaskResult { objective, channel_id: Some(5), .. } if objective == "Canal 5"
+    ));
+
+    db.clear_messages(project_id).unwrap();
+    assert!(db.load_history(project_id).unwrap().is_empty());
+}
+
+#[test]
+fn task_result_com_json_corrompido_faz_fallback_para_mensagem_sem_derrubar_historico() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "task-result-corrompido");
+    db.insert_task_result(
+        project_id,
+        Speaker::Agent(Agent::from_stored("ember").unwrap()),
+        1,
+        None,
+        &crate::db::StoredTaskResult {
+            objective: "objetivo original".to_string(),
+            concluded: true,
+            turns: 1,
+            agents: vec![Agent::from_stored("ember").unwrap()],
+        },
+    )
+    .unwrap();
+    db.conn()
+        .unwrap()
+        .execute("UPDATE messages SET task_result = '{corrompido' WHERE project_id = ?1", [project_id])
+        .unwrap();
+
+    let history = db.load_history(project_id).unwrap();
+    assert_eq!(history.len(), 1);
+    assert!(matches!(
+        &history[0],
+        VokiaEvent::Message { text, channel_id: None, .. } if text.is_empty()
+    ));
+}
+
+#[test]
 fn frontend_balloon_oculta_origem_em_erro_e_use_feed_so_sugere_migracao_para_limite_esgotado() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let balloon_vue = fs::read_to_string(manifest.join("../src/features/balloon/Balloon.vue"))

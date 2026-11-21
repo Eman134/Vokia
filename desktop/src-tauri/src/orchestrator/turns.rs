@@ -4,8 +4,8 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
-use crate::claude::{ProjectAccess, TurnActivity, TurnUsage};
-use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot};
+use crate::claude::{ProjectAccess, ToolCategory, TurnActivity, TurnUsage};
+use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot, StoredTaskResult};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
@@ -14,7 +14,7 @@ use crate::orchestration::snapshot::placement_of;
 use crate::orchestration::snapshot::{ACTION_CONSULT, ACTION_RETURN};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, Batch, PendingDecision, RequestContext};
-use crate::task::{Cache, Change, TaskDefinition, TaskOutcome};
+use crate::task::{Cache, Change, TaskDefinition, TaskKind, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{
@@ -82,6 +82,8 @@ pub(super) async fn run_turns(
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
     let mut counters = Counters::default();
+    counters.kind = definition.kind;
+    counters.acted.push(origin.clone());
     // Um lote é a entrega de trabalho até o próximo fim de cadeia; só ele exige revisão, e cada lote novo volta a exigi-la.
     let mut lote_open = false;
     let mut rejections = 0;
@@ -158,6 +160,7 @@ pub(super) async fn run_turns(
             }
         };
         counters.task.register_turn(&turn.speaker);
+        counters.act(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
         let mut activity = activity;
         let ExchangeOutcome {
@@ -190,6 +193,15 @@ pub(super) async fn run_turns(
         let raised = decision
             .map(|decision| (decision, visible.clone()))
             .or_else(|| text_decision.map(ParsedDecision::split));
+        // Decisão, proposta de card e ferramenta que escreve ou executa são trabalho, mesmo num pedido que parecia conversa.
+        let worked = activity.as_ref().is_some_and(|activity| {
+            activity.tools.iter().any(|tool| {
+                matches!(tool.category, ToolCategory::Edit | ToolCategory::Command | ToolCategory::App)
+            })
+        });
+        if raised.is_some() || proposal.is_some() || worked {
+            counters.promote();
+        }
         if let Some((decision, shown)) = raised {
             let shown = Some(shown).filter(|shown| !shown.is_empty());
             let shown = with_confirmations(shown, &confirmations).unwrap_or_default();
@@ -317,6 +329,18 @@ pub(super) async fn run_turns(
             || applied.changed_value
             || variables.created_variable
             || variables.changed_value;
+        let helpers = delegation
+            .iter()
+            .map(|(helper, _)| helper)
+            .chain(parallel_checked.iter().map(|(helper, _, _)| helper));
+        let mut delegated = false;
+        for helper in helpers {
+            counters.act(helper);
+            delegated = true;
+        }
+        if delegated || cards.changed || !confirmations.is_empty() || advanced {
+            counters.promote();
+        }
         let accepted: Vec<Change> = variables
             .accepted
             .into_iter()
@@ -356,13 +380,7 @@ pub(super) async fn run_turns(
                 "",
                 counters.goal.checks(),
             )?;
-            report_task_result(
-                app,
-                project_id,
-                definition,
-                TaskOutcome::Finished,
-                counters.task.turns(),
-            )?;
+            report_task_result(exchange, &counters, TaskOutcome::Finished)?;
             let message = format!("Tarefa concluída: {}.", definition.objetivo);
             conclude(
                 app,
@@ -662,9 +680,23 @@ struct Counters {
     loop_guard: LoopGuard,
     goal: GoalTracker,
     task: TaskCounters,
+    // Nasce da definição e só sobe: um pedido que parecia conversa vira demanda quando o fluxo mostra trabalho.
+    kind: TaskKind,
+    // Quem falou ou recebeu delegação na troca, sem repetir, para o cartão de conclusão.
+    acted: Vec<Agent>,
 }
 
 impl Counters {
+    fn promote(&mut self) {
+        self.kind = TaskKind::Demanda;
+    }
+
+    fn act(&mut self, agent: &Agent) {
+        if !self.acted.contains(agent) {
+            self.acted.push(agent.clone());
+        }
+    }
+
     fn reset_stalls(&mut self) {
         self.passes.reset();
         self.loop_guard = LoopGuard::default();
@@ -714,13 +746,7 @@ async fn resolve(
                 team,
                 *channel_id,
             )?;
-            report_task_result(
-                app,
-                project_id,
-                definition,
-                TaskOutcome::Finished,
-                counters.task.turns(),
-            )?;
+            report_task_result(exchange, counters, TaskOutcome::Finished)?;
             Step::End(TaskOutcome::Finished)
         }
         Settlement::Continue { instruction } => {
@@ -734,46 +760,59 @@ async fn resolve(
         }
         Settlement::Stalled { message } => {
             stop_with_error(app, project_id, message)?;
-            report_task_result(
-                app,
-                project_id,
-                definition,
-                TaskOutcome::Stalled,
-                counters.task.turns(),
-            )?;
+            report_task_result(exchange, counters, TaskOutcome::Stalled)?;
             Step::End(TaskOutcome::Stalled)
         }
         Settlement::Ended => {
             emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
-            report_task_result(
-                app,
-                project_id,
-                definition,
-                TaskOutcome::Finished,
-                counters.task.turns(),
-            )?;
+            // Conversa simples termina só com a resposta do agente: sem cartão de conclusão.
+            if counters.kind == TaskKind::Demanda {
+                report_task_result(exchange, counters, TaskOutcome::Finished)?;
+            }
             Step::End(TaskOutcome::Finished)
         }
     })
 }
 
-// Cartão para o usuário: vem do registro da tarefa (objetivo e participantes) e do contador de turnos.
+// Cartão para o usuário: grava no histórico e avisa a tela. Os agentes são a origem, os participantes definidos e quem agiu.
 fn report_task_result(
-    app: &AppHandle,
-    project_id: i64,
-    definition: &TaskDefinition,
+    exchange: &Exchange<'_>,
+    counters: &Counters,
     outcome: TaskOutcome,
-    turns: i64,
 ) -> Result<(), FlowError> {
+    let project_id = exchange.key.project_id;
+    let mut agents = vec![exchange.key.agent.clone()];
+    for agent in exchange.definition.participants.iter().chain(&counters.acted) {
+        if !agents.contains(agent) {
+            agents.push(agent.clone());
+        }
+    }
+    let time = now_millis()?;
+    let result = StoredTaskResult {
+        objective: exchange.definition.objetivo.clone(),
+        concluded: outcome == TaskOutcome::Finished,
+        turns: counters.task.turns(),
+        agents,
+    };
+    if let Some(db) = exchange.app.state::<DbState>().db() {
+        db.insert_task_result(
+            project_id,
+            Speaker::from(exchange.key.agent.clone()),
+            time,
+            exchange.channel_id,
+            &result,
+        )?;
+    }
     emit(
-        app,
+        exchange.app,
         VokiaEvent::TaskResult {
             project_id,
-            objective: definition.objetivo.clone(),
-            concluded: outcome == TaskOutcome::Finished,
-            turns,
-            agents: definition.participants.clone(),
-            time: now_millis()?,
+            objective: result.objective,
+            concluded: result.concluded,
+            turns: result.turns,
+            agents: result.agents,
+            time,
+            channel_id: exchange.channel_id,
         },
     )
 }

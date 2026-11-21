@@ -19,9 +19,40 @@ const LONG_REQUEST_CHARS: usize = 1200;
 const REQUEST_PROMPT_MAX: usize = 8000;
 const REQUEST_TRUNCATED: &str = " (pedido truncado)";
 const CRITERION_MAX_CHARS: usize = 300;
+const DEMAND_PREFIXES: &[&str] = &["/plano", "/revisar"];
+const CONVERSATION_GREETINGS: &[&str] = &[
+    "oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "e aí", "tudo bem", "obrigado", "obrigada",
+    "valeu", "ok", "entendi", "beleza", "teste",
+];
+const DEMAND_VERBS: &[&str] = &[
+    "crie", "criar", "implemente", "implementar", "corrija", "corrigir", "arrume", "arrumar", "refatore",
+    "refatorar", "adicione", "adicionar", "remova", "remover", "altere", "alterar", "edite", "editar", "atualize",
+    "atualizar", "planeje", "planejar", "investigue", "investigar", "pesquise", "pesquisar", "revise", "revisar",
+    "execute", "executar", "rode", "rodar", "teste", "testar", "commite", "commit", "gere", "gerar", "construa",
+    "construir", "faça", "faca", "card", "backlog", "pr", "pull request", "issue", "bug", "branch", "worktree",
+];
+// Pedidos com revezamento, variáveis ou condição de parada precisam do interpretador; o resto a definição local resolve.
+const INTERPRETER_TRIGGERS: &[&str] = &[
+    "alternadamente", "revezando", "um de cada vez", "variável", "variavel", "variáveis", "variaveis",
+    "pronto quando", "até alcançar", "ate alcancar", "condição de parada", "condicao de parada",
+];
+const VARIABLE_SIGIL: char = '$';
+const MENTION_PREFIX: char = '@';
+const KIND_FIELD: &str = "tipo";
+const DEMAND_KIND_VALUE: &str = "demanda";
+const CONVERSATION_KIND_VALUE: &str = "conversa";
+
+// Conversa (saudação, pergunta direta) termina sem cartão de conclusão; demanda é trabalho de verdade.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TaskKind {
+    #[default]
+    Conversa,
+    Demanda,
+}
 
 #[derive(Debug)]
 pub struct TaskDefinition {
+    pub kind: TaskKind,
     pub nova_tarefa: bool,
     pub objetivo: String,
     pub criterion: String,
@@ -30,6 +61,58 @@ pub struct TaskDefinition {
     pub alternate: bool,
     pub variables: Vec<Variable>,
     pub stop: Option<StopCondition>,
+}
+
+impl TaskDefinition {
+    // Alternância, verificação, parada, variáveis ou mais de um agente só existem em trabalho de verdade.
+    pub fn has_task_structure(&self) -> bool {
+        self.alternate
+            || self.verify
+            || self.stop.is_some()
+            || !self.variables.is_empty()
+            || self.participants.len() >= MULTI_AGENT_MIN_PARTICIPANTS
+    }
+
+    pub fn promote_to_demand(&mut self) {
+        self.kind = TaskKind::Demanda;
+    }
+}
+
+pub fn classify_request(request: &str) -> TaskKind {
+    let lower = request.trim().to_lowercase();
+    if lower.is_empty() {
+        return TaskKind::Conversa;
+    }
+    if DEMAND_PREFIXES.iter().any(|prefix| lower.starts_with(prefix)) {
+        return TaskKind::Demanda;
+    }
+    let clean = lower.trim_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace());
+    if CONVERSATION_GREETINGS.contains(&clean) {
+        return TaskKind::Conversa;
+    }
+    let asks_for_work = DEMAND_VERBS.iter().any(|keyword| {
+        lower
+            .split(|c: char| !c.is_alphanumeric() && c != '/')
+            .any(|word| word == *keyword)
+            || (keyword.contains(' ') && lower.contains(keyword))
+    });
+    if asks_for_work {
+        TaskKind::Demanda
+    } else {
+        TaskKind::Conversa
+    }
+}
+
+// Estrutura de tarefa sempre vence; senão vale o "tipo" que o interpretador escreveu, e por fim a heurística do pedido.
+fn kind_of(definition: &TaskDefinition, declared: Option<&str>, request: &str) -> TaskKind {
+    if definition.has_task_structure() {
+        return TaskKind::Demanda;
+    }
+    match declared {
+        Some(DEMAND_KIND_VALUE) => TaskKind::Demanda,
+        Some(CONVERSATION_KIND_VALUE) => TaskKind::Conversa,
+        _ => classify_request(request),
+    }
 }
 
 #[derive(Debug)]
@@ -100,11 +183,64 @@ pub fn long_request_text(request: &str) -> Option<String> {
 }
 
 pub fn parse_definition(reply: &str, origin: &Agent, request: &str, team: &Team) -> TaskDefinition {
-    definition_from_json(reply, origin, team).unwrap_or_else(|| safe_definition(origin, request))
+    definition_from_json(reply, origin, team, request)
+        .unwrap_or_else(|| safe_definition(origin, request))
+}
+
+pub fn needs_llm_interpreter(request: &str, has_active_variables: bool) -> bool {
+    if has_active_variables {
+        return true;
+    }
+    let trimmed = request.trim();
+    if trimmed.contains(VARIABLE_SIGIL) {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    INTERPRETER_TRIGGERS.iter().any(|trigger| lower.contains(trigger))
+}
+
+// Definição sem chamada ao modelo: o agente do pedido e quem o pedido cita com @Nome.
+pub fn fast_definition(origin: &Agent, request: &str, team: &Team, nova_tarefa: bool) -> TaskDefinition {
+    let trimmed = request.trim();
+    let objective = if trimmed.is_empty() {
+        request.to_string()
+    } else {
+        truncate(trimmed, CRITERION_MAX_CHARS)
+    };
+    let mut participants = vec![origin.clone()];
+    for mentioned in mentioned_agents(trimmed, team) {
+        if !participants.contains(&mentioned) {
+            participants.push(mentioned);
+        }
+    }
+    let mut definition = TaskDefinition {
+        kind: TaskKind::Conversa,
+        nova_tarefa,
+        criterion: objective.clone(),
+        objetivo: objective,
+        verify: false,
+        participants,
+        alternate: false,
+        variables: Vec::new(),
+        stop: None,
+    };
+    definition.kind = kind_of(&definition, None, request);
+    definition
+}
+
+fn mentioned_agents(request: &str, team: &Team) -> Vec<Agent> {
+    request
+        .split_whitespace()
+        .filter_map(|token| token.strip_prefix(MENTION_PREFIX))
+        .map(|name| name.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| team.named(name))
+        .collect()
 }
 
 fn safe_definition(origin: &Agent, request: &str) -> TaskDefinition {
-    TaskDefinition {
+    let mut definition = TaskDefinition {
+        kind: TaskKind::Conversa,
         nova_tarefa: false,
         objetivo: request.to_string(),
         criterion: request.to_string(),
@@ -113,10 +249,17 @@ fn safe_definition(origin: &Agent, request: &str) -> TaskDefinition {
         alternate: false,
         variables: Vec::new(),
         stop: None,
-    }
+    };
+    definition.kind = kind_of(&definition, None, request);
+    definition
 }
 
-fn definition_from_json(reply: &str, origin: &Agent, team: &Team) -> Option<TaskDefinition> {
+fn definition_from_json(
+    reply: &str,
+    origin: &Agent,
+    team: &Team,
+    request: &str,
+) -> Option<TaskDefinition> {
     let start = reply.find('{')?;
     let end = reply.rfind('}')?;
     let json: Json = serde_json::from_str(reply.get(start..=end)?).ok()?;
@@ -142,7 +285,8 @@ fn definition_from_json(reply: &str, origin: &Agent, team: &Team) -> Option<Task
         .get("verificar")
         .and_then(Json::as_bool)
         .unwrap_or(false);
-    Some(TaskDefinition {
+    let mut definition = TaskDefinition {
+        kind: TaskKind::Conversa,
         nova_tarefa: json.get("nova_tarefa")?.as_bool()?,
         objetivo: objetivo.to_string(),
         criterion,
@@ -151,7 +295,10 @@ fn definition_from_json(reply: &str, origin: &Agent, team: &Team) -> Option<Task
         alternate,
         variables,
         stop,
-    })
+    };
+    let declared = json.get(KIND_FIELD).and_then(Json::as_str);
+    definition.kind = kind_of(&definition, declared, request);
+    Some(definition)
 }
 
 fn participants_from_json(names: &[Json], origin: &Agent, team: &Team) -> Vec<Agent> {
@@ -252,4 +399,25 @@ fn is_number_variable(variables: &[Variable], name: &str) -> bool {
     variables
         .iter()
         .any(|variable| variable.name == name && matches!(variable.value, VarValue::Number(_)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cls1_classifica_saudacao_pergunta_e_pedidos_de_trabalho() {
+        for request in ["Oi", "Obrigado", "O que esse projeto faz?"] {
+            assert_eq!(classify_request(request), TaskKind::Conversa, "{request}");
+        }
+        for request in [
+            "Crie um card de login",
+            "/plano revisar o fluxo",
+            "Implemente o filtro",
+            "Testar a conexão",
+            "Corrigir bug no login",
+        ] {
+            assert_eq!(classify_request(request), TaskKind::Demanda, "{request}");
+        }
+    }
 }

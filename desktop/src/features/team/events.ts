@@ -206,6 +206,7 @@ export interface VokiaTaskResult {
   turns: number
   agents: Agent[]
   time: number
+  channelId?: number | null
 }
 
 export type GoalState = 'atingido' | 'incompleto' | 'sem-avanco' | 'repetindo'

@@ -6,5 +6,6 @@ pub use cache::{
     CONVERSATION_VAR, RECOVERY_CONVERSATION_ITEMS,
 };
 pub use definition::{
-    long_request_text, parse_definition, ActiveTask, TaskDefinition, TaskOutcome, TaskRecord,
+    fast_definition, long_request_text, needs_llm_interpreter, parse_definition, ActiveTask, TaskDefinition,
+    TaskKind, TaskOutcome, TaskRecord,
 };

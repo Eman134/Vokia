@@ -45,9 +45,10 @@ export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
       return entry.from === agent || entry.to === agent
     case 'permission-result':
       return entry.agent === agent
+    case 'task-result':
+      return entry.agents.includes(agent)
     case 'notice':
     case 'error':
-    case 'task-result':
       return false
   }
 }
@@ -69,9 +70,13 @@ export function screenEntries(
 }
 
 // #geral recebe o que não tem canal específico, os pedidos de permissão (E7) e os avisos e erros, que não pertencem a canal nenhum;
-// canal específico recebe só as suas mensagens.
+// canal específico recebe só as suas mensagens. A conclusão de tarefa segue o canal de origem; sem canal (registro antigo), vai para #geral.
 function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNEL_NAME, channels: readonly Channel[]): boolean {
-  if (entry.type === 'permission-result' || entry.type === 'notice' || entry.type === 'error' || entry.type === 'task-result') {
+  if (entry.type === 'task-result') {
+    const channel = entry.channelId ?? null
+    return target === GENERAL_CHANNEL_NAME ? channel === null : channel === target
+  }
+  if (entry.type === 'permission-result' || entry.type === 'notice' || entry.type === 'error') {
     return target === GENERAL_CHANNEL_NAME
   }
   if (entry.type !== 'message') {

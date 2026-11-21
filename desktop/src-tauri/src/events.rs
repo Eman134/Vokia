@@ -237,6 +237,8 @@ pub enum VokiaEvent {
         turns: i64,
         agents: Vec<Agent>,
         time: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_id: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     BacklogChanged {

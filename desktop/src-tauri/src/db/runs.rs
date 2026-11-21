@@ -186,7 +186,7 @@ impl Db {
         let mut statement = conn.prepare(&format!(
             "SELECT from_agent, to_agent, text, activity FROM messages \
              WHERE project_id = ?1 AND created_at >= ?2 AND created_at < {RUN_WINDOW_END} \
-             ORDER BY id"
+             AND task_result IS NULL ORDER BY id"
         ))?;
         let messages = statement
             .query_map(

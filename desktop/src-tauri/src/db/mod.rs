@@ -24,6 +24,7 @@ pub use artifact_documents::{
     ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactSummary, NewArtifactDocument,
 };
 pub use artifact_kinds::{ArtifactKind, ARTIFACT_KINDS};
+pub use messages::StoredTaskResult;
 pub use permission_rules::PermissionRule;
 pub use backlog::{
     board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible, CardResult,

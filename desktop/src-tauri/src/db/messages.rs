@@ -1,12 +1,23 @@
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
 
 use crate::claude::{TurnActivity, TurnUsage};
-use crate::events::{RequestProposal, Speaker, VokiaEvent};
+use crate::events::{Agent, RequestProposal, Speaker, VokiaEvent};
 
 use super::connection::Db;
 use super::error::DbError;
 
 const HISTORY_LIMIT: i64 = 500;
+
+// O cartão de conclusão vai na própria tabela de mensagens: a ordem por id e o clear_messages valem para ele também.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredTaskResult {
+    pub objective: String,
+    pub concluded: bool,
+    pub turns: i64,
+    pub agents: Vec<Agent>,
+}
 
 impl Db {
     pub fn clear_messages(&self, project_id: i64) -> Result<(), DbError> {
@@ -76,11 +87,33 @@ impl Db {
         Ok(())
     }
 
+    pub fn insert_task_result(
+        &self,
+        project_id: i64,
+        from: Speaker,
+        time: u64,
+        channel_id: Option<i64>,
+        result: &StoredTaskResult,
+    ) -> Result<(), DbError> {
+        let json = serde_json::to_string(result)
+            .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
+        let conn = self.conn()?;
+        let inserted = conn.execute(
+            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, task_result) \
+             SELECT id, ?2, ?3, '', ?4, ?5, ?6 FROM projects WHERE id = ?1",
+            params![project_id, from.as_str(), Speaker::User.as_str(), time as i64, channel_id, json],
+        )?;
+        if inserted == 0 {
+            return Err(DbError::ProjectNotFound(project_id));
+        }
+        Ok(())
+    }
+
     pub fn load_history(&self, project_id: i64) -> Result<Vec<VokiaEvent>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage FROM ( \
-                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage FROM messages \
+            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result FROM ( \
+                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result FROM messages \
                  WHERE project_id = ?1 ORDER BY id DESC LIMIT ?2 \
              ) ORDER BY id",
         )?;
@@ -94,11 +127,24 @@ impl Db {
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
             ))
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
-            let (from, to, text, time, channel_id, activity, request_proposal, usage) = row?;
+            let (from, to, text, time, channel_id, activity, request_proposal, usage, task_result) = row?;
             let from = parse_speaker(&from)?;
+            // JSON ilegível não derruba o histórico: a linha cai como mensagem vazia, como qualquer outra sem texto útil.
+            if let Some(result) = task_result.and_then(|json| serde_json::from_str::<StoredTaskResult>(&json).ok()) {
+                return Ok(VokiaEvent::TaskResult {
+                    project_id,
+                    objective: result.objective,
+                    concluded: result.concluded,
+                    turns: result.turns,
+                    agents: result.agents,
+                    time: time as u64,
+                    channel_id,
+                });
+            }
             let is_error = from != Speaker::User
                 && (text == "Limite esgotado"
                     || text.starts_with("A CLI ")
