@@ -109,6 +109,7 @@ pub(crate) fn post_agent_message(
         Some(found.id),
         None,
         None,
+        None,
     )
     .map_err(|_| POST_FAILED_MESSAGE.to_string())
 }

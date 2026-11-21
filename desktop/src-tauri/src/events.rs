@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::claude::{ConsoleKind, LimitName, TurnActivity};
+use crate::claude::{ConsoleKind, LimitName, TurnActivity, TurnUsage};
 use crate::orchestrator::fallback::TemporaryOverride;
 use crate::orchestrator::RequestOutcome;
 
@@ -138,6 +138,8 @@ pub enum VokiaEvent {
         activity: Option<TurnActivity>,
         #[serde(skip_serializing_if = "Option::is_none")]
         request_proposal: Option<RequestProposal>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        usage: Option<TurnUsage>,
         #[serde(default, skip_serializing_if = "is_false")]
         is_error: bool,
     },

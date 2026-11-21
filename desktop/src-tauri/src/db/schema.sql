@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS messages (
         to_agent TEXT NOT NULL,
         text TEXT NOT NULL,
         created_at INTEGER NOT NULL
-    , channel_id INTEGER, activity TEXT, request_proposal TEXT);
+    , channel_id INTEGER, activity TEXT, request_proposal TEXT, usage TEXT);
 
 CREATE INDEX IF NOT EXISTS messages_by_project ON messages(project_id, id);
 

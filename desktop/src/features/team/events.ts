@@ -47,6 +47,15 @@ export interface RequestProposal {
   detail: string
 }
 
+export interface TurnUsage {
+  provider?: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  costUsd?: number
+}
+
 export interface VokiaMessage {
   type: 'message'
   from: Speaker
@@ -57,6 +66,7 @@ export interface VokiaMessage {
   channelId?: number
   activity?: TurnActivity
   requestProposal?: RequestProposal
+  usage?: TurnUsage
   isError?: boolean
 }
 

@@ -20,4 +20,4 @@ pub use error::{classify_provider_error, ClaudeError};
 pub use live_session::LiveSession;
 pub(crate) use locate::cli_message;
 pub use locate::{locate, CliProblem};
-pub use stream::{LimitName, LimitWindow, RateLimits, Reply, UsageLimit};
+pub use stream::{LimitName, LimitWindow, RateLimits, Reply, TurnUsage, UsageLimit};

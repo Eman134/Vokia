@@ -11,6 +11,7 @@ import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import { taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
+import { formatUsageInline, formatUsageTooltip } from './messageUsageFormat'
 import { splitAttachments } from '../attachments/attachmentBlock'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -28,6 +29,16 @@ const userProfile = useUserProfile()
 const backlog = useBacklog()
 
 const userContent = computed(() => splitAttachments(props.entry.type === 'message' ? props.entry.text : ''))
+const usageInline = computed(() =>
+  props.entry.type === 'message' && props.entry.from !== 'user'
+    ? formatUsageInline(props.entry.usage)
+    : null,
+)
+const usageTooltip = computed(() =>
+  props.entry.type === 'message' && props.entry.from !== 'user'
+    ? formatUsageTooltip(props.entry.usage)
+    : '',
+)
 
 const runCard = computed(() => {
   const { entry } = props
@@ -118,7 +129,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   <div
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
     class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1"
-    :title="TIME_FORMAT.format(entry.time)"
+    :title="`${TIME_FORMAT.format(entry.time)}${usageTooltip ? ` — ${usageTooltip}` : ''}`"
     data-testid="agent-exchange"
   >
     <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
@@ -161,6 +172,14 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           @restore="overrides.restore(entry.from)"
         />
         <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+        <span
+          v-if="usageInline"
+          data-testid="message-usage"
+          :title="usageTooltip"
+          class="tabular-nums text-xs text-muted"
+        >
+          · {{ usageInline }}
+        </span>
       </div>
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
       <div

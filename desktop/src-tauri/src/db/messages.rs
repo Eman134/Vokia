@@ -1,6 +1,6 @@
 use rusqlite::params;
 
-use crate::claude::TurnActivity;
+use crate::claude::{TurnActivity, TurnUsage};
 use crate::events::{RequestProposal, Speaker, VokiaEvent};
 
 use super::connection::Db;
@@ -40,6 +40,7 @@ impl Db {
         channel_id: Option<i64>,
         activity: Option<&TurnActivity>,
         request_proposal: Option<&RequestProposal>,
+        usage: Option<&TurnUsage>,
     ) -> Result<(), DbError> {
         let activity = activity
             .map(serde_json::to_string)
@@ -49,10 +50,14 @@ impl Db {
             .map(serde_json::to_string)
             .transpose()
             .map_err(|error| DbError::MessageProposalData(error.to_string()))?;
+        let usage = usage
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
         let conn = self.conn()?;
         let inserted = conn.execute(
-            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal) \
-             SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8 FROM projects WHERE id = ?1",
+            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage) \
+             SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 FROM projects WHERE id = ?1",
             params![
                 project_id,
                 from.as_str(),
@@ -61,7 +66,8 @@ impl Db {
                 time as i64,
                 channel_id,
                 activity,
-                request_proposal
+                request_proposal,
+                usage
             ],
         )?;
         if inserted == 0 {
@@ -73,8 +79,8 @@ impl Db {
     pub fn load_history(&self, project_id: i64) -> Result<Vec<VokiaEvent>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal FROM ( \
-                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal FROM messages \
+            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage FROM ( \
+                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage FROM messages \
                  WHERE project_id = ?1 ORDER BY id DESC LIMIT ?2 \
              ) ORDER BY id",
         )?;
@@ -87,10 +93,11 @@ impl Db {
                 row.get::<_, Option<i64>>(4)?,
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
-            let (from, to, text, time, channel_id, activity, request_proposal) = row?;
+            let (from, to, text, time, channel_id, activity, request_proposal, usage) = row?;
             let from = parse_speaker(&from)?;
             let is_error = from != Speaker::User && text == "Limite esgotado";
             Ok(VokiaEvent::Message {
@@ -105,6 +112,7 @@ impl Db {
                 activity: activity.and_then(|json| serde_json::from_str(&json).ok()),
                 request_proposal: request_proposal
                     .and_then(|json| serde_json::from_str(&json).ok()),
+                usage: usage.and_then(|json| serde_json::from_str(&json).ok()),
             })
         })
         .collect()

@@ -67,11 +67,11 @@ fn marca_de_canal_sobrevive_a_reabrir_o_banco_e_mensagem_sem_canal_continua_sem(
     let project_id = {
         let db = dir.open();
         let project_id = project(&db, "a");
-        db.insert_message(project_id, Speaker::User, agent("vexa"), "no canal", 1, Some(7), None, None)
+        db.insert_message(project_id, Speaker::User, agent("vexa"), "no canal", 1, Some(7), None, None, None)
             .unwrap();
-        db.insert_message(project_id, agent("vexa"), Speaker::User, "resposta no canal", 2, Some(7), None, None)
+        db.insert_message(project_id, agent("vexa"), Speaker::User, "resposta no canal", 2, Some(7), None, None, None)
             .unwrap();
-        db.insert_message(project_id, Speaker::User, agent("axiom"), "sem canal", 3, None, None, None)
+        db.insert_message(project_id, Speaker::User, agent("axiom"), "sem canal", 3, None, None, None, None)
             .unwrap();
         project_id
     };
@@ -89,9 +89,9 @@ fn json_do_evento_traz_channel_id_so_com_canal_e_nunca_null() {
     let dir = TempDir::new();
     let db = dir.open();
     let project_id = project(&db, "a");
-    db.insert_message(project_id, Speaker::User, agent("vexa"), "com", 1, Some(3), None, None)
+    db.insert_message(project_id, Speaker::User, agent("vexa"), "com", 1, Some(3), None, None, None)
         .unwrap();
-    db.insert_message(project_id, Speaker::User, agent("vexa"), "sem", 2, None, None, None)
+    db.insert_message(project_id, Speaker::User, agent("vexa"), "sem", 2, None, None, None, None)
         .unwrap();
 
     let json: Vec<serde_json::Value> = db
@@ -115,9 +115,9 @@ fn historico_de_um_projeto_nao_traz_a_marca_de_outro() {
     let db = dir.open();
     let first = project(&db, "a");
     let second = project(&db, "b");
-    db.insert_message(first, Speaker::User, agent("vexa"), "do a", 1, Some(1), None, None)
+    db.insert_message(first, Speaker::User, agent("vexa"), "do a", 1, Some(1), None, None, None)
         .unwrap();
-    db.insert_message(second, Speaker::User, agent("vexa"), "do b", 2, None, None, None)
+    db.insert_message(second, Speaker::User, agent("vexa"), "do b", 2, None, None, None, None)
         .unwrap();
 
     let history = db.load_history(second).unwrap();
@@ -135,9 +135,9 @@ fn proposta_de_pedido_sobrevive_ao_historico_e_mensagem_sem_proposta_volta_sem_e
         detail: "Detalhe".to_string(),
     };
 
-    db.insert_message(project_id, agent("vexa"), Speaker::User, "com", 1, None, None, Some(&proposal))
+    db.insert_message(project_id, agent("vexa"), Speaker::User, "com", 1, None, None, Some(&proposal), None)
         .unwrap();
-    db.insert_message(project_id, agent("vexa"), Speaker::User, "sem", 2, None, None, None)
+    db.insert_message(project_id, agent("vexa"), Speaker::User, "sem", 2, None, None, None, None)
         .unwrap();
     let history = db.load_history(project_id).unwrap();
 
@@ -150,7 +150,7 @@ fn proposta_ilegivel_no_banco_nao_esconde_a_mensagem() {
     let dir = TempDir::new();
     let db = dir.open();
     let project_id = project(&db, "a");
-    db.insert_message(project_id, agent("vexa"), Speaker::User, "texto", 1, None, None, None)
+    db.insert_message(project_id, agent("vexa"), Speaker::User, "texto", 1, None, None, None, None)
         .unwrap();
     db.conn()
         .unwrap()
@@ -174,6 +174,7 @@ fn evento_serializa_request_proposal_em_camel_case_e_omite_quando_nao_ha() {
         channel_id: None,
         activity: None,
         request_proposal,
+        usage: None,
         is_error: false,
     };
     let with = serde_json::to_value(message(Some(RequestProposal {

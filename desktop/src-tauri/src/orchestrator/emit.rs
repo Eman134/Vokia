@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::agents::Agent;
-use crate::claude::{LimitWindow, RateLimits, TurnActivity};
+use crate::claude::{LimitWindow, RateLimits, TurnActivity, TurnUsage};
 use crate::db::DbState;
 use crate::events::{AgentState, RequestProposal, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
 
@@ -54,6 +54,7 @@ pub(crate) fn emit_feed_note(
             channel_id: None,
             activity: None,
             request_proposal: None,
+            usage: None,
             is_error: false,
         },
     )
@@ -69,6 +70,7 @@ pub(crate) fn emit_message(
     channel_id: Option<i64>,
     activity: Option<TurnActivity>,
     request_proposal: Option<RequestProposal>,
+    usage: Option<TurnUsage>,
 ) -> Result<(), FlowError> {
     let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
     let time = now_millis()?;
@@ -82,6 +84,7 @@ pub(crate) fn emit_message(
             channel_id,
             activity.as_ref(),
             request_proposal.as_ref(),
+            usage.as_ref(),
         )?;
     }
     emit(
@@ -95,6 +98,7 @@ pub(crate) fn emit_message(
             channel_id,
             activity,
             request_proposal,
+            usage,
             is_error: false,
         },
     )
@@ -118,6 +122,7 @@ pub(crate) fn emit_error_message(
             channel_id,
             None,
             None,
+            None,
         )?;
     }
     emit(
@@ -131,6 +136,7 @@ pub(crate) fn emit_error_message(
             channel_id,
             activity: None,
             request_proposal: None,
+            usage: None,
             is_error: true,
         },
     )
