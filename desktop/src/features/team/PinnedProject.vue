@@ -15,7 +15,7 @@ const ROOT_CLASSES = 'relative flex shrink-0 items-center'
 const MENU_CLASSES = 'absolute bottom-full left-0 pb-2'
 const MENU_FRAME_CLASSES = 'w-60 rounded-popover border border-line bg-surface p-1.5 shadow-float'
 const MENU_TITLE_CLASSES = 'px-2 py-1.5 text-caption text-muted'
-const PIN_ICON_CLASSES = 'size-4 text-faint'
+const PIN_ICON_CLASSES = 'size-4 shrink-0 text-faint'
 
 const projects = useProjects()
 const root = ref<HTMLElement | null>(null)
@@ -72,6 +72,7 @@ onUnmounted(() => {
     <UiButton
       variant="quiet"
       size="sm"
+      class="w-7 !px-0"
       data-testid="pin-toggle"
       aria-haspopup="menu"
       :aria-expanded="open"
@@ -79,7 +80,7 @@ onUnmounted(() => {
       :title="toggleLabel"
       @press="toggleMenu"
     >
-      <ProjectIcon v-if="projects.pinned" :icon="projects.pinned.symbol" class="size-4" />
+      <ProjectIcon v-if="projects.pinned" :icon="projects.pinned.symbol" class="size-4 shrink-0" />
       <svg
         v-else
         viewBox="0 0 16 16"

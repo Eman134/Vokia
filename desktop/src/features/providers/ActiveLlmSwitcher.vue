@@ -1,54 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
-import UiCombobox from '../../ui/UiCombobox.vue'
-import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
-import { agentName } from '../team/agents'
-import type { ModelTier } from '../team/teamApi'
-import { useFeed } from '../team/useFeed'
 import { useRoster } from '../team/useRoster'
 import { useActiveLlm } from './useActiveLlm'
 import { useProviders } from './useProviders'
-
-type Mode = 'tier' | 'model'
-
-const EFFORT_OPTIONS: readonly { label: string; value: ModelTier }[] = [
-  { label: 'Básico', value: 'basic' },
-  { label: 'Intermediário', value: 'intermediate' },
-  { label: 'Avançado', value: 'advanced' },
-]
-
-const TIER_LABELS: Record<ModelTier, string> = {
-  basic: 'Básico',
-  intermediate: 'Intermediário',
-  advanced: 'Avançado',
-}
-
-const MODE_OPTIONS: readonly { label: string; value: Mode }[] = [
-  { label: 'Nível', value: 'tier' },
-  { label: 'Modelo', value: 'model' },
-]
 
 const open = defineModel<boolean>('open')
 
 const activeLlm = useActiveLlm()
 const providersStore = useProviders()
 const roster = useRoster()
-const feed = useFeed()
-
-const selectedCli = ref(activeLlm.active.cli)
-const mode = ref<Mode>(activeLlm.active.model ? 'model' : 'tier')
-const selectedTier = ref<ModelTier>(activeLlm.active.modelTier ?? 'intermediate')
-const freeModel = ref(activeLlm.active.model ?? '')
 const busy = ref(false)
-const feedback = ref<string | null>(null)
-
-const currentProvider = computed(
-  () =>
-    providersStore.providers.find((p) => p.id === selectedCli.value) ??
-    roster.presets.find((p) => p.id === selectedCli.value),
-)
 
 const providerOptions = computed(() => {
   if (providersStore.providers.length > 0) {
@@ -56,8 +19,6 @@ const providerOptions = computed(() => {
   }
   return roster.presets.map((p) => ({ label: p.label, value: p.id }))
 })
-
-const modelSuggestions = computed(() => currentProvider.value?.models ?? [])
 
 const activeProviderLabel = computed(() => {
   const id = activeLlm.active.cli
@@ -68,30 +29,10 @@ const activeProviderLabel = computed(() => {
   )
 })
 
-const activeDetailLabel = computed(() => {
-  if (activeLlm.active.model) return activeLlm.active.model
-  const tier = activeLlm.active.modelTier ?? 'intermediate'
-  return TIER_LABELS[tier]
-})
-
-const activeTooltip = computed(
-  () => `Provedor ativo: ${activeProviderLabel.value} · ${activeDetailLabel.value}`,
-)
-
-const targetAgent = computed(() => {
-  if (feed.screen.kind === 'agent') {
-    return feed.screen.agent
-  }
-  return roster.agents.find((a) => !a.builtin)?.id ?? roster.agents[0]?.id ?? 'ember'
-})
-
-const emberRequiresMcpNotice = computed(
-  () => currentProvider.value !== undefined && !currentProvider.value.supportsMcp,
-)
+const activeTooltip = computed(() => `Provedor ativo: ${activeProviderLabel.value}`)
 
 watch(open, async (isOpen) => {
   if (!isOpen) return
-  feedback.value = null
   if (!activeLlm.loaded) {
     await activeLlm.load()
   } else {
@@ -100,10 +41,6 @@ watch(open, async (isOpen) => {
   if (providersStore.providers.length === 0) {
     void providersStore.load().catch(() => {})
   }
-  selectedCli.value = activeLlm.active.cli
-  mode.value = activeLlm.active.model ? 'model' : 'tier'
-  selectedTier.value = activeLlm.active.modelTier ?? 'intermediate'
-  freeModel.value = activeLlm.active.model ?? currentProvider.value?.defaultModel ?? ''
 })
 
 function onKeydown(event: KeyboardEvent): void {
@@ -123,37 +60,15 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
 })
 
-async function applyGlobal(): Promise<void> {
+async function selectProvider(cli: string | undefined): Promise<void> {
+  if (!cli || cli === activeLlm.active.cli || busy.value) return
   busy.value = true
-  feedback.value = null
   try {
     await activeLlm.saveActive({
-      cli: selectedCli.value,
-      modelTier: mode.value === 'tier' ? selectedTier.value : null,
-      model: mode.value === 'model' ? freeModel.value.trim() || null : null,
+      cli,
+      modelTier: activeLlm.active.modelTier ?? 'intermediate',
+      model: null,
     })
-    feedback.value = 'Padrão global atualizado.'
-  } catch (err) {
-    feedback.value = String(err)
-  } finally {
-    busy.value = false
-  }
-}
-
-async function applyTempAgent(): Promise<void> {
-  busy.value = true
-  feedback.value = null
-  try {
-    await activeLlm.applyOverride({
-      agent: targetAgent.value,
-      cli: selectedCli.value,
-      modelTier: mode.value === 'tier' ? selectedTier.value : null,
-      model: mode.value === 'model' ? freeModel.value.trim() || null : null,
-      reason: 'manual-temp',
-    })
-    feedback.value = `Temporário em ${agentName(targetAgent.value)}.`
-  } catch (err) {
-    feedback.value = String(err)
   } finally {
     busy.value = false
   }
@@ -170,6 +85,7 @@ function openSetup(): void {
     <UiButton
       variant="quiet"
       size="sm"
+      class="w-7 px-0"
       aria-label="Selecionar provedor ativo"
       :title="activeTooltip"
       aria-haspopup="dialog"
@@ -208,81 +124,60 @@ function openSetup(): void {
       aria-label="Selecionar provedor ativo"
       class="absolute left-0 bottom-full z-40 pb-2"
     >
-      <div class="flex w-76 flex-col gap-3 rounded-popover border border-line bg-surface p-3.5 shadow-float">
+      <div class="flex w-64 flex-col gap-2.5 rounded-popover border border-line bg-surface p-3 shadow-float">
         <div class="flex items-center justify-between gap-2">
           <div class="min-w-0">
-            <span class="block text-small text-muted">Ativo agora</span>
+            <span class="block text-small text-muted">Provedor atual</span>
             <span class="block truncate text-caption font-semibold text-ink">
-              {{ activeProviderLabel }} · {{ activeDetailLabel }}
+              {{ activeProviderLabel }}
             </span>
           </div>
           <button
             type="button"
-            class="shrink-0 cursor-pointer text-small text-accent hover:underline"
+            title="Configurar provedores"
+            aria-label="Configurar provedores"
+            class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
             @click="openSetup()"
           >
-            /setup
+            <span>Setup</span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
           </button>
         </div>
 
-        <UiSelect v-model="selectedCli" :options="providerOptions" label="Provedor Padrão" />
-
-        <UiSegmented v-model="mode" :options="MODE_OPTIONS" label="Modo de seleção" />
-
-        <UiSegmented
-          v-if="mode === 'tier'"
-          v-model="selectedTier"
-          :options="EFFORT_OPTIONS"
-          label="Nível de Esforço/Inteligência"
+        <UiSelect
+          :model-value="activeLlm.active.cli"
+          :options="providerOptions"
+          :disabled="busy"
+          label="Alterar provedor"
+          @update:model-value="selectProvider($event)"
         />
 
-        <UiCombobox
-          v-else
-          v-model="freeModel"
-          :options="modelSuggestions"
-          placeholder="Digite ou escolha um modelo"
-        />
-
-        <div class="flex items-center justify-between gap-2">
-          <UiButton variant="quiet" size="sm" :disabled="busy" @press="applyTempAgent()">
-            Só este agente
-          </UiButton>
-          <UiButton variant="primary" size="sm" :disabled="busy" @press="applyGlobal()">
-            Aplicar global
-          </UiButton>
-        </div>
-
-        <p v-if="emberRequiresMcpNotice" class="text-small text-muted">
-          Ember exige MCP e continua no Claude; agentes no padrão global usam {{ currentProvider?.label }}.
-        </p>
-
-        <p v-if="feedback" class="text-small text-muted">{{ feedback }}</p>
-
-        <div v-if="activeLlm.overrides.length > 0" class="flex flex-col gap-1.5 border-t border-line pt-2.5">
-          <div class="flex items-center justify-between">
-            <span class="text-small font-semibold text-warn-text">
-              Temporários ({{ activeLlm.overrides.length }})
-            </span>
-            <button
-              type="button"
-              class="cursor-pointer text-small text-accent hover:underline"
-              @click="activeLlm.clearAllOverrides()"
-            >
-              Restaurar todos
-            </button>
-          </div>
-          <ul class="flex flex-col gap-1 text-small text-muted">
-            <li v-for="ov in activeLlm.overrides" :key="ov.agent" class="flex items-center justify-between gap-2">
-              <span class="truncate">{{ agentName(ov.agent) }} · {{ ov.cli }}</span>
-              <button
-                type="button"
-                class="shrink-0 cursor-pointer text-ink hover:underline"
-                @click="activeLlm.clearOverride(ov.agent)"
-              >
-                Restaurar
-              </button>
-            </li>
-          </ul>
+        <div
+          v-if="activeLlm.overrides.length > 0"
+          class="flex items-center justify-between border-t border-line pt-2 text-small"
+        >
+          <span class="text-warn-text">{{ activeLlm.overrides.length }} temporário(s)</span>
+          <button
+            type="button"
+            class="cursor-pointer text-ink hover:underline"
+            @click="activeLlm.clearAllOverrides()"
+          >
+            Restaurar
+          </button>
         </div>
       </div>
     </div>

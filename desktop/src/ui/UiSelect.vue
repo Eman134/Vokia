@@ -8,11 +8,11 @@ defineProps<{
 const model = defineModel<string>()
 
 const SELECT_CLASSES =
-  'h-9 appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-control text-ink enabled:hover:border-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  'h-9 w-full min-w-0 appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-control text-ink transition-colors enabled:hover:border-faint focus:outline-2 focus:outline-solid focus:outline-accent'
 </script>
 
 <template>
-  <div class="relative inline-flex">
+  <div class="relative inline-flex min-w-0">
     <select
       :value="model ?? ''"
       :disabled="disabled"

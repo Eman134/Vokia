@@ -219,9 +219,11 @@ function onPointerLeave(): void {
       <PausedAgents />
       <UsageLimitNotice />
       <FlowSteps v-if="flow.active" />
-      <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
-      <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
-      <ActiveLlmSwitcher v-if="canAsk && !flow.active" v-model:open="llmSwitcherOpen" />
+      <div class="flex shrink-0 items-center gap-0.5 empty:hidden">
+        <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
+        <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
+        <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
+      </div>
       <ComposerField
         ref="composer"
         v-model:draft="draft"
