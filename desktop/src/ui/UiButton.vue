@@ -10,7 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ press: [] }>()
 
 const BASE_CLASSES =
-  'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control font-medium focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40'
+  'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-control font-medium focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-not-allowed disabled:opacity-40'
 const SIZE_CLASSES: Record<ButtonSize, string> = {
   sm: 'h-7 px-2.5 text-label',
   lg: 'h-9 px-3.5 text-control',

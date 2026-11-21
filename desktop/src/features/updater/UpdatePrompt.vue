@@ -6,6 +6,7 @@ export const RESTART_LABEL = 'Reiniciar'
 <script setup lang="ts">
 import { computed } from 'vue'
 import VokiaMascot from '../brand/VokiaMascot.vue'
+import MarkdownText from '../team/MarkdownText.vue'
 import { useUpdater } from './useUpdater'
 
 const DATE_LOCALE = 'pt-BR'
@@ -61,8 +62,8 @@ const installLabel = computed<string>(() => {
         </p>
         <p v-if="releaseDate" class="text-caption text-muted">Publicada em {{ releaseDate }}</p>
 
-        <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3">
-          <p v-if="updater.notes" class="whitespace-pre-wrap text-control text-ink">{{ updater.notes }}</p>
+        <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3 [&_code]:bg-surface">
+          <MarkdownText v-if="updater.notes" :text="updater.notes" />
           <p v-else class="text-control text-muted">Sem notas de versão.</p>
         </div>
       </template>

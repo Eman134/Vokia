@@ -13,3 +13,10 @@ body {
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
 }
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
