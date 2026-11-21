@@ -8,7 +8,7 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
@@ -46,9 +46,12 @@ const TAB_ON = 'border-ink text-ink'
 const TAB_OFF = 'border-transparent text-muted hover:text-ink'
 const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
 const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
-const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa. O agente recomeça sem esse histórico.'
+const CLEAR_CONVERSATION_TITLE = 'Limpar conversa?'
+const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
 const CLEAR_BUTTON_CLASSES =
   'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
+const CLEAR_POPUP_CLASSES =
+  'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-float'
 
 const feed = useFeed()
 
@@ -105,6 +108,21 @@ const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
 const confirmingClear = ref(false)
+const clearWrap = ref<HTMLElement | null>(null)
+
+function onClearKeydown(event: KeyboardEvent): void {
+  if (confirmingClear.value && event.key === 'Escape' && !event.defaultPrevented) {
+    event.preventDefault()
+    confirmingClear.value = false
+  }
+}
+
+function onClearPointerDown(event: PointerEvent): void {
+  if (!confirmingClear.value) return
+  if (event.target instanceof Node && !clearWrap.value?.contains(event.target)) {
+    confirmingClear.value = false
+  }
+}
 
 function countLabel(count: number): string {
   return count === 1 ? '1 mensagem' : `${count} mensagens`
@@ -131,7 +149,15 @@ watch(
   ],
   followEnd,
 )
-onMounted(followEnd)
+onMounted(() => {
+  followEnd()
+  window.addEventListener('keydown', onClearKeydown)
+  document.addEventListener('pointerdown', onClearPointerDown)
+})
+onUnmounted(() => {
+  window.removeEventListener('keydown', onClearKeydown)
+  document.removeEventListener('pointerdown', onClearPointerDown)
+})
 watch(
   () => feed.screen,
   () => {
@@ -185,15 +211,15 @@ watch(temTerminal, (disponivel) => {
             {{ TAB_LABELS.fila }}
           </button>
         </div>
-        <div v-if="feed.feed.length > 0" class="flex min-w-0 flex-wrap items-center gap-2">
+        <div v-if="feed.feed.length > 0" ref="clearWrap" class="relative flex items-center">
           <button
-            v-if="!confirmingClear"
             type="button"
             :class="CLEAR_BUTTON_CLASSES"
             :title="CLEAR_CONVERSATION_LABEL"
             :aria-label="CLEAR_CONVERSATION_LABEL"
+            :aria-expanded="confirmingClear"
             data-testid="confirm-open"
-            @click="confirmingClear = true"
+            @click="confirmingClear = !confirmingClear"
           >
             <svg
               class="size-4"
@@ -212,15 +238,25 @@ watch(temTerminal, (disponivel) => {
               <path d="M14 11v6" />
             </svg>
           </button>
-          <template v-else>
-            <p class="min-w-0 flex-1 text-caption text-muted">{{ CLEAR_CONVERSATION_MESSAGE }}</p>
-            <UiButton variant="quiet" size="sm" data-testid="confirm-cancel" @press="confirmingClear = false">
-              Cancelar
-            </UiButton>
-            <UiButton variant="danger" size="sm" data-testid="confirm-accept" @press="clearConversation">
-              {{ CLEAR_CONVERSATION_LABEL }}
-            </UiButton>
-          </template>
+          <div
+            v-if="confirmingClear"
+            role="dialog"
+            :aria-label="CLEAR_CONVERSATION_LABEL"
+            :class="CLEAR_POPUP_CLASSES"
+          >
+            <div class="flex flex-col gap-0.5">
+              <p class="text-caption font-semibold text-ink">{{ CLEAR_CONVERSATION_TITLE }}</p>
+              <p class="text-xs text-muted">{{ CLEAR_CONVERSATION_MESSAGE }}</p>
+            </div>
+            <div class="flex items-center justify-end gap-2">
+              <UiButton variant="quiet" size="sm" data-testid="confirm-cancel" @press="confirmingClear = false">
+                Cancelar
+              </UiButton>
+              <UiButton variant="danger" size="sm" data-testid="confirm-accept" @press="clearConversation">
+                Limpar
+              </UiButton>
+            </div>
+          </div>
         </div>
       </div>
     </header>
