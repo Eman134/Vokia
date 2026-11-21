@@ -8,6 +8,8 @@ export const THEME_SETTING_KEY = 'theme'
 export const AVATAR_PROFILES_SETTING_KEY = 'avatar_profiles'
 export const USER_NAME_SETTING_KEY = 'user_name'
 export const USER_AVATAR_SETTING_KEY = 'user_avatar'
+export const ACTIVE_LLM_SETTING_KEY = 'active_llm'
+export const LLM_FALLBACK_SETTING_KEY = 'llm_fallback'
 
 export function fetchSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>(GET_SETTINGS_COMMAND)

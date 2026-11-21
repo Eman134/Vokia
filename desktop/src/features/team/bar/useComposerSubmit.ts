@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { DEFAULT_RECIPIENT } from '../agents'
 import { mentionSpans } from '../composerMentions'
-import { expandCommand } from '../slashCommands'
+import { expandCommand, parseLocalCommand } from '../slashCommands'
 import type { Agent } from '../events'
 import { useConnection } from '../useConnection'
 import { useRequests } from '../useRequests'
@@ -12,6 +12,7 @@ import { useFeed } from '../useFeed'
 import { useRoster } from '../useRoster'
 import { useChannels } from '../../channels/useChannels'
 import { useComposerAttachments } from '../../attachments/useComposerAttachments'
+import { useProviders } from '../../providers/useProviders'
 
 // Rascunho e envio vivem no pai: o campo é desmontado offline, e a restauração após falha precisa sobreviver a isso.
 export function useComposerSubmit() {
@@ -22,6 +23,7 @@ export function useComposerSubmit() {
   const navigation = useNavigation()
   const channels = useChannels()
   const roster = useRoster()
+  const providers = useProviders()
   const draft = ref('')
   const confirmed = ref(new Set<Agent>())
   const composerAttachments = useComposerAttachments()
@@ -29,6 +31,13 @@ export function useComposerSubmit() {
   async function submit(): Promise<void> {
     const text = draft.value.trim()
     if ((text === '' && composerAttachments.attachments.value.length === 0) || connection.checking || composerAttachments.saving.value) {
+      return
+    }
+    const localCommand = parseLocalCommand(text)
+    if (localCommand?.action === 'setup') {
+      draft.value = ''
+      confirmed.value = new Set()
+      providers.openSetup(localCommand.arg)
       return
     }
     const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null

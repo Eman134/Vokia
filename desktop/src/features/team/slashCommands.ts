@@ -1,10 +1,11 @@
 import { findTrigger, type TriggerMatch } from './composerMentions'
 
 export interface SlashCommand {
-  id: 'plano' | 'revisar' | 'pausar' | 'lembrar'
+  id: 'plano' | 'revisar' | 'pausar' | 'lembrar' | 'setup'
   description: string
   enabled: boolean
   prompt?: string
+  action?: 'setup'
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
@@ -22,6 +23,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   { id: 'pausar', description: 'pausar um agente ou o time', enabled: false },
   { id: 'lembrar', description: 'salvar um fato na memória', enabled: false },
+  { id: 'setup', description: 'configurar ou adicionar um provedor de LLM', enabled: true, action: 'setup' },
 ]
 
 export const COMMAND_TRIGGER = '/'
@@ -31,6 +33,14 @@ const COMMAND_PATTERN = /^\/(\S+)(?:\s+([\s\S]*))?$/
 export function findCommandTrigger(text: string, caret: number): TriggerMatch | null {
   const match = findTrigger(text, caret, COMMAND_TRIGGER)
   return match?.start === 0 ? match : null
+}
+
+export function parseLocalCommand(text: string): { action: 'setup'; arg: string } | null {
+  const match = COMMAND_PATTERN.exec(text.trim())
+  if (match === null || match[1] !== 'setup') {
+    return null
+  }
+  return { action: 'setup', arg: (match[2] ?? '').trim() }
 }
 
 export function expandCommand(text: string): { text: string } | null {

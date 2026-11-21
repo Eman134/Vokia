@@ -27,6 +27,7 @@ import OfflineNotice from './bar/OfflineNotice.vue'
 import PageActionsButton from './bar/PageActionsButton.vue'
 import QueueButton from './bar/QueueButton.vue'
 import StatusRing from './bar/StatusRing.vue'
+import ActiveLlmSwitcher from '../providers/ActiveLlmSwitcher.vue'
 import { useComposerSubmit } from './bar/useComposerSubmit'
 import { usePageActions } from './bar/usePageActions'
 import { listenFileDrops } from '../attachments/attachmentsApi'
@@ -59,11 +60,19 @@ const focusWithin = ref(false)
 const actionMenuOpen = ref(false)
 const queueOpen = ref(false)
 const menuOpen = ref(false)
+const llmSwitcherOpen = ref(false)
 const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
 const hasDraft = computed(() => draft.value !== '' || attachments.attachments.value.length > 0)
 const interacting = computed(
-  () => hasDraft.value || hovered.value || focusWithin.value || menuOpen.value || actionMenuOpen.value || queueOpen.value,
+  () =>
+    hasDraft.value ||
+    hovered.value ||
+    focusWithin.value ||
+    menuOpen.value ||
+    actionMenuOpen.value ||
+    queueOpen.value ||
+    llmSwitcherOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() => !flow.active && expanded.value && feed.permissions.length > 0)
@@ -112,18 +121,28 @@ watch(menuOpen, (open) => {
   if (open) {
     actionMenuOpen.value = false
     queueOpen.value = false
+    llmSwitcherOpen.value = false
   }
 })
 
 watch(actionMenuOpen, (open) => {
   if (open) {
     queueOpen.value = false
+    llmSwitcherOpen.value = false
   }
 })
 
 watch(queueOpen, (open) => {
   if (open) {
     actionMenuOpen.value = false
+    llmSwitcherOpen.value = false
+  }
+})
+
+watch(llmSwitcherOpen, (open) => {
+  if (open) {
+    actionMenuOpen.value = false
+    queueOpen.value = false
   }
 })
 
@@ -214,6 +233,7 @@ function onPointerLeave(): void {
         @menu-open="menuOpen = $event"
       />
       <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
+      <ActiveLlmSwitcher v-if="canAsk && !flow.active" v-model:open="llmSwitcherOpen" />
       <DecisionsButton :expanded="expanded" />
       <QueueButton v-model:open="queueOpen" />
       <ActionMenu

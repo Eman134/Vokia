@@ -2,10 +2,12 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { BalloonItem } from '../balloon/balloonTypes'
 import { useBalloons } from '../balloon/useBalloons'
-import type { VokiaUsageLimit } from '../team/events'
+import type { VokiaModelUnavailable, VokiaUsageLimit } from '../team/events'
 import { availableProviders, resumeInterruptedRun, type AgentProfile, type CliPreset } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
 import { useRoster } from '../team/useRoster'
+import { useActiveLlm } from '../providers/useActiveLlm'
+import { useProviders } from '../providers/useProviders'
 import { useUsage } from './useUsage'
 import { MS_PER_SECOND, resetCountdownLabel } from './usagePlans'
 
@@ -48,20 +50,25 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     profile: AgentProfile,
     target: CliPreset,
     runId: number | null,
+    resetsAt: number,
   ): Promise<string | void> {
     try {
-      await roster.update(profile.id, {
-        name: profile.name,
-        role: profile.role,
-        avatar: profile.avatar,
+      const resolvedModel =
+        (profile.modelTier ? target.tiers[profile.modelTier] : '') || target.defaultModel
+      const expiresInMs =
+        resetsAt > 0 ? Math.max(60_000, resetsAt * MS_PER_SECOND - Date.now()) : null
+      await useActiveLlm().applyOverride({
+        agent: profile.id,
         cli: target.id,
-        model: target.defaultModel,
-        command: target.defaultCommand,
+        modelTier: profile.modelTier ?? null,
+        model: resolvedModel,
+        reason: 'usage-limit',
+        expiresInMs,
       })
       if (runId !== null) {
         await resume(runId)
       }
-      return `Migrado para ${target.label}`
+      return `Continuando temporariamente com ${target.label}`
     } catch (error) {
       feed.feed.push({ type: 'error', message: String(error) })
     }
@@ -115,12 +122,58 @@ export const useUsageLimit = defineStore('usageLimit', () => {
       actions: [
         {
           id: 'migrate',
-          label: `Migrar para ${target.label} e continuar`,
+          label: `Continuar temporariamente com ${target.label}`,
           primary: true,
-          run: () => migrateAndContinue(profile, target, event.runId),
+          run: () => migrateAndContinue(profile, target, event.runId, event.resetsAt),
         },
         { id: 'wait', label: 'Esperar' },
       ],
+    })
+  }
+
+  function suggestModelUnavailable(event: VokiaModelUnavailable): void {
+    const profile = roster.profileOf(event.agent)
+    const preset = roster.presets.find((item) => item.id === event.provider)
+    const fallbackModel =
+      preset?.models.find((m) => m !== event.model) ??
+      preset?.tiers.intermediate ??
+      preset?.defaultModel ??
+      null
+
+    const actions: BalloonItem['actions'] = []
+    if (profile && preset && fallbackModel && fallbackModel !== event.model) {
+      actions.push({
+        id: 'use-available-model',
+        label: 'Usar modelo disponível temporariamente',
+        primary: true,
+        run: async () => {
+          await useActiveLlm().applyOverride({
+            agent: profile.id,
+            cli: preset.id,
+            modelTier: null,
+            model: fallbackModel,
+            reason: 'model-unavailable',
+          })
+          return `Usando temporariamente ${fallbackModel}`
+        },
+      })
+    }
+    actions.push({
+      id: 'open-setup',
+      label: 'Abrir Setup',
+      run: () => {
+        useProviders().openSetup(event.provider)
+      },
+    })
+
+    enqueueOrReplace({
+      id: `model-unavailable:${event.agent}`,
+      kind: 'limit',
+      source: 'uso do plano',
+      title: 'Modelo sem acesso',
+      text: `${event.provider} recusou o modelo "${event.model}" (${event.detail}).`,
+      mascot: 'pausado',
+      actions,
     })
   }
 
@@ -159,5 +212,5 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     }
   }
 
-  return { notice, visible, resumable, apply, suggestFromLimitMessage, resume }
+  return { notice, visible, resumable, apply, suggestFromLimitMessage, suggestModelUnavailable, resume }
 })

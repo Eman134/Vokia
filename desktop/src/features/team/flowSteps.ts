@@ -1,7 +1,7 @@
 export type FlowId = 'onboarding' | 'novo-projeto'
 
 export const FLOW_STEPS: Record<FlowId, readonly string[]> = {
-  onboarding: ['Boas-vindas', 'Nome', 'Foto', 'Pronto'],
+  onboarding: ['Boas-vindas', 'Nome', 'Foto', 'Provedores', 'Pronto'],
   'novo-projeto': ['Origem', 'Time', 'Pedido'],
 }
 
