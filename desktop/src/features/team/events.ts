@@ -224,6 +224,11 @@ export interface VokiaBacklogChanged {
   projectId: number
 }
 
+export interface VokiaArtifactsChanged {
+  type: 'artifacts-changed'
+  projectId: number
+}
+
 export interface VokiaOrchestrationChanged {
   type: 'orchestration-changed'
 }
@@ -297,6 +302,7 @@ export type VokiaEvent =
   | VokiaTaskResult
   | VokiaGoalState
   | VokiaBacklogChanged
+  | VokiaArtifactsChanged
   | VokiaOrchestrationChanged
   | VokiaAgentNamed
   | VokiaBatchProgress

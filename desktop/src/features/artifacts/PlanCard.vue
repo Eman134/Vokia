@@ -5,12 +5,8 @@ import UiProgress from '../../ui/UiProgress.vue'
 import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
 import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
 import type { ParsedProposal } from '../backlog/planProposal'
+import { CARD_CLASSES, SUMMARY_LINES_CLASSES, WRAP_CLASSES } from './artifactCardClasses'
 import { planProgress } from './planProgress'
-
-const CARD_CLASSES =
-  'flex min-w-0 flex-col gap-3 rounded-dialog border border-line bg-surface p-4 text-left transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-accent'
-const WRAP_CLASSES = 'wrap-break-word'
-const SUMMARY_LINES_CLASSES = 'line-clamp-3'
 
 const props = defineProps<{
   item: BacklogItem

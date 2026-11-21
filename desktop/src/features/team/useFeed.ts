@@ -26,6 +26,7 @@ import { projectAgentKey } from './projectAgentKey'
 import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
 import { useBacklog } from '../backlog/useBacklog'
+import { useArtifacts } from '../artifacts/useArtifacts'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useAgentActivity } from '../teammap/useAgentActivity'
 import { useUsageLimit } from '../usage/useUsageLimit'
@@ -176,6 +177,9 @@ export const useFeed = defineStore('feed', () => {
       case 'backlog-changed':
         void useBacklog().reloadAfterAgentChange(event.projectId)
         void useAgentActivity().load()
+        break
+      case 'artifacts-changed':
+        void useArtifacts().reloadIfCurrent(event.projectId)
         break
       case 'agent-named':
         roster.nameInstance(event.agent, event.name)

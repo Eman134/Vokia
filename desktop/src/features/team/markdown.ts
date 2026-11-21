@@ -11,13 +11,22 @@ const HTML_ESCAPES: Record<string, string> = {
   "'": '&#39;',
 }
 
-const FENCE_OPEN = /^```\s*([\w+#.-]*)\s*$/
-const FENCE_CLOSE = /^```\s*$/
+interface FenceRules {
+  open: RegExp
+  close: RegExp
+}
+
+// No chat a cerca é estrita, para que "```npm run build```" numa linha continue sendo código inline.
+const CHAT_FENCES: FenceRules = { open: /^```\s*([\w+#.-]*)\s*$/, close: /^```\s*$/ }
+// Com taskList vale a regra de toggle_check e de artifactChecks.ts: toda linha que começa com ``` (após espaços) abre ou fecha cerca.
+const TASK_FENCES: FenceRules = { open: /^\s*```\s*([\w+#.-]*).*$/, close: /^\s*```/ }
 const HEADING = /^(#{1,3})\s+(.+?)\s*#*\s*$/
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/
 const QUOTE = /^\s{0,3}>\s?(.*)$/
 const UL_ITEM = /^\s*[-*+]\s+(.*)$/
 const OL_ITEM = /^\s*\d+[.)]\s+(.*)$/
+// Mesma regra de set_artifact_check no backend: só "- [ ]" e "- [x]", com o índice contado na ordem do texto fora de blocos de código.
+const TASK_ITEM = /^\s*- \[( |x|X)\](.*)$/
 const CODE_SPAN = /`([^`]+)`/g
 const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g
 const BOLD = /\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__/g
@@ -47,9 +56,22 @@ function highlightMentions(html: string, agents: readonly MentionAgent[]): strin
   return out + html.slice(cursor)
 }
 
-function startsBlock(line: string): boolean {
+export interface MarkdownOptions {
+  taskList?: boolean
+}
+
+interface TaskCounter {
+  next: number
+}
+
+function taskListItem(match: RegExpExecArray, index: number, mentions: readonly MentionAgent[]): string {
+  const checked = match[1] === ' ' ? '' : ' checked'
+  return `<li class="list-none"><label class="inline-flex cursor-pointer items-start gap-2"><input type="checkbox" class="mt-1 cursor-pointer" data-check-index="${index}"${checked}><span>${formatInline(match[2].trim(), mentions)}</span></label></li>`
+}
+
+function startsBlock(line: string, fences: FenceRules): boolean {
   return (
-    FENCE_OPEN.test(line) ||
+    fences.open.test(line) ||
     HEADING.test(line) ||
     RULE.test(line) ||
     QUOTE.test(line) ||
@@ -79,18 +101,19 @@ function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
   return text.replace(PLACEHOLDER, (_, index: string) => stash[Number(index)])
 }
 
-function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[]): string {
+function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[], tasks: TaskCounter | null = null): string {
   const html: string[] = []
+  const fences = tasks === null ? CHAT_FENCES : TASK_FENCES
   let i = 0
 
   while (i < lines.length) {
     const line = lines[i]
 
-    const fence = FENCE_OPEN.exec(line)
+    const fence = fences.open.exec(line)
     if (fence) {
       const code: string[] = []
       i++
-      while (i < lines.length && !FENCE_CLOSE.test(lines[i])) {
+      while (i < lines.length && !fences.close.test(lines[i])) {
         code.push(lines[i])
         i++
       }
@@ -134,7 +157,12 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
       const tag = listPattern === UL_ITEM ? 'ul' : 'ol'
       const items: string[] = []
       while (i < lines.length && listPattern.test(lines[i])) {
-        items.push(`<li>${formatInline(listPattern.exec(lines[i])![1], mentions)}</li>`)
+        const task = tasks !== null && listPattern === UL_ITEM ? TASK_ITEM.exec(lines[i]) : null
+        items.push(
+          task && tasks
+            ? taskListItem(task, tasks.next++, mentions)
+            : `<li>${formatInline(listPattern.exec(lines[i])![1], mentions)}</li>`,
+        )
         i++
       }
       html.push(`<${tag}>${items.join('')}</${tag}>`)
@@ -142,7 +170,7 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
     }
 
     const paragraph: string[] = []
-    while (i < lines.length && lines[i].trim() !== '' && !startsBlock(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== '' && !startsBlock(lines[i], fences)) {
       paragraph.push(formatInline(lines[i], mentions))
       i++
     }
@@ -153,6 +181,12 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
 }
 
 /** Converte o texto de uma mensagem em HTML seguro. `agents` são os agentes reais, destacados com o ícone quando citados. */
-export function renderMarkdown(source: string, agents: readonly MentionAgent[] = []): string {
-  return renderBlocks(source.replace(/\r\n?/g, '\n').split('\n'), agents)
+export function renderMarkdown(
+  source: string,
+  agents: readonly MentionAgent[] = [],
+  options: MarkdownOptions = {},
+): string {
+  // Com taskList, "- [ ]" vira checkbox numerado (data-check-index); citações não entram na contagem.
+  const tasks = options.taskList ? { next: 0 } : null
+  return renderBlocks(source.replace(/\r\n?/g, '\n').split('\n'), agents, tasks)
 }
