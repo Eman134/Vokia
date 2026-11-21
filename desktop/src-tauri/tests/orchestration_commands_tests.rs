@@ -294,14 +294,20 @@ fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
     world
         .app
         .state::<AgentRegistry>()
-        .create(&crate::agents::AgentDraft {
-            name: "Lia".to_string(),
-            role: "Backend Developer".to_string(),
-            avatar: "onix".to_string(),
-            cli: "claude".to_string(),
-            model: "sonnet".to_string(),
-            command: "claude".to_string(),
-        })
+        .create(
+            &crate::agents::AgentDraft {
+                name: "Lia".to_string(),
+                role: "Backend Developer".to_string(),
+                avatar: "onix".to_string(),
+                cli: "claude".to_string(),
+                model: "sonnet".to_string(),
+                model_tier: None,
+                command: "claude".to_string(),
+                follow_default_llm: false,
+                fallback: Vec::new(),
+            },
+            &crate::providers::ProviderRegistry::seeded(),
+        )
         .unwrap();
 
     let snapshot = world.get().unwrap();

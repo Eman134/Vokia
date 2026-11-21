@@ -184,6 +184,7 @@ pub fn build_app(data_dir: &std::path::Path) -> tauri::App {
         .build(context)
         .expect("o app de teste deveria abrir");
     app.manage(crate::db::DbState::open(data_dir));
+    app.manage(crate::providers::ProviderRegistry::load(data_dir));
     app.manage(crate::agents::AgentRegistry::load(data_dir));
     app.manage(crate::state::AppState::new(Ok(std::path::PathBuf::from("claude"))));
     app

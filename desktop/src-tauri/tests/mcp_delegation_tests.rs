@@ -413,6 +413,7 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
     let card = world.create(&axiom, "Login");
 
     let registry = world.app.state::<AgentRegistry>();
+    let providers = crate::providers::ProviderRegistry::seeded();
 
     for (cli, model, cmd) in [
         ("codex", "gpt-6-luna", "codex"),
@@ -425,9 +426,14 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
             avatar: "lume".to_string(),
             cli: cli.to_string(),
             model: model.to_string(),
+            model_tier: None,
             command: cmd.to_string(),
+            follow_default_llm: false,
+            fallback: Vec::new(),
         };
-        registry.update(&agent("vexa"), &draft).expect("update vexa");
+        registry
+            .update(&agent("vexa"), &draft, &providers)
+            .expect("update vexa");
 
         // 1. Com item_id (delegação de card) -> DEVE RECUSAR CONFORME D2
         axiom.slot.begin(None, None);

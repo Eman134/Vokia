@@ -990,7 +990,7 @@ fn get_orchestration(app: &AppHandle) -> ToolText {
 fn list_agents(app: &AppHandle) -> ToolText {
     let listing = app
         .state::<AgentRegistry>()
-        .listing()
+        .listing(&app.state::<crate::providers::ProviderRegistry>())
         .map_err(|_| SYSTEM_FAILURE.to_string())?;
     to_json(&listing)
 }

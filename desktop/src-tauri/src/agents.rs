@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::claude::DEFAULT_MODEL;
 use crate::db::DbError;
+use crate::orchestrator::fallback::LlmTarget;
+use crate::providers::{ModelTier, ModelTiers, ProviderConfig, ProviderRegistry};
 
 const NAME_MIN_CHARS: usize = 2;
 const NAME_MAX_CHARS: usize = 20;
@@ -21,83 +23,8 @@ const AGENTS_FILE_TMP: &str = "agents.json.tmp";
 const FILE_VERSION: u32 = 1;
 const AVATAR_MAX_CHARS: usize = 32;
 const INSTRUCTIONS_MAX_CHARS: usize = 4000;
+const MODEL_MAX_CHARS: usize = 120;
 const CLAUDE_CLI: &str = "claude";
-const CLAUDE_CLI_LABEL: &str = "Claude Code";
-const CLAUDE_MODELS: [&str; 3] = ["haiku", "sonnet", "opus"];
-const CODEX_CLI: &str = "codex";
-const CODEX_CLI_LABEL: &str = "Codex";
-const CODEX_DEFAULT_MODEL: &str = "gpt-6-luna";
-const CODEX_MODELS: [&str; 3] = ["gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"];
-const CODEX_RESERVED_FLAGS: [&str; 12] = [
-    "--json",
-    "-m",
-    "--model",
-    "-s",
-    "--sandbox",
-    "-C",
-    "--cd",
-    "--add-dir",
-    "--dangerously-bypass-approvals-and-sandbox",
-    "-c",
-    "--config",
-    "--approve-for-me",
-];
-const OPENCODE_CLI: &str = "opencode";
-const OPENCODE_CLI_LABEL: &str = "OpenCode";
-const OPENCODE_DEFAULT_MODEL: &str = "openai/gpt-6-astra";
-const OPENCODE_MODELS: [&str; 3] = [
-    "openai/gpt-6-astra",
-    "openai/gpt-5.6-luna",
-    "openai/gpt-5.4-mini",
-];
-const OPENCODE_RESERVED_FLAGS: [&str; 9] = [
-    "--format",
-    "-m",
-    "--model",
-    "--dir",
-    "--auto",
-    "-s",
-    "--session",
-    "-c",
-    "--continue",
-];
-const ANTIGRAVITY_CLI: &str = "antigravity";
-const ANTIGRAVITY_CLI_LABEL: &str = "Antigravity";
-const ANTIGRAVITY_DEFAULT_COMMAND: &str = "agy";
-const ANTIGRAVITY_DEFAULT_MODEL: &str = "gemini-4-hydrogen-medium";
-const ANTIGRAVITY_MODELS: [&str; 4] = [
-    "gemini-4-hydrogen-medium",
-    "gemini-4-neon-medium",
-    "gemini-4-argon-medium",
-    "gemini-3.8-flash-medium",
-];
-const ANTIGRAVITY_RESERVED_FLAGS: [&str; 13] = [
-    "-p",
-    "--print",
-    "--prompt",
-    "--output-format",
-    "--input-format",
-    "--model",
-    "--sandbox",
-    "--mode",
-    "--dangerously-skip-permissions",
-    "--add-dir",
-    "--conversation",
-    "-c",
-    "--continue",
-];
-const CLAUDE_RESERVED_FLAGS: [&str; 10] = [
-    "-p",
-    "--output-format",
-    "--input-format",
-    "--model",
-    "--tools",
-    "--allowedTools",
-    "--mcp-config",
-    "--permission-mode",
-    "--append-system-prompt",
-    "--resume",
-];
 const EMBER: &str = "ember";
 const AXIOM: &str = "axiom";
 const VEXA: &str = "vexa";
@@ -188,6 +115,12 @@ pub struct AgentProfile {
     pub cli: String,
     pub model: String,
     #[serde(default)]
+    pub model_tier: Option<ModelTier>,
+    #[serde(default)]
+    pub follow_default_llm: bool,
+    #[serde(default)]
+    pub fallback: Vec<LlmTarget>,
+    #[serde(default)]
     pub command: String,
     #[serde(default)]
     pub builtin: bool,
@@ -204,50 +137,45 @@ pub struct AgentDraft {
     pub avatar: String,
     pub cli: String,
     pub model: String,
+    #[serde(default)]
+    pub model_tier: Option<ModelTier>,
+    #[serde(default)]
+    pub follow_default_llm: bool,
+    #[serde(default)]
+    pub fallback: Vec<LlmTarget>,
     pub command: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmberOverride {
+    #[serde(default)]
+    pub cli: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub model_tier: Option<ModelTier>,
+    #[serde(default)]
+    pub fallback: Vec<LlmTarget>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CliPreset {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub models: &'static [&'static str],
-    pub default_model: &'static str,
-    pub default_command: &'static str,
+    pub id: String,
+    pub label: String,
+    pub models: Vec<String>,
+    pub default_model: String,
+    pub default_command: String,
+    pub tiers: ModelTiers,
+    pub supports_mcp: bool,
+    pub supports_sandbox: bool,
+    pub builtin_seed: bool,
 }
 
+#[allow(dead_code)]
 pub fn presets() -> Vec<CliPreset> {
-    vec![
-        CliPreset {
-            id: CLAUDE_CLI,
-            label: CLAUDE_CLI_LABEL,
-            models: &CLAUDE_MODELS,
-            default_model: DEFAULT_MODEL,
-            default_command: CLAUDE_CLI,
-        },
-        CliPreset {
-            id: CODEX_CLI,
-            label: CODEX_CLI_LABEL,
-            models: &CODEX_MODELS,
-            default_model: CODEX_DEFAULT_MODEL,
-            default_command: CODEX_CLI,
-        },
-        CliPreset {
-            id: OPENCODE_CLI,
-            label: OPENCODE_CLI_LABEL,
-            models: &OPENCODE_MODELS,
-            default_model: OPENCODE_DEFAULT_MODEL,
-            default_command: OPENCODE_CLI,
-        },
-        CliPreset {
-            id: ANTIGRAVITY_CLI,
-            label: ANTIGRAVITY_CLI_LABEL,
-            models: &ANTIGRAVITY_MODELS,
-            default_model: ANTIGRAVITY_DEFAULT_MODEL,
-            default_command: ANTIGRAVITY_DEFAULT_COMMAND,
-        },
-    ]
+    crate::providers::initial_presets()
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -267,7 +195,7 @@ pub enum AgentError {
     InvalidAvatar(String),
     AvatarInUse(String),
     UnknownCli(String),
-    UnknownModel { cli: String, model: String },
+    InvalidModel(String),
     InvalidCommand,
     ReservedCommandFlag(String),
     UnknownAgent(String),
@@ -307,9 +235,7 @@ impl Display for AgentError {
             AgentError::InvalidAvatar(id) => write!(f, "Avatar inválido: {id}."),
             AgentError::AvatarInUse(name) => write!(f, "Esse avatar já é usado por {name}."),
             AgentError::UnknownCli(cli) => write!(f, "CLI desconhecida: {cli}."),
-            AgentError::UnknownModel { cli, model } => {
-                write!(f, "O modelo {model} não existe para {cli}.")
-            }
+            AgentError::InvalidModel(model) => write!(f, "Modelo inválido: {model}."),
             AgentError::InvalidCommand => write!(
                 f,
                 "Comando inválido: informe um comando válido e com aspas fechadas."
@@ -345,6 +271,9 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         avatar: avatar.to_string(),
         cli: CLAUDE_CLI.to_string(),
         model: DEFAULT_MODEL.to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: Vec::new(),
         command: CLAUDE_CLI.to_string(),
         builtin: true,
         extra_instructions: String::new(),
@@ -365,6 +294,9 @@ fn initial_agents() -> Vec<AgentProfile> {
             avatar: avatar.to_string(),
             cli: CLAUDE_CLI.to_string(),
             model: DEFAULT_MODEL.to_string(),
+            model_tier: None,
+            follow_default_llm: false,
+            fallback: Vec::new(),
             command: CLAUDE_CLI.to_string(),
             builtin: false,
             extra_instructions: String::new(),
@@ -433,14 +365,14 @@ pub fn name_key(name: &str) -> String {
         .collect()
 }
 
-fn default_command_for(cli: &str) -> &'static str {
-    presets()
+fn default_command_for(cli: &str) -> String {
+    crate::providers::initial_presets()
         .into_iter()
         .find(|preset| preset.id == cli)
-        .map_or(CLAUDE_CLI, |preset| preset.default_command)
+        .map_or_else(|| CLAUDE_CLI.to_string(), |preset| preset.default_command)
 }
 
-fn validate_command(cli: &str, command: &str) -> Result<(), AgentError> {
+fn validate_command(reserved: &[String], command: &str) -> Result<(), AgentError> {
     let trimmed = command.trim();
     if trimmed.is_empty() {
         return Err(AgentError::InvalidCommand);
@@ -451,16 +383,9 @@ fn validate_command(cli: &str, command: &str) -> Result<(), AgentError> {
     if parts.is_empty() {
         return Err(AgentError::InvalidCommand);
     }
-    let reserved: &[&str] = match cli {
-        CLAUDE_CLI => &CLAUDE_RESERVED_FLAGS,
-        CODEX_CLI => &CODEX_RESERVED_FLAGS,
-        OPENCODE_CLI => &OPENCODE_RESERVED_FLAGS,
-        ANTIGRAVITY_CLI => &ANTIGRAVITY_RESERVED_FLAGS,
-        _ => &[],
-    };
     for arg in parts {
         let flag_name = arg.split_once('=').map_or(arg.as_str(), |(name, _)| name);
-        if reserved.contains(&flag_name) {
+        if reserved.iter().any(|flag| flag == flag_name) {
             return Err(AgentError::ReservedCommandFlag(flag_name.to_string()));
         }
     }
@@ -471,6 +396,7 @@ fn validate(
     draft: &AgentDraft,
     team: &[AgentProfile],
     editing: Option<&Agent>,
+    provider: Option<&ProviderConfig>,
 ) -> Result<AgentProfile, AgentError> {
     if editing.is_none() && team.len() >= MAX_AGENTS {
         return Err(AgentError::LimitReached);
@@ -519,17 +445,18 @@ fn validate(
         return Err(AgentError::AvatarInUse(profile.name.clone()));
     }
 
-    let preset = presets()
-        .into_iter()
-        .find(|preset| preset.id == draft.cli)
-        .ok_or_else(|| AgentError::UnknownCli(draft.cli.clone()))?;
-    if !preset.models.contains(&draft.model.as_str()) {
-        return Err(AgentError::UnknownModel {
-            cli: draft.cli.clone(),
-            model: draft.model.clone(),
-        });
+    let resolved_model = match (draft.model.trim(), draft.model_tier, provider) {
+        ("", Some(tier), Some(provider)) => provider.tiers.get(tier).to_string(),
+        (other, _, _) => other.to_string(),
+    };
+    let model_chars = resolved_model.chars().count();
+    let model_is_valid = (1..=MODEL_MAX_CHARS).contains(&model_chars)
+        && !resolved_model.contains(['\n', '\r']);
+    if !model_is_valid {
+        return Err(AgentError::InvalidModel(resolved_model));
     }
-    validate_command(&draft.cli, &draft.command)?;
+    let reserved = provider.map_or(&[][..], |item| item.reserved_flags.as_slice());
+    validate_command(reserved, &draft.command)?;
 
     Ok(AgentProfile {
         id: editing.cloned().unwrap_or(Agent(key)),
@@ -537,16 +464,34 @@ fn validate(
         role: role.to_string(),
         avatar: avatar.to_string(),
         cli: draft.cli.clone(),
-        model: draft.model.clone(),
+        model: resolved_model,
+        model_tier: draft.model_tier,
+        follow_default_llm: draft.follow_default_llm,
+        fallback: draft.fallback.clone(),
         command: draft.command.trim().to_string(),
         builtin: false,
         extra_instructions: String::new(),
     })
 }
 
-fn team_of(stored: &[AgentProfile]) -> Vec<AgentProfile> {
+fn team_of(stored: &[AgentProfile], ember_override: Option<&EmberOverride>) -> Vec<AgentProfile> {
     builtins()
         .into_iter()
+        .map(|mut profile| {
+            if profile.id == Agent::ember() {
+                if let Some(override_cfg) = ember_override {
+                    if let Some(cli) = &override_cfg.cli {
+                        profile.cli = cli.clone();
+                    }
+                    if let Some(model) = &override_cfg.model {
+                        profile.model = model.clone();
+                    }
+                    profile.model_tier = override_cfg.model_tier;
+                    profile.fallback = override_cfg.fallback.clone();
+                }
+            }
+            profile
+        })
         .chain(stored.iter().cloned())
         .collect()
 }
@@ -627,6 +572,8 @@ struct AgentsFile {
     instructions: BTreeMap<String, String>,
     #[serde(default)]
     roster_migrated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ember_override: Option<EmberOverride>,
 }
 
 // Agentes gravados e instruções extras por id (inclusive dos embutidos, que não ficam em `agents`).
@@ -634,6 +581,7 @@ struct AgentsFile {
 struct Stored {
     agents: Vec<AgentProfile>,
     instructions: BTreeMap<String, String>,
+    ember_override: Option<EmberOverride>,
 }
 
 pub struct AgentRegistry {
@@ -654,7 +602,7 @@ impl AgentRegistry {
     pub fn team(&self) -> Result<Team, AgentError> {
         match &*self.lock() {
             Ok(stored) => Ok(Team(
-                team_of(&stored.agents)
+                team_of(&stored.agents, stored.ember_override.as_ref())
                     .into_iter()
                     .map(|profile| with_instructions(profile, &stored.instructions))
                     .collect(),
@@ -663,29 +611,58 @@ impl AgentRegistry {
         }
     }
 
-    pub fn listing(&self) -> Result<TeamListing, AgentError> {
+    pub fn listing(&self, providers: &ProviderRegistry) -> Result<TeamListing, AgentError> {
         let team = self.team()?;
+        let presets = providers
+            .presets()
+            .map_err(|error| AgentError::LoadFailed(error.to_string()))?;
         Ok(TeamListing {
             agents: team.profiles().to_vec(),
-            presets: presets(),
+            presets,
         })
     }
 
-    pub fn create(&self, draft: &AgentDraft) -> Result<AgentProfile, AgentError> {
+    pub fn create(
+        &self,
+        draft: &AgentDraft,
+        providers: &ProviderRegistry,
+    ) -> Result<AgentProfile, AgentError> {
+        let provider = providers
+            .get(&draft.cli)
+            .map_err(|_| AgentError::UnknownCli(draft.cli.clone()))?;
         let mut state = self.lock();
         let stored = stored_mut(&mut state)?;
-        let profile = validate(draft, &team_of(&stored.agents), None)?;
+        let profile = validate(
+            draft,
+            &team_of(&stored.agents, stored.ember_override.as_ref()),
+            None,
+            Some(&provider),
+        )?;
         let mut next = stored.agents.clone();
         next.push(profile.clone());
-        write_file(&self.file, &next, &stored.instructions).map_err(AgentError::SaveFailed)?;
+        write_file(
+            &self.file,
+            &next,
+            &stored.instructions,
+            stored.ember_override.as_ref(),
+        )
+        .map_err(AgentError::SaveFailed)?;
         stored.agents = next;
         Ok(profile)
     }
 
-    pub fn update(&self, id: &Agent, draft: &AgentDraft) -> Result<AgentProfile, AgentError> {
+    pub fn update(
+        &self,
+        id: &Agent,
+        draft: &AgentDraft,
+        providers: &ProviderRegistry,
+    ) -> Result<AgentProfile, AgentError> {
         if let Some(builtin) = builtins().into_iter().find(|profile| &profile.id == id) {
             return Err(AgentError::BuiltinLocked(builtin.name));
         }
+        let provider = providers
+            .get(&draft.cli)
+            .map_err(|_| AgentError::UnknownCli(draft.cli.clone()))?;
         let mut state = self.lock();
         let stored = stored_mut(&mut state)?;
         let index = stored
@@ -693,12 +670,72 @@ impl AgentRegistry {
             .iter()
             .position(|profile| &profile.id == id)
             .ok_or_else(|| AgentError::UnknownAgent(id.to_string()))?;
-        let profile = validate(draft, &team_of(&stored.agents), Some(id))?;
+        let profile = validate(
+            draft,
+            &team_of(&stored.agents, stored.ember_override.as_ref()),
+            Some(id),
+            Some(&provider),
+        )?;
         let mut next = stored.agents.clone();
         next[index] = profile.clone();
-        write_file(&self.file, &next, &stored.instructions).map_err(AgentError::SaveFailed)?;
+        write_file(
+            &self.file,
+            &next,
+            &stored.instructions,
+            stored.ember_override.as_ref(),
+        )
+        .map_err(AgentError::SaveFailed)?;
         stored.agents = next;
         Ok(with_instructions(profile, &stored.instructions))
+    }
+
+    pub fn update_ember_llm(
+        &self,
+        cli: Option<String>,
+        model_tier: Option<ModelTier>,
+        model: Option<String>,
+        fallback: Vec<LlmTarget>,
+        providers: &ProviderRegistry,
+    ) -> Result<AgentProfile, AgentError> {
+        let cli_id = cli.unwrap_or_else(|| CLAUDE_CLI.to_string());
+        let provider = providers
+            .get(&cli_id)
+            .map_err(|_| AgentError::UnknownCli(cli_id.clone()))?;
+        if !provider.supports_mcp {
+            return Err(AgentError::SaveFailed(
+                "O agente Ember exige um provedor com suporte a MCP.".to_string(),
+            ));
+        }
+        let resolved_model = crate::orchestrator::fallback::resolve_model_for_provider(
+            &provider,
+            model_tier,
+            model.as_deref().unwrap_or(""),
+        );
+        let model_chars = resolved_model.chars().count();
+        if !(1..=MODEL_MAX_CHARS).contains(&model_chars) || resolved_model.contains(['\n', '\r']) {
+            return Err(AgentError::InvalidModel(resolved_model));
+        }
+        let override_cfg = EmberOverride {
+            cli: Some(cli_id),
+            model: Some(resolved_model),
+            model_tier,
+            fallback,
+        };
+        let mut state = self.lock();
+        let stored = stored_mut(&mut state)?;
+        write_file(
+            &self.file,
+            &stored.agents,
+            &stored.instructions,
+            Some(&override_cfg),
+        )
+        .map_err(AgentError::SaveFailed)?;
+        stored.ember_override = Some(override_cfg);
+        let ember = team_of(&stored.agents, stored.ember_override.as_ref())
+            .into_iter()
+            .find(|profile| profile.id == Agent::ember())
+            .ok_or_else(|| AgentError::UnknownAgent(EMBER.to_string()))?;
+        Ok(with_instructions(ember, &stored.instructions))
     }
 
     // Só tira o registro: posições e cards são tratados antes, na mesma operação do banco.
@@ -717,7 +754,13 @@ impl AgentRegistry {
         agents.remove(index);
         let mut instructions = stored.instructions.clone();
         instructions.remove(id.as_str());
-        write_file(&self.file, &agents, &instructions).map_err(AgentError::SaveFailed)?;
+        write_file(
+            &self.file,
+            &agents,
+            &instructions,
+            stored.ember_override.as_ref(),
+        )
+        .map_err(AgentError::SaveFailed)?;
         stored.agents = agents;
         stored.instructions = instructions;
         Ok(())
@@ -731,7 +774,7 @@ impl AgentRegistry {
         }
         let mut state = self.lock();
         let stored = stored_mut(&mut state)?;
-        let profile = team_of(&stored.agents)
+        let profile = team_of(&stored.agents, stored.ember_override.as_ref())
             .into_iter()
             .find(|profile| &profile.id == id)
             .ok_or_else(|| AgentError::UnknownAgent(id.to_string()))?;
@@ -741,7 +784,13 @@ impl AgentRegistry {
         } else {
             instructions.insert(id.to_string(), text.to_string());
         }
-        write_file(&self.file, &stored.agents, &instructions).map_err(AgentError::SaveFailed)?;
+        write_file(
+            &self.file,
+            &stored.agents,
+            &instructions,
+            stored.ember_override.as_ref(),
+        )
+        .map_err(AgentError::SaveFailed)?;
         stored.instructions = instructions;
         Ok(with_instructions(profile, &stored.instructions))
     }
@@ -772,10 +821,11 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
         let seeds = initial_agents();
         let instructions = BTreeMap::new();
         fs::create_dir_all(dir).map_err(|error| load_failed(file, error))?;
-        write_file(file, &seeds, &instructions).map_err(|detail| load_failed(file, detail))?;
+        write_file(file, &seeds, &instructions, None).map_err(|detail| load_failed(file, detail))?;
         return Ok(Stored {
             agents: seeds,
             instructions,
+            ember_override: None,
         });
     }
     let text = fs::read_to_string(file).map_err(|error| load_failed(file, error))?;
@@ -794,7 +844,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
         rewrite |= profile.id != stored.id;
         let command = if profile.command.trim().is_empty() {
             rewrite = true;
-            default_command_for(&profile.cli).to_string()
+            default_command_for(&profile.cli)
         } else {
             profile.command.clone()
         };
@@ -804,9 +854,12 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             avatar: profile.avatar.clone(),
             cli: profile.cli.clone(),
             model: profile.model.clone(),
+            model_tier: profile.model_tier,
+            follow_default_llm: profile.follow_default_llm,
+            fallback: profile.fallback.clone(),
             command,
         };
-        let team = team_of(&loaded);
+        let team = team_of(&loaded, parsed.ember_override.as_ref());
         // Avatar repetido já gravado não derruba o carregamento: o segundo recebe o próximo livre.
         if team.iter().any(|other| other.avatar == draft.avatar) {
             let free = free_avatar(&team).ok_or_else(|| {
@@ -819,7 +872,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             draft.avatar = free.to_string();
             rewrite = true;
         }
-        let validated = validate(&draft, &team, None).map_err(|error| load_failed(file, error))?;
+        let validated = validate(&draft, &team, None, None).map_err(|error| load_failed(file, error))?;
         if validated.id != profile.id {
             return Err(load_failed(
                 file,
@@ -836,7 +889,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             if loaded.iter().any(|profile| profile.id == id) {
                 continue;
             }
-            let team = team_of(&loaded);
+            let team = team_of(&loaded, parsed.ember_override.as_ref());
             if team.len() >= MAX_AGENTS {
                 break;
             }
@@ -855,6 +908,9 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
                 avatar,
                 cli: CLAUDE_CLI.to_string(),
                 model: DEFAULT_MODEL.to_string(),
+                model_tier: None,
+                follow_default_llm: false,
+                fallback: Vec::new(),
                 command: CLAUDE_CLI.to_string(),
                 builtin: false,
                 extra_instructions: String::new(),
@@ -863,11 +919,18 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
         rewrite = true;
     }
     if rewrite {
-        write_file(file, &loaded, &parsed.instructions).map_err(|detail| load_failed(file, detail))?;
+        write_file(
+            file,
+            &loaded,
+            &parsed.instructions,
+            parsed.ember_override.as_ref(),
+        )
+        .map_err(|detail| load_failed(file, detail))?;
     }
     Ok(Stored {
         agents: loaded,
         instructions: parsed.instructions,
+        ember_override: parsed.ember_override,
     })
 }
 
@@ -921,12 +984,14 @@ fn write_file(
     file: &Path,
     agents: &[AgentProfile],
     instructions: &BTreeMap<String, String>,
+    ember_override: Option<&EmberOverride>,
 ) -> Result<(), String> {
     let text = serde_json::to_string_pretty(&AgentsFile {
         version: FILE_VERSION,
         agents: agents.to_vec(),
         instructions: instructions.clone(),
         roster_migrated: true,
+        ember_override: ember_override.cloned(),
     })
     .map_err(|error| error.to_string())?;
     write_atomic(file, AGENTS_FILE_TMP, &text)

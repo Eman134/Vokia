@@ -6,6 +6,7 @@ use std::sync::Arc;
 use super::*;
 use crate::agents::{AgentDraft, AgentError, AgentRegistry};
 use crate::db::{Db, DbError, OrchestrationSettings};
+use crate::providers::ProviderRegistry;
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
@@ -57,7 +58,10 @@ fn draft(name: &str) -> AgentDraft {
         avatar: "onix".to_string(),
         cli: "claude".to_string(),
         model: "sonnet".to_string(),
+        model_tier: None,
         command: "claude".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     }
 }
 
@@ -279,7 +283,7 @@ fn agente_novo_criado_depois_da_semente_fica_sem_posicao_ate_alguem_posicionar()
     db.seed_orchestration(&build(&registry.team().unwrap()))
         .unwrap();
 
-    registry.create(&draft("Lia")).unwrap();
+    registry.create(&draft("Lia"), &ProviderRegistry::seeded()).unwrap();
 
     let ids: Vec<String> = placement_layers(&db)
         .into_iter()
@@ -299,8 +303,9 @@ fn registro_recusa_nome_com_espaco_ou_hifen_que_colidiria_com_id_de_replica() {
     let dir = TempDir::new();
     let registry = AgentRegistry::load(&dir.0);
 
+    let providers = ProviderRegistry::seeded();
     for name in ["Vexa 2", "Vexa-2", "Lia-3"] {
-        let error = registry.create(&draft(name)).unwrap_err();
+        let error = registry.create(&draft(name), &providers).unwrap_err();
         assert!(matches!(error, AgentError::InvalidName), "{name}");
     }
     assert_eq!(registry.team().unwrap().ids().count(), 6);
@@ -384,6 +389,7 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
     let dir = TempDir::new();
     let registry = AgentRegistry::load(&dir.0);
 
+    let providers = ProviderRegistry::seeded();
     // Ember não pode ser alterado nem removido
     let ember_draft = AgentDraft {
         name: "Ember Alterado".to_string(),
@@ -391,9 +397,14 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         avatar: "ember".to_string(),
         cli: "claude".to_string(),
         model: "sonnet".to_string(),
+        model_tier: None,
         command: "claude".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
-    let err_update_ember = registry.update(&Agent::ember(), &ember_draft).unwrap_err();
+    let err_update_ember = registry
+        .update(&Agent::ember(), &ember_draft, &providers)
+        .unwrap_err();
     assert!(
         matches!(err_update_ember, AgentError::BuiltinLocked(ref name) if name == "Ember"),
         "esperava BuiltinLocked('Ember'), obteve {:?}",
@@ -414,10 +425,13 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         avatar: "quarzo".to_string(),
         cli: "claude".to_string(),
         model: "opus".to_string(),
+        model_tier: None,
         command: "claude".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
     let updated_axiom = registry
-        .update(&Agent::axiom(), &axiom_draft)
+        .update(&Agent::axiom(), &axiom_draft, &providers)
         .expect("edição do Axiom deve ser permitida");
     assert_eq!(updated_axiom.id, Agent::axiom());
     assert_eq!(updated_axiom.role, "Principal Architect");
@@ -431,10 +445,13 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         avatar: "lume".to_string(),
         cli: "claude".to_string(),
         model: "haiku".to_string(),
+        model_tier: None,
         command: "claude".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
     let updated_vexa = registry
-        .update(&Agent::vexa(), &vexa_draft)
+        .update(&Agent::vexa(), &vexa_draft, &providers)
         .expect("edição da Vexa deve ser permitida");
     assert_eq!(updated_vexa.id, Agent::vexa());
     assert_eq!(updated_vexa.role, "Frontend Lead");
@@ -529,6 +546,7 @@ fn migracao_de_agents_json_legado_sem_command_recebe_default_command_do_preset()
 fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
     let dir = TempDir::new();
     let registry = AgentRegistry::load(&dir.0);
+    let providers = ProviderRegistry::seeded();
 
     let base_draft = |cli: &str, model: &str, cmd: &str| AgentDraft {
         name: "TestBot".to_string(),
@@ -536,24 +554,27 @@ fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
         avatar: "onix".to_string(),
         cli: cli.to_string(),
         model: model.to_string(),
+        model_tier: None,
         command: cmd.to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
 
     // 1. Comando vazio e apenas espaços
-    let err_vazio = registry.create(&base_draft("claude", "haiku", "")).unwrap_err();
+    let err_vazio = registry.create(&base_draft("claude", "haiku", ""), &providers).unwrap_err();
     assert!(matches!(err_vazio, AgentError::InvalidCommand));
 
-    let err_espacos = registry.create(&base_draft("claude", "haiku", "   \t  ")).unwrap_err();
+    let err_espacos = registry.create(&base_draft("claude", "haiku", "   \t  "), &providers).unwrap_err();
     assert!(matches!(err_espacos, AgentError::InvalidCommand));
 
     // 2. Aspas sem fechamento (falha de shlex::split)
-    let err_aspas = registry.create(&base_draft("claude", "haiku", "claude \"aspas sem fechar")).unwrap_err();
+    let err_aspas = registry.create(&base_draft("claude", "haiku", "claude \"aspas sem fechar"), &providers).unwrap_err();
     assert!(matches!(err_aspas, AgentError::InvalidCommand));
 
     // 3. Flags reservadas Claude (inclusive com '=')
     for flag in ["-p", "--tools", "--allowedTools", "--model=sonnet", "--append-system-prompt", "--permission-mode"] {
         let cmd = format!("claude {flag}");
-        let err = registry.create(&base_draft("claude", "haiku", &cmd)).unwrap_err();
+        let err = registry.create(&base_draft("claude", "haiku", &cmd), &providers).unwrap_err();
         match err {
             AgentError::ReservedCommandFlag(found) => {
                 let expected_base = flag.split('=').next().unwrap();
@@ -566,27 +587,27 @@ fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
     // 4. Flags reservadas Codex
     for flag in ["--json", "-m", "--model=gpt-5", "-s", "--sandbox=workspace-write", "-C", "--cd", "--add-dir"] {
         let cmd = format!("codex {flag}");
-        let err = registry.create(&base_draft("codex", "gpt-6-luna", &cmd)).unwrap_err();
+        let err = registry.create(&base_draft("codex", "gpt-6-luna", &cmd), &providers).unwrap_err();
         assert!(matches!(err, AgentError::ReservedCommandFlag(_)), "para flag codex {flag}");
     }
 
     // 5. Flags reservadas OpenCode
     for flag in ["--format", "--format=json", "-m", "--model=gpt", "--dir=/tmp", "--auto"] {
         let cmd = format!("opencode {flag}");
-        let err = registry.create(&base_draft("opencode", "openai/gpt-6-astra", &cmd)).unwrap_err();
+        let err = registry.create(&base_draft("opencode", "openai/gpt-6-astra", &cmd), &providers).unwrap_err();
         assert!(matches!(err, AgentError::ReservedCommandFlag(_)), "para flag opencode {flag}");
     }
 
     // 6. Flags reservadas Antigravity
     for flag in ["-p", "--print", "--output-format", "--sandbox", "--mode=plan", "--dangerously-skip-permissions"] {
         let cmd = format!("agy {flag}");
-        let err = registry.create(&base_draft("antigravity", "gemini-4-hydrogen-medium", &cmd)).unwrap_err();
+        let err = registry.create(&base_draft("antigravity", "gemini-4-hydrogen-medium", &cmd), &providers).unwrap_err();
         assert!(matches!(err, AgentError::ReservedCommandFlag(_)), "para flag antigravity {flag}");
     }
 
     // 7. Flag reservada no meio de outros argumentos
     let cmd_meio = "codex --custom-flag --json --outra-flag";
-    let err_meio = registry.create(&base_draft("codex", "gpt-6-luna", cmd_meio)).unwrap_err();
+    let err_meio = registry.create(&base_draft("codex", "gpt-6-luna", cmd_meio), &providers).unwrap_err();
     match err_meio {
         AgentError::ReservedCommandFlag(flag) => assert_eq!(flag, "--json"),
         other => panic!("esperava ReservedCommandFlag, obteve {:?}", other),
@@ -594,7 +615,7 @@ fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
 
     // 8. Comando válido com flags customizadas livres
     let cmd_valido = "codex --custom-feature --dangerously-skip-repo-check";
-    let ok = registry.create(&base_draft("codex", "gpt-6-luna", cmd_valido));
+    let ok = registry.create(&base_draft("codex", "gpt-6-luna", cmd_valido), &providers);
     assert!(ok.is_ok(), "comando válido foi recusado: {:?}", ok.err());
 }
 
@@ -606,35 +627,36 @@ fn presets_contem_claude_codex_opencode_e_antigravity_com_defaults_e_modelos_cor
     let claude = presets.iter().find(|p| p.id == "claude").expect("preset claude");
     assert_eq!(claude.default_command, "claude");
     assert_eq!(claude.default_model, "haiku");
-    assert_eq!(claude.models, &["haiku", "sonnet", "opus"]);
+    assert_eq!(claude.models, vec!["haiku", "sonnet", "opus"]);
 
     let codex = presets.iter().find(|p| p.id == "codex").expect("preset codex");
     assert_eq!(codex.default_command, "codex");
     assert_eq!(codex.default_model, "gpt-6-luna");
-    assert!(codex.models.contains(&"gpt-6-luna"));
-    assert!(codex.models.contains(&"gpt-5.6-terra"));
-    assert!(codex.models.contains(&"gpt-5.6-luna"));
+    assert!(codex.models.iter().any(|m| m == "gpt-6-luna"));
+    assert!(codex.models.iter().any(|m| m == "gpt-5.6-terra"));
+    assert!(codex.models.iter().any(|m| m == "gpt-5.6-luna"));
 
     let opencode = presets.iter().find(|p| p.id == "opencode").expect("preset opencode");
     assert_eq!(opencode.default_command, "opencode");
     assert_eq!(opencode.default_model, "openai/gpt-6-astra");
-    assert!(opencode.models.contains(&"openai/gpt-6-astra"));
-    assert!(opencode.models.contains(&"openai/gpt-5.6-luna"));
-    assert!(opencode.models.contains(&"openai/gpt-5.4-mini"));
+    assert!(opencode.models.iter().any(|m| m == "openai/gpt-6-astra"));
+    assert!(opencode.models.iter().any(|m| m == "openai/gpt-5.6-luna"));
+    assert!(opencode.models.iter().any(|m| m == "openai/gpt-5.4-mini"));
 
     let agy = presets.iter().find(|p| p.id == "antigravity").expect("preset antigravity");
     assert_eq!(agy.default_command, "agy");
     assert_eq!(agy.default_model, "gemini-4-hydrogen-medium");
-    assert!(agy.models.contains(&"gemini-4-hydrogen-medium"));
-    assert!(agy.models.contains(&"gemini-4-neon-medium"));
-    assert!(agy.models.contains(&"gemini-4-argon-medium"));
-    assert!(agy.models.contains(&"gemini-3.8-flash-medium"));
+    assert!(agy.models.iter().any(|m| m == "gemini-4-hydrogen-medium"));
+    assert!(agy.models.iter().any(|m| m == "gemini-4-neon-medium"));
+    assert!(agy.models.iter().any(|m| m == "gemini-4-argon-medium"));
+    assert!(agy.models.iter().any(|m| m == "gemini-3.8-flash-medium"));
 }
 
 #[test]
 fn ember_bloqueado_contra_alteracao_de_cli_para_codex_ou_outro_provedor() {
     let dir = TempDir::new();
     let registry = AgentRegistry::load(&dir.0);
+    let providers = ProviderRegistry::seeded();
 
     let ember_draft = AgentDraft {
         name: "Ember".to_string(),
@@ -642,10 +664,13 @@ fn ember_bloqueado_contra_alteracao_de_cli_para_codex_ou_outro_provedor() {
         avatar: "ember".to_string(),
         cli: "codex".to_string(),
         model: "gpt-6-luna".to_string(),
+        model_tier: None,
         command: "codex".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
 
-    let err = registry.update(&Agent::ember(), &ember_draft).unwrap_err();
+    let err = registry.update(&Agent::ember(), &ember_draft, &providers).unwrap_err();
     match err {
         AgentError::BuiltinLocked(name) => assert_eq!(name, "Ember"),
         other => panic!("esperava BuiltinLocked('Ember'), obteve {:?}", other),
@@ -657,6 +682,7 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
     let dir = TempDir::new();
     let file = dir.0.join("agents.json");
     let registry = AgentRegistry::load(&dir.0);
+    let providers = ProviderRegistry::seeded();
 
     // 1. Cadastrar agente com comando customizado
     let draft_atlas = AgentDraft {
@@ -665,9 +691,12 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         avatar: "onix".to_string(),
         cli: "codex".to_string(),
         model: "gpt-6-luna".to_string(),
+        model_tier: None,
         command: "codex --custom-flag --another-opt".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
-    let created = registry.create(&draft_atlas).expect("criar atlas");
+    let created = registry.create(&draft_atlas, &providers).expect("criar atlas");
     assert_eq!(created.command, "codex --custom-flag --another-opt");
 
     // 2. Verificar persistência em disco após reload
@@ -685,7 +714,7 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         command: "codex".to_string(),
         ..draft_atlas
     };
-    let updated = registry_reloaded.update(&created.id, &draft_restaurado).expect("atualizar atlas");
+    let updated = registry_reloaded.update(&created.id, &draft_restaurado, &providers).expect("atualizar atlas");
     assert_eq!(updated.command, "codex");
 
     // Conferir disco
@@ -699,9 +728,12 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         avatar: "quarzo".to_string(),
         cli: "claude".to_string(),
         model: "sonnet".to_string(),
+        model_tier: None,
         command: "claude --dangerously-skip-permissions".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
-    let updated_axiom = registry_reloaded.update(&Agent::axiom(), &axiom_draft).expect("update axiom com custom command");
+    let updated_axiom = registry_reloaded.update(&Agent::axiom(), &axiom_draft, &providers).expect("update axiom com custom command");
     assert_eq!(updated_axiom.command, "claude --dangerously-skip-permissions");
 
     let vexa_draft = AgentDraft {
@@ -710,9 +742,12 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         avatar: "lume".to_string(),
         cli: "codex".to_string(),
         model: "gpt-6-luna".to_string(),
+        model_tier: None,
         command: "codex --custom-vexa".to_string(),
+        follow_default_llm: false,
+        fallback: Vec::new(),
     };
-    let updated_vexa = registry_reloaded.update(&Agent::vexa(), &vexa_draft).expect("update vexa com codex");
+    let updated_vexa = registry_reloaded.update(&Agent::vexa(), &vexa_draft, &providers).expect("update vexa com codex");
     assert_eq!(updated_vexa.command, "codex --custom-vexa");
     assert_eq!(updated_vexa.cli, "codex");
 }
