@@ -9,9 +9,11 @@ import { useUserProfile } from '../profile/useUserProfile'
 import BoasVindasStep from './steps/BoasVindasStep.vue'
 import NomeStep from './steps/NomeStep.vue'
 import FotoStep from './steps/FotoStep.vue'
+import ProvedoresStep from './steps/ProvedoresStep.vue'
 import ProntoStep from './steps/ProntoStep.vue'
+import { useOnboardingLlm } from './useOnboardingLlm'
 
-type StepId = 'boas-vindas' | 'nome' | 'foto' | 'pronto'
+type StepId = 'boas-vindas' | 'nome' | 'foto' | 'provedores' | 'pronto'
 
 interface OnboardingStep {
   id: StepId
@@ -23,6 +25,7 @@ const STEPS: readonly OnboardingStep[] = [
   { id: 'boas-vindas', view: BoasVindasStep, forwardLabel: 'Começar' },
   { id: 'nome', view: NomeStep, forwardLabel: 'Continuar' },
   { id: 'foto', view: FotoStep, forwardLabel: 'Continuar' },
+  { id: 'provedores', view: ProvedoresStep, forwardLabel: 'Continuar' },
   { id: 'pronto', view: ProntoStep, forwardLabel: 'Abrir projetos' },
 ]
 // Último passo de perfil: é onde nome e foto são salvos juntos.
@@ -41,6 +44,7 @@ const ARROW_PATH = 'M3 8h9M8.5 4.5 12 8l-3.5 3.5'
 const navigation = useNavigation()
 const profile = useUserProfile()
 const profileDraft = useProfileDraft()
+const onboardingLlm = useOnboardingLlm()
 profileDraft.begin()
 const index = ref(firstStepIndex())
 const flow = useFlow()
@@ -72,6 +76,13 @@ function back(): void {
 
 async function forward(): Promise<void> {
   if (current.value.id === SAVE_STEP_ID && !(await profileDraft.submit())) return
+  if (current.value.id === 'provedores') {
+    try {
+      await onboardingLlm.persist()
+    } catch {
+      // Não bloqueia conclusão do onboarding se settings ainda não persistir
+    }
+  }
   if (index.value === LAST_INDEX) {
     navigation.goTo('projetos')
     return
