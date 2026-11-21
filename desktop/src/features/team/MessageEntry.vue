@@ -11,7 +11,8 @@ import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import { taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
-import { formatUsageInline, formatUsageTooltip } from './messageUsageFormat'
+import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
+import TokenUsageChart from './TokenUsageChart.vue'
 import { splitAttachments } from '../attachments/attachmentBlock'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -29,11 +30,12 @@ const userProfile = useUserProfile()
 const backlog = useBacklog()
 
 const userContent = computed(() => splitAttachments(props.entry.type === 'message' ? props.entry.text : ''))
-const usageInline = computed(() =>
-  props.entry.type === 'message' && props.entry.from !== 'user'
-    ? formatUsageInline(props.entry.usage)
-    : null,
+const agentUsage = computed(() =>
+  props.entry.type === 'message' && props.entry.from !== 'user' ? props.entry.usage : undefined,
 )
+const usageModel = computed(() => formatUsageModel(agentUsage.value))
+const usageCost = computed(() => formatCostUsd(agentUsage.value?.costUsd))
+const usageSplit = computed(() => tokenSplit(agentUsage.value))
 const usageTooltip = computed(() =>
   props.entry.type === 'message' && props.entry.from !== 'user'
     ? formatUsageTooltip(props.entry.usage)
@@ -51,6 +53,8 @@ const runCard = computed(() => {
 const AVATAR_SIZE = PORTRAIT_SIZES.chat
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
+const USAGE_REVEAL_CLASSES =
+  'flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none'
 
 const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
   allowed: '✓ Aprovado:',
@@ -152,7 +156,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <MarkdownText :text="entry.text" />
     </div>
   </div>
-  <div v-else-if="entry.type === 'message'" class="flex min-w-0 items-start gap-3">
+  <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-3">
     <span class="mt-0.5 flex shrink-0" aria-hidden="true">
       <AgentPortrait :who="entry.from" :size="AVATAR_SIZE" />
     </span>
@@ -172,13 +176,14 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           @restore="overrides.restore(entry.from)"
         />
         <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+        <span v-if="usageModel" data-testid="message-usage" class="text-xs text-muted">· {{ usageModel }}</span>
         <span
-          v-if="usageInline"
-          data-testid="message-usage"
-          :title="usageTooltip"
-          class="tabular-nums text-xs text-muted"
+          v-if="usageCost || usageSplit"
+          data-testid="message-usage-detail"
+          :class="USAGE_REVEAL_CLASSES"
         >
-          · {{ usageInline }}
+          <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
+          <TokenUsageChart :usage="entry.usage" />
         </span>
       </div>
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />

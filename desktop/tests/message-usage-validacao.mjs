@@ -4,8 +4,10 @@ import assert from 'node:assert/strict'
 import {
   formatTokenCount,
   formatCostUsd,
-  formatUsageInline,
+  formatUsageModel,
   formatUsageTooltip,
+  formatUsageDetails,
+  tokenSplit,
 } from '../src/features/team/messageUsageFormat.ts'
 
 console.log('=== Iniciando Validação E2E da Etapa MSG-4 (Metadados de Uso nas Mensagens) ===\n')
@@ -34,7 +36,7 @@ function computeEntryView(entry) {
   const isAgentMessage = entry.type === 'message' && entry.from !== 'user'
   const betweenAgents = entry.type === 'message' && isBetweenAgents(entry)
 
-  const usageInline = isAgentMessage ? formatUsageInline(entry.usage) : null
+  const usageModel = isAgentMessage ? formatUsageModel(entry.usage) : null
   const usageTooltip = isAgentMessage ? formatUsageTooltip(entry.usage) : ''
 
   // Template em MessageEntry.vue:
@@ -46,17 +48,15 @@ function computeEntryView(entry) {
     ? `12:00${usageTooltip ? ` — ${usageTooltip}` : ''}`
     : null
 
-  const hasMessageUsage = !betweenAgents && isAgentMessage && usageInline !== null
-  const messageUsageText = hasMessageUsage ? `· ${usageInline}` : null
-  const messageUsageTitle = hasMessageUsage ? usageTooltip : null
+  const hasMessageUsage = !betweenAgents && isAgentMessage && usageModel !== null
+  const messageUsageText = hasMessageUsage ? `· ${usageModel}` : null
 
   return {
     hasAgentExchange,
     agentExchangeTitle,
     hasMessageUsage,
     messageUsageText,
-    messageUsageTitle,
-    usageInline,
+    usageModel,
     usageTooltip,
   }
 }
@@ -75,8 +75,7 @@ test('Cenário 1 — Mensagem completa exibe modelo, tokens compactos in/out e c
   }
 
   // 1.1 Formatação pura inline
-  const inline = formatUsageInline(usage)
-  assert.equal(inline, 'claude-sonnet-4-6 · 1.2k in · 340 out · $0.0042')
+  assert.equal(formatUsageModel(usage), 'claude-sonnet-4-6')
 
   // 1.2 Formatação do tooltip (title)
   const tooltip = formatUsageTooltip(usage)
@@ -99,8 +98,8 @@ test('Cenário 1 — Mensagem completa exibe modelo, tokens compactos in/out e c
 
   const view = computeEntryView(entry)
   assert.equal(view.hasMessageUsage, true, 'deve renderizar data-testid="message-usage"')
-  assert.equal(view.messageUsageText, '· claude-sonnet-4-6 · 1.2k in · 340 out · $0.0042')
-  assert.equal(view.messageUsageTitle, tooltip)
+  assert.equal(view.messageUsageText, '· claude-sonnet-4-6')
+  assert.equal(formatCostUsd(usage.costUsd), '$0.0042')
   assert.equal(view.hasAgentExchange, false)
 })
 
@@ -116,9 +115,7 @@ test('Cenário 2 — Custo ausente ou zero não exibe símbolo de dólar em mess
     outputTokens: 100,
     costUsd: 0,
   }
-  const inlineZero = formatUsageInline(usageZero)
-  assert.equal(inlineZero, 'gpt-6-luna · 2.5k in · 100 out')
-  assert.ok(!inlineZero.includes('$'), 'não deve conter $ quando custo é zero')
+  assert.equal(formatCostUsd(usageZero.costUsd), null)
 
   const tooltipZero = formatUsageTooltip(usageZero)
   assert.ok(!tooltipZero.includes('Custo:'), 'tooltip não deve conter Custo quando for zero')
@@ -131,9 +128,7 @@ test('Cenário 2 — Custo ausente ou zero não exibe símbolo de dólar em mess
     outputTokens: 420,
     costUsd: undefined,
   }
-  const inlineUndef = formatUsageInline(usageUndef)
-  assert.equal(inlineUndef, 'gemini-4-hydrogen-medium · 850 in · 420 out')
-  assert.ok(!inlineUndef.includes('$'), 'não deve conter $ quando custo é undefined')
+  assert.equal(formatCostUsd(usageUndef.costUsd), null)
 
   // 2.3 Renderização da view
   const entry = {
@@ -158,8 +153,7 @@ test('Cenário 3 — Mensagem apenas com modelo exibe nome do modelo sem separad
     model: 'llama-4',
   }
 
-  const inline = formatUsageInline(usageModelOnly)
-  assert.equal(inline, 'llama-4', 'deve exibir estritamente o modelo sem separadores')
+  assert.equal(formatUsageModel(usageModelOnly), 'llama-4')
 
   const tooltip = formatUsageTooltip(usageModelOnly)
   assert.equal(tooltip, 'Provedor: generic · Modelo: llama-4')
@@ -175,7 +169,6 @@ test('Cenário 3 — Mensagem apenas com modelo exibe nome do modelo sem separad
   const view = computeEntryView(entry)
   assert.equal(view.hasMessageUsage, true)
   assert.equal(view.messageUsageText, '· llama-4')
-  assert.equal(view.messageUsageTitle, 'Provedor: generic · Modelo: llama-4')
 })
 
 // -------------------------------------------------------------
@@ -226,7 +219,7 @@ test('Cenário 5 — Mensagens antigas sem usage e mensagens do usuário nunca r
   }
   const userView = computeEntryView(userEntry)
   assert.equal(userView.hasMessageUsage, false, 'mensagem do usuário nunca renderiza message-usage')
-  assert.equal(userView.usageInline, null)
+  assert.equal(userView.usageModel, null)
 
   // 5.2 Mensagem antiga de agente gravada antes da migration (usage: undefined/null)
   const legacyAgentEntry = {
@@ -239,7 +232,7 @@ test('Cenário 5 — Mensagens antigas sem usage e mensagens do usuário nunca r
   }
   const legacyView = computeEntryView(legacyAgentEntry)
   assert.equal(legacyView.hasMessageUsage, false, 'mensagem legada sem usage não renderiza message-usage')
-  assert.equal(legacyView.usageInline, null)
+  assert.equal(legacyView.usageModel, null)
 
   // 5.3 Mensagem com usage vazio (objeto sem modelo nem tokens)
   const emptyUsageEntry = {
@@ -252,6 +245,39 @@ test('Cenário 5 — Mensagens antigas sem usage e mensagens do usuário nunca r
   }
   const emptyView = computeEntryView(emptyUsageEntry)
   assert.equal(emptyView.hasMessageUsage, false, 'usage vazio não deve renderizar message-usage')
+})
+
+test('Cenário 6 — Donut: fatia mínima de 20° para proporções extremas e rótulo do lado maior', () => {
+  const extreme = tokenSplit({ inputTokens: 2, outputTokens: 864 })
+  assert.equal(extreme.dominant, 'out')
+  assert.equal(extreme.inputDegrees, 20)
+  assert.equal(extreme.outputDegrees, 340)
+  assert.equal(extreme.label, '>99% out')
+
+  const balanced = tokenSplit({ inputTokens: 850, outputTokens: 150 })
+  assert.equal(balanced.dominant, 'in')
+  assert.equal(balanced.label, '85% in')
+  assert.ok(Math.abs(balanced.inputDegrees + balanced.outputDegrees - 360) < 1e-9)
+
+  const onlyOutput = tokenSplit({ outputTokens: 10 })
+  assert.equal(onlyOutput.inputDegrees, 0)
+  assert.equal(onlyOutput.label, '100% out')
+
+  assert.equal(tokenSplit(undefined), null)
+  assert.equal(tokenSplit({ model: 'x' }), null)
+  assert.equal(tokenSplit({ inputTokens: 0, outputTokens: 0 }), null)
+})
+
+test('Cenário 7 — Detalhes do tooltip: entradas, saídas, cache, total, modelo e custo', () => {
+  const rows = formatUsageDetails({ model: 'claude-haiku-5-5', inputTokens: 2, outputTokens: 864, cachedInputTokens: 500, costUsd: 0.0063 })
+  const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]))
+  assert.equal(byLabel['Modelo'], 'claude-haiku-5-5')
+  assert.equal(byLabel['Entrada'], '2 tokens')
+  assert.equal(byLabel['Saída'], '864 tokens')
+  assert.equal(byLabel['Cache (leitura)'], '500 tokens')
+  assert.equal(byLabel['Total'], '866 tokens')
+  assert.equal(byLabel['Custo'], '$0.0063')
+  assert.ok(!formatUsageDetails({ inputTokens: 1, outputTokens: 1 }).some((r) => r.label === 'Cache (leitura)'))
 })
 
 // -------------------------------------------------------------
