@@ -20,7 +20,9 @@ struct Endpoint {
 enum Action {
     Help,
     ListTools { json_raw: bool },
+    ListCommands { json_raw: bool },
     CallTool { name: String, arguments: Value },
+    CallCommand { name: String, arguments: Value },
 }
 
 fn main() -> ExitCode {
@@ -69,10 +71,25 @@ fn main() -> ExitCode {
             "method": "tools/list",
             "params": {},
         }),
+        Action::ListCommands { .. } => json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "commands/list",
+            "params": {},
+        }),
         Action::CallTool { name, arguments } => json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
+            "params": {
+                "name": name,
+                "arguments": arguments,
+            },
+        }),
+        Action::CallCommand { name, arguments } => json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "commands/call",
             "params": {
                 "name": name,
                 "arguments": arguments,
@@ -122,18 +139,23 @@ fn main() -> ExitCode {
     };
 
     match action {
-        Action::ListTools { json_raw } => {
+        Action::ListTools { json_raw } | Action::ListCommands { json_raw } => {
             if json_raw {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string())
                 );
             } else {
-                print_tools_list(result);
+                let key = if matches!(action, Action::ListTools { .. }) {
+                    "tools"
+                } else {
+                    "commands"
+                };
+                print_named_list(result, key);
             }
             ExitCode::SUCCESS
         }
-        Action::CallTool { .. } => {
+        Action::CallTool { .. } | Action::CallCommand { .. } => {
             let text = extract_content_text(result);
             let is_error = result.get("isError").and_then(Value::as_bool) == Some(true);
             if is_error {
@@ -303,13 +325,13 @@ fn extract_content_text(result: &Value) -> String {
         .join("\n")
 }
 
-fn print_tools_list(result: &Value) {
-    let Some(tools) = result.get("tools").and_then(Value::as_array) else {
+fn print_named_list(result: &Value, key: &str) {
+    let Some(items) = result.get(key).and_then(Value::as_array) else {
         return;
     };
-    for tool in tools {
-        let name = tool.get("name").and_then(Value::as_str).unwrap_or("");
-        let desc = tool.get("description").and_then(Value::as_str).unwrap_or("");
+    for item in items {
+        let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+        let desc = item.get("description").and_then(Value::as_str).unwrap_or("");
         println!("{name} — {desc}");
     }
 }
@@ -333,7 +355,18 @@ where
             }
             Ok(Action::ListTools { json_raw })
         }
+        "commands" => {
+            let mut json_raw = false;
+            for arg in rest {
+                match arg.as_str() {
+                    "--json" => json_raw = true,
+                    other => return Err(format!("flag desconhecida em 'commands': {other}")),
+                }
+            }
+            Ok(Action::ListCommands { json_raw })
+        }
         "call" => parse_call(rest, read_stdin),
+        "cmd" => parse_cmd(rest, read_stdin),
         "list-backlog" => {
             let col = optional_flag(rest, "--column")?;
             let mut map = Map::new();
@@ -535,6 +568,97 @@ where
         name: tool.clone(),
         arguments: parsed,
     })
+}
+
+fn parse_cmd<F>(rest: &[String], read_stdin: F) -> Result<Action, String>
+where
+    F: FnOnce() -> Result<String, String>,
+{
+    const USAGE: &str =
+        "uso: vokia-cli cmd <command_name> [--json <json> | --stdin | --<flag> <valor>...]";
+    let Some((name, tail)) = rest.split_first() else {
+        return Err(USAGE.to_string());
+    };
+    let mut raw_json: Option<String> = None;
+    let mut from_stdin = false;
+    let mut flags = Map::new();
+    let mut i = 0;
+    while i < tail.len() {
+        let arg = tail[i].as_str();
+        match arg {
+            "--json" => {
+                i += 1;
+                let val = tail
+                    .get(i)
+                    .ok_or_else(|| "falta valor após --json.".to_string())?;
+                raw_json = Some(val.clone());
+            }
+            "--stdin" => from_stdin = true,
+            _ => {
+                let key = arg
+                    .strip_prefix("--")
+                    .filter(|key| !key.is_empty())
+                    .ok_or_else(|| format!("argumento desconhecido em 'cmd': {arg}"))?;
+                i += 1;
+                let val = tail
+                    .get(i)
+                    .ok_or_else(|| format!("falta valor após {arg}."))?;
+                flags.insert(kebab_to_camel(key), parse_scalar_flag_value(val));
+            }
+        }
+        i += 1;
+    }
+    let has_json = raw_json.is_some() || from_stdin;
+    if raw_json.is_some() && from_stdin {
+        return Err("use apenas --json ou --stdin, não ambos.".to_string());
+    }
+    if has_json && !flags.is_empty() {
+        return Err("não misture --json/--stdin com flags dinâmicas.".to_string());
+    }
+    let arguments = if has_json {
+        let payload_text = match raw_json {
+            Some(text) => text,
+            None => read_stdin()?,
+        };
+        let parsed: Value = serde_json::from_str(payload_text.trim())
+            .map_err(|err| format!("JSON inválido: {err}"))?;
+        if !parsed.is_object() {
+            return Err("argumentos de comando devem ser um objeto JSON.".to_string());
+        }
+        parsed
+    } else {
+        Value::Object(flags)
+    };
+    Ok(Action::CallCommand {
+        name: name.clone(),
+        arguments,
+    })
+}
+
+fn kebab_to_camel(key: &str) -> String {
+    let mut out = String::with_capacity(key.len());
+    let mut upper_next = false;
+    for ch in key.chars() {
+        if ch == '-' {
+            upper_next = true;
+        } else if upper_next {
+            out.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn parse_scalar_flag_value(raw: &str) -> Value {
+    match raw {
+        "true" => json!(true),
+        "false" => json!(false),
+        _ => raw
+            .parse::<i64>()
+            .map_or_else(|_| json!(raw), |num| json!(num)),
+    }
 }
 
 fn parse_request_decision(rest: &[String]) -> Result<Action, String> {
@@ -749,6 +873,8 @@ vokia-cli — cliente local das ferramentas do Vokia (requer {ENV_URL} e {ENV_TO
 Uso:
   vokia-cli tools [--json]
   vokia-cli call <tool_name> [--json <json_obj> | --stdin]
+  vokia-cli commands [--json]
+  vokia-cli cmd <command_name> [--json <json_obj> | --stdin | --<flag> <valor>...]
   vokia-cli list-backlog [--column <col>]
   vokia-cli read-card --id <id>
   vokia-cli create-card --title <t> [--description <d>] [--team <team>]

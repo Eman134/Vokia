@@ -3,6 +3,8 @@ use serde_json::{json, Value};
 
 use tauri::AppHandle;
 
+use crate::commands::dispatcher;
+
 use super::registry::{Binding, ToolRegistry};
 use super::tools;
 use super::SERVER_NAME;
@@ -30,7 +32,7 @@ struct Request {
     params: Option<Value>,
 }
 
-pub fn handle(
+pub async fn handle(
     body: &[u8],
     tools: &ToolRegistry,
     binding: &Binding,
@@ -48,7 +50,12 @@ pub fn handle(
         "notifications/initialized" => Reply::NoContent,
         "ping" => success(id, json!({})),
         "tools/list" => success(id, json!({ "tools": tools.definitions() })),
-        "tools/call" => call_tool(id, request.params.as_ref(), binding, app),
+        "tools/call" => call_tool(id, request.params.as_ref(), binding, app).await,
+        "commands/list" => success(
+            id,
+            json!({ "commands": crate::commands::dispatcher::list_commands() }),
+        ),
+        "commands/call" => call_app_command(id, request.params.as_ref(), app).await,
         other => failure(
             id,
             METHOD_NOT_FOUND,
@@ -71,28 +78,65 @@ fn initialize_result(params: Option<&Value>) -> Value {
     })
 }
 
-fn call_tool(
+fn call_target(params: Option<&Value>) -> Option<(&str, &Value)> {
+    let name = params?.get("name")?.as_str()?;
+    let arguments = params
+        .and_then(|params| params.get("arguments"))
+        .unwrap_or(&Value::Null);
+    Some((name, arguments))
+}
+
+async fn call_tool(
     id: Value,
     params: Option<&Value>,
     binding: &Binding,
     app: Option<&AppHandle>,
 ) -> Reply {
-    let name = params
-        .and_then(|params| params.get("name"))
-        .and_then(Value::as_str);
-    let Some(name) = name else {
+    let Some((name, arguments)) = call_target(params) else {
         return failure(id, INVALID_PARAMS, "falta o nome da ferramenta");
     };
-    let arguments = params
-        .and_then(|params| params.get("arguments"))
-        .unwrap_or(&Value::Null);
-    match app.and_then(|app| tools::call(app, binding, name, arguments)) {
-        Some(result) => success(id, result),
+    let Some(app) = app else {
+        return failure(id, INVALID_PARAMS, &format!("ferramenta desconhecida: {name}"));
+    };
+    if let Some(result) = tools::call(app, binding, name, arguments) {
+        return success(id, result);
+    }
+    match dispatcher::dispatch(app, name, arguments.clone()).await {
+        Some(outcome) => success(id, command_reply(outcome)),
         None => failure(
             id,
             INVALID_PARAMS,
             &format!("ferramenta desconhecida: {name}"),
         ),
+    }
+}
+
+async fn call_app_command(id: Value, params: Option<&Value>, app: Option<&AppHandle>) -> Reply {
+    let Some((name, arguments)) = call_target(params) else {
+        return failure(id, INVALID_PARAMS, "falta o nome do comando");
+    };
+    let Some(app) = app else {
+        return failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}"));
+    };
+    match dispatcher::dispatch(app, name, arguments.clone()).await {
+        Some(outcome) => success(id, command_reply(outcome)),
+        None => failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}")),
+    }
+}
+
+fn command_reply(outcome: Result<Value, String>) -> Value {
+    match outcome {
+        Ok(value) => {
+            let text = match value {
+                Value::Null => "OK".to_string(),
+                Value::String(text) => text,
+                other => serde_json::to_string_pretty(&other).unwrap_or_else(|_| other.to_string()),
+            };
+            json!({ "content": [{ "type": "text", "text": text }], "isError": false })
+        }
+        Err(message) => {
+            json!({ "content": [{ "type": "text", "text": message }], "isError": true })
+        }
     }
 }
 

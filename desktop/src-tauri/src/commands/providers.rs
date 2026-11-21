@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
-use tauri::{AppHandle, State};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager, State};
 use tokio::io::AsyncWriteExt;
 use tokio::time::timeout;
 
@@ -57,9 +57,111 @@ pub struct TestProviderResult {
     pub error_message: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveProviderArgs {
+    pub config: ProviderConfig,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProviderIdArgs {
+    pub id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InspectCliArgs {
+    pub command: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BuildSetupPromptArgs {
+    pub cli_name: String,
+    pub command: String,
+    pub help_text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TestProviderConfigArgs {
+    pub config: ProviderConfig,
+    pub model: Option<String>,
+}
+
 #[tauri::command]
-pub fn list_providers(providers: State<'_, ProviderRegistry>) -> Result<Vec<ProviderWithStatus>, String> {
-    let list = providers.list().map_err(|error| error.to_string())?;
+pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderWithStatus>, String> {
+    list_providers_exec(&app)
+}
+
+#[tauri::command]
+pub fn save_provider(app: AppHandle, config: ProviderConfig) -> Result<ProviderConfig, String> {
+    save_provider_exec(&app, SaveProviderArgs { config })
+}
+
+#[tauri::command]
+pub fn delete_provider(
+    providers: State<'_, ProviderRegistry>,
+    agents: State<'_, AgentRegistry>,
+    id: String,
+) -> Result<(), String> {
+    delete_provider_impl(&providers, &agents, &id)
+}
+
+#[tauri::command]
+pub async fn discover_provider_models(
+    app: AppHandle,
+    id: String,
+) -> Result<DiscoverModelsResult, String> {
+    discover_provider_models_exec(&app, ProviderIdArgs { id }).await
+}
+
+#[tauri::command]
+pub async fn inspect_cli(command: String) -> Result<InspectCliResult, String> {
+    inspect_cli_exec(InspectCliArgs { command }).await
+}
+
+#[tauri::command]
+pub fn build_setup_prompt(cli_name: String, command: String, help_text: String) -> String {
+    build_setup_prompt_exec(BuildSetupPromptArgs {
+        cli_name,
+        command,
+        help_text,
+    })
+}
+
+#[tauri::command]
+pub async fn test_provider_config(
+    config: ProviderConfig,
+    model: Option<String>,
+) -> Result<TestProviderResult, String> {
+    test_provider_config_exec(TestProviderConfigArgs { config, model }).await
+}
+
+#[tauri::command]
+pub async fn auto_configure_provider(
+    app: AppHandle,
+    cli_name: String,
+    command: String,
+    help_text: String,
+) -> Result<ProviderConfig, String> {
+    auto_configure_provider_exec(
+        &app,
+        BuildSetupPromptArgs {
+            cli_name,
+            command,
+            help_text,
+        },
+    )
+    .await
+}
+
+pub(crate) fn list_providers_exec(app: &AppHandle) -> Result<Vec<ProviderWithStatus>, String> {
+    let list = app
+        .state::<ProviderRegistry>()
+        .list()
+        .map_err(|error| error.to_string())?;
     Ok(list
         .into_iter()
         .map(|config| {
@@ -69,22 +171,28 @@ pub fn list_providers(providers: State<'_, ProviderRegistry>) -> Result<Vec<Prov
         .collect())
 }
 
-#[tauri::command]
-pub fn save_provider(
-    providers: State<'_, ProviderRegistry>,
-    config: ProviderConfig,
+pub(crate) fn save_provider_exec(
+    app: &AppHandle,
+    args: SaveProviderArgs,
 ) -> Result<ProviderConfig, String> {
-    validate_provider_config(&config)?;
-    providers
-        .save_provider(config)
+    validate_provider_config(&args.config)?;
+    app.state::<ProviderRegistry>()
+        .save_provider(args.config)
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub fn delete_provider(
-    providers: State<'_, ProviderRegistry>,
-    agents: State<'_, AgentRegistry>,
-    id: String,
+pub(crate) fn delete_provider_exec(app: &AppHandle, args: ProviderIdArgs) -> Result<(), String> {
+    delete_provider_impl(
+        &app.state::<ProviderRegistry>(),
+        &app.state::<AgentRegistry>(),
+        &args.id,
+    )
+}
+
+fn delete_provider_impl(
+    providers: &ProviderRegistry,
+    agents: &AgentRegistry,
+    id: &str,
 ) -> Result<(), String> {
     if id == "claude" {
         return Err("O provedor padrão 'claude' não pode ser removido.".to_string());
@@ -97,15 +205,16 @@ pub fn delete_provider(
         ));
     }
     providers
-        .remove_provider(&id)
+        .remove_provider(id)
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub async fn discover_provider_models(
-    providers: State<'_, ProviderRegistry>,
-    id: String,
+pub(crate) async fn discover_provider_models_exec(
+    app: &AppHandle,
+    args: ProviderIdArgs,
 ) -> Result<DiscoverModelsResult, String> {
+    let id = args.id;
+    let providers = app.state::<ProviderRegistry>();
     let provider = providers.get(&id).map_err(|error| error.to_string())?;
     let cached = provider.models.clone();
 
@@ -146,7 +255,9 @@ pub async fn discover_provider_models(
         Ok(_) => Ok(DiscoverModelsResult {
             models: cached,
             source: "cache".to_string(),
-            warning: Some("Nenhum modelo retornado pela descoberta; usando cache local.".to_string()),
+            warning: Some(
+                "Nenhum modelo retornado pela descoberta; usando cache local.".to_string(),
+            ),
         }),
         Err(reason) => Ok(DiscoverModelsResult {
             models: cached,
@@ -158,9 +269,8 @@ pub async fn discover_provider_models(
     }
 }
 
-#[tauri::command]
-pub async fn inspect_cli(command: String) -> Result<InspectCliResult, String> {
-    let (program, mut base_args) = split_command(&command)?;
+pub(crate) async fn inspect_cli_exec(args: InspectCliArgs) -> Result<InspectCliResult, String> {
+    let (program, mut base_args) = split_command(&args.command)?;
     let Ok(program_path) = which::which(&program) else {
         return Ok(InspectCliResult {
             found: false,
@@ -193,8 +303,12 @@ pub async fn inspect_cli(command: String) -> Result<InspectCliResult, String> {
     })
 }
 
-#[tauri::command]
-pub fn build_setup_prompt(cli_name: String, command: String, help_text: String) -> String {
+pub(crate) fn build_setup_prompt_exec(args: BuildSetupPromptArgs) -> String {
+    let BuildSetupPromptArgs {
+        cli_name,
+        command,
+        help_text,
+    } = args;
     let clipped_help = truncate_utf8(&help_text, MAX_HELP_BYTES);
     format!(
         r#"Gere APENAS um objeto JSON válido seguindo o schema `ProviderConfig` do Vokia para configurar a CLI "{cli_name}" (comando base: `{command}`).
@@ -250,11 +364,10 @@ Saída de `{command} --help`:
     )
 }
 
-#[tauri::command]
-pub async fn test_provider_config(
-    config: ProviderConfig,
-    model: Option<String>,
+pub(crate) async fn test_provider_config_exec(
+    args: TestProviderConfigArgs,
 ) -> Result<TestProviderResult, String> {
+    let TestProviderConfigArgs { config, model } = args;
     validate_provider_config(&config)?;
     let (program_path, base_args) = match resolve_program(&config.default_command) {
         Ok(resolved) => resolved,
@@ -280,16 +393,14 @@ pub async fn test_provider_config(
     let ping_prompt = "Responda apenas OK.";
 
     let result = match config.protocol {
-        ProviderProtocol::ClaudeLive => {
-            timeout(
-                Duration::from_secs(TEST_TIMEOUT_SECS),
-                claude_ask(&program_path, ping_prompt, "", &target_model),
-            )
-            .await
-            .map_err(|_| ClaudeError::Timeout(Duration::from_secs(TEST_TIMEOUT_SECS)))
-            .and_then(|inner| inner)
-            .map(|reply| reply.text)
-        }
+        ProviderProtocol::ClaudeLive => timeout(
+            Duration::from_secs(TEST_TIMEOUT_SECS),
+            claude_ask(&program_path, ping_prompt, "", &target_model),
+        )
+        .await
+        .map_err(|_| ClaudeError::Timeout(Duration::from_secs(TEST_TIMEOUT_SECS)))
+        .and_then(|inner| inner)
+        .map(|reply| reply.text),
         _ => {
             let args = build_test_args(&config, &base_args, &target_model, ping_prompt);
             let stdin_prompt = match (&config.protocol, &config.generic) {
@@ -362,27 +473,23 @@ pub async fn test_provider_config(
     }
 }
 
-#[tauri::command]
-pub async fn auto_configure_provider(
-    app: AppHandle,
-    agents: State<'_, AgentRegistry>,
-    state: State<'_, AppState>,
-    cli_name: String,
-    command: String,
-    help_text: String,
+pub(crate) async fn auto_configure_provider_exec(
+    app: &AppHandle,
+    args: BuildSetupPromptArgs,
 ) -> Result<ProviderConfig, String> {
-    let prompt = build_setup_prompt(cli_name, command, help_text);
-    let team = agents.team().map_err(|error| error.to_string())?;
+    let state = app.state::<AppState>();
+    let prompt = build_setup_prompt_exec(args);
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|error| error.to_string())?;
     let profile = team
         .profile(&Agent::ember())
         .or_else(|| team.profiles().first())
         .ok_or_else(|| "Nenhum agente configurado para auto-configuração.".to_string())?;
-    let default_cli = state
-        .cli
-        .as_deref()
-        .unwrap_or_else(|_| Path::new("claude"));
+    let default_cli = state.cli.as_deref().unwrap_or_else(|_| Path::new("claude"));
 
-    let reply = ask_with_fallback(&app, &state, default_cli, &profile.id, profile, &prompt, "")
+    let reply = ask_with_fallback(app, &state, default_cli, &profile.id, profile, &prompt, "")
         .await
         .map_err(|error| format!("Falha ao consultar agente para auto-configuração: {error}"))?;
 
@@ -401,9 +508,7 @@ fn validate_provider_config(config: &ProviderConfig) -> Result<(), String> {
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
     {
-        return Err(
-            "ID do provedor inválido: use apenas letras, números, '-' ou '_'.".to_string(),
-        );
+        return Err("ID do provedor inválido: use apenas letras, números, '-' ou '_'.".to_string());
     }
     if config.label.trim().is_empty() {
         return Err("Nome de exibição do provedor é obrigatório.".to_string());
@@ -428,7 +533,10 @@ fn resolve_program(command: &str) -> Result<(PathBuf, Vec<String>), String> {
     Ok((path, args))
 }
 
-fn discover_from_cache_file(cache_file: &str, json_path: Option<&str>) -> Result<Vec<String>, String> {
+fn discover_from_cache_file(
+    cache_file: &str,
+    json_path: Option<&str>,
+) -> Result<Vec<String>, String> {
     let path = resolve_user_path(cache_file)?;
     let text = std::fs::read_to_string(&path)
         .map_err(|error| format!("Não foi possível ler {}: {error}", path.display()))?;
@@ -542,7 +650,11 @@ fn build_test_args(
             args.push(prompt.to_string());
         }
         ProviderProtocol::OpenCodeJson => {
-            args.extend(["run".to_string(), "--format".to_string(), "json".to_string()]);
+            args.extend([
+                "run".to_string(),
+                "--format".to_string(),
+                "json".to_string(),
+            ]);
             if !model.is_empty() {
                 args.extend(["--model".to_string(), model.to_string()]);
             }

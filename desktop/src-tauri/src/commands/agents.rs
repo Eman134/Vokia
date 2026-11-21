@@ -1,4 +1,5 @@
-use tauri::{AppHandle, State};
+use serde::Deserialize;
+use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, AgentDraft, AgentProfile, AgentRegistry, TeamListing};
 use crate::db::DbState;
@@ -11,17 +12,66 @@ use crate::providers::{ModelTier, ProviderRegistry};
 use crate::roles::RoleRegistry;
 use crate::state::AppState;
 
-#[tauri::command]
-pub fn list_agents(
-    registry: State<'_, AgentRegistry>,
-    providers: State<'_, ProviderRegistry>,
-) -> Result<TeamListing, String> {
-    registry.listing(&providers).map_err(|error| error.to_string())
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateAgentArgs {
+    pub draft: AgentDraft,
 }
 
-#[tauri::command]
-pub fn available_providers(providers: State<'_, ProviderRegistry>) -> Vec<String> {
-    providers
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateAgentArgs {
+    pub id: Agent,
+    pub draft: AgentDraft,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteAgentArgs {
+    pub id: Agent,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetAgentInstructionsArgs {
+    pub id: Agent,
+    pub text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetTemporaryOverrideArgs {
+    pub agent: Agent,
+    pub cli: String,
+    pub model_tier: Option<ModelTier>,
+    pub model: Option<String>,
+    pub reason: Option<OverrideReason>,
+    pub expires_in_ms: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClearTemporaryOverrideArgs {
+    pub agent: Agent,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateEmberLlmArgs {
+    pub cli: Option<String>,
+    pub model_tier: Option<ModelTier>,
+    pub model: Option<String>,
+    pub fallback: Option<Vec<LlmTarget>>,
+}
+
+pub(crate) fn list_agents_exec(app: &AppHandle) -> Result<TeamListing, String> {
+    app.state::<AgentRegistry>()
+        .listing(&app.state::<ProviderRegistry>())
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn available_providers_exec(app: &AppHandle) -> Vec<String> {
+    app.state::<ProviderRegistry>()
         .list()
         .unwrap_or_default()
         .into_iter()
@@ -34,49 +84,39 @@ pub fn available_providers(providers: State<'_, ProviderRegistry>) -> Vec<String
         .collect()
 }
 
-#[tauri::command]
-pub fn create_agent(
-    registry: State<'_, AgentRegistry>,
-    providers: State<'_, ProviderRegistry>,
-    roles: State<'_, RoleRegistry>,
-    draft: AgentDraft,
+pub(crate) fn create_agent_exec(
+    app: &AppHandle,
+    args: CreateAgentArgs,
 ) -> Result<AgentProfile, String> {
-    roles
-        .ensure_exists(&draft.role)
+    app.state::<RoleRegistry>()
+        .ensure_exists(&args.draft.role)
         .map_err(|error| error.to_string())?;
-    registry
-        .create(&draft, &providers)
+    app.state::<AgentRegistry>()
+        .create(&args.draft, &app.state::<ProviderRegistry>())
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub fn update_agent(
-    registry: State<'_, AgentRegistry>,
-    providers: State<'_, ProviderRegistry>,
-    roles: State<'_, RoleRegistry>,
-    id: Agent,
-    draft: AgentDraft,
+pub(crate) fn update_agent_exec(
+    app: &AppHandle,
+    args: UpdateAgentArgs,
 ) -> Result<AgentProfile, String> {
-    roles
-        .ensure_exists(&draft.role)
+    app.state::<RoleRegistry>()
+        .ensure_exists(&args.draft.role)
         .map_err(|error| error.to_string())?;
-    registry
-        .update(&id, &draft, &providers)
+    app.state::<AgentRegistry>()
+        .update(&args.id, &args.draft, &app.state::<ProviderRegistry>())
         .map_err(|error| error.to_string())
 }
 
 // O Ember assume os cards do agente excluído; o aviso de cada troca entra no feed do projeto.
-#[tauri::command]
-pub fn delete_agent(
-    app: AppHandle,
-    registry: State<'_, AgentRegistry>,
-    state: State<'_, DbState>,
-    id: Agent,
-) -> Result<(), String> {
+pub(crate) fn delete_agent_exec(app: &AppHandle, args: DeleteAgentArgs) -> Result<(), String> {
+    let id = args.id;
+    let registry = app.state::<AgentRegistry>();
     let team = registry.team().map_err(|error| error.to_string())?;
     let agent_name = team.name_of(&id).to_string();
     let successor = Agent::ember();
     let successor_name = team.name_of(&successor).to_string();
+    let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
     let time = now_millis().map_err(|error| error.to_string())?;
     let notes = db
@@ -87,35 +127,36 @@ pub fn delete_agent(
     for note in notes {
         // A troca já está gravada; falha ao avisar o feed não vira erro para quem excluiu.
         let _ = emit_feed_note(
-            &app,
+            app,
             note.project_id,
             Speaker::Agent(successor.clone()),
             &note.text,
             time,
         );
-        let _ = emit_backlog_changed(&app, note.project_id);
+        let _ = emit_backlog_changed(app, note.project_id);
     }
     Ok(())
 }
 
-#[tauri::command]
-pub async fn set_agent_instructions(
-    registry: State<'_, AgentRegistry>,
-    app_state: State<'_, AppState>,
-    id: Agent,
-    text: String,
+pub(crate) async fn set_agent_instructions_exec(
+    app: &AppHandle,
+    args: SetAgentInstructionsArgs,
 ) -> Result<AgentProfile, String> {
-    let profile = registry
-        .set_instructions(&id, &text)
+    let profile = app
+        .state::<AgentRegistry>()
+        .set_instructions(&args.id, &args.text)
         .map_err(|error| error.to_string())?;
     // Só depois de gravada: a sessão que reabrir já lê o prompt com o texto novo.
-    app_state.sessions.retire_agent(&id).await;
+    app.state::<AppState>()
+        .sessions
+        .retire_agent(&args.id)
+        .await;
     Ok(profile)
 }
 
-#[tauri::command]
-pub fn list_temporary_overrides(app_state: State<'_, AppState>) -> Vec<TemporaryOverride> {
+pub(crate) fn list_temporary_overrides_exec(app: &AppHandle) -> Vec<TemporaryOverride> {
     let now = now_millis_u64();
+    let app_state = app.state::<AppState>();
     let mut map = app_state
         .temporary_overrides
         .lock()
@@ -124,25 +165,29 @@ pub fn list_temporary_overrides(app_state: State<'_, AppState>) -> Vec<Temporary
     map.values().cloned().collect()
 }
 
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn set_temporary_override(
-    app: AppHandle,
-    registry: State<'_, AgentRegistry>,
-    providers: State<'_, ProviderRegistry>,
-    app_state: State<'_, AppState>,
-    agent: Agent,
-    cli: String,
-    model_tier: Option<ModelTier>,
-    model: Option<String>,
-    reason: Option<OverrideReason>,
-    expires_in_ms: Option<u64>,
+pub(crate) async fn set_temporary_override_exec(
+    app: &AppHandle,
+    args: SetTemporaryOverrideArgs,
 ) -> Result<TemporaryOverride, String> {
-    let team = registry.team().map_err(|error| error.to_string())?;
+    let SetTemporaryOverrideArgs {
+        agent,
+        cli,
+        model_tier,
+        model,
+        reason,
+        expires_in_ms,
+    } = args;
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|error| error.to_string())?;
     let profile = team
         .profile(&agent)
         .ok_or_else(|| format!("Agente desconhecido: {agent}"))?;
-    let provider = providers.get(&cli).map_err(|error| error.to_string())?;
+    let provider = app
+        .state::<ProviderRegistry>()
+        .get(&cli)
+        .map_err(|error| error.to_string())?;
     if agent == Agent::ember() && !provider.has_tools() {
         return Err(
             "O agente Ember exige um provedor com suporte a ferramentas (MCP ou Vokia CLI)."
@@ -170,6 +215,7 @@ pub async fn set_temporary_override(
         applied_at: now,
         expires_at: expires_in_ms.map(|ms| now.saturating_add(ms)),
     };
+    let app_state = app.state::<AppState>();
     {
         let mut map = app_state
             .temporary_overrides
@@ -178,35 +224,31 @@ pub async fn set_temporary_override(
         map.insert(agent.clone(), ov.clone());
     }
     app_state.sessions.retire_agent(&agent).await;
-    emit_overrides_changed(&app, &app_state);
+    emit_overrides_changed(app, &app_state);
     Ok(ov)
 }
 
-#[tauri::command]
-pub async fn clear_temporary_override(
-    app: AppHandle,
-    app_state: State<'_, AppState>,
-    agent: Agent,
+pub(crate) async fn clear_temporary_override_exec(
+    app: &AppHandle,
+    args: ClearTemporaryOverrideArgs,
 ) -> Result<(), String> {
+    let app_state = app.state::<AppState>();
     let removed = {
         let mut map = app_state
             .temporary_overrides
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        map.remove(&agent).is_some()
+        map.remove(&args.agent).is_some()
     };
     if removed {
-        app_state.sessions.retire_agent(&agent).await;
-        emit_overrides_changed(&app, &app_state);
+        app_state.sessions.retire_agent(&args.agent).await;
+        emit_overrides_changed(app, &app_state);
     }
     Ok(())
 }
 
-#[tauri::command]
-pub async fn clear_all_temporary_overrides(
-    app: AppHandle,
-    app_state: State<'_, AppState>,
-) -> Result<(), String> {
+pub(crate) async fn clear_all_temporary_overrides_exec(app: &AppHandle) -> Result<(), String> {
+    let app_state = app.state::<AppState>();
     let agents: Vec<Agent> = {
         let mut map = app_state
             .temporary_overrides
@@ -220,30 +262,121 @@ pub async fn clear_all_temporary_overrides(
         app_state.sessions.retire_agent(agent).await;
     }
     if !agents.is_empty() {
-        emit_overrides_changed(&app, &app_state);
+        emit_overrides_changed(app, &app_state);
     }
     Ok(())
 }
 
+pub(crate) async fn update_ember_llm_exec(
+    app: &AppHandle,
+    args: UpdateEmberLlmArgs,
+) -> Result<AgentProfile, String> {
+    let profile = app
+        .state::<AgentRegistry>()
+        .update_ember_llm(
+            args.cli,
+            args.model_tier,
+            args.model,
+            args.fallback.unwrap_or_default(),
+            &app.state::<ProviderRegistry>(),
+        )
+        .map_err(|error| error.to_string())?;
+    app.state::<AppState>()
+        .sessions
+        .retire_agent(&Agent::ember())
+        .await;
+    Ok(profile)
+}
+
+#[tauri::command]
+pub fn list_agents(app: AppHandle) -> Result<TeamListing, String> {
+    list_agents_exec(&app)
+}
+
+#[tauri::command]
+pub fn available_providers(app: AppHandle) -> Vec<String> {
+    available_providers_exec(&app)
+}
+
+#[tauri::command]
+pub fn create_agent(app: AppHandle, draft: AgentDraft) -> Result<AgentProfile, String> {
+    create_agent_exec(&app, CreateAgentArgs { draft })
+}
+
+#[tauri::command]
+pub fn update_agent(app: AppHandle, id: Agent, draft: AgentDraft) -> Result<AgentProfile, String> {
+    update_agent_exec(&app, UpdateAgentArgs { id, draft })
+}
+
+#[tauri::command]
+pub fn delete_agent(app: AppHandle, id: Agent) -> Result<(), String> {
+    delete_agent_exec(&app, DeleteAgentArgs { id })
+}
+
+#[tauri::command]
+pub async fn set_agent_instructions(
+    app: AppHandle,
+    id: Agent,
+    text: String,
+) -> Result<AgentProfile, String> {
+    set_agent_instructions_exec(&app, SetAgentInstructionsArgs { id, text }).await
+}
+
+#[tauri::command]
+pub fn list_temporary_overrides(app: AppHandle) -> Vec<TemporaryOverride> {
+    list_temporary_overrides_exec(&app)
+}
+
+#[tauri::command]
+pub async fn set_temporary_override(
+    app: AppHandle,
+    agent: Agent,
+    cli: String,
+    model_tier: Option<ModelTier>,
+    model: Option<String>,
+    reason: Option<OverrideReason>,
+    expires_in_ms: Option<u64>,
+) -> Result<TemporaryOverride, String> {
+    set_temporary_override_exec(
+        &app,
+        SetTemporaryOverrideArgs {
+            agent,
+            cli,
+            model_tier,
+            model,
+            reason,
+            expires_in_ms,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn clear_temporary_override(app: AppHandle, agent: Agent) -> Result<(), String> {
+    clear_temporary_override_exec(&app, ClearTemporaryOverrideArgs { agent }).await
+}
+
+#[tauri::command]
+pub async fn clear_all_temporary_overrides(app: AppHandle) -> Result<(), String> {
+    clear_all_temporary_overrides_exec(&app).await
+}
+
 #[tauri::command]
 pub async fn update_ember_llm(
-    registry: State<'_, AgentRegistry>,
-    providers: State<'_, ProviderRegistry>,
-    app_state: State<'_, AppState>,
+    app: AppHandle,
     cli: Option<String>,
     model_tier: Option<ModelTier>,
     model: Option<String>,
     fallback: Option<Vec<LlmTarget>>,
 ) -> Result<AgentProfile, String> {
-    let profile = registry
-        .update_ember_llm(
+    update_ember_llm_exec(
+        &app,
+        UpdateEmberLlmArgs {
             cli,
             model_tier,
             model,
-            fallback.unwrap_or_default(),
-            &providers,
-        )
-        .map_err(|error| error.to_string())?;
-    app_state.sessions.retire_agent(&Agent::ember()).await;
-    Ok(profile)
+            fallback,
+        },
+    )
+    .await
 }

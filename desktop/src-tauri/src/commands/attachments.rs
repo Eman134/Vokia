@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
 use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
@@ -23,32 +24,63 @@ pub async fn pick_attachment_files(app: AppHandle) -> Vec<String> {
         .collect()
 }
 
-#[tauri::command]
-pub async fn save_attachment_files(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    project_id: i64,
-    paths: Vec<String>,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveAttachmentFilesArgs {
+    pub project_id: i64,
+    pub paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DiscardAttachmentArgs {
+    pub project_id: i64,
+    pub id: String,
+}
+
+pub(crate) async fn save_attachment_files_exec(
+    app: &AppHandle,
+    args: SaveAttachmentFilesArgs,
 ) -> Result<Vec<Attachment>, String> {
+    let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
-    let data_dir = data_dir(&app)?;
-    if paths.len() > ATTACHMENTS_PER_MESSAGE {
+    let data_dir = data_dir(app)?;
+    if args.paths.len() > ATTACHMENTS_PER_MESSAGE {
         return Err(AttachmentError::TooMany {
             limit: ATTACHMENTS_PER_MESSAGE,
         }
         .to_string());
     }
-    let mut saved = Vec::with_capacity(paths.len());
-    for path in &paths {
-        match attachments::save_file(db, &data_dir, project_id, Path::new(path)) {
+    let mut saved = Vec::with_capacity(args.paths.len());
+    for path in &args.paths {
+        match attachments::save_file(db, &data_dir, args.project_id, Path::new(path)) {
             Ok(attachment) => saved.push(attachment),
             Err(error) => {
-                discard_all(db, &data_dir, project_id, &saved);
+                discard_all(db, &data_dir, args.project_id, &saved);
                 return Err(error.to_string());
             }
         }
     }
     Ok(saved)
+}
+
+pub(crate) async fn discard_attachment_exec(
+    app: &AppHandle,
+    args: DiscardAttachmentArgs,
+) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    attachments::discard(db, &data_dir(app)?, args.project_id, &args.id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn save_attachment_files(
+    app: AppHandle,
+    project_id: i64,
+    paths: Vec<String>,
+) -> Result<Vec<Attachment>, String> {
+    save_attachment_files_exec(&app, SaveAttachmentFilesArgs { project_id, paths }).await
 }
 
 #[tauri::command]
@@ -63,23 +95,16 @@ pub async fn save_attachment_bytes(
     let project_id = header(&request, PROJECT_HEADER)?
         .parse::<i64>()
         .map_err(|_| header_error(PROJECT_HEADER))?;
-    let name = percent_decode(header(&request, NAME_HEADER)?)
-        .ok_or_else(|| header_error(NAME_HEADER))?;
+    let name =
+        percent_decode(header(&request, NAME_HEADER)?).ok_or_else(|| header_error(NAME_HEADER))?;
     let db = state.require().map_err(|error| error.to_string())?;
     attachments::save_bytes(db, &data_dir(&app)?, project_id, &name, bytes)
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn discard_attachment(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    project_id: i64,
-    id: String,
-) -> Result<(), String> {
-    let db = state.require().map_err(|error| error.to_string())?;
-    attachments::discard(db, &data_dir(&app)?, project_id, &id)
-        .map_err(|error| error.to_string())
+pub async fn discard_attachment(app: AppHandle, project_id: i64, id: String) -> Result<(), String> {
+    discard_attachment_exec(&app, DiscardAttachmentArgs { project_id, id }).await
 }
 
 // A operação principal já deu certo; sobra de arquivo é varrida na próxima abertura do app.
@@ -97,9 +122,7 @@ pub fn purge_sent_files(app: &AppHandle, db: &Db, project_id: i64) {
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())
+    app.path().app_data_dir().map_err(|error| error.to_string())
 }
 
 // Falha ao desfazer deixa só pastas já sem linha útil; o erro que importa é o do anexo que falhou.

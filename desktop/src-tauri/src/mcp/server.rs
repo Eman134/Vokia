@@ -242,7 +242,7 @@ async fn post_mcp(State(shared): State<Arc<Shared>>, headers: HeaderMap, body: B
     let Ok(bytes) = to_bytes(body, MAX_BODY_BYTES).await else {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     };
-    match handle(&bytes, &shared.tools, &binding, shared.app.get()) {
+    match handle(&bytes, &shared.tools, &binding, shared.app.get()).await {
         Reply::Json(value) => Json(value).into_response(),
         Reply::NoContent => StatusCode::NO_CONTENT.into_response(),
     }

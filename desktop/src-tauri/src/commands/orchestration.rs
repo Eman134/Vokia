@@ -2,7 +2,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::agents::{replica_of, Agent, AgentError, AgentRegistry};
 use crate::db::{
@@ -89,55 +89,146 @@ pub(crate) fn read_orchestration(
     Ok(snapshot)
 }
 
-#[tauri::command]
-pub fn get_orchestration(
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveLayerArgs {
+    pub draft: LayerDraft,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteLayerArgs {
+    pub id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReorderLayersArgs {
+    pub ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveTeamArgs {
+    pub draft: TeamDraft,
+    pub leader_agent: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteTeamArgs {
+    pub id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlaceAgentArgs {
+    pub draft: PlacementDraft,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UnplaceAgentArgs {
+    pub agent_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveTeamFlowArgs {
+    pub team_id: String,
+    pub draft: TeamFlowDraft,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetFinalValidationArgs {
+    pub team_id: String,
+    pub mode: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveOrchestrationSettingsArgs {
+    pub settings: OrchestrationSettings,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListAgentCopiesArgs {
+    pub project_id: i64,
+}
+
+fn get_orchestration_impl(
+    state: &DbState,
+    registry: &AgentRegistry,
 ) -> Result<OrchestrationSnapshot, String> {
     let db = state.require().map_err(|error| error.to_string())?;
-    read_orchestration(db, &registry)
+    read_orchestration(db, registry)
 }
 
-#[tauri::command]
-pub fn save_layer(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    draft: LayerDraft,
+fn save_layer_impl(
+    app: &AppHandle,
+    state: &DbState,
+    registry: &AgentRegistry,
+    draft: &LayerDraft,
 ) -> Result<Layer, String> {
-    write(&app, &state, &registry, |db| db.save_layer(&draft))
+    write(app, state, registry, |db| db.save_layer(draft))
 }
 
-#[tauri::command]
-pub fn delete_layer(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    id: String,
+fn place_agent_impl(
+    app: &AppHandle,
+    state: &DbState,
+    registry: &AgentRegistry,
+    draft: &PlacementDraft,
+) -> Result<Placement, String> {
+    write(app, state, registry, |db| db.place_agent(draft))
+}
+
+fn save_orchestration_settings_impl(
+    app: &AppHandle,
+    state: &DbState,
+    registry: &AgentRegistry,
+    settings: &OrchestrationSettings,
 ) -> Result<(), String> {
-    write(&app, &state, &registry, |db| db.delete_layer(&id))
+    write(app, state, registry, |db| db.save_settings(settings))
 }
 
-#[tauri::command]
-pub fn reorder_layers(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    ids: Vec<String>,
-) -> Result<(), String> {
-    write(&app, &state, &registry, |db| db.reorder_layers(&ids))
+pub(crate) fn get_orchestration_exec(app: &AppHandle) -> Result<OrchestrationSnapshot, String> {
+    get_orchestration_impl(&app.state::<DbState>(), &app.state::<AgentRegistry>())
 }
 
-#[tauri::command]
-pub fn save_team(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    draft: TeamDraft,
-    leader_agent: Option<String>,
-) -> Result<Team, String> {
-    let leader = leader_in_cast(&registry, leader_agent)?;
-    write(&app, &state, &registry, |db| {
+pub(crate) fn save_layer_exec(app: &AppHandle, args: SaveLayerArgs) -> Result<Layer, String> {
+    save_layer_impl(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        &args.draft,
+    )
+}
+
+pub(crate) fn delete_layer_exec(app: &AppHandle, args: DeleteLayerArgs) -> Result<(), String> {
+    write(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        |db| db.delete_layer(&args.id),
+    )
+}
+
+pub(crate) fn reorder_layers_exec(app: &AppHandle, args: ReorderLayersArgs) -> Result<(), String> {
+    write(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        |db| db.reorder_layers(&args.ids),
+    )
+}
+
+pub(crate) fn save_team_exec(app: &AppHandle, args: SaveTeamArgs) -> Result<Team, String> {
+    let registry = app.state::<AgentRegistry>();
+    let leader = leader_in_cast(&registry, args.leader_agent)?;
+    let draft = args.draft;
+    write(app, &app.state::<DbState>(), &registry, |db| {
         let team = db.save_team(&draft)?;
         match leader.as_deref() {
             Some(leader) => db.set_team_leader(&team.id, leader),
@@ -149,20 +240,15 @@ pub fn save_team(
 }
 
 // Os agentes do time ficam sem posição; o Ember assume os cards deles, com aviso no feed.
-#[tauri::command]
-pub fn delete_team(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    id: String,
-) -> Result<(), String> {
+pub(crate) fn delete_team_exec(app: &AppHandle, args: DeleteTeamArgs) -> Result<(), String> {
+    let registry = app.state::<AgentRegistry>();
     let cast = registry.team().map_err(|error| error.to_string())?;
     let successor = Agent::ember();
     let successor_name = cast.name_of(&successor).to_string();
     let time = orchestrator::now_millis().map_err(|error| error.to_string())?;
-    let notes = write(&app, &state, &registry, |db| {
+    let notes = write(app, &app.state::<DbState>(), &registry, |db| {
         db.delete_team(
-            &id,
+            &args.id,
             &successor,
             &successor_name,
             |agent| cast.name_of(agent).to_string(),
@@ -172,15 +258,121 @@ pub fn delete_team(
     for note in notes {
         // A troca já está gravada; falha ao avisar o feed não vira erro para quem removeu.
         let _ = orchestrator::emit_feed_note(
-            &app,
+            app,
             note.project_id,
             Speaker::Agent(successor.clone()),
             &note.text,
             time,
         );
-        let _ = orchestrator::emit_backlog_changed(&app, note.project_id);
+        let _ = orchestrator::emit_backlog_changed(app, note.project_id);
     }
     Ok(())
+}
+
+pub(crate) fn place_agent_exec(app: &AppHandle, args: PlaceAgentArgs) -> Result<Placement, String> {
+    place_agent_impl(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        &args.draft,
+    )
+}
+
+pub(crate) fn unplace_agent_exec(app: &AppHandle, args: UnplaceAgentArgs) -> Result<(), String> {
+    write(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        |db| db.unplace_agent(&args.agent_id),
+    )
+}
+
+// A estrutura do fluxo (agentes, gateways e ligações) só muda por aqui, validada de uma vez.
+pub(crate) fn save_team_flow_exec(
+    app: &AppHandle,
+    args: SaveTeamFlowArgs,
+) -> Result<OrchestrationSnapshot, String> {
+    let registry = app.state::<AgentRegistry>();
+    let cast = registry.team().map_err(|error| error.to_string())?;
+    let name_of = |id: &str| {
+        Agent::from_stored(id)
+            .map_or_else(|| id.to_string(), |agent| cast.name_of(&agent).to_string())
+    };
+    write(app, &app.state::<DbState>(), &registry, |db| {
+        db.save_team_flow(&args.team_id, &args.draft, &name_of)
+    })
+}
+
+pub(crate) fn set_final_validation_exec(
+    app: &AppHandle,
+    args: SetFinalValidationArgs,
+) -> Result<(), String> {
+    write(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        |db| db.set_final_validation(&args.team_id, &args.mode),
+    )
+}
+
+pub(crate) fn save_orchestration_settings_exec(
+    app: &AppHandle,
+    args: SaveOrchestrationSettingsArgs,
+) -> Result<(), String> {
+    save_orchestration_settings_impl(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        &args.settings,
+    )
+}
+
+#[tauri::command]
+pub fn get_orchestration(
+    state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
+) -> Result<OrchestrationSnapshot, String> {
+    get_orchestration_impl(&state, &registry)
+}
+
+#[tauri::command]
+pub fn save_layer(
+    app: AppHandle,
+    state: State<'_, DbState>,
+    registry: State<'_, AgentRegistry>,
+    draft: LayerDraft,
+) -> Result<Layer, String> {
+    save_layer_impl(&app, &state, &registry, &draft)
+}
+
+#[tauri::command]
+pub fn delete_layer(app: AppHandle, id: String) -> Result<(), String> {
+    delete_layer_exec(&app, DeleteLayerArgs { id })
+}
+
+#[tauri::command]
+pub fn reorder_layers(app: AppHandle, ids: Vec<String>) -> Result<(), String> {
+    reorder_layers_exec(&app, ReorderLayersArgs { ids })
+}
+
+#[tauri::command]
+pub fn save_team(
+    app: AppHandle,
+    draft: TeamDraft,
+    leader_agent: Option<String>,
+) -> Result<Team, String> {
+    save_team_exec(
+        &app,
+        SaveTeamArgs {
+            draft,
+            leader_agent,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn delete_team(app: AppHandle, id: String) -> Result<(), String> {
+    delete_team_exec(&app, DeleteTeamArgs { id })
 }
 
 #[tauri::command]
@@ -190,49 +382,26 @@ pub fn place_agent(
     registry: State<'_, AgentRegistry>,
     draft: PlacementDraft,
 ) -> Result<Placement, String> {
-    write(&app, &state, &registry, |db| db.place_agent(&draft))
+    place_agent_impl(&app, &state, &registry, &draft)
 }
 
 #[tauri::command]
-pub fn unplace_agent(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    agent_id: String,
-) -> Result<(), String> {
-    write(&app, &state, &registry, |db| db.unplace_agent(&agent_id))
+pub fn unplace_agent(app: AppHandle, agent_id: String) -> Result<(), String> {
+    unplace_agent_exec(&app, UnplaceAgentArgs { agent_id })
 }
 
-// A estrutura do fluxo (agentes, gateways e ligações) só muda por aqui, validada de uma vez.
 #[tauri::command]
 pub fn save_team_flow(
     app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
     team_id: String,
     draft: TeamFlowDraft,
 ) -> Result<OrchestrationSnapshot, String> {
-    let cast = registry.team().map_err(|error| error.to_string())?;
-    let name_of = |id: &str| {
-        Agent::from_stored(id)
-            .map_or_else(|| id.to_string(), |agent| cast.name_of(&agent).to_string())
-    };
-    write(&app, &state, &registry, |db| {
-        db.save_team_flow(&team_id, &draft, &name_of)
-    })
+    save_team_flow_exec(&app, SaveTeamFlowArgs { team_id, draft })
 }
 
 #[tauri::command]
-pub fn set_final_validation(
-    app: AppHandle,
-    state: State<'_, DbState>,
-    registry: State<'_, AgentRegistry>,
-    team_id: String,
-    mode: String,
-) -> Result<(), String> {
-    write(&app, &state, &registry, |db| {
-        db.set_final_validation(&team_id, &mode)
-    })
+pub fn set_final_validation(app: AppHandle, team_id: String, mode: String) -> Result<(), String> {
+    set_final_validation_exec(&app, SetFinalValidationArgs { team_id, mode })
 }
 
 #[tauri::command]
@@ -242,7 +411,7 @@ pub fn save_orchestration_settings(
     registry: State<'_, AgentRegistry>,
     settings: OrchestrationSettings,
 ) -> Result<(), String> {
-    write(&app, &state, &registry, |db| db.save_settings(&settings))
+    save_orchestration_settings_impl(&app, &state, &registry, &settings)
 }
 
 pub(crate) fn read_movements(db: &Db, project_id: i64) -> Result<Vec<Handoff>, String> {
@@ -268,12 +437,13 @@ pub struct AgentCopies {
 }
 
 // Agrupa só as réplicas em execução (id <base>-<n>) sob o agente base; o grupo some quando não há réplica. O item vem do turno em andamento e o worktree do próprio item.
-#[tauri::command]
-pub fn list_agent_copies(
-    app_state: State<'_, AppState>,
-    state: State<'_, DbState>,
-    project_id: i64,
+pub(crate) fn list_agent_copies_exec(
+    app: &AppHandle,
+    args: ListAgentCopiesArgs,
 ) -> Result<Vec<AgentCopies>, String> {
+    let project_id = args.project_id;
+    let state = app.state::<DbState>();
+    let app_state = app.state::<AppState>();
     let db = state.require().map_err(|error| error.to_string())?;
     let instances = orchestrator::active_instances(&app_state, project_id)
         .map_err(|error| error.to_string())?;
@@ -327,11 +497,9 @@ pub struct AgentActivity {
 
 // Execuções em andamento de todos os projetos, por agente base: o próprio agente (cópia 0) e as réplicas (cópia n).
 // Ember orquestra e não é posicionado, então não entra.
-#[tauri::command]
-pub fn list_agent_activity(
-    app_state: State<'_, AppState>,
-    state: State<'_, DbState>,
-) -> Result<Vec<AgentActivity>, String> {
+pub(crate) fn list_agent_activity_exec(app: &AppHandle) -> Result<Vec<AgentActivity>, String> {
+    let state = app.state::<DbState>();
+    let app_state = app.state::<AppState>();
     let db = state.require().map_err(|error| error.to_string())?;
     let instances =
         orchestrator::all_active_instances(&app_state).map_err(|error| error.to_string())?;
@@ -377,6 +545,16 @@ pub fn list_agent_activity(
             AgentActivity { agent, runs }
         })
         .collect())
+}
+
+#[tauri::command]
+pub fn list_agent_copies(app: AppHandle, project_id: i64) -> Result<Vec<AgentCopies>, String> {
+    list_agent_copies_exec(&app, ListAgentCopiesArgs { project_id })
+}
+
+#[tauri::command]
+pub fn list_agent_activity(app: AppHandle) -> Result<Vec<AgentActivity>, String> {
+    list_agent_activity_exec(&app)
 }
 
 #[cfg(test)]
