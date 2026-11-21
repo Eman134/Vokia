@@ -33,26 +33,32 @@ fn position(args: &[String], flag: &str) -> usize {
 
 #[test]
 fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconhecido() {
-    assert_eq!(ProviderAdapter::from_cli("claude").unwrap(), ProviderAdapter::Claude);
-    assert_eq!(ProviderAdapter::from_cli("codex").unwrap(), ProviderAdapter::Codex);
-    assert_eq!(ProviderAdapter::from_cli("opencode").unwrap(), ProviderAdapter::OpenCode);
-    assert_eq!(ProviderAdapter::from_cli("antigravity").unwrap(), ProviderAdapter::Antigravity);
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let claude = ProviderAdapter::from_cli("claude", &providers).unwrap();
+    let codex = ProviderAdapter::from_cli("codex", &providers).unwrap();
+    let opencode = ProviderAdapter::from_cli("opencode", &providers).unwrap();
+    let antigravity = ProviderAdapter::from_cli("antigravity", &providers).unwrap();
 
-    let err = ProviderAdapter::from_cli("desconhecido").unwrap_err();
+    assert!(matches!(claude, ProviderAdapter::Claude(_)));
+    assert!(matches!(codex, ProviderAdapter::Codex(_)));
+    assert!(matches!(opencode, ProviderAdapter::OpenCode(_)));
+    assert!(matches!(antigravity, ProviderAdapter::Antigravity(_)));
+
+    let err = ProviderAdapter::from_cli("desconhecido", &providers).unwrap_err();
     assert!(
         err.to_string().contains("Provedor de CLI desconhecido"),
         "mensagem inesperada: {err}"
     );
 
-    assert!(ProviderAdapter::Claude.supports_mcp());
-    assert!(!ProviderAdapter::Codex.supports_mcp());
-    assert!(!ProviderAdapter::OpenCode.supports_mcp());
-    assert!(!ProviderAdapter::Antigravity.supports_mcp());
+    assert!(claude.supports_mcp());
+    assert!(!codex.supports_mcp());
+    assert!(!opencode.supports_mcp());
+    assert!(!antigravity.supports_mcp());
 
-    assert!(ProviderAdapter::Claude.supports_live_session());
-    assert!(!ProviderAdapter::Codex.supports_live_session());
-    assert!(!ProviderAdapter::OpenCode.supports_live_session());
-    assert!(!ProviderAdapter::Antigravity.supports_live_session());
+    assert!(claude.supports_live_session());
+    assert!(!codex.supports_live_session());
+    assert!(!opencode.supports_live_session());
+    assert!(!antigravity.supports_live_session());
 }
 
 #[test]
@@ -61,7 +67,7 @@ fn run_cli_process_com_exit_code_diferente_de_zero_retorna_claude_error_exit() {
         let mut cmd = tokio::process::Command::new("cmd.exe");
         cmd.args(["/C", "echo falha no processo 1>&2 & exit 42"]);
         let pid = std::sync::atomic::AtomicU32::new(0);
-        let res = run_cli_process(cmd, Access::TextOnly, &pid, None).await;
+        let res = run_cli_process(cmd, Access::TextOnly, &pid, None, None).await;
         match res {
             Err(ClaudeError::Exit { code, message }) => {
                 assert_eq!(code, Some(42));
@@ -360,4 +366,830 @@ fn antigravity_parse_stream_output_processa_result_assistant_e_erros() {
     let plain = b"Resposta simples em texto puro do Antigravity";
     let reply_plain = antigravity::parse_stream_output(plain).unwrap();
     assert_eq!(reply_plain.text, "Resposta simples em texto puro do Antigravity");
+}
+
+// ==========================================
+// 5. LLM-1: Seed de providers.json, custom provider, modelo livre vs InvalidModel, model_tier via tiers
+// ==========================================
+
+#[test]
+fn llm1_seed_de_providers_json_em_diretorio_vazio_cria_quatro_provedores_iniciais() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-llm1-seed-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let providers_file = dir.join("providers.json");
+    assert!(!providers_file.exists());
+
+    let registry = crate::providers::ProviderRegistry::load(&dir);
+    assert!(providers_file.exists(), "providers.json deve ser criado no seed");
+
+    let list = registry.list().expect("carregar lista de provedores");
+    assert_eq!(list.len(), 4, "deve semear exatamente 4 provedores");
+
+    let ids: Vec<&str> = list.iter().map(|p| p.id.as_str()).collect();
+    assert!(ids.contains(&"claude"));
+    assert!(ids.contains(&"codex"));
+    assert!(ids.contains(&"opencode"));
+    assert!(ids.contains(&"antigravity"));
+
+    for provider in &list {
+        assert!(!provider.default_command.trim().is_empty());
+        assert!(!provider.default_model.trim().is_empty());
+        assert!(!provider.tiers.basic.trim().is_empty());
+        assert!(!provider.tiers.intermediate.trim().is_empty());
+        assert!(!provider.tiers.advanced.trim().is_empty());
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-llm1-custom-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let registry = crate::providers::ProviderRegistry::load(&dir);
+    assert_eq!(registry.list().unwrap().len(), 4);
+
+    let custom = crate::providers::ProviderConfig {
+        id: "meu-llm-custom".to_string(),
+        label: "Meu LLM Customizado".to_string(),
+        protocol: crate::providers::ProviderProtocol::GenericCli,
+        default_command: "meu-llm".to_string(),
+        default_model: "modelo-base".to_string(),
+        models: vec!["modelo-base".to_string(), "modelo-avancado".to_string()],
+        tiers: crate::providers::ModelTiers {
+            basic: "modelo-base".to_string(),
+            intermediate: "modelo-base".to_string(),
+            advanced: "modelo-avancado".to_string(),
+        },
+        supports_mcp: false,
+        supports_sandbox: false,
+        reserved_flags: vec!["--danger".to_string()],
+        rate_limit_patterns: vec!["quota_error".to_string()],
+        model_unavailable_patterns: vec!["no_access".to_string()],
+        discovery: None,
+        generic: Some(crate::providers::GenericCliSpec {
+            prompt_args: vec!["-p".to_string(), "{prompt}".to_string()],
+            prompt_via_stdin: false,
+            model_flag: Some("--model".to_string()),
+            dir_flag: None,
+            json_output_args: vec![],
+            text_json_paths: vec![],
+            error_json_paths: vec![],
+            sandbox_args: std::collections::BTreeMap::new(),
+        }),
+        builtin_seed: false,
+    };
+
+    let saved = registry.save_provider(custom.clone()).expect("salvar custom provider");
+    assert_eq!(saved.id, "meu-llm-custom");
+
+    // Verifica que agora tem 5 provedores
+    let list = registry.list().unwrap();
+    assert_eq!(list.len(), 5);
+    assert!(list.iter().any(|p| p.id == "meu-llm-custom"));
+
+    // Recarrega em nova instância e confirma persistência em providers.json
+    let reloaded = crate::providers::ProviderRegistry::load(&dir);
+    let loaded_custom = reloaded.get("meu-llm-custom").expect("recuperar custom persistido");
+    assert_eq!(loaded_custom.label, "Meu LLM Customizado");
+    assert_eq!(loaded_custom.default_command, "meu-llm");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-llm1-model-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let providers = crate::providers::ProviderRegistry::load(&dir);
+    let agents = crate::agents::AgentRegistry::load(&dir);
+
+    // 1. Modelo livre arbitrário ("modelo-futuro-2026") é aceito mesmo fora dos presets conhecidos
+    let draft_valido = crate::agents::AgentDraft {
+        name: "LivreAgent".to_string(),
+        role: "Testador de modelo livre".to_string(),
+        avatar: "artesao".to_string(),
+        cli: "claude".to_string(),
+        model: "modelo-futuro-2026".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![],
+        command: "claude".to_string(),
+    };
+    let created = agents.create(&draft_valido, &providers).expect("modelo livre válido deve ser criado");
+    assert_eq!(created.model, "modelo-futuro-2026");
+
+    // 2. Modelo com quebra de linha gera InvalidModel
+    let draft_quebra = crate::agents::AgentDraft {
+        name: "QuebraAgent".to_string(),
+        role: "Testador de modelo quebrado".to_string(),
+        avatar: "pensador".to_string(),
+        cli: "claude".to_string(),
+        model: "modelo\ninvalido".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![],
+        command: "claude".to_string(),
+    };
+    match agents.create(&draft_quebra, &providers) {
+        Err(crate::agents::AgentError::InvalidModel(m)) => assert!(m.contains('\n')),
+        other => panic!("esperava InvalidModel para quebra de linha, obteve: {other:?}"),
+    }
+
+    // 3. Modelo vazio sem tier gera InvalidModel
+    let draft_vazio = crate::agents::AgentDraft {
+        name: "VazioAgent".to_string(),
+        role: "Testador de modelo vazio".to_string(),
+        avatar: "vigia".to_string(),
+        cli: "claude".to_string(),
+        model: "".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![],
+        command: "claude".to_string(),
+    };
+    match agents.create(&draft_vazio, &providers) {
+        Err(crate::agents::AgentError::InvalidModel(_)) => {}
+        other => panic!("esperava InvalidModel para modelo vazio sem tier, obteve: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn llm1_model_tier_basic_intermediate_advanced_resolvido_via_tiers() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let claude = providers.get("claude").unwrap();
+    let codex = providers.get("codex").unwrap();
+
+    // Claude
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &claude,
+            Some(crate::providers::ModelTier::Basic),
+            ""
+        ),
+        "haiku"
+    );
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &claude,
+            Some(crate::providers::ModelTier::Intermediate),
+            ""
+        ),
+        "sonnet"
+    );
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &claude,
+            Some(crate::providers::ModelTier::Advanced),
+            ""
+        ),
+        "opus"
+    );
+
+    // Codex
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &codex,
+            Some(crate::providers::ModelTier::Basic),
+            ""
+        ),
+        "gpt-5.6-luna"
+    );
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &codex,
+            Some(crate::providers::ModelTier::Intermediate),
+            ""
+        ),
+        "gpt-5.6-terra"
+    );
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &codex,
+            Some(crate::providers::ModelTier::Advanced),
+            ""
+        ),
+        "gpt-6-luna"
+    );
+
+    // Modelo explícito sem tier resolve o modelo específico informado
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &claude,
+            None,
+            "custom-override"
+        ),
+        "custom-override"
+    );
+
+    // Sem tier e sem modelo explícito resolve o default_model do provedor
+    assert_eq!(
+        crate::orchestrator::fallback::resolve_model_for_provider(
+            &claude,
+            None,
+            ""
+        ),
+        "haiku"
+    );
+}
+
+// ==========================================
+// 6. LLM-2: Generic build_command sem shell, recusa Liberado sem sandbox, parse_output, classify_provider_error
+// ==========================================
+
+#[test]
+fn llm2_generic_build_command_sem_shell_e_recusa_liberado_quando_sandbox_false() {
+    let mut provider = crate::providers::initial_providers()[0].clone();
+    provider.id = "custom-cli".to_string();
+    provider.label = "Custom CLI".to_string();
+    provider.supports_sandbox = false;
+    provider.generic = Some(crate::providers::GenericCliSpec {
+        prompt_args: vec!["-p".to_string(), "{prompt}".to_string()],
+        prompt_via_stdin: false,
+        model_flag: Some("--model".to_string()),
+        dir_flag: Some("--cwd".to_string()),
+        json_output_args: vec!["--json".to_string()],
+        text_json_paths: vec!["text".to_string()],
+        error_json_paths: vec![],
+        sandbox_args: std::collections::BTreeMap::new(),
+    });
+
+    let program = Path::new("minha-cli-bin");
+    let user_args = vec!["--extra-user-flag".to_string()];
+    let role = "Analista";
+    let model = "modelo-x";
+    let message = "Processar dados";
+
+    // 1. TextOnly: sem shell (programa é exatamente 'minha-cli-bin')
+    let (cmd, stdin) = generic::build_command(
+        program,
+        &user_args,
+        role,
+        model,
+        Access::TextOnly,
+        message,
+        &provider,
+    )
+    .expect("build_command para TextOnly deve funcionar");
+    assert!(stdin.is_none());
+    let args = args_of(&cmd);
+    assert_eq!(cmd.as_std().get_program().to_string_lossy(), "minha-cli-bin");
+    assert!(args.contains(&"--extra-user-flag".to_string()));
+    assert!(args.contains(&"--json".to_string()));
+    assert_eq!(args[position(&args, "--model") + 1], "modelo-x");
+    assert_eq!(args[position(&args, "-p") + 1], "Analista\n\nProcessar dados");
+
+    // 2. Project com Leitura: sucesso
+    let (cmd_leitura, _) = generic::build_command(
+        program,
+        &user_args,
+        role,
+        model,
+        Access::Project(project_access(PermissionLevel::Leitura)),
+        message,
+        &provider,
+    )
+    .expect("build_command para Leitura deve funcionar");
+    let args_leitura = args_of(&cmd_leitura);
+    assert!(args_leitura.contains(&"--cwd".to_string()));
+
+    // 3. Project com Liberado mas supports_sandbox == false: recusa explícita
+    let err_liberado = generic::build_command(
+        program,
+        &user_args,
+        role,
+        model,
+        Access::Project(project_access(PermissionLevel::Liberado)),
+        message,
+        &provider,
+    )
+    .expect_err("Liberado sem supports_sandbox deve falhar");
+
+    match err_liberado {
+        ClaudeError::Reported(msg) => {
+            assert!(
+                msg.contains("não oferece sandbox equivalente para o nível Liberado"),
+                "mensagem inesperada: {msg}"
+            );
+        }
+        other => panic!("esperava Reported, obteve: {other:?}"),
+    }
+}
+
+#[test]
+fn llm2_generic_parse_output_texto_puro_e_jsonl_field_com_extracao() {
+    let mut provider = crate::providers::initial_providers()[0].clone();
+
+    // 1. Sem json paths configurados -> retorna texto bruto
+    provider.generic = None;
+    let reply_raw = generic::parse_output(b"  Resposta em texto puro direto   \n", &provider, "m").unwrap();
+    assert_eq!(reply_raw.text, "Resposta em texto puro direto");
+
+    // 2. Com text_json_paths e error_json_paths configurados
+    let mut spec = crate::providers::GenericCliSpec::default();
+    spec.text_json_paths = vec!["message.content".to_string(), "text".to_string()];
+    spec.error_json_paths = vec!["error.message".to_string()];
+    provider.generic = Some(spec);
+
+    let jsonl_ok = b"{\"type\": \"start\"}\n{\"message\": {\"content\": \"Parte 1 do texto\"}}\n{\"text\": \"Parte 2 do texto\"}\n";
+    let reply_json = generic::parse_output(jsonl_ok, &provider, "m").unwrap();
+    assert_eq!(reply_json.text, "Parte 1 do texto\n\nParte 2 do texto");
+
+    // 3. Linha com erro em error_json_paths -> classify_provider_error / Reported
+    let jsonl_err = "{\"type\": \"error\", \"error\": {\"message\": \"Falha de autorizacao interna\"}}\n".as_bytes();
+    let Err(ClaudeError::Reported(msg)) = generic::parse_output(jsonl_err, &provider, "m") else {
+        panic!("esperava Reported");
+    };
+    assert_eq!(msg, "Falha de autorizacao interna");
+}
+
+#[test]
+fn llm2_classify_provider_error_retorna_limit_exhausted_vs_model_unavailable() {
+    let limit_patterns = vec!["rate_limit".to_string(), "usage_limit_reached".to_string(), "quota".to_string()];
+    let unavail_patterns = vec!["model_not_found".to_string(), "does not have access to".to_string(), "not available".to_string()];
+
+    // 1. ModelUnavailable (ex: conta sem acesso ao modelo neon)
+    let msg_unavail = "User account does not have access to model gemini-4-neon-medium.";
+    let err_unavail = crate::claude::classify_provider_error(
+        "antigravity",
+        "gemini-4-neon-medium",
+        msg_unavail,
+        &limit_patterns,
+        &unavail_patterns,
+    );
+    match err_unavail {
+        Some(ClaudeError::ModelUnavailable { provider, model, detail }) => {
+            assert_eq!(provider, "antigravity");
+            assert_eq!(model, "gemini-4-neon-medium");
+            assert_eq!(detail, msg_unavail);
+        }
+        other => panic!("esperava ModelUnavailable, obteve: {other:?}"),
+    }
+
+    // 2. LimitExhausted (rate limit padrão)
+    let msg_limit = "Error: usage_limit_reached for current period.";
+    let err_limit = crate::claude::classify_provider_error(
+        "claude",
+        "haiku",
+        msg_limit,
+        &limit_patterns,
+        &unavail_patterns,
+    );
+    assert!(matches!(err_limit, Some(ClaudeError::LimitExhausted)));
+
+    // 3. Erro qualquer não classificado como limite nem indisponível
+    let msg_other = "SyntaxError: Unexpected token in request.";
+    let err_other = crate::claude::classify_provider_error(
+        "claude",
+        "haiku",
+        msg_other,
+        &limit_patterns,
+        &unavail_patterns,
+    );
+    assert!(err_other.is_none());
+}
+
+// ==========================================
+// 7. LLM-3: parse_models_lines, parse_codex_models_cache, inspect_cli, delete_provider("claude")
+// ==========================================
+
+#[test]
+fn llm3_parse_models_lines_filtra_cabecalhos_e_extrai_modelos() {
+    let sample = r#"
+Available models for this CLI:
+------------------------------
+# OpenAI models:
+openai/gpt-6-astra   (recommended, high speed)
+openai/gpt-5.6-luna
+=== Antigravity models ===
+gemini-4-hydrogen-medium
+gemini-4-neon-medium:
+"#;
+    let models = crate::providers::parse_models_lines(sample);
+    assert_eq!(
+        models,
+        vec![
+            "openai/gpt-6-astra".to_string(),
+            "openai/gpt-5.6-luna".to_string(),
+            "gemini-4-hydrogen-medium".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn llm3_parse_codex_models_cache_e_parse_json_models() {
+    // 1. parse_codex_models_cache com campo models
+    let cache_json = r#"{
+        "models": [
+            {"id": "gpt-6-luna", "name": "GPT-6 Luna"},
+            {"slug": "gpt-5.6-terra"}
+        ]
+    }"#;
+    let codex_models = crate::providers::parse_codex_models_cache(cache_json).unwrap();
+    assert_eq!(codex_models, vec!["gpt-6-luna", "gpt-5.6-terra"]);
+
+    // 2. parse_json_models com json_path aninhado
+    let nested_json = r#"{
+        "data": {
+            "available": [
+                {"id": "custom-1"},
+                {"slug": "custom-2"}
+            ]
+        }
+    }"#;
+    let json_models = crate::providers::parse_json_models(nested_json, Some("data.available")).unwrap();
+    assert_eq!(json_models, vec!["custom-1", "custom-2"]);
+}
+
+#[tokio::test]
+async fn llm3_inspect_cli_sem_shell_cli_ausente_e_truncamento_8kb() {
+    // 1. CLI inexistente retorna found: false sem erro nem panic
+    let result = crate::commands::providers::inspect_cli("cli_totalmente_inexistente_xyz_12345".to_string())
+        .await
+        .expect("inspect_cli de comando inexistente deve retornar Ok com found: false");
+    assert!(!result.found);
+    assert!(result.program_path.is_none());
+    assert!(result.help_text.is_empty());
+
+    // 2. build_setup_prompt inclui ajuda truncada e schema JSON esperado sem shell
+    let prompt = crate::commands::providers::build_setup_prompt(
+        "MinhaCli".to_string(),
+        "minha-cli".to_string(),
+        "Texto de ajuda da CLI".to_string(),
+    );
+    assert!(prompt.contains("MinhaCli"));
+    assert!(prompt.contains("minha-cli"));
+    assert!(prompt.contains("generic-cli"));
+    assert!(prompt.contains("Nunca use shell"));
+}
+
+#[test]
+fn llm3_delete_provider_claude_recusado() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-llm3-delete-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let app = crate::mcp::support::build_app(&dir);
+    use tauri::Manager;
+
+    let err = crate::commands::providers::delete_provider(
+        app.state::<crate::providers::ProviderRegistry>(),
+        app.state::<crate::agents::AgentRegistry>(),
+        "claude".to_string(),
+    )
+    .expect_err("remoção do provedor claude deve ser recusada");
+
+    assert!(
+        err.contains("O provedor padrão 'claude' não pode ser removido"),
+        "mensagem inesperada: {err}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ==========================================
+// 8. LLM-4: resolve_candidates prioridades, filtros Ember MCP, sandbox Liberado, CooldownTracker, expiração, update_ember_llm
+// ==========================================
+
+#[test]
+fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fallback() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));
+
+    let agent = crate::agents::Agent::from_stored("axiom").unwrap();
+    let profile = crate::agents::AgentProfile {
+        id: agent.clone(),
+        name: "Axiom".to_string(),
+        role: "Líder".to_string(),
+        avatar: "pensador".to_string(),
+        cli: "claude".to_string(),
+        model: "haiku".to_string(),
+        model_tier: None,
+        follow_default_llm: true,
+        fallback: vec![crate::orchestrator::fallback::LlmTarget {
+            cli: "codex".to_string(),
+            model_tier: None,
+            model: Some("gpt-6-luna".to_string()),
+        }],
+        command: "claude".to_string(),
+        builtin: false,
+        extra_instructions: String::new(),
+    };
+
+    let global_active = crate::orchestrator::fallback::LlmTarget {
+        cli: "antigravity".to_string(),
+        model_tier: None,
+        model: Some("gemini-4-hydrogen-medium".to_string()),
+    };
+    let global_fallback = vec![crate::orchestrator::fallback::LlmTarget {
+        cli: "opencode".to_string(),
+        model_tier: None,
+        model: Some("openai/gpt-6-astra".to_string()),
+    }];
+
+    // 1. Sem override temporário:
+    // Ordem esperada: follow_default (antigravity) -> profile (claude) -> agent fallback (codex) -> global fallback (opencode)
+    let candidates = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &state,
+        Some(&global_active),
+        &global_fallback,
+        None,
+    );
+    assert_eq!(candidates.len(), 4);
+    assert_eq!(candidates[0].cli, "antigravity");
+    assert_eq!(candidates[1].cli, "claude");
+    assert_eq!(candidates[2].cli, "codex");
+    assert_eq!(candidates[3].cli, "opencode");
+
+    // 2. Com override temporário:
+    // Ele assume a primeira posição absoluta!
+    let now = crate::orchestrator::fallback::now_millis_u64();
+    let temp_override = crate::orchestrator::fallback::TemporaryOverride {
+        agent: agent.clone(),
+        cli: "codex".to_string(),
+        model: "gpt-5.6-luna".to_string(),
+        model_tier: None,
+        command: "codex".to_string(),
+        original_cli: "claude".to_string(),
+        original_model: "haiku".to_string(),
+        original_tier: None,
+        reason: crate::orchestrator::fallback::OverrideReason::UsageLimit,
+        applied_at: now,
+        expires_at: Some(now + 60_000),
+    };
+    state.temporary_overrides.lock().unwrap().insert(agent.clone(), temp_override);
+
+    let candidates_with_ov = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &state,
+        Some(&global_active),
+        &global_fallback,
+        None,
+    );
+    assert_eq!(candidates_with_ov[0].cli, "codex");
+    assert_eq!(candidates_with_ov[0].model, "gpt-5.6-luna");
+}
+
+#[test]
+fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));
+
+    // 1. Filtro MCP do Ember:
+    // Ember só pode usar provedores com supports_mcp == true (ex: claude)
+    let ember = crate::agents::Agent::ember();
+    let ember_profile = crate::agents::AgentProfile {
+        id: ember.clone(),
+        name: "Ember".to_string(),
+        role: "Assistente".to_string(),
+        avatar: "artesao".to_string(),
+        cli: "claude".to_string(),
+        model: "haiku".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![
+            crate::orchestrator::fallback::LlmTarget {
+                cli: "codex".to_string(), // supports_mcp: false
+                model_tier: None,
+                model: Some("gpt-6-luna".to_string()),
+            },
+            crate::orchestrator::fallback::LlmTarget {
+                cli: "claude".to_string(), // supports_mcp: true
+                model_tier: None,
+                model: Some("sonnet".to_string()),
+            },
+        ],
+        command: "claude".to_string(),
+        builtin: true,
+        extra_instructions: String::new(),
+    };
+
+    let ember_candidates = crate::orchestrator::fallback::resolve_candidates(
+        &ember,
+        &ember_profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        None,
+    );
+    // Codex foi descartado porque não tem MCP!
+    assert!(ember_candidates.iter().all(|c| c.provider.supports_mcp));
+    assert_eq!(ember_candidates.len(), 2); // haiku e sonnet do Claude
+
+    // 2. Filtro Sandbox no nível Liberado:
+    // OpenCode tem supports_sandbox: false, então deve ser filtrado no Liberado
+    let axiom = crate::agents::Agent::from_stored("axiom").unwrap();
+    let axiom_profile = crate::agents::AgentProfile {
+        id: axiom.clone(),
+        name: "Axiom".to_string(),
+        role: "Líder".to_string(),
+        avatar: "pensador".to_string(),
+        cli: "opencode".to_string(),
+        model: "openai/gpt-6-astra".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![crate::orchestrator::fallback::LlmTarget {
+            cli: "claude".to_string(),
+            model_tier: None,
+            model: Some("haiku".to_string()),
+        }],
+        command: "opencode".to_string(),
+        builtin: false,
+        extra_instructions: String::new(),
+    };
+
+    let liberado_candidates = crate::orchestrator::fallback::resolve_candidates(
+        &axiom,
+        &axiom_profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        Some(PermissionLevel::Liberado),
+    );
+    // opencode descartado pois supports_sandbox == false; resta claude
+    assert_eq!(liberado_candidates.len(), 1);
+    assert_eq!(liberado_candidates[0].cli, "claude");
+
+    // 3. CooldownTracker:
+    // Se marcamos cooldown para (claude, haiku), ele é ignorado
+    crate::orchestrator::fallback::mark_cooldown(&state, "claude", "haiku");
+    let after_cooldown = crate::orchestrator::fallback::resolve_candidates(
+        &axiom,
+        &axiom_profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        Some(PermissionLevel::Liberado),
+    );
+    assert!(after_cooldown.is_empty(), "candidato em cooldown deve ser filtrado");
+}
+
+#[test]
+fn llm4_expiracao_automatica_vs_clear_temporary_override() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+    let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));
+    let agent = crate::agents::Agent::from_stored("axiom").unwrap();
+    let profile = crate::agents::AgentProfile {
+        id: agent.clone(),
+        name: "Axiom".to_string(),
+        role: "Líder".to_string(),
+        avatar: "pensador".to_string(),
+        cli: "claude".to_string(),
+        model: "haiku".to_string(),
+        model_tier: None,
+        follow_default_llm: false,
+        fallback: vec![],
+        command: "claude".to_string(),
+        builtin: false,
+        extra_instructions: String::new(),
+    };
+
+    // 1. Override expirado: expires_at no passado
+    let now = crate::orchestrator::fallback::now_millis_u64();
+    let expired_ov = crate::orchestrator::fallback::TemporaryOverride {
+        agent: agent.clone(),
+        cli: "codex".to_string(),
+        model: "gpt-6-luna".to_string(),
+        model_tier: None,
+        command: "codex".to_string(),
+        original_cli: "claude".to_string(),
+        original_model: "haiku".to_string(),
+        original_tier: None,
+        reason: crate::orchestrator::fallback::OverrideReason::UsageLimit,
+        applied_at: now - 10_000,
+        expires_at: Some(now - 1_000), // Expirado há 1s
+    };
+    state.temporary_overrides.lock().unwrap().insert(agent.clone(), expired_ov);
+
+    let candidates = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        None,
+    );
+    // Automaticamente remove o expirado e retorna claude
+    assert_eq!(candidates[0].cli, "claude");
+    assert!(
+        state.temporary_overrides.lock().unwrap().get(&agent).is_none(),
+        "override expirado deve ter sido expurgado da memória"
+    );
+
+    // 2. Override ativo: não expira e é retornado
+    let active_ov = crate::orchestrator::fallback::TemporaryOverride {
+        agent: agent.clone(),
+        cli: "codex".to_string(),
+        model: "gpt-6-luna".to_string(),
+        model_tier: None,
+        command: "codex".to_string(),
+        original_cli: "claude".to_string(),
+        original_model: "haiku".to_string(),
+        original_tier: None,
+        reason: crate::orchestrator::fallback::OverrideReason::ManualTemp,
+        applied_at: now,
+        expires_at: Some(now + 100_000),
+    };
+    state.temporary_overrides.lock().unwrap().insert(agent.clone(), active_ov);
+
+    let candidates_active = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        None,
+    );
+    assert_eq!(candidates_active[0].cli, "codex");
+
+    // Limpeza explícita (clear_temporary_override)
+    state.temporary_overrides.lock().unwrap().remove(&agent);
+    let candidates_cleared = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &state,
+        None,
+        &[],
+        None,
+    );
+    assert_eq!(candidates_cleared[0].cli, "claude");
+}
+
+#[test]
+fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-llm4-ember-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let providers = crate::providers::ProviderRegistry::load(&dir);
+    let agents = crate::agents::AgentRegistry::load(&dir);
+
+    // 1. Provedor com MCP (claude): aceito com sucesso
+    let updated = agents
+        .update_ember_llm(
+            Some("claude".to_string()),
+            None,
+            Some("opus".to_string()),
+            vec![],
+            &providers,
+        )
+        .expect("update_ember_llm com Claude deve ter sucesso");
+    assert_eq!(updated.model, "opus");
+
+    // 2. Provedor sem MCP (codex): recusa explícita
+    let err = agents
+        .update_ember_llm(
+            Some("codex".to_string()),
+            None,
+            Some("gpt-6-luna".to_string()),
+            vec![],
+            &providers,
+        )
+        .expect_err("update_ember_llm com Codex deve falhar");
+
+    match err {
+        crate::agents::AgentError::SaveFailed(msg) => {
+            assert!(
+                msg.contains("O agente Ember exige um provedor com suporte a MCP"),
+                "mensagem inesperada: {msg}"
+            );
+        }
+        other => panic!("esperava SaveFailed com recusa de MCP, obteve: {other:?}"),
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

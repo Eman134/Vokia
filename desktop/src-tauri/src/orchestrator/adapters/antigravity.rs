@@ -4,8 +4,11 @@ use std::sync::atomic::AtomicU32;
 use serde_json::Value as Json;
 use tokio::process::Command;
 
-use crate::claude::{base_command, Access, ClaudeError, Reply, TurnActivity};
+use crate::claude::{
+    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity,
+};
 use crate::permissions::PermissionLevel;
+use crate::providers::ProviderConfig;
 
 pub(crate) fn build_command(
     program: &Path,
@@ -60,13 +63,24 @@ pub(super) async fn run_turn(
     access: Access<'_>,
     message: &str,
     pid: &AtomicU32,
+    provider: &ProviderConfig,
 ) -> Result<Reply, ClaudeError> {
     let command = build_command(program, user_args, role, model, access, message);
-    let stdout = super::run_cli_process(command, access, pid, None).await?;
-    parse_stream_output(&stdout)
+    let stdout =
+        super::run_cli_process(command, access, pid, None, Some((provider, model))).await?;
+    parse_stream_output_with_provider(&stdout, Some(provider), model)
 }
 
+#[allow(dead_code)]
 pub(crate) fn parse_stream_output(stdout: &[u8]) -> Result<Reply, ClaudeError> {
+    parse_stream_output_with_provider(stdout, None, "")
+}
+
+pub(crate) fn parse_stream_output_with_provider(
+    stdout: &[u8],
+    provider: Option<&ProviderConfig>,
+    model: &str,
+) -> Result<Reply, ClaudeError> {
     let raw = String::from_utf8_lossy(stdout);
     let mut result_text: Option<String> = None;
     let mut assistant_chunks: Vec<String> = Vec::new();
@@ -97,6 +111,17 @@ pub(crate) fn parse_stream_output(stdout: &[u8]) -> Result<Reply, ClaudeError> {
                     } else {
                         text
                     };
+                    if let Some(provider) = provider {
+                        if let Some(classified) = classify_provider_error(
+                            &provider.id,
+                            model,
+                            message,
+                            &provider.rate_limit_patterns,
+                            &provider.model_unavailable_patterns,
+                        ) {
+                            return Err(classified);
+                        }
+                    }
                     return Err(ClaudeError::Reported(message.to_string()));
                 }
                 if !text.is_empty() {
@@ -115,6 +140,17 @@ pub(crate) fn parse_stream_output(stdout: &[u8]) -> Result<Reply, ClaudeError> {
                     .as_str()
                     .or_else(|| value["message"].as_str())
                     .unwrap_or("erro desconhecido no Antigravity");
+                if let Some(provider) = provider {
+                    if let Some(classified) = classify_provider_error(
+                        &provider.id,
+                        model,
+                        message,
+                        &provider.rate_limit_patterns,
+                        &provider.model_unavailable_patterns,
+                    ) {
+                        return Err(classified);
+                    }
+                }
                 return Err(ClaudeError::Reported(message.to_string()));
             }
             _ => {}

@@ -16,7 +16,7 @@ pub use command::{kill_process_tree, Access, ProjectAccess, DEFAULT_MODEL};
 pub(crate) use connectivity::is_reachable;
 pub use console::{ConsoleKind, ConsoleLine};
 pub use control::{PermissionRequest, PermissionVerdict};
-pub use error::ClaudeError;
+pub use error::{classify_provider_error, ClaudeError};
 pub use live_session::LiveSession;
 pub(crate) use locate::cli_message;
 pub use locate::{locate, CliProblem};

@@ -125,6 +125,14 @@ impl FlowError {
             _ => false,
         }
     }
+
+    #[allow(dead_code)]
+    pub fn is_model_unavailable(&self) -> bool {
+        match self {
+            FlowError::Claude(error) => error.is_model_unavailable(),
+            _ => false,
+        }
+    }
 }
 
 impl From<ClaudeError> for FlowError {
