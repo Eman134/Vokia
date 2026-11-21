@@ -8,6 +8,7 @@ import { useRail } from './shell/useRail'
 import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
+import ProviderSetupDialog from './features/providers/ProviderSetupDialog.vue'
 import { useBacklog } from './features/backlog/useBacklog'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
@@ -72,5 +73,6 @@ onUnmounted(limitNotices.stop)
   </div>
   <SplashScreen v-else />
   <NewRequestDialog />
+  <ProviderSetupDialog />
   <UpdatePrompt />
 </template>
