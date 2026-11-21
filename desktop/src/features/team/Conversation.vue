@@ -28,7 +28,6 @@ import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
-import AgentTerminal from '../console/AgentTerminal.vue'
 import ActivityRun from './ActivityRun.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
@@ -44,7 +43,7 @@ const TABS_CLASSES = 'flex gap-5'
 const TAB_CLASSES = 'cursor-pointer whitespace-nowrap border-b-2 pb-1 text-label font-medium focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 const TAB_ON = 'border-ink text-ink'
 const TAB_OFF = 'border-transparent text-muted hover:text-ink'
-const TAB_LABELS = { conversa: 'Conversa', terminal: 'Terminal', fila: 'Fila' } as const
+const TAB_LABELS = { conversa: 'Conversa', fila: 'Fila' } as const
 const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
 const CLEAR_CONVERSATION_TITLE = 'Limpar conversa?'
 const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
@@ -62,8 +61,6 @@ const props = defineProps<{ filaEmAba: boolean }>()
 const { tab: aba } = storeToRefs(useConversationTab())
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
 const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
-// Canal e "Todos" não têm terminal: só a conversa com um agente tem.
-const temTerminal = computed(() => feed.screen.kind === 'agent')
 
 function groupTitle(messages: readonly VokiaMessage[]): string {
   return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
@@ -164,9 +161,6 @@ watch(
     confirmingClear.value = false
   },
 )
-watch(temTerminal, (disponivel) => {
-  if (!disponivel && aba.value === 'terminal') aba.value = 'conversa'
-}, { flush: 'sync' })
 </script>
 
 <template>
@@ -189,16 +183,6 @@ watch(temTerminal, (disponivel) => {
             @click="aba = 'conversa'"
           >
             {{ TAB_LABELS.conversa }}
-          </button>
-          <button
-            v-if="temTerminal"
-            type="button"
-            role="tab"
-            :aria-selected="aba === 'terminal'"
-            :class="[TAB_CLASSES, aba === 'terminal' ? TAB_ON : TAB_OFF]"
-            @click="aba = 'terminal'"
-          >
-            {{ TAB_LABELS.terminal }}
           </button>
           <button
             v-if="filaEmAba"
@@ -260,7 +244,7 @@ watch(temTerminal, (disponivel) => {
         </div>
       </div>
     </header>
-    <section v-show="aba !== 'terminal'" ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
+    <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <template v-if="!filaAberta">
       <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
@@ -334,6 +318,5 @@ watch(temTerminal, (disponivel) => {
     </template>
     <slot v-else name="fila" />
     </section>
-    <AgentTerminal v-if="aba === 'terminal'" @answer="aba = 'conversa'" @exit="aba = 'conversa'" />
   </section>
 </template>

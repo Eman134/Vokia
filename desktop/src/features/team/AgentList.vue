@@ -12,18 +12,16 @@ import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import type { Channel } from '../channels/channelsApi'
 import ChannelForm from '../channels/ChannelForm.vue'
+import ChannelMenu from '../channels/ChannelMenu.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
-import { useConversationTab } from './conversationTabs'
 import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useProjects } from '../projects/useProjects'
 import { trapFocus } from '../backlog/dialogFocus'
 import UiButton from '../../ui/UiButton.vue'
-import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
-const CONSOLE_LABEL = 'Terminal'
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const NEW_CHANNEL_TITLE_ID = 'novo-canal-titulo'
 const CLOSE_LABEL = 'Fechar'
@@ -38,15 +36,10 @@ const CARD_CLASSES =
 const MENTION_CLASSES =
   'absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40 motion-reduce:transition-none'
 const MENTION_GLYPH = '@'
-const CONSOLE_BUTTON_CLASSES =
-  'absolute right-2 top-2 grid size-5 cursor-pointer place-items-center rounded-control text-muted enabled:hover:bg-surface-2 enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
-const CONSOLE_GLYPH_PATH = 'M3 4.5l3 2.5-3 2.5M7.5 10.5h5'
 const SELECTED_CLASSES = 'border-accent bg-accent-soft'
 const UNSELECTED_CLASSES = 'border-line hover:bg-hover'
 const CHANNEL_CLASSES =
-  'flex w-full cursor-pointer items-center rounded-control border px-3 py-1.5 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
-const DELETE_CHANNEL_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'
-const DELETE_CHANNEL_LABEL = 'Excluir canal'
+  'flex w-full cursor-pointer items-center rounded-control border py-1.5 pl-3 pr-8 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
 const COPY_CLASSES =
   'flex w-full cursor-pointer flex-col gap-0.5 rounded-control border border-line px-2.5 py-1.5 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
 const COPY_SELECTED_CLASSES = 'outline-2 outline-solid outline-accent bg-accent-soft'
@@ -60,7 +53,6 @@ const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
-const conversationTab = useConversationTab()
 const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
@@ -152,7 +144,7 @@ function closeChannelDialog(): void {
             #{{ GENERAL_CHANNEL_NAME }}
           </button>
         </li>
-        <li v-for="channel in channels.channels" :key="channel.id" class="flex flex-col gap-1">
+        <li v-for="channel in channels.channels" :key="channel.id" class="group relative">
           <button
             type="button"
             :class="[CHANNEL_CLASSES, channelShown(channel.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
@@ -162,12 +154,7 @@ function closeChannelDialog(): void {
           >
             #{{ channel.name }}
           </button>
-          <UiConfirm
-            :label="`Excluir canal #${channel.name}`"
-            :message="DELETE_CHANNEL_MESSAGE"
-            :confirm-label="DELETE_CHANNEL_LABEL"
-            @confirm="removeChannel(channel)"
-          />
+          <ChannelMenu :name="channel.name" @remove="removeChannel(channel)" />
         </li>
       </ul>
       <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
@@ -215,17 +202,6 @@ function closeChannelDialog(): void {
           >
             {{ requests.queuedFor(agent.id).length }}
           </span>
-          <button
-            type="button"
-            :class="CONSOLE_BUTTON_CLASSES"
-            :aria-label="`${CONSOLE_LABEL} de ${agent.name}`"
-            :title="`${CONSOLE_LABEL} de ${agent.name}`"
-            @click="conversationTab.showTerminal(agent.id)"
-          >
-            <svg class="size-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path :d="CONSOLE_GLYPH_PATH" />
-            </svg>
-          </button>
           <ul
             v-if="agentCopies.copiesOf(agent.id).length"
             :aria-label="`${COPIES_LIST_LABEL} de ${agent.name}`"
