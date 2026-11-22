@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import UiButton from './UiButton.vue'
+import UiSketchBox from './UiSketchBox.vue'
 
 defineProps<{
   label: string
@@ -11,6 +12,7 @@ defineProps<{
 const emit = defineEmits<{ confirm: [] }>()
 
 const ROOT_CLASSES = 'flex min-w-0 flex-wrap items-center gap-2'
+const ASKING_CLASSES = 'flex min-w-0 flex-wrap items-center gap-2 p-2'
 const MESSAGE_CLASSES = 'min-w-0 flex-1 text-caption text-muted'
 
 const asking = ref(false)
@@ -26,12 +28,14 @@ function accept() {
     <UiButton v-if="!asking" variant="danger" size="sm" :disabled="busy" data-testid="confirm-open" @press="asking = true">
       {{ label }}
     </UiButton>
-    <template v-else>
-      <p :class="MESSAGE_CLASSES">{{ message }}</p>
-      <UiButton variant="quiet" size="sm" data-testid="confirm-cancel" @press="asking = false">Cancelar</UiButton>
-      <UiButton variant="danger" size="sm" :disabled="busy" data-testid="confirm-accept" @press="accept">
-        {{ confirmLabel }}
-      </UiButton>
-    </template>
+    <UiSketchBox v-else tone="danger" class="min-w-0 flex-1 rounded-md">
+      <div :class="ASKING_CLASSES">
+        <p :class="MESSAGE_CLASSES">{{ message }}</p>
+        <UiButton variant="quiet" size="sm" data-testid="confirm-cancel" @press="asking = false">Cancelar</UiButton>
+        <UiButton variant="danger" size="sm" :disabled="busy" data-testid="confirm-accept" @press="accept">
+          {{ confirmLabel }}
+        </UiButton>
+      </div>
+    </UiSketchBox>
   </div>
 </template>

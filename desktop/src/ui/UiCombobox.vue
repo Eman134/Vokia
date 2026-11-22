@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId, watch } from 'vue'
 
+import { INK_FOCUS_CLASSES } from './handDrawn'
 const props = withDefaults(
   defineProps<{
     modelValue: string
@@ -169,9 +170,9 @@ function onRefresh() {
 }
 
 const INPUT_CLASSES =
-  'h-9 w-full min-w-0 rounded-control border border-line bg-surface pl-3 pr-9 text-control text-ink placeholder:text-faint transition-colors enabled:hover:border-faint focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40'
+  `h-9 w-full min-w-0 rounded-md border border-line bg-surface pl-3 pr-9 text-control text-ink placeholder:text-faint transition-colors enabled:hover:border-faint ${INK_FOCUS_CLASSES} disabled:cursor-default disabled:opacity-40`
 const REFRESH_CLASSES =
-  'inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-label font-medium text-muted enabled:hover:border-faint enabled:hover:bg-hover enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40'
+  `inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-label font-medium text-muted enabled:hover:border-faint enabled:hover:bg-hover enabled:hover:text-ink ${INK_FOCUS_CLASSES} disabled:cursor-default disabled:opacity-40`
 </script>
 
 <template>
@@ -201,7 +202,7 @@ const REFRESH_CLASSES =
         tabindex="-1"
         :disabled="disabled"
         aria-label="Alternar sugestões"
-        class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-control-sm text-muted enabled:hover:text-ink disabled:cursor-default disabled:opacity-40"
+        class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-muted enabled:hover:text-ink disabled:cursor-default disabled:opacity-40"
         @mousedown.prevent
         @click="toggleDropdown"
       >
@@ -224,7 +225,7 @@ const REFRESH_CLASSES =
         v-if="showDropdown"
         :id="listboxId"
         role="listbox"
-        class="absolute right-0 left-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-control border border-line bg-surface py-1 shadow-float"
+        class="absolute right-0 left-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-paper"
       >
         <li v-if="loading && filteredOptions.length === 0" class="px-3 py-1.5 text-caption text-muted">
           Carregando...

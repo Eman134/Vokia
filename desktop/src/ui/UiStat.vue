@@ -27,7 +27,7 @@ const percent = computed(() => toPercent(props.percent ?? 0))
 </script>
 
 <template>
-  <article class="flex flex-col gap-2 rounded-card border border-line bg-surface p-3.5">
+  <article class="flex flex-col gap-2 border-t border-line pt-3">
     <p class="text-caption text-muted">{{ label }}</p>
     <div class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 flex-col gap-1">

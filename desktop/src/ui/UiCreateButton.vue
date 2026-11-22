@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { INK_FOCUS_CLASSES } from './handDrawn'
 const props = defineProps<{ disabled?: boolean }>()
 const emit = defineEmits<{ press: [] }>()
 
 const CLASSES =
-  'inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 text-caption font-medium text-ink transition-colors enabled:hover:bg-hover focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none'
+  `inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-caption font-medium text-ink transition-colors enabled:hover:bg-hover ${INK_FOCUS_CLASSES} disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none`
 
 // Botão desabilitado ainda recebe click disparado por código; o guard impede o evento de sair.
 function press() {

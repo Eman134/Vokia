@@ -6,7 +6,7 @@ const emit = defineEmits<{ create: []; adjust: [] }>()
 </script>
 
 <template>
-  <article class="flex min-w-0 flex-col gap-3 rounded-card border border-line bg-surface p-4">
+  <article class="flex min-w-0 flex-col gap-3 rounded-md border border-line bg-surface p-4">
     <p class="text-caption font-medium text-muted">Proposta para o kanban</p>
     <p class="text-lead text-ink">{{ title }}</p>
     <footer class="flex justify-end gap-2">

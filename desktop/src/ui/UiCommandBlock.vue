@@ -4,6 +4,6 @@ defineProps<{ command: string }>()
 
 <template>
   <pre
-    class="min-w-0 overflow-x-auto rounded-card border border-line bg-surface-2 px-3 py-2.5 font-mono text-small text-ink"
+    class="min-w-0 overflow-x-auto rounded-md border border-line bg-surface-2 px-3 py-2.5 font-mono text-small text-ink"
   >{{ command }}</pre>
 </template>

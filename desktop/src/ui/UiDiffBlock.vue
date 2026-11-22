@@ -20,7 +20,7 @@ const PREFIXES: Record<DiffLineKind, string> = {
 </script>
 
 <template>
-  <div class="min-w-0 overflow-hidden rounded-card border border-line bg-surface font-mono text-small">
+  <div class="min-w-0 overflow-hidden rounded-md border border-line bg-surface font-mono text-small">
     <p class="border-b border-line px-3 py-2 text-caption text-muted">{{ file }}</p>
     <div class="overflow-x-auto py-2">
       <div

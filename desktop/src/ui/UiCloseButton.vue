@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { INK_FOCUS_CLASSES } from './handDrawn'
 const CLOSE_LABEL = 'Fechar'
 const CLASSES =
-  'inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent motion-reduce:transition-none'
+  `inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-ink ${INK_FOCUS_CLASSES} motion-reduce:transition-none`
 
 const emit = defineEmits<{ press: [] }>()
 </script>

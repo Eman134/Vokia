@@ -1,3 +1,14 @@
+<script lang="ts">
+import { INK_FOCUS_CLASSES, handReveal } from './handDrawn'
+import UiHandLine from './UiHandLine.vue'
+
+export const SEGMENTED_GROUP_CLASSES = 'flex gap-0.5 rounded-md bg-surface-2 p-0.75'
+export const SEGMENTED_OPTION_CLASSES = `group relative whitespace-nowrap rounded-sm px-3 py-1 text-caption ${INK_FOCUS_CLASSES}`
+export const SEGMENTED_ACTIVE_CLASSES = 'bg-surface font-medium text-ink'
+export const SEGMENTED_INACTIVE_CLASSES = 'text-muted enabled:hover:text-ink'
+export const SEGMENTED_MARK_CLASSES = 'absolute bottom-0.5 left-3 h-1.5 w-[calc(100%-1.5rem)] text-ink-pen'
+</script>
+
 <script setup lang="ts" generic="T extends string">
 const props = defineProps<{
   options: readonly { label: string; value: T }[]
@@ -6,12 +17,6 @@ const props = defineProps<{
   wrap?: boolean
 }>()
 const model = defineModel<T>({ required: true })
-
-const ROOT_CLASSES = 'flex gap-0.5 rounded-control bg-surface-2 p-0.75'
-const OPTION_CLASSES =
-  'whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
-const ACTIVE_CLASSES = 'bg-surface font-medium text-ink shadow-seg'
-const INACTIVE_CLASSES = 'text-muted enabled:hover:bg-hover enabled:hover:text-ink'
 
 function select(value: T) {
   if (props.disabled || value === model.value) return
@@ -24,7 +29,7 @@ function select(value: T) {
     role="group"
     :aria-label="label"
     :aria-disabled="disabled"
-    :class="[ROOT_CLASSES, wrap ? 'flex-wrap' : 'overflow-x-auto', disabled && 'opacity-40']"
+    :class="[SEGMENTED_GROUP_CLASSES, wrap ? 'flex-wrap' : 'overflow-x-auto', disabled && 'opacity-40']"
   >
     <button
       v-for="option in options"
@@ -32,14 +37,15 @@ function select(value: T) {
       type="button"
       :disabled="disabled"
       :class="[
-        OPTION_CLASSES,
+        SEGMENTED_OPTION_CLASSES,
         disabled ? 'cursor-default' : 'cursor-pointer',
-        option.value === model ? ACTIVE_CLASSES : INACTIVE_CLASSES,
+        option.value === model ? SEGMENTED_ACTIVE_CLASSES : SEGMENTED_INACTIVE_CLASSES,
       ]"
       :aria-pressed="option.value === model"
       @click="select(option.value)"
     >
       {{ option.label }}
+      <UiHandLine :class="[SEGMENTED_MARK_CLASSES, handReveal(option.value === model)]" />
     </button>
   </div>
 </template>

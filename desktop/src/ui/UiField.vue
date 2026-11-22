@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { INK_FOCUS_CLASSES } from './handDrawn'
 const model = defineModel<string>({ required: true })
 
 defineProps<{
@@ -8,7 +9,7 @@ defineProps<{
 }>()
 
 const INPUT_CLASSES =
-  'h-9 w-full min-w-0 rounded-control border bg-surface px-3 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `h-9 w-full min-w-0 rounded-md border bg-surface px-3 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 const INPUT_BORDER_CLASSES = 'border-line'
 const INPUT_ERROR_BORDER_CLASSES = 'border-danger'
 </script>
