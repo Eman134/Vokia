@@ -4,10 +4,10 @@
   --text-*: initial;
   --shadow-*: initial;
 
-  --color-bg: light-dark(#fafafa, #121214);
-  --color-surface: light-dark(#ffffff, #1a1a1e);
-  --color-surface-2: light-dark(#f3f3f5, #232328);
-  --color-line: light-dark(#e6e6ea, #2f2f36);
+  --color-bg: light-dark(#faf8f4, #121214);
+  --color-surface: light-dark(#fffdf9, #1a1a1e);
+  --color-surface-2: light-dark(#f3f0ea, #232328);
+  --color-line: light-dark(#e7e3da, #2f2f36);
   --color-ink: light-dark(#1c1c21, #ececf0);
   --color-muted: light-dark(#6a6a75, #a1a1ac);
   --color-faint: light-dark(#a6a6b0, #686873);

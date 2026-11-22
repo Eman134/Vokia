@@ -13,6 +13,7 @@ import {
 } from './railNav'
 import { useNavigation } from './useNavigation'
 import { useRail } from './useRail'
+import UiHandLine from '../ui/UiHandLine.vue'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
 import ProjectIcon from '../features/projects/ProjectIcon.vue'
@@ -28,6 +29,7 @@ const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
 const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
 const PROJECT_BADGE = 'size-4.5 flex-none'
+const ACTIVE_MARK = 'pointer-events-none absolute inset-x-2.5 bottom-0.5 h-1.5 text-accent'
 const ITEM_ON = 'bg-accent-soft text-accent'
 const ITEM_OFF = 'text-muted hover:bg-hover hover:text-ink'
 const TOGGLE = 'cursor-pointer bg-transparent text-ink'
@@ -140,6 +142,7 @@ function toggleProject(project: Project) {
           </svg>
         </span>
         <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
+        <UiHandLine v-if="isActive(item.page)" :class="ACTIVE_MARK" />
       </button>
     </nav>
 
@@ -169,7 +172,7 @@ function toggleProject(project: Project) {
           :inert="!isOpen(project.name)"
         >
           <div class="flex min-h-0 flex-col gap-0.5 overflow-hidden">
-            <span class="mx-1.5 my-0.75 h-px bg-line" />
+            <UiHandLine class="mx-1.5 my-0.75 h-1.5 text-line" />
             <button
               v-for="item in PROJECT_TOOLS"
               :key="item.page"
@@ -195,6 +198,7 @@ function toggleProject(project: Project) {
                 </svg>
               </span>
               <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
+              <UiHandLine v-if="isActiveSubpage(project.name, item.page)" :class="ACTIVE_MARK" />
             </button>
           </div>
         </div>
@@ -253,6 +257,7 @@ function toggleProject(project: Project) {
           </svg>
         </span>
         <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS.config }}</span>
+        <UiHandLine v-if="isActive('config')" :class="ACTIVE_MARK" />
       </button>
       <button
         v-if="rail.canExpand"

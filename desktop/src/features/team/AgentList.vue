@@ -19,6 +19,7 @@ import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useProjects } from '../projects/useProjects'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
@@ -128,7 +129,7 @@ function closeChannelDialog(): void {
         <h2 class="text-small font-semibold text-muted">Canais</h2>
         <UiCreateButton @press="openChannelDialog()">{{ NEW_CHANNEL_LABEL }}</UiCreateButton>
       </div>
-      <ul class="mb-4 flex flex-col gap-2">
+      <ul class="mb-2 flex flex-col gap-2">
         <li>
           <button
             type="button"
@@ -154,6 +155,7 @@ function closeChannelDialog(): void {
         </li>
       </ul>
       <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
+      <UiHandLine class="mb-3 h-1.5 w-full text-line" />
       <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
       <ul class="flex flex-col gap-1.5">
         <li v-for="agent in roster.agents" :key="agent.id" class="relative">
