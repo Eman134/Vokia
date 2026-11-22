@@ -10,6 +10,7 @@ import {
 } from './identityFamilies'
 import { COMPARE_SIZES, IDENTITY_STATES } from './identityState'
 import IdentityGlyph from './IdentityGlyph.vue'
+import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
 
 const ALL = 'todos'
 const COMPARE_LIMIT = 4
@@ -82,7 +83,7 @@ function clearAll() {
         {{ filter.label }}
         <select
           v-model="filters[filter.key]"
-          class="h-8 rounded-control border border-line bg-surface px-2 text-control text-ink"
+          class="h-8 rounded-md border border-line bg-surface px-2 text-control text-ink"
         >
           <option :value="ALL">Todos</option>
           <option v-for="(text, value) in filter.options" :key="value" :value="value">{{ text }}</option>
@@ -90,7 +91,7 @@ function clearAll() {
       </label>
       <button
         type="button"
-        class="h-8 rounded-control border border-line bg-surface px-3 text-control text-ink"
+        class="h-8 rounded-md border border-line bg-surface px-3 text-control text-ink"
         @click="clearAll"
       >
         Limpar
@@ -109,7 +110,7 @@ function clearAll() {
         <div
           v-for="background in COMPARE_BACKGROUNDS"
           :key="background.id"
-          class="flex flex-col gap-5 rounded-card border border-line p-4"
+          class="flex flex-col gap-5 rounded-md border border-line p-4"
           :class="background.surface"
         >
           <div v-for="item in compareItems" :key="`${item.family}/${item.concept}`" class="flex flex-col gap-2">
@@ -135,8 +136,8 @@ function clearAll() {
         <li v-for="concept in family.concepts" :key="concept.id">
           <button
             type="button"
-            class="flex w-full cursor-pointer flex-wrap items-center gap-4 rounded-card border p-3 text-left"
-            :class="isSelected(family.id, concept.id) ? 'border-accent bg-accent-soft' : 'border-line bg-surface hover:bg-hover'"
+            class="flex w-full cursor-pointer flex-wrap items-center gap-4 rounded-md border p-3 text-left"
+            :class="isSelected(family.id, concept.id) ? HAND_SELECTED_CLASSES : 'border-line bg-surface hover:bg-hover'"
             :aria-pressed="isSelected(family.id, concept.id)"
             @click="toggleCompare(family.id, concept.id)"
           >

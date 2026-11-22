@@ -4,7 +4,8 @@ import { initialOf } from './useUserProfile'
 import { useProfileDraft } from './useProfileDraft'
 import { USER_ICONS, type UserIcon } from './userIcons'
 import UserAvatar from './UserAvatar.vue'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const OPTION_SIZE = 48
 const ENTRY_STAGGER_MS = 40
 const PHOTO_LABEL = 'Sua foto'
@@ -30,8 +31,8 @@ function select(icon: UserIcon): void {
       :aria-pressed="isSelected(icon)"
       :aria-label="icon.label"
       :title="icon.label"
-      class="icon-option grid size-15 cursor-pointer place-items-center rounded-full p-1.5 focus:outline-2 focus:outline-solid focus:outline-accent"
-      :class="isSelected(icon) ? 'bg-accent-soft outline-2 outline-solid outline-offset-2 outline-accent' : 'bg-transparent hover:bg-hover'"
+      class="icon-option grid size-15 cursor-pointer place-items-center rounded-full p-1.5"
+      :class="[INK_FOCUS_CLASSES, isSelected(icon) ? 'bg-accent-soft outline-2 outline-solid outline-offset-2 outline-accent' : 'bg-transparent hover:bg-hover']"
       :style="{ animationDelay: `${index * ENTRY_STAGGER_MS}ms` }"
       @click="select(icon)"
     >

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import ProjectIcon from './ProjectIcon.vue'
+import { HAND_SELECTED_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import { PROJECT_ICON_KEYS, PROJECT_ICONS } from './projectIcons'
 
 const model = defineModel<string>({ required: true })
 
 const ICON_LABEL = 'Ícone do projeto'
 const ICON_BUTTON_CLASSES =
-  'grid size-10 cursor-pointer place-items-center rounded-control border focus:outline-2 focus:outline-solid focus:outline-accent'
-const ICON_ACTIVE_CLASSES = 'border-accent bg-accent-soft text-accent'
+  `grid size-10 cursor-pointer place-items-center rounded-md border ${INK_FOCUS_CLASSES}`
+const ICON_ACTIVE_CLASSES = `${HAND_SELECTED_CLASSES} text-ink`
 const ICON_INACTIVE_CLASSES = 'border-line text-muted hover:border-faint hover:text-ink'
 </script>
 

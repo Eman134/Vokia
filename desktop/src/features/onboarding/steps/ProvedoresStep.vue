@@ -89,7 +89,7 @@ async function testProvider(id: string): Promise<void> {
       text="Nenhuma CLI detectada ainda. Você pode configurar agora ou avançar e ajustar depois em Configurações ou /setup."
     />
 
-    <div class="flex flex-col gap-4 rounded-card border border-line bg-surface p-5">
+    <div class="flex flex-col gap-4 rounded-md border border-line bg-surface p-5">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <span class="text-control font-semibold text-ink">Preferência inicial</span>
         <UiButton
@@ -137,7 +137,7 @@ async function testProvider(id: string): Promise<void> {
 
     <ul
       v-if="providersStore.providers.length > 0"
-      class="flex flex-col divide-y divide-line rounded-card border border-line bg-surface"
+      class="flex flex-col divide-y divide-line rounded-md border border-line bg-surface"
     >
       <li
         v-for="provider in providersStore.providers"
@@ -153,7 +153,7 @@ async function testProvider(id: string): Promise<void> {
             />
             <span class="truncate text-caption font-medium text-ink">{{ provider.label }}</span>
             <span
-              class="inline-flex h-5 items-center rounded-chip px-2 text-small font-medium"
+              class="inline-flex h-5 items-center rounded-sm px-2 text-small font-medium"
               :class="provider.installed ? 'bg-ok-soft text-ok' : 'bg-surface-2 text-muted'"
             >
               {{ provider.installed ? 'Instalado' : 'Ausente' }}

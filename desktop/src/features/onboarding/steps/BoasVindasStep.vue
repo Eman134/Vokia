@@ -9,6 +9,7 @@ const MASCOT_SIZE = 84
   <div class="flex w-full flex-col gap-7">
     <StepHeading
       title="Boas-vindas à Vokia"
+      note="seu time começa aqui"
       text="Um time de agentes de IA trabalhando no seu código, no seu computador. Antes de começar, são dois passos rápidos: seu nome e sua foto."
     >
       <template #mascot>

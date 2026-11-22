@@ -18,7 +18,8 @@ import type {
   ToolTransport,
 } from './providersApi'
 import { SETUP_ADD_PROVIDER_TOKEN, useProviders } from './useProviders'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const PROTOCOL_OPTIONS: readonly { label: string; value: ProviderProtocol }[] = [
   { label: 'Generic CLI', value: 'generic-cli' },
   { label: 'Claude Live', value: 'claude-live' },
@@ -465,7 +466,7 @@ async function saveAddWithoutTest(): Promise<void> {
       :aria-labelledby="titleId"
       data-testid="provider-setup-dialog"
       tabindex="-1"
-      class="flex max-h-[88vh] w-145 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      class="flex max-h-[88vh] w-145 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="closeMain()"
       @keydown.tab="trapFocus($event, dialog)"
     >
@@ -490,7 +491,7 @@ async function saveAddWithoutTest(): Promise<void> {
         Carregando provedores...
       </p>
 
-      <ul v-else class="flex flex-col divide-y divide-line rounded-card border border-line bg-surface">
+      <ul v-else class="flex flex-col divide-y divide-line rounded-md border border-line bg-surface">
         <li
           v-for="provider in providersStore.providers"
           :key="provider.id"
@@ -507,14 +508,14 @@ async function saveAddWithoutTest(): Promise<void> {
                 <div class="flex items-center gap-2">
                   <span class="truncate text-control font-semibold text-ink">{{ provider.label }}</span>
                   <span
-                    class="inline-flex h-5 items-center rounded-chip px-2 text-small font-medium"
+                    class="inline-flex h-5 items-center rounded-sm px-2 text-small font-medium"
                     :class="provider.installed ? 'bg-ok-soft text-ok' : 'bg-surface-2 text-muted'"
                   >
                     {{ provider.installed ? 'Instalado' : 'Ausente' }}
                   </span>
                   <span
                     data-testid="provider-tool-transport"
-                    class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-small font-medium text-muted"
+                    class="inline-flex h-5 items-center rounded-sm bg-surface-2 px-2 text-small font-medium text-muted"
                   >
                     {{ TRANSPORT_LABELS[effectiveTransport(provider)] }}
                   </span>
@@ -574,7 +575,7 @@ async function saveAddWithoutTest(): Promise<void> {
         aria-modal="true"
         :aria-labelledby="editTitleId"
         tabindex="-1"
-        class="flex max-h-[85vh] w-130 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+        class="flex max-h-[85vh] w-130 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
         @keydown.esc.stop="closeEditModal()"
         @keydown.tab="trapFocus($event, editDialog)"
       >
@@ -662,7 +663,7 @@ async function saveAddWithoutTest(): Promise<void> {
         aria-modal="true"
         :aria-labelledby="removeTitleId"
         tabindex="-1"
-        class="flex w-100 max-w-full flex-col gap-4 rounded-dialog border border-line bg-surface p-5 shadow-float"
+        class="flex w-100 max-w-full flex-col gap-4 rounded-md border border-line bg-surface p-5 shadow-paper"
         @keydown.esc.stop="closeRemoveModal()"
         @keydown.tab="trapFocus($event, removeDialog)"
       >
@@ -693,7 +694,7 @@ async function saveAddWithoutTest(): Promise<void> {
         aria-modal="true"
         :aria-labelledby="addTitleId"
         tabindex="-1"
-        class="flex max-h-[88vh] w-145 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+        class="flex max-h-[88vh] w-145 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
         @keydown.esc.stop="closeAddModal()"
         @keydown.tab="trapFocus($event, addDialog)"
       >
@@ -741,7 +742,7 @@ async function saveAddWithoutTest(): Promise<void> {
           </UiButton>
         </div>
 
-        <div v-if="inspectResult" class="flex flex-col gap-1.5 rounded-card border border-line bg-surface-2 p-3">
+        <div v-if="inspectResult" class="flex flex-col gap-1.5 rounded-md border border-line bg-surface-2 p-3">
           <span class="text-caption font-medium" :class="inspectResult.found ? 'text-ok' : 'text-warn-text'">
             {{
               inspectResult.found
@@ -773,7 +774,7 @@ async function saveAddWithoutTest(): Promise<void> {
             v-model="jsonInput"
             rows="3"
             placeholder='{"id": "gemini", "label": "Gemini CLI", "protocol": "generic-cli", "defaultCommand": "gemini", ...}'
-            class="w-full rounded-control border border-line bg-surface p-2.5 font-mono text-small text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent"
+            class="w-full rounded-md border border-line bg-surface p-2.5 font-mono text-small text-ink placeholder:text-faint" :class="INK_FOCUS_CLASSES"
           />
           <span v-if="jsonError" role="alert" class="text-small text-danger">{{ jsonError }}</span>
         </label>

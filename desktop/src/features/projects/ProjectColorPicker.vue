@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { PROJECT_COLOR_KEYS, PROJECT_COLORS } from './projectColors'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const model = defineModel<string>({ required: true })
 
 const COLOR_LABEL = 'Cor do projeto'
 const SWATCH_BASE_CLASSES =
-  'size-8 cursor-pointer rounded-full border border-project-line hover:opacity-80 focus:outline-2 focus:outline-solid focus:outline-accent'
+  `size-8 cursor-pointer rounded-full border border-project-line hover:opacity-80 ${INK_FOCUS_CLASSES}`
 const SWATCH_ACTIVE_CLASSES = 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
 </script>
 

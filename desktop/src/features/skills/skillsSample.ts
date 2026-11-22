@@ -1,6 +1,4 @@
 export const SKILLS_TITLE = 'Skills'
-export const SKILLS_MEMORY_ACTION_LABEL = 'Criar da memória'
-export const SKILLS_INSTALL_ACTION_LABEL = 'Instalar skill'
 export const SKILL_FROM_MEMORY_LABEL = 'criada da memória'
 export const SKILL_MATRIX_TITLE = 'Quem usa o quê'
 export const SKILL_MATRIX_SKILL_HEADER = 'Skill'

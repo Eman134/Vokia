@@ -21,7 +21,7 @@ const { claude, now, openable, startupError } = storeToRefs(useUsage())
     :id="panelId"
     role="dialog"
     aria-label="Uso dos planos"
-    class="absolute bottom-0 z-40 flex w-78 flex-col gap-3 rounded-popover border border-line bg-surface p-3.5 text-left text-ink shadow-float"
+    class="absolute bottom-0 z-40 flex w-78 flex-col gap-3 rounded-md border border-line bg-surface p-3.5 text-left text-ink shadow-paper"
   >
     <div class="flex items-baseline gap-2">
       <b class="text-control">Uso dos planos</b>
@@ -57,11 +57,11 @@ const { claude, now, openable, startupError } = storeToRefs(useUsage())
 
       <div class="flex gap-1.5 border-t border-line pt-2.5">
         <a
-          class="grid h-8 flex-1 place-items-center rounded-control bg-ink text-caption font-semibold text-bg no-underline"
+          class="grid h-8 flex-1 place-items-center rounded-md bg-ink text-caption font-semibold text-bg no-underline"
           >Ver em Estatísticas</a
         >
         <a
-          class="grid h-8.5 place-items-center rounded-control border border-line px-2.75 text-caption text-ink no-underline"
+          class="grid h-8.5 place-items-center rounded-md border border-line px-2.75 text-caption text-ink no-underline"
           >Limites</a
         >
       </div>

@@ -1,14 +1,3 @@
-export const MEMORY_FILTERS = [
-  { label: 'Projeto', value: 'projeto' },
-  { label: 'Por agente', value: 'agente' },
-  { label: 'Decisões', value: 'decisoes' },
-  { label: 'De artefatos', value: 'artefatos' },
-  { label: 'De devoluções', value: 'devolucoes' },
-  { label: 'Suas preferências', value: 'preferencias' },
-] as const
-
-export const MEMORY_FILTER_INITIAL = 'projeto'
-
 export interface MemoryFact {
   text: string
   // null marca a preferência do usuário, que usa a inicial em vez do retrato.

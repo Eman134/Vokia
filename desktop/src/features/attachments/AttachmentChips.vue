@@ -2,6 +2,7 @@
 import type { Attachment } from './attachmentsApi'
 import { formatSize } from './attachmentBlock'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const SAVING_LABEL = 'Anexando…'
 
 defineProps<{ attachments: Attachment[]; saving: boolean }>()
@@ -21,7 +22,7 @@ const emit = defineEmits<{ remove: [id: string] }>()
       <button
         type="button"
         :aria-label="`Remover ${attachment.name}`"
-        class="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
         @click="emit('remove', attachment.id)"
       >
         ×

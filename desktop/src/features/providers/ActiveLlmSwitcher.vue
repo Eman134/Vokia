@@ -9,7 +9,8 @@ import type { ModelTier, ModelTiers } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import { useActiveLlm } from './useActiveLlm'
 import { useProviders } from './useProviders'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 export interface CatalogModelItem {
   providerId: string
   providerLabel: string
@@ -469,7 +470,7 @@ function refreshCatalog(): void {
       aria-label="Selecionar provedor ativo"
       class="absolute left-0 bottom-full z-40 pb-2"
     >
-      <div class="flex w-72 flex-col gap-2.5 rounded-popover border border-line bg-surface p-3 shadow-float">
+      <div class="flex w-72 flex-col gap-2.5 rounded-md border border-line bg-surface p-3 shadow-paper">
         <div class="flex flex-col gap-1">
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
@@ -484,7 +485,7 @@ function refreshCatalog(): void {
                 data-testid="open-model-selector"
                 title="Selecionar modelo"
                 aria-label="Selecionar modelo"
-                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
                 @click="openModelSelector()"
               >
                 <span>Modelo</span>
@@ -507,7 +508,7 @@ function refreshCatalog(): void {
                 type="button"
                 title="Configurar provedores"
                 aria-label="Configurar provedores"
-                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-control px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+                class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-small font-medium text-muted hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
                 @click="openSetup()"
               >
                 <span>Setup</span>
@@ -531,7 +532,7 @@ function refreshCatalog(): void {
           <div
             v-if="activeModelLabel"
             data-testid="active-llm-model-label"
-            class="flex items-center justify-between gap-2 rounded-control bg-surface-2 px-2 py-1"
+            class="flex items-center justify-between gap-2 rounded-md bg-surface-2 px-2 py-1"
           >
             <span class="text-tiny text-muted">Modelo</span>
             <span
@@ -584,7 +585,7 @@ function refreshCatalog(): void {
           aria-modal="true"
           :aria-labelledby="titleId"
           tabindex="-1"
-          class="flex max-h-[82vh] w-130 max-w-full flex-col overflow-hidden rounded-dialog border border-line bg-surface shadow-float"
+          class="flex max-h-[82vh] w-130 max-w-full flex-col overflow-hidden rounded-md border border-line bg-surface shadow-paper"
           @keydown.esc.stop="closeModal()"
           @keydown.tab="trapFocus($event, dialogRef)"
         >
@@ -625,7 +626,7 @@ function refreshCatalog(): void {
                 aria-label="Buscar modelos"
                 placeholder="Buscar modelos"
                 autocomplete="off"
-                class="h-9 w-full rounded-control border border-line bg-surface-2 pr-3 pl-9 text-control text-ink placeholder:text-faint focus:border-accent focus:bg-surface focus:outline-none"
+                class="h-9 w-full rounded-md border border-line bg-surface-2 pr-3 pl-9 text-control text-ink placeholder:text-faint focus:border-accent focus:bg-surface focus:outline-none"
                 @keydown="onSearchKeydown"
               />
             </div>
@@ -656,7 +657,7 @@ function refreshCatalog(): void {
                   <span
                     v-if="!group.installed"
                     data-testid="provider-missing-badge"
-                    class="inline-flex h-4.5 items-center rounded-chip bg-surface-2 px-1.5 text-tiny font-medium text-muted"
+                    class="inline-flex h-4.5 items-center rounded-sm bg-surface-2 px-1.5 text-tiny font-medium text-muted"
                   >
                     Ausente
                   </span>
@@ -687,7 +688,7 @@ function refreshCatalog(): void {
                 :disabled="!item.installed || busy"
                 :aria-selected="item.isActive"
                 :class="[
-                  'flex w-full items-center justify-between gap-3 rounded-control px-2.5 py-2 text-left text-control transition-colors',
+                  'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left text-control transition-colors',
                   !item.installed
                     ? 'cursor-not-allowed opacity-45'
                     : itemKey(item.providerId, item.modelId) === highlightedKey
@@ -710,14 +711,14 @@ function refreshCatalog(): void {
                     v-for="tierLabel in item.tierLabels"
                     :key="tierLabel"
                     data-testid="model-tier-badge"
-                    class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-tiny font-medium text-muted"
+                    class="inline-flex h-5 items-center rounded-sm bg-surface-2 px-2 text-tiny font-medium text-muted"
                   >
                     {{ tierLabel }}
                   </span>
                   <span
                     v-if="item.isFree"
                     data-testid="model-free-badge"
-                    class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-tiny font-medium text-muted"
+                    class="inline-flex h-5 items-center rounded-sm bg-surface-2 px-2 text-tiny font-medium text-muted"
                   >
                     Grátis
                   </span>
@@ -750,7 +751,7 @@ function refreshCatalog(): void {
             <button
               type="button"
               data-testid="model-selector-manage-models"
-              class="inline-flex cursor-pointer items-center gap-2 rounded-control px-2 py-1 text-caption font-medium text-muted transition-colors hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+              class="inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-caption font-medium text-muted transition-colors hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
               @click="openManageModels()"
             >
               <svg
@@ -796,7 +797,7 @@ function refreshCatalog(): void {
                 type="button"
                 data-testid="model-selector-refresh"
                 :disabled="anyDiscovering"
-                class="cursor-pointer rounded-control px-2 py-1 text-small text-muted hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40"
+                class="cursor-pointer rounded-md px-2 py-1 text-small text-muted hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40"
                 @click="refreshCatalog()"
               >
                 {{ anyDiscovering ? 'Atualizando...' : 'Atualizar' }}

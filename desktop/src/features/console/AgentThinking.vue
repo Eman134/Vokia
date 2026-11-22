@@ -4,6 +4,7 @@ import type { AgentProfile } from '../team/teamApi'
 import type { AgentState, TurnActivity } from '../team/events'
 import { formatClock } from '../team/activitySummary'
 import MarkdownText from '../team/MarkdownText.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
 import { currentTurn } from './consoleTurn'
 import { useConsole } from './useConsole'
 
@@ -12,6 +13,8 @@ const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: numb
 const SENDING_LABEL = 'Enviando…'
 const THINKING_LABEL = 'Pensando…'
 const TICK_MS = 1000
+const DOT_CLASSES = 'size-2 fill-current motion-reduce:animate-none'
+const DOT_ANIMATIONS = ['animate-dot-1', 'animate-dot-2', 'animate-dot-3']
 
 const consoleStore = useConsole()
 const now = ref(Date.now())
@@ -54,9 +57,7 @@ const label = computed(() => {
     <span class="flex items-center gap-2 text-caption text-muted">
       {{ agent.name }} · {{ label }}
       <span class="flex items-center gap-1" aria-hidden="true">
-        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-1" />
-        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-2" />
-        <span class="size-1.5 rounded-full bg-muted motion-reduce:animate-none animate-dot-3" />
+        <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
       </span>
     </span>
     <div v-if="preview" class="line-clamp-4 min-w-0">

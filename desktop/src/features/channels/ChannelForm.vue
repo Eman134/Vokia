@@ -8,6 +8,7 @@ import AgentPortrait from '../team/AgentPortrait.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
 import UiNotice from '../../ui/UiNotice.vue'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const MIN_MEMBERS = 2
 const NAME_MIN_CHARS = 2
 const NAME_MAX_CHARS = 32
@@ -21,17 +22,17 @@ const CLEAR_LABEL = 'Limpar seleção'
 const NAME_RULES = 'Letras minúsculas, números e hífens, sem espaços.'
 const SECTION_LABEL_CLASSES = 'text-caption font-semibold text-ink'
 const NAME_FIELD_CLASSES =
-  'flex h-10 items-center gap-1 rounded-control-lg border border-line bg-surface-2 px-3 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/30 motion-reduce:transition-none'
+  'flex h-10 items-center gap-1 rounded-md border border-line bg-surface-2 px-3 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/30 motion-reduce:transition-none'
 const MEMBER_CLASSES =
-  'group flex cursor-pointer items-center gap-3 rounded-control border border-line bg-surface p-2 transition-colors duration-150 hover:bg-hover has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid has-[:focus-visible]:outline-accent motion-reduce:transition-none'
+  'group flex cursor-pointer items-center gap-3 rounded-md border border-line bg-surface p-2 transition-colors duration-150 hover:bg-hover has-[:checked]:border-accent has-[:checked]:bg-accent-soft has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-solid has-[:focus-visible]:outline-accent motion-reduce:transition-none'
 const CHECK_CLASSES =
   'grid size-5 shrink-0 place-items-center rounded-full border border-line text-transparent transition-colors duration-150 group-has-[:checked]:border-accent group-has-[:checked]:bg-accent group-has-[:checked]:text-accent-ink motion-reduce:transition-none'
 const ACTION_BASE_CLASSES =
-  'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-control px-2.5 text-caption font-medium transition-colors focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-not-allowed disabled:opacity-40'
+  `inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-caption font-medium transition-colors ${INK_FOCUS_CLASSES} disabled:cursor-not-allowed disabled:opacity-40`
 const CANCEL_CLASSES = `${ACTION_BASE_CLASSES} text-muted hover:bg-hover hover:text-ink`
 const SUBMIT_CLASSES = `${ACTION_BASE_CLASSES} border border-line bg-surface text-ink enabled:hover:bg-hover`
 const LINK_CLASSES =
-  'cursor-pointer rounded-chip px-1.5 py-0.5 text-caption font-medium text-accent hover:bg-accent-soft focus:outline-2 focus:outline-solid focus:outline-accent'
+  `cursor-pointer rounded-sm px-1.5 py-0.5 text-caption font-medium text-accent hover:bg-accent-soft ${INK_FOCUS_CLASSES}`
 
 const props = defineProps<{ channel?: Channel }>()
 const emit = defineEmits<{ done: []; cancel: [] }>()

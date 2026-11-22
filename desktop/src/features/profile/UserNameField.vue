@@ -5,7 +5,7 @@ import { useProfileDraft } from './useProfileDraft'
 
 const NAME_LABEL = 'Seu nome'
 const NAME_INPUT_CLASSES =
-  'w-full min-w-0 border-0 border-b border-line bg-transparent pb-2 text-center text-[28px] font-semibold tracking-[-0.02em] text-ink placeholder:text-faint focus:border-accent focus:outline-none'
+  'w-full min-w-0 border-0 border-b border-line bg-transparent pb-2 text-center text-page font-semibold text-ink placeholder:text-faint focus:border-accent focus:outline-none'
 
 const draft = useProfileDraft()
 const counter = computed(() => `${[...draft.name.trim()].length}/${USER_NAME_MAX_CHARS}`)

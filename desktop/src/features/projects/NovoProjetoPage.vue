@@ -4,6 +4,7 @@ import AgentPortrait from '../team/AgentPortrait.vue'
 import { useFlow } from '../team/useFlow'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
+import UiStepDots from '../../ui/UiStepDots.vue'
 import PrimeiroPedidoStep from './PrimeiroPedidoStep.vue'
 import ProjetoOrigemStep from './ProjetoOrigemStep.vue'
 import TimeStep from './TimeStep.vue'
@@ -22,14 +23,14 @@ import {
   STEP_TITLES,
   SUMMARY_HEADING,
   TEAM_NEXT_HEADING,
-} from './projetosSample'
+} from './projetosCopy'
 import { useNovoProjeto, type WizardStep } from './useNovoProjeto'
 
 const PREVIEW_PORTRAIT_SIZE = 28
 const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const COLUMNS_CLASSES = 'flex flex-wrap items-start gap-5.5'
-const FORM_CLASSES = 'flex min-w-0 basis-[560px] flex-1 flex-col gap-5.5 rounded-[28px] bg-surface p-7'
-const PREVIEW_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-[28px] border border-line p-6'
+const FORM_CLASSES = 'flex min-w-0 basis-[560px] flex-1 flex-col gap-5.5 rounded-md bg-surface p-7'
+const PREVIEW_CLASSES = 'flex min-w-0 basis-[360px] flex-col gap-4 rounded-md border border-line p-6'
 const HEADING_CLASSES = 'text-label font-medium text-muted'
 
 const wizard = useNovoProjeto()
@@ -59,6 +60,7 @@ const previewOrigin = computed(() => (wizard.originKind === 'folder' ? 'Pasta' :
 <template>
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="STEP_TITLES[index]" />
+    <UiStepDots :total="STEP_TITLES.length" :current="index" />
 
     <div :class="COLUMNS_CLASSES">
       <div :class="FORM_CLASSES">
@@ -71,7 +73,7 @@ const previewOrigin = computed(() => (wizard.originKind === 'folder' ? 'Pasta' :
         <template v-if="wizard.step === 1">
           <h2 :class="HEADING_CLASSES">{{ PREVIEW_HEADING }}</h2>
           <div class="flex items-center gap-3">
-            <span class="grid size-10 place-items-center rounded-control bg-accent-soft text-accent">
+            <span class="grid size-10 place-items-center rounded-md bg-accent-soft text-accent">
               <ProjectIcon :icon="wizard.symbol" class="size-5" data-testid="preview-icon" />
             </span>
             <div class="min-w-0">

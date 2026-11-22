@@ -20,7 +20,7 @@ const decisions = useDecisions()
         <li
           v-for="entry in decisions.resolved"
           :key="entry.key"
-          class="flex items-center justify-between gap-2 rounded-control bg-surface-2 px-3 py-1.5"
+          class="flex items-center justify-between gap-2 rounded-md bg-surface-2 px-3 py-1.5"
         >
           <span class="wrap-break-word min-w-0 text-label text-ink">{{ entry.message }}</span>
           <UiButton

@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 defineProps<{ name: string }>()
 const emit = defineEmits<{ edit: []; remove: [] }>()
 
@@ -10,12 +11,12 @@ const DELETE_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'
 const DELETE_LABEL = 'Excluir canal'
 const EDIT_LABEL = 'Editar canal'
 const TRIGGER_CLASSES =
-  'absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-label font-bold text-muted transition-opacity duration-150 hover:bg-hover hover:text-ink focus-visible:opacity-100 focus:outline-2 focus:outline-solid focus:outline-accent motion-reduce:transition-none'
+  `absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-label font-bold text-muted transition-opacity duration-150 hover:bg-hover hover:text-ink focus-visible:opacity-100 ${INK_FOCUS_CLASSES} motion-reduce:transition-none`
 const TRIGGER_IDLE_CLASSES = 'opacity-0 group-hover:opacity-100'
 const POPOVER_CLASSES =
-  'absolute inset-x-0 top-full z-20 mt-1 flex flex-col gap-1 rounded-popover border border-line bg-surface p-1.5 shadow-float'
+  'absolute inset-x-0 top-full z-20 mt-1 flex flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-paper'
 const ITEM_CLASSES =
-  'flex w-full cursor-pointer items-center gap-2.5 rounded-control px-3 py-2 text-left text-label font-medium transition-colors duration-150 focus:outline-2 focus:outline-solid focus:outline-accent motion-reduce:transition-none'
+  `flex w-full cursor-pointer items-center gap-2.5 rounded-md px-3 py-2 text-left text-label font-medium transition-colors duration-150 ${INK_FOCUS_CLASSES} motion-reduce:transition-none`
 const EDIT_ITEM_CLASSES = 'text-ink hover:bg-hover [&_svg]:text-muted hover:[&_svg]:text-ink'
 const DELETE_ITEM_CLASSES = 'text-danger hover:bg-danger/10'
 const ICON_CLASSES = 'size-4 shrink-0 transition-colors duration-150'

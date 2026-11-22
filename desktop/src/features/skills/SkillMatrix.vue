@@ -8,7 +8,7 @@ import {
 } from './skillsSample'
 
 const PORTRAIT_SIZE = 22
-const PANEL_CLASSES = 'overflow-hidden rounded-dialog border border-line bg-surface'
+const PANEL_CLASSES = 'overflow-hidden rounded-md border border-line bg-surface'
 const TITLE_CLASSES = 'px-5 pt-4.5 pb-1.5 text-lead font-semibold text-ink'
 const TABLE_CLASSES = 'w-full min-w-[820px] border-collapse text-label text-ink'
 const HEAD_CELL_CLASSES = 'px-2 py-2.5 text-left font-medium text-muted first:pl-5 last:pr-5'
@@ -44,7 +44,6 @@ const MARKER_LABELS = { on: 'Ligada', off: 'Desligada' } as const
             <td v-for="(used, index) in row.uses" :key="index" :class="CELL_CLASSES">
               <span
                 role="img"
-                aria-disabled="true"
                 :aria-label="used ? MARKER_LABELS.on : MARKER_LABELS.off"
                 :class="[MARKER_CLASSES, used ? MARKER_ON_CLASSES : MARKER_OFF_CLASSES]"
               />

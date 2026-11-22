@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import UiButton from '../../ui/UiButton.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import SkillCard from './SkillCard.vue'
 import SkillMatrix from './SkillMatrix.vue'
 import {
   SKILL_SAMPLES,
-  SKILLS_INSTALL_ACTION_LABEL,
-  SKILLS_MEMORY_ACTION_LABEL,
   SKILLS_TITLE,
 } from './skillsSample'
 
@@ -17,16 +14,7 @@ const CARD_GRID_CLASSES = 'grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="SKILLS_TITLE">
-      <template #actions>
-        <UiButton variant="quiet" size="lg" class="border border-line" disabled aria-disabled="true">
-          {{ SKILLS_MEMORY_ACTION_LABEL }}
-        </UiButton>
-        <UiButton variant="primary" size="lg" disabled aria-disabled="true">
-          {{ SKILLS_INSTALL_ACTION_LABEL }}
-        </UiButton>
-      </template>
-    </UiPageHeader>
+    <UiPageHeader :title="SKILLS_TITLE" />
     <div :class="CARD_GRID_CLASSES">
       <SkillCard v-for="skill in SKILL_SAMPLES" :key="skill.name" :skill="skill" />
     </div>

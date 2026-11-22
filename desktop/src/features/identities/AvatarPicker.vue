@@ -4,6 +4,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
+import { HAND_SELECTED_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import {
   CANCEL_PROFILE_LABEL,
   EXPRESSION_LABELS,
@@ -162,8 +163,8 @@ async function saveProfile(): Promise<void> {
         :title="ownerOf(profile.id) === undefined ? undefined : labelOf(profile)"
         :disabled="ownerOf(profile.id) !== undefined"
         :tabindex="selected === profile.id ? 0 : -1"
-        class="rounded-control p-1 focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40"
-        :class="selected === profile.id ? 'bg-accent-soft ring-2 ring-accent' : 'border border-line'"
+        class="rounded-md p-1 disabled:opacity-40"
+        :class="[INK_FOCUS_CLASSES, selected === profile.id ? HAND_SELECTED_CLASSES : 'border border-line']"
         @click="selected = profile.id"
         @keydown.right="moveAvatar($event, 1)"
         @keydown.down="moveAvatar($event, 1)"
@@ -180,7 +181,7 @@ async function saveProfile(): Promise<void> {
       type="button"
       :aria-label="NEW_PROFILE_LABEL"
       :disabled="creating"
-      class="grid size-12.5 cursor-pointer place-items-center rounded-control border border-dashed border-line text-control text-muted enabled:hover:bg-hover enabled:hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40"
+      class="grid size-12.5 cursor-pointer place-items-center rounded-md border border-dashed border-line text-control text-muted enabled:hover:bg-hover enabled:hover:text-ink disabled:cursor-default disabled:opacity-40" :class="INK_FOCUS_CLASSES"
       @click="openCreator()"
     >
       +
@@ -189,7 +190,7 @@ async function saveProfile(): Promise<void> {
     <div
       v-if="creating"
       ref="creator"
-      class="flex flex-col gap-3 rounded-control border border-line p-3"
+      class="flex flex-col gap-3 rounded-md border border-line p-3"
       @keydown.esc.stop="cancelCreator()"
     >
       <div @keydown.enter.prevent="saveProfile()">
@@ -204,8 +205,8 @@ async function saveProfile(): Promise<void> {
           :aria-pressed="draftColor === color.id"
           :aria-label="color.label"
           :style="{ backgroundColor: color.base }"
-          class="size-6 cursor-pointer rounded-full hover:opacity-80 focus:outline-2 focus:outline-solid focus:outline-accent"
-          :class="draftColor === color.id ? 'ring-2 ring-accent ring-offset-2' : 'border border-line'"
+          class="size-6 cursor-pointer rounded-full hover:opacity-80"
+          :class="[INK_FOCUS_CLASSES, draftColor === color.id ? 'ring-2 ring-accent ring-offset-2' : 'border border-line']"
           @click="draftColor = color.id"
         />
       </div>

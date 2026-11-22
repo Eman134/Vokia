@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch, type Component } from 'vue'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
+import UiStepDots from '../../ui/UiStepDots.vue'
 import VokiaLogo from '../brand/VokiaLogo.vue'
 import { useFlow } from '../team/useFlow'
 import { useProfileDraft } from '../profile/useProfileDraft'
@@ -34,8 +36,8 @@ const LAST_INDEX = STEPS.length - 1
 
 const ROOT_CLASSES =
   'relative flex min-w-0 flex-1 flex-col items-center overflow-y-auto bg-bg px-6 pt-10 pb-[150px] text-ink'
-const MARK_CLASSES = 'grid size-8 place-items-center rounded-control bg-ink'
-const WORDMARK_CLASSES = 'text-[18px] font-bold tracking-[-0.02em]'
+const MARK_CLASSES = 'grid size-8 place-items-center text-ink'
+const WORDMARK_CLASSES = 'text-card-title font-bold'
 const MAIN_CLASSES = 'mt-14 flex w-[min(600px,100%)] flex-col items-center gap-7'
 const MARK_LOGO_SIZE = 20
 const ARROW_SIZE = 14
@@ -94,12 +96,15 @@ async function forward(): Promise<void> {
 <template>
   <div :class="ROOT_CLASSES">
     <header class="flex w-full items-center gap-2.5 px-4">
-      <span :class="MARK_CLASSES" :style="{ '--logo-cut': 'var(--color-ink)' }">
-        <VokiaLogo variant="cheio" :size="MARK_LOGO_SIZE" class="text-bg" />
-      </span>
+      <UiSketchBox bold>
+        <span :class="MARK_CLASSES" :style="{ '--logo-cut': 'var(--color-paper)' }">
+          <VokiaLogo variant="cheio" :size="MARK_LOGO_SIZE" />
+        </span>
+      </UiSketchBox>
       <b :class="WORDMARK_CLASSES">Vokia</b>
     </header>
     <main :class="MAIN_CLASSES">
+      <UiStepDots :total="STEPS.length" :current="index" />
       <component :is="current.view" />
       <footer class="flex w-full items-center gap-2" :class="isFirst ? 'justify-center' : 'justify-between'">
         <UiButton v-if="!isFirst" variant="quiet" size="lg" @press="back">Voltar</UiButton>

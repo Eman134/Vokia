@@ -71,7 +71,7 @@ function submitChoice(): void {
 
 <template>
   <li
-    class="rounded-card border border-line bg-surface px-3 py-2.5"
+    class="rounded-md border border-line bg-surface px-3 py-2.5"
     :data-testid="`decision-card-${card.key}`"
     :data-kind="card.kind"
   >

@@ -36,9 +36,12 @@ interface SettingsSectionData {
   items: readonly SettingsItem[]
 }
 
+export const GENERAL_SECTION_TITLE = 'Geral'
+export const AGENTS_SECTION_TITLE = 'Agentes e conexões'
+
 export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
   {
-    title: 'Geral',
+    title: GENERAL_SECTION_TITLE,
     description: 'aparência e o básico do app',
     items: [
       { kind: 'row', label: 'Tema', control: { kind: 'theme' } },
@@ -77,7 +80,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
     ],
   },
   {
-    title: 'Agentes e conexões',
+    title: AGENTS_SECTION_TITLE,
     description: 'os CLIs que a Vokia usa; o login é sempre o do próprio CLI',
     action: 'Verificar de novo',
     items: [

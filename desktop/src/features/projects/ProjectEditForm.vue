@@ -9,7 +9,7 @@ import ProjectColorPicker from './ProjectColorPicker.vue'
 import ProjectIconPicker from './ProjectIconPicker.vue'
 import ProjectPermissionRules from './ProjectPermissionRules.vue'
 import { projectColorOf } from './projectColors'
-import { CANCEL_LABEL, EMPTY_PATH_TEXT, SAVE_LABEL } from './projetosSample'
+import { CANCEL_LABEL, EMPTY_PATH_TEXT, SAVE_LABEL } from './projetosCopy'
 import { SETUP_COMMAND_MAX_CHARS, type PermissionLevel, type Project, type ProjectEdit } from './projectsApi'
 
 const props = defineProps<{ project: Project }>()
@@ -31,9 +31,9 @@ const DIALOG_TITLE = 'Editar projeto'
 const NAME_FIELD_SELECTOR = 'input'
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4'
 const DIALOG_CLASSES =
-  'flex max-h-full w-120 max-w-full min-w-0 flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5.5 shadow-float'
+  'flex max-h-full w-120 max-w-full min-w-0 flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5.5 shadow-paper'
 const PATH_CLASSES =
-  'flex h-9 items-center truncate rounded-control border border-line bg-surface px-3 font-mono text-[11.5px] text-faint opacity-60'
+  'flex h-9 items-center truncate rounded-md border border-line bg-surface px-3 font-mono text-meta text-faint opacity-60'
 const FOOTER_CLASSES = 'flex flex-wrap items-center justify-end gap-2.5'
 
 const titleId = useId()

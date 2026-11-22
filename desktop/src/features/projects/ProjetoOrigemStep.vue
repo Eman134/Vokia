@@ -1,15 +1,22 @@
 <script setup lang="ts">
 import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
+import { handReveal } from '../../ui/handDrawn'
+import {
+  SEGMENTED_ACTIVE_CLASSES,
+  SEGMENTED_GROUP_CLASSES,
+  SEGMENTED_INACTIVE_CLASSES,
+  SEGMENTED_MARK_CLASSES,
+  SEGMENTED_OPTION_CLASSES,
+} from '../../ui/UiSegmented.vue'
 import { storeToRefs } from 'pinia'
 import {
   CANCEL_LABEL,
   CHOOSE_LABEL,
   LINKED_REPO_LABEL,
   PICK_FOLDER_LABEL,
-  START_FROM_LABEL,
-  START_FROM_VALUE,
-} from './projetosSample'
+} from './projetosCopy'
 import ProjectColorPicker from './ProjectColorPicker.vue'
 import ProjectIconPicker from './ProjectIconPicker.vue'
 import type { CloneMode, OriginKind } from './projectsApi'
@@ -30,12 +37,8 @@ const MODE_OPTIONS: readonly ToggleOption<CloneMode>[] = [
   { label: 'Fork', value: 'fork', testid: 'mode-fork' },
 ]
 
-const GROUP_CLASSES = 'flex w-fit gap-0.5 rounded-control bg-surface-2 p-0.75'
-const OPTION_CLASSES = 'cursor-pointer whitespace-nowrap rounded-control-sm px-3 py-1.25 text-caption focus:outline-2 focus:outline-solid focus:outline-accent'
-const ACTIVE_CLASSES = 'bg-surface font-medium text-ink shadow-seg'
-const INACTIVE_CLASSES = 'text-muted hover:bg-hover hover:text-ink'
-const DISABLED_FIELD_CLASSES =
-  'flex h-9 items-center rounded-control border border-line bg-surface px-3 text-control text-faint opacity-60'
+const GROUP_CLASSES = `${SEGMENTED_GROUP_CLASSES} w-fit`
+const OPTION_CLASSES = `cursor-pointer ${SEGMENTED_OPTION_CLASSES}`
 const FOOTER_CLASSES ='flex items-center justify-end gap-2'
 
 const wizard = useNovoProjeto()
@@ -56,10 +59,11 @@ function errorFor(field: string): string | undefined {
         type="button"
         :data-testid="option.testid"
         :aria-pressed="originKind === option.value"
-        :class="[OPTION_CLASSES, originKind === option.value ? ACTIVE_CLASSES : INACTIVE_CLASSES]"
+        :class="[OPTION_CLASSES, originKind === option.value ? SEGMENTED_ACTIVE_CLASSES : SEGMENTED_INACTIVE_CLASSES]"
         @click="originKind = option.value"
       >
         {{ option.label }}
+        <UiHandLine :class="[SEGMENTED_MARK_CLASSES, handReveal(originKind === option.value)]" />
       </button>
     </div>
 
@@ -81,10 +85,11 @@ function errorFor(field: string): string | undefined {
           type="button"
           :data-testid="option.testid"
           :aria-pressed="mode === option.value"
-          :class="[OPTION_CLASSES, mode === option.value ? ACTIVE_CLASSES : INACTIVE_CLASSES]"
+          :class="[OPTION_CLASSES, mode === option.value ? SEGMENTED_ACTIVE_CLASSES : SEGMENTED_INACTIVE_CLASSES]"
           @click="mode = option.value"
         >
           {{ option.label }}
+          <UiHandLine :class="[SEGMENTED_MARK_CLASSES, handReveal(mode === option.value)]" />
         </button>
       </div>
       <div class="flex items-end gap-2">
@@ -92,10 +97,6 @@ function errorFor(field: string): string | undefined {
         <UiButton variant="quiet" size="lg" @press="wizard.chooseParent">{{ PICK_FOLDER_LABEL }}</UiButton>
       </div>
       <UiField v-model="branch" label="Branch · opcional" :error="errorFor('branch')" data-testid="field-branch" />
-      <div class="flex flex-col gap-1.5" aria-disabled="true">
-        <span class="text-label font-medium text-muted">{{ START_FROM_LABEL }}</span>
-        <div :class="DISABLED_FIELD_CLASSES">{{ START_FROM_VALUE }}</div>
-      </div>
     </template>
 
     <UiField

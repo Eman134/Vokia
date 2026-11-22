@@ -12,11 +12,11 @@ const NEW_SUBTITLE = 'Crie um espaço focado para discussões com agentes espec�
 const EDIT_SUBTITLE = 'Altere o nome ou quem participa deste canal.'
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4'
 const DIALOG_CLASSES =
-  'flex max-h-full w-120 max-w-full flex-col gap-5 overflow-y-auto rounded-dialog border border-line bg-surface p-6 shadow-panel'
+  'flex max-h-full w-120 max-w-full flex-col gap-5 overflow-y-auto rounded-md border border-line bg-surface p-6 shadow-paper'
 const ENTER_FROM_CLASS = 'opacity-0'
 const ENTER_ACTIVE_CLASS = 'transition-opacity duration-200 ease-out motion-reduce:transition-none'
 const BADGE_CLASSES =
-  'grid size-11 shrink-0 place-items-center rounded-card bg-linear-to-br from-accent-soft to-surface-2 text-section font-bold text-accent ring-1 ring-line'
+  'grid size-11 shrink-0 place-items-center rounded-md bg-linear-to-br from-accent-soft to-surface-2 text-section font-bold text-accent ring-1 ring-line'
 
 defineProps<{ channel?: Channel }>()
 const emit = defineEmits<{ close: [] }>()

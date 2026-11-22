@@ -10,7 +10,7 @@ import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 const PAGE_CLASSES = `flex-[999_1_640px] flex min-w-0 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const PAGE_TITLE = 'Memória e grafo'
 const SECTIONS_CLASSES = 'flex flex-wrap items-start gap-4.5'
-const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-dialog border border-line bg-surface'
+const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-md border border-line bg-surface'
 const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
 const GRAPH_SECTION_CLASSES = `${SECTION_CLASSES} flex-[999_1_560px]`
 const SECTION_HEADER_CLASSES = 'flex flex-wrap items-baseline gap-2 px-4.5 py-4'

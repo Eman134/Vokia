@@ -13,6 +13,7 @@ import UiProgress from '../../ui/UiProgress.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
+import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
 import type { SettingsActionId, SettingsItem } from './configuracoesSample'
 import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
@@ -103,19 +104,19 @@ onMounted(() => {
 const ROW_CLASSES = 'flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-line py-3'
 const CONTROL_CLASSES = 'flex max-w-full flex-none flex-wrap items-center justify-end gap-2'
 const INPUT_CLASSES =
-  'h-9 w-18 rounded-control border border-line bg-surface px-2.5 text-control text-ink disabled:opacity-40'
+  'h-9 w-18 rounded-md border border-line bg-surface px-2.5 text-control text-ink disabled:opacity-40'
 const CLI_ROW_CLASSES = 'grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3.5 border-t border-line py-3'
-const CLI_CODE_CLASSES = 'grid size-10 place-items-center rounded-control-lg bg-surface-2 font-mono text-label font-medium'
+const CLI_CODE_CLASSES = 'grid size-10 place-items-center rounded-md bg-surface-2 font-mono text-label font-medium'
 const MOMENTS_CLASSES = 'grid grid-cols-3 gap-2 border-t border-line py-3'
-const MOMENT_CLASSES = 'flex items-center gap-2.5 rounded-card border px-3 py-2.5'
-const MOMENT_ON_CLASSES = 'border-accent bg-accent-soft'
+const MOMENT_CLASSES = 'flex items-center gap-2.5 rounded-md border px-3 py-2.5'
+const MOMENT_ON_CLASSES = HAND_SELECTED_CLASSES
 const MOMENT_OFF_CLASSES = 'border-line bg-surface'
 const CODE_CLASSES: Record<'plain' | 'ok' | 'danger', string> = {
   plain: 'font-mono text-caption text-muted',
-  ok: 'rounded-chip bg-ok-soft px-2 py-0.5 font-mono text-small text-ok',
-  danger: 'rounded-chip bg-danger/10 px-2 py-0.5 font-mono text-small text-danger',
+  ok: 'rounded-sm bg-ok-soft px-2 py-0.5 font-mono text-small text-ok',
+  danger: 'rounded-sm bg-danger/10 px-2 py-0.5 font-mono text-small text-danger',
 }
-const KEY_CLASSES = 'rounded-chip border border-line bg-surface-2 px-1.5 font-mono text-small text-ink'
+const KEY_CLASSES = 'rounded-sm border border-line bg-surface-2 px-1.5 font-mono text-small text-ink'
 
 function toOptions(labels: readonly string[]) {
   return labels.map((label) => ({ label, value: label }))
@@ -124,7 +125,7 @@ function toOptions(labels: readonly string[]) {
 
 <template>
   <div v-if="item.kind === 'group'" class="flex flex-col gap-0.5 pt-4 pb-1">
-    <span class="text-small font-semibold tracking-[0.04em] text-muted uppercase">{{ item.label }}</span>
+    <span class="text-small font-semibold text-muted">{{ item.label }}</span>
     <span v-if="item.hint" class="text-small text-muted">{{ item.hint }}</span>
   </div>
 
@@ -211,7 +212,7 @@ function toOptions(labels: readonly string[]) {
         disabled
       />
       <template v-else-if="item.control.kind === 'input'">
-        <input :value="item.control.value" :aria-label="item.label" :class="INPUT_CLASSES" disabled aria-disabled="true" />
+        <input :value="item.control.value" :aria-label="item.label" :class="INPUT_CLASSES" disabled />
         <span v-if="item.control.unit" class="text-caption text-muted">{{ item.control.unit }}</span>
       </template>
       <template v-else-if="item.control.kind === 'value'">

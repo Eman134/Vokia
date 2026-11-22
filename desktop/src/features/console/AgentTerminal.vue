@@ -109,7 +109,7 @@ onUnmounted(() => clearInterval(clock))
   <section
     v-if="agent !== null"
     :aria-label="TERMINAL_LABEL_PREFIX + agentName(agent)"
-    class="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-term-line bg-term-bg font-mono text-label leading-relaxed text-term-ink"
+    class="m-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-term-line bg-term-bg font-mono text-label leading-relaxed text-term-ink"
   >
     <div class="truncate border-b border-term-line px-4 py-2 text-small text-term-muted">
       {{ TITLE_NAME }}{{ TITLE_SEPARATOR }}{{ projects.selected?.path }}
@@ -156,7 +156,7 @@ onUnmounted(() => clearInterval(clock))
       <UiButton variant="primary" size="sm" @press="jumpToEnd">{{ JUMP_LABEL }}</UiButton>
     </div>
     <div class="flex flex-col gap-1 border-t border-term-line px-4 py-3">
-      <form class="flex items-center gap-2 rounded-control border border-term-line px-3 py-1.5" @submit.prevent="send">
+      <form class="flex items-center gap-2 rounded-md border border-term-line px-3 py-1.5" @submit.prevent="send">
         <span class="select-none font-bold" aria-hidden="true">{{ PROMPT_MARK }}</span>
         <input
           v-model="draft"

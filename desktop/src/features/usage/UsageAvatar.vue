@@ -53,7 +53,7 @@ function emphasisClass(percent: number) {
     <button
       type="button"
       :class="[
-        'mt-1 flex items-center gap-2.5 rounded-control-lg border-0 bg-transparent text-left',
+        'mt-1 flex items-center gap-2.5 rounded-md border-0 bg-transparent text-left',
         openable ? 'cursor-pointer' : 'cursor-default',
         expanded ? 'p-0 pr-1' : 'p-0',
       ]"

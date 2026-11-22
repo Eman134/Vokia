@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import UiCreateButton from '../../ui/UiCreateButton.vue'
+import UiChip from '../../ui/UiChip.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
@@ -10,7 +10,7 @@ import { useFeed } from '../team/useFeed'
 import { useConsole } from '../console/useConsole'
 import ProjectCard from './ProjectCard.vue'
 import ProjectEditForm from './ProjectEditForm.vue'
-import { NEW_PROJECT_LABEL, PROJECTS_TITLE } from './projetosSample'
+import { NEW_PROJECT_LABEL, PROJECTS_TITLE } from './projetosCopy'
 import {
   isProjectError,
   type PermissionLevel,
@@ -86,9 +86,7 @@ onMounted(async () => {
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="PROJECTS_TITLE">
       <template #actions>
-        <UiCreateButton data-testid="new-project" @press="navigation.goTo('novo-projeto')">
-          {{ NEW_PROJECT_LABEL }}
-        </UiCreateButton>
+        <UiChip kind="add" data-testid="new-project" :label="`+ ${NEW_PROJECT_LABEL}`" @press="navigation.goTo('novo-projeto')" />
       </template>
     </UiPageHeader>
 

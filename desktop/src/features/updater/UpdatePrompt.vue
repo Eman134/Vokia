@@ -46,7 +46,7 @@ const installLabel = computed<string>(() => {
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-prompt-title"
-      class="w-130 max-w-full rounded-dialog border border-line bg-surface p-6 shadow-float"
+      class="w-130 max-w-full rounded-sm border border-graphite bg-surface p-6 shadow-paper"
     >
       <template v-if="updater.status === 'ready'">
         <div class="flex flex-col items-center gap-3 text-center">
@@ -62,7 +62,7 @@ const installLabel = computed<string>(() => {
         </p>
         <p v-if="releaseDate" class="text-caption text-muted">Publicada em {{ releaseDate }}</p>
 
-        <div class="mt-4 max-h-64 overflow-y-auto rounded-control-lg bg-surface-2 p-3 [&_code]:bg-surface">
+        <div class="mt-4 max-h-64 overflow-y-auto rounded-md bg-surface-2 p-3 [&_code]:bg-surface">
           <MarkdownText v-if="updater.notes" :text="updater.notes" />
           <p v-else class="text-control text-muted">Sem notas de versão.</p>
         </div>
@@ -74,7 +74,7 @@ const installLabel = computed<string>(() => {
         <button
           v-if="updater.status === 'ready'"
           type="button"
-          class="h-9 rounded-control bg-ink px-3.5 text-control font-medium text-bg"
+          class="h-9 rounded-md bg-ink px-3.5 text-control font-medium text-bg"
           @click="updater.restart()"
         >
           {{ RESTART_LABEL }}
@@ -82,7 +82,7 @@ const installLabel = computed<string>(() => {
         <button
           v-else-if="updater.status === 'failed'"
           type="button"
-          class="h-9 rounded-control bg-surface-2 px-3.5 text-control font-medium text-ink"
+          class="h-9 rounded-md bg-surface-2 px-3.5 text-control font-medium text-ink"
           @click="updater.dismissUpdate()"
         >
           Fechar
@@ -90,7 +90,7 @@ const installLabel = computed<string>(() => {
         <template v-else>
           <button
             type="button"
-            class="h-9 rounded-control px-3.5 text-control font-medium text-muted disabled:opacity-40"
+            class="h-9 rounded-md px-3.5 text-control font-medium text-muted disabled:opacity-40"
             :disabled="updater.busy"
             @click="updater.dismissUpdate()"
           >
@@ -98,7 +98,7 @@ const installLabel = computed<string>(() => {
           </button>
           <button
             type="button"
-            class="h-9 rounded-control bg-ink px-3.5 text-control font-medium text-bg disabled:opacity-40"
+            class="h-9 rounded-md bg-ink px-3.5 text-control font-medium text-bg disabled:opacity-40"
             :disabled="updater.busy"
             @click="updater.install()"
           >
@@ -111,12 +111,12 @@ const installLabel = computed<string>(() => {
 
   <div
     v-if="updater.checkError"
-    class="fixed top-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-popover border border-line bg-surface px-3.5 py-3 shadow-float"
+    class="fixed top-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-md border border-line bg-surface px-3.5 py-3 shadow-paper"
   >
     <p class="text-caption text-muted">{{ updater.checkError }}</p>
     <button
       type="button"
-      class="h-7.5 shrink-0 rounded-control-sm px-3.5 text-control font-medium text-muted"
+      class="h-7.5 shrink-0 rounded-sm px-3.5 text-control font-medium text-muted"
       @click="updater.dismissCheckError()"
     >
       Fechar
