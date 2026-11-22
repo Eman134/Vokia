@@ -212,7 +212,9 @@ impl SessionPool {
             return 0;
         }
         // Só agente técnico precisa da árvore; o Ember pré-carregado fica com a identidade do projeto.
-        let tree = if targets.iter().any(|target| *target != Agent::ember()) {
+        let tree = if Self::has_preload_capacity(self.live_count())
+            && targets.iter().any(|target| *target != Agent::ember())
+        {
             scan_structure(&project_dir).await
         } else {
             None

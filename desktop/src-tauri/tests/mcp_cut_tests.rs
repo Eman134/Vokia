@@ -120,12 +120,17 @@ fn prompt_do_passo_ensina_as_ferramentas_com_mcp_e_a_sintaxe_de_texto_sem_mcp() 
     for prompt in [&with.opening, &with.follow_up, &with.minimal] {
         assert!(!prompt.contains("set_variable"), "sem variáveis, prompt MCP compacto: {prompt}");
         assert!(!prompt.contains("get_variables"), "sem variáveis, prompt MCP compacto: {prompt}");
-        assert!(prompt.contains(DELEGATE_TOOL_TEXT), "{prompt}");
         assert!(!prompt.contains("@Nome:"), "{prompt}");
         for marker in OLD_MARKERS {
             assert!(!prompt.contains(marker), "{marker}: {prompt}");
         }
     }
+    for prompt in [&with.opening, &with.minimal] {
+        assert!(prompt.contains(DELEGATE_TOOL_TEXT), "{prompt}");
+    }
+    assert!(!with.follow_up.contains(DELEGATE_TOOL_TEXT), "follow_up não repete as regras: {}", with.follow_up);
+    assert_eq!(with.follow_up, "objetivo: teste
+instrucao: Faça", "follow_up traz só o pedido");
     for prompt in [&without.opening, &without.follow_up, &without.minimal] {
         assert!(!prompt.contains("set_variable"), "{prompt}");
         assert!(!prompt.contains("`$nome = valor`"), "sem variáveis, prompt textual compacto: {prompt}");

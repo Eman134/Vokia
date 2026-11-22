@@ -1,4 +1,7 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex as StdMutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
@@ -28,6 +31,24 @@ const PROJECT_TREE_EMPTY: &str = "A pasta do projeto está vazia.";
 // Orçamento do bloco no prompt: bem menor que o da leitura da pasta, que segue com os limites de projects::folder_tree.
 const PROMPT_TREE_MAX_DEPTH: usize = 2;
 const PROMPT_TREE_MAX_ENTRIES: usize = 60;
+const TREE_CACHE_TTL: Duration = Duration::from_secs(30);
+
+static TREE_CACHE: OnceLock<StdMutex<HashMap<PathBuf, (Instant, FolderTree)>>> = OnceLock::new();
+
+fn tree_cache() -> &'static StdMutex<HashMap<PathBuf, (Instant, FolderTree)>> {
+    TREE_CACHE.get_or_init(Default::default)
+}
+
+fn cached_tree(dir: &Path) -> Option<FolderTree> {
+    let cache = tree_cache().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (scanned_at, tree) = cache.get(dir)?;
+    (scanned_at.elapsed() < TREE_CACHE_TTL).then(|| tree.clone())
+}
+
+fn store_tree(dir: PathBuf, tree: &FolderTree) {
+    let mut cache = tree_cache().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    cache.insert(dir, (Instant::now(), tree.clone()));
+}
 const PROMPT_TREE_MAX_CHARS: usize = 1800;
 const RESERVED_FOOTER_CHARS: usize = 64;
 
@@ -99,7 +120,10 @@ pub(super) fn project_id_from_choice(
 }
 
 pub(super) fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, FlowError> {
-    let project = load_project(app, project_id)?;
+    project_dir_of(&load_project(app, project_id)?)
+}
+
+pub(super) fn project_dir_of(project: &Project) -> Result<PathBuf, FlowError> {
     if project.path.trim().is_empty() {
         return Err(FlowError::ProjectFolder(NO_FOLDER_MESSAGE.to_string()));
     }
@@ -108,10 +132,16 @@ pub(super) fn project_dir(app: &AppHandle, project_id: i64) -> Result<PathBuf, F
 }
 
 pub(super) async fn scan_structure(dir: &Path) -> Option<FolderTree> {
+    if let Some(tree) = cached_tree(dir) {
+        return Some(tree);
+    }
     let owned = dir.to_path_buf();
     let scanned = tauri::async_runtime::spawn_blocking(move || projects::folder_tree(&owned)).await;
     let error = match scanned {
-        Ok(Ok(tree)) => return Some(tree),
+        Ok(Ok(tree)) => {
+            store_tree(dir.to_path_buf(), &tree);
+            return Some(tree);
+        }
         Ok(Err(error)) => error.to_string(),
         Err(error) => error.to_string(),
     };
@@ -221,63 +251,5 @@ fn project_description(project: &Project) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn tok2_ember_recebe_identidade_sem_bloco_da_arvore() {
-        let project = Project {
-            id: 1,
-            name: "Vokia".to_string(),
-            selected: true,
-            created_at: 0,
-            symbol: "folder".to_string(),
-            color: Some("amber".to_string()),
-            description: "Orquestrador de agentes".to_string(),
-            path: "C:/projetos/Vokia".to_string(),
-            pinned: true,
-            permission_level: crate::permissions::PermissionLevel::Edicao,
-            origin_kind: ORIGIN_GITHUB.to_string(),
-            origin_repo: Some("org/vokia".to_string()),
-            last_activity_at: None,
-            setup_command: None,
-        };
-        let ember = project_context_without_tree(&project);
-
-        assert!(ember.contains("Vokia"));
-        assert!(ember.contains("Orquestrador de agentes"));
-        assert!(ember.contains("org/vokia"));
-        assert!(!ember.contains("Estrutura da pasta do projeto"));
-    }
-
-    #[test]
-    fn tok2_arvore_respeita_profundidade_limite_de_entradas_e_soma_omissoes() {
-        let mut entries: Vec<String> = (0..75).map(|index| format!("arquivo-{index:02}.txt")).collect();
-        entries.push("desktop/src/App.vue".to_string());
-        let block = project_tree_block(&FolderTree {
-            entries,
-            omitted: 3,
-            omitted_is_lower_bound: false,
-        });
-        let lines: Vec<_> = block.lines().collect();
-
-        assert!(lines[0].contains("até 2 níveis"));
-        assert_eq!(lines.iter().filter(|line| line.starts_with("arquivo-")).count(), 60);
-        assert!(!block.contains("desktop/src/App.vue"));
-        assert!(block.contains("… e mais 19 entradas não listadas."));
-    }
-
-    #[test]
-    fn tok2_arvore_respeita_orcamento_total_de_1800_caracteres() {
-        let entries: Vec<String> = (0..70)
-            .map(|index| format!("diretorio-com-nome-longo-subdiretorio-{index:02}.txt"))
-            .collect();
-        let block = project_tree_block(&FolderTree {
-            entries,
-            omitted: 0,
-            omitted_is_lower_bound: false,
-        });
-
-        assert!(block.chars().count() <= PROMPT_TREE_MAX_CHARS);
-    }
-}
+#[path = "project_context_tests.rs"]
+mod tests;

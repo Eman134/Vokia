@@ -7,6 +7,7 @@ mod opencode;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::OnceLock;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
@@ -260,6 +261,11 @@ fn finalize_vokia_cli(
 }
 
 pub(crate) fn resolve_vokia_cli_path() -> Option<PathBuf> {
+    static CLI_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    CLI_PATH.get_or_init(locate_vokia_cli).clone()
+}
+
+fn locate_vokia_cli() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
     let bin = if cfg!(windows) {

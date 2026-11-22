@@ -37,7 +37,7 @@ use super::emit::{
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
-    load_project, project_context, project_context_without_tree, project_dir, project_id_from_choice,
+    load_project, project_context, project_context_without_tree, project_dir, project_dir_of, project_id_from_choice,
     scan_structure,
 };
 use super::prompts::NO_NAMES;
@@ -1068,9 +1068,9 @@ async fn run_parallel_item(
         with_batch(state, id, |open| open.started.push(key.agent.clone()));
         announce_batch(app, state, id);
     }
-    let project_dir = project_dir(app, key.project_id)?;
-    let attachments_dir = attachments_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
+    let project_dir = project_dir_of(&project)?;
+    let attachments_dir = attachments_dir(app, key.project_id)?;
     let tree = scan_structure(&project_dir).await;
     let context = project_context(&project, tree.as_ref());
     let orchestration = load_orchestration(app)?;
@@ -1541,9 +1541,9 @@ async fn exchange_turns(
     let channel = find_channel(app, key.project_id, channel_id, team);
     let request = with_channel_note(request, channel.as_ref());
     let request = request.as_str();
-    let project_dir = project_dir(app, key.project_id)?;
-    let attachments_dir = attachments_dir(app, key.project_id)?;
     let project = load_project(app, key.project_id)?;
+    let project_dir = project_dir_of(&project)?;
+    let attachments_dir = attachments_dir(app, key.project_id)?;
     // Snapshot único da troca: edições feitas durante ela só valem na próxima.
     let orchestration = load_orchestration(app)?;
     let working = working_dir(

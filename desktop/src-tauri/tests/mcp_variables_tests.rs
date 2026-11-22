@@ -64,7 +64,7 @@ fn set_cria_a_variavel_e_o_slot_leva_o_que_foi_aceito_para_o_orquestrador() {
     assert!(!effects.changed_value);
     assert_eq!(
         listing(&world, &axiom),
-        "- contagem (número, compartilhada) = 3"
+        "- contagem (número, comp): 3"
     );
 }
 
@@ -84,7 +84,7 @@ fn texto_numerico_vira_numero_e_a_mudanca_de_valor_marca_changed_value() {
     assert!(!outcome.is_error, "{}", outcome.text);
     assert!(!effects.created_variable);
     assert!(effects.changed_value);
-    assert_eq!(listing(&world, &axiom), "- n (número, compartilhada) = 2");
+    assert_eq!(listing(&world, &axiom), "- n (número, comp): 2");
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn recusa_volta_como_is_error_nao_grava_e_nao_entra_nos_efeitos() {
     );
     assert!(effects.accepted.is_empty());
     assert!(!effects.created_variable && !effects.changed_value);
-    assert_eq!(listing(&world, &axiom), "- n (número, compartilhada) = 1");
+    assert_eq!(listing(&world, &axiom), "- n (número, comp): 1");
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn cada_chamada_grava_sozinha_e_uma_recusa_depois_nao_desfaz_a_anterior() {
     assert!(!first.is_error);
     assert!(second.is_error);
     assert_eq!(effects.accepted.len(), 1);
-    assert_eq!(listing(&world, &axiom), "- a (texto, compartilhada) = um");
+    assert_eq!(listing(&world, &axiom), "- a (texto, comp): um");
 }
 
 #[test]
@@ -140,9 +140,9 @@ fn variavel_nasce_compartilhada_e_outro_agente_le_e_altera() {
     let seen = listing(&world, &vexa);
     let write = set(&world, &vexa, "tema", json!("y"));
 
-    assert_eq!(seen, "- tema (texto, compartilhada) = x");
+    assert_eq!(seen, "- tema (texto, comp): x");
     assert!(!write.is_error, "{}", write.text);
-    assert_eq!(listing(&world, &axiom), "- tema (texto, compartilhada) = y");
+    assert_eq!(listing(&world, &axiom), "- tema (texto, comp): y");
 }
 
 #[test]
@@ -168,7 +168,7 @@ fn variavel_privada_so_quando_pedida_e_continua_isolada_de_outro_agente() {
     );
 
     assert!(!created.is_error, "{}", created.text);
-    assert_eq!(listing(&world, &axiom), "- rascunho (texto, privada) = x");
+    assert_eq!(listing(&world, &axiom), "- rascunho (texto, priv): x");
     assert_eq!(hidden, EMPTY_LISTING);
     assert!(write.is_error);
     assert!(
@@ -206,7 +206,7 @@ fn share_so_vale_ao_criar_e_nao_publica_variavel_privada_existente() {
 
     assert!(!again.is_error, "{}", again.text);
     assert_eq!(listing(&world, &vexa), EMPTY_LISTING);
-    assert_eq!(listing(&world, &axiom), "- rascunho (texto, privada) = z");
+    assert_eq!(listing(&world, &axiom), "- rascunho (texto, priv): z");
 }
 
 #[test]
@@ -231,7 +231,7 @@ fn append_nasce_compartilhada_e_outro_agente_acrescenta_na_mesma_lista() {
     assert!(!second.is_error, "{}", second.text);
     assert_eq!(
         listing(&world, &axiom),
-        "- animais (lista, compartilhada) = gato, cão"
+        "- animais (lista, comp): gato, cão"
     );
 }
 
@@ -250,7 +250,7 @@ fn append_privado_so_quando_pedido_nao_aparece_para_outro_agente() {
         json!({ "name": "notas", "op": "append", "value": "a", "share": false }),
     );
 
-    assert_eq!(listing(&world, &axiom), "- notas (lista, privada) = a");
+    assert_eq!(listing(&world, &axiom), "- notas (lista, priv): a");
     assert_eq!(listing(&world, &vexa), EMPTY_LISTING);
 }
 
@@ -303,7 +303,7 @@ fn variaveis_de_um_projeto_nao_aparecem_no_outro() {
 
     set(&world, &in_first, "v", json!("x"));
 
-    assert_eq!(listing(&world, &in_first), "- v (texto, compartilhada) = x");
+    assert_eq!(listing(&world, &in_first), "- v (texto, comp): x");
     assert_eq!(listing(&world, &in_second), EMPTY_LISTING);
 }
 
@@ -322,7 +322,7 @@ fn project_id_e_agent_nos_argumentos_sao_ignorados() {
         json!({ "name": "v", "op": "set", "value": "x", "project_id": second, "agent": "vexa" }),
     );
 
-    assert_eq!(listing(&world, &axiom), "- v (texto, compartilhada) = x");
+    assert_eq!(listing(&world, &axiom), "- v (texto, comp): x");
     assert_eq!(listing(&world, &other), EMPTY_LISTING);
 }
 

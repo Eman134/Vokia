@@ -19,7 +19,7 @@ const TREE_MAX_ENTRIES: usize = 150;
 const TREE_MAX_CHARS: usize = 4000;
 const TREE_SCAN_LIMIT: usize = 2000;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct FolderTree {
     pub entries: Vec<String>,
     pub omitted: usize,
