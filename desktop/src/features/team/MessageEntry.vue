@@ -9,7 +9,7 @@ import type { AgentProfile } from './teamApi'
 import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
-import { protocolMessageRow, taskStartedRow } from './activitySummary'
+import { protocolMessageRow, splitVokiaConfirmations, taskStartedRow } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
@@ -55,6 +55,12 @@ const protocolRow = computed(() => {
   if (entry.type !== 'message') return null
   return protocolMessageRow(entry.text)
 })
+
+const confirmations = computed(() =>
+  props.entry.type === 'message' && props.entry.from !== 'user'
+    ? splitVokiaConfirmations(props.entry.text)
+    : { rows: [], rest: '' },
+)
 
 const AVATAR_SIZE = PORTRAIT_SIZES.chat
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
@@ -222,7 +228,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
         <ActivityRow :row="protocolRow" />
       </ul>
-      <MarkdownText v-else :text="entry.text" />
+      <template v-else>
+        <ul v-if="confirmations.rows.length > 0" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="vokia-confirmations">
+          <ActivityRow v-for="row in confirmations.rows" :key="row.id" :row="row" />
+        </ul>
+        <MarkdownText v-if="confirmations.rest !== ''" :text="confirmations.rest" />
+      </template>
       <UiButton
         v-if="entry.requestProposal"
         class="self-start"

@@ -418,6 +418,38 @@ export function protocolMessageRow(text: string): ActivityRowModel | null {
   return null
 }
 
+// Confirmações que as ferramentas do Vokia devolvem em texto ("Card X criado: título."); só linhas inteiras casam.
+const CONFIRMATION_LINE =
+  /^(Card|Etapa|Artefato) (\S+) (criado|atualizado|removido|arquivado|restaurado|movido para .+?|já está em .+?)(?:: (.+?))?\.$/
+const CONFIRMATION_ID_PREFIX = 'confirmation-'
+const CONFIRMATION_ICON: Record<string, RowIconKind> = { Card: 'backlog', Etapa: 'backlog', Artefato: 'artifact' }
+
+export interface VokiaConfirmations {
+  rows: ActivityRowModel[]
+  rest: string
+}
+
+export function splitVokiaConfirmations(text: string): VokiaConfirmations {
+  const rows: ActivityRowModel[] = []
+  const rest: string[] = []
+  for (const line of text.split(LINE_BREAK)) {
+    const match = CONFIRMATION_LINE.exec(line.trim())
+    if (!match) {
+      rest.push(line)
+      continue
+    }
+    const [, subject, id, action, title] = match
+    rows.push({
+      id: `${CONFIRMATION_ID_PREFIX}${rows.length}`,
+      icon: CONFIRMATION_ICON[subject],
+      verb: `${subject} ${action}`,
+      chip: { label: title ?? id, title: id, icon: 'generic' },
+      failed: false,
+    })
+  }
+  return rows.length === 0 ? { rows, rest: text } : { rows, rest: rest.join(LINE_BREAK).trim() }
+}
+
 export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
   // Criação conta desde a entrada da ferramenta: a linha nasce uma vez e só cresce com o contador.
   const created = tools.filter((tool) => tool.detail?.kind === 'created')
