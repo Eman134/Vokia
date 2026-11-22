@@ -28,7 +28,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="absolute bottom-full left-0 pb-2">
-    <div class="w-60 rounded-popover border border-line bg-surface p-1.5 shadow-float">
+    <div class="w-60 rounded-md border border-line bg-surface p-1.5 shadow-paper">
       <p class="px-2 py-1.5 text-caption text-muted">Ações · {{ pageLabel }}</p>
       <ul role="menu" :aria-label="`Ações · ${pageLabel}`" class="flex flex-col gap-0.5">
         <li v-for="(action, index) in actions" :key="action.id" role="none">

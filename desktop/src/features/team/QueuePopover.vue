@@ -38,10 +38,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="absolute bottom-full left-0 pb-2">
-    <div class="w-80 rounded-popover border border-line bg-surface p-1.5 shadow-float">
+    <div class="w-80 rounded-md border border-line bg-surface p-1.5 shadow-paper">
       <p class="px-2 py-1.5 text-caption text-muted">{{ QUEUE_POPOVER_TITLE }}</p>
       <ol :aria-label="QUEUE_POPOVER_TITLE" class="flex flex-col gap-1">
-        <li v-for="(request, index) in requests.queue" :key="request.id" class="rounded-control px-2 py-1.5">
+        <li v-for="(request, index) in requests.queue" :key="request.id" class="rounded-md px-2 py-1.5">
           <span class="text-caption font-semibold text-ink">{{ agentName(request.to) }}</span>
           <QueueItemEditor v-if="request.editing" :request="request" />
           <template v-else>

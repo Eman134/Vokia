@@ -4,6 +4,7 @@ import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
 import UiButton from '../../ui/UiButton.vue'
+import { USER_BUBBLE_CLASSES } from '../../ui/handDrawn'
 import UserAvatar from '../profile/UserAvatar.vue'
 import { useUserProfile } from '../profile/useUserProfile'
 
@@ -19,14 +20,12 @@ const userProfile = useUserProfile()
   <div class="flex items-start justify-end gap-2.5 opacity-60">
     <div class="flex max-w-3/4 flex-col items-end gap-1">
       <span class="flex items-center gap-2 text-caption text-muted">
-        <span class="rounded-control bg-surface-2 px-1.5 font-semibold">{{ QUEUED_TAG }}</span>
+        <span class="rounded-md bg-surface-2 px-1.5 font-semibold">{{ QUEUED_TAG }}</span>
         <span v-if="request.to !== DEFAULT_RECIPIENT">Para {{ agentName(request.to) }}</span>
       </span>
       <QueueItemEditor v-if="request.editing" :request="request" class="w-full" />
       <template v-else>
-        <p
-          class="wrap-break-word whitespace-pre-wrap rounded-card rounded-tr-tail bg-surface-2 px-4 py-3 text-control text-muted"
-        >
+        <p :class="['wrap-break-word whitespace-pre-wrap px-3 py-1.5 text-control text-muted', USER_BUBBLE_CLASSES]">
           {{ request.text }}
         </p>
         <div class="flex gap-1">

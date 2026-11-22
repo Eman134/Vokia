@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from '../../ui/UiButton.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import { useProjects } from '../projects/useProjects'
 import type { InterruptedRun } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
@@ -12,6 +13,9 @@ import {
 } from './nowCopy'
 import { useAgentControl } from './useAgentControl'
 import { useInterruptedRuns } from './useInterruptedRuns'
+
+const DISCARD_MESSAGE = 'Descarta o pedido interrompido. Não dá para retomar depois.'
+const DISCARD_CONFIRM_LABEL = 'Descartar pedido'
 
 const interrupted = useInterruptedRuns()
 const roster = useRoster()
@@ -35,7 +39,7 @@ function isPausedRun(run: InterruptedRun): boolean {
   <details
     v-if="interrupted.runs.length > 0"
     open
-    class="flex flex-col gap-2 rounded-card border border-line bg-surface px-3 py-2"
+    class="flex flex-col gap-2 rounded-md border border-line bg-surface px-3 py-2"
     data-testid="interrupted-runs"
   >
     <summary class="cursor-pointer text-label font-semibold text-ink">
@@ -72,9 +76,13 @@ function isPausedRun(run: InterruptedRun): boolean {
           >
             {{ RESUME_REQUEST_LABEL }}
           </UiButton>
-          <UiButton variant="quiet" size="sm" data-testid="interrupted-discard" @press="interrupted.discard(run)">
-            {{ DISCARD_LABEL }}
-          </UiButton>
+          <UiConfirm
+            :label="DISCARD_LABEL"
+            :message="DISCARD_MESSAGE"
+            :confirm-label="DISCARD_CONFIRM_LABEL"
+            data-testid="interrupted-discard"
+            @confirm="interrupted.discard(run)"
+          />
         </span>
       </li>
     </ul>

@@ -21,6 +21,9 @@ import { useUserProfile } from '../profile/useUserProfile'
 import { useBacklog } from '../backlog/useBacklog'
 import { runTitleOf } from '../backlog/useRunItem'
 import UiButton from '../../ui/UiButton.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
+import UiIcon from '../../ui/UiIcon.vue'
+import { USER_BUBBLE_CLASSES } from '../../ui/handDrawn'
 
 const props = defineProps<{ entry: FeedEntry }>()
 
@@ -78,10 +81,11 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const CHECK_ICON_PATH = 'M3.5 8.5l3 3 6-6.5'
 const WARNING_ICON_PATH = 'M8 2.5L14 13.5H2Z M8 6.5v3M8 11.2v.3'
-const ERROR_ICON_CIRCLE_CX = 8
-const ERROR_ICON_CIRCLE_CY = 8
-const ERROR_ICON_CIRCLE_R = 6
-const ERROR_ICON_PATH = 'M8 5v3.5M8 10.8v.4'
+const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
+const ICON_SIZE = 16
+const USER_TEXT_CLASSES = 'w-fit max-w-full wrap-break-word px-3 py-1.5'
+const ERROR_SCRIBBLE_CLASSES = 'pointer-events-none absolute inset-x-0 -bottom-1.5 h-2 w-full text-danger/70'
+const AUTHOR_CLASSES = 'text-control font-semibold text-ink'
 
 function taskResultTitle(entry: VokiaTaskResult): string {
   return entry.concluded ? `Tarefa concluída: ${entry.objective}` : `Tarefa interrompida: ${entry.objective}`
@@ -103,11 +107,11 @@ function profile(speaker: Speaker): AgentProfile | undefined {
 </script>
 
 <template>
-  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 flex-row-reverse items-start gap-3">
+  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 flex-row-reverse items-start gap-2">
     <div class="mt-0.5 shrink-0">
       <UserAvatar :size="AVATAR_SIZE" :title="userProfile.displayName" />
     </div>
-    <div class="flex min-w-0 flex-1 flex-col items-end gap-1">
+    <div class="flex min-w-0 flex-1 flex-col items-end gap-0.5">
       <div class="flex flex-wrap items-center justify-end gap-2">
         <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
         <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-small text-muted">
@@ -123,7 +127,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       </ul>
       <div
         v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
-        class="w-fit max-w-full wrap-break-word rounded-card bg-surface-2 px-3.5 py-2.5"
+        :class="[USER_TEXT_CLASSES, USER_BUBBLE_CLASSES]"
       >
         <MarkdownText :text="userContent.text" />
       </div>
@@ -137,7 +141,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           :key="attachment.path"
           :title="attachment.path"
           :data-attachment-name="attachment.name"
-          class="flex min-w-0 items-center gap-1.5 rounded-card border border-line bg-surface px-2.5 py-1.5 text-caption"
+          class="flex min-w-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-caption"
         >
           <span class="truncate font-semibold text-ink">{{ attachment.name }}</span>
           <span class="shrink-0 text-muted">{{ attachment.label }} · {{ attachment.size }}</span>
@@ -174,16 +178,16 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     </div>
     <ActivityRun v-if="entry.activity" :activity="entry.activity" />
   </div>
-  <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-3">
+  <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-2">
     <span class="mt-0.5 flex shrink-0" aria-hidden="true">
       <AgentPortrait :who="entry.from" :size="AVATAR_SIZE" />
     </span>
-    <div class="flex min-w-0 flex-1 flex-col gap-1">
+    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
+        <span :class="AUTHOR_CLASSES">{{ speakerName(entry.from) }}</span>
         <span
           v-if="profile(entry.from)?.role"
-          class="rounded-chip bg-surface-2 px-1.5 py-0.5 text-small text-muted"
+          class="text-small text-muted"
         >
           {{ profile(entry.from)?.role }}
         </span>
@@ -210,20 +214,11 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         class="flex items-center gap-2 text-danger"
         data-testid="agent-error-message"
       >
-        <svg
-          class="size-4 shrink-0"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <circle :cx="ERROR_ICON_CIRCLE_CX" :cy="ERROR_ICON_CIRCLE_CY" :r="ERROR_ICON_CIRCLE_R" />
-          <path :d="ERROR_ICON_PATH" />
-        </svg>
-        <span class="wrap-break-word">{{ entry.text }}</span>
+        <UiIcon class="shrink-0" :path="ERROR_ICON_PATH" :size="ICON_SIZE" />
+        <span class="relative wrap-break-word">
+          {{ entry.text }}
+          <UiHandLine variant="scribble" :class="ERROR_SCRIBBLE_CLASSES" />
+        </span>
       </div>
       <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
         <ActivityRow :row="protocolRow" />
@@ -250,21 +245,14 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   <div
     v-else-if="entry.type === 'task-result'"
     data-testid="task-result"
-    class="flex items-start gap-2.5 rounded-card border border-line bg-surface px-4 py-3"
+    class="flex items-start gap-2.5 rounded-md border border-line bg-surface px-3 py-2"
   >
-    <svg
-      class="mt-0.5 size-4 shrink-0"
+    <UiIcon
+      class="mt-0.5 shrink-0"
       :class="entry.concluded ? 'text-ok' : 'text-warn-text'"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.8"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path :d="entry.concluded ? CHECK_ICON_PATH : WARNING_ICON_PATH" />
-    </svg>
+      :path="entry.concluded ? CHECK_ICON_PATH : WARNING_ICON_PATH"
+      :size="ICON_SIZE"
+    />
     <div class="flex min-w-0 flex-col gap-0.5">
       <p class="wrap-break-word text-control font-semibold text-ink">{{ taskResultTitle(entry) }}</p>
       <p class="wrap-break-word text-caption text-muted">{{ taskResultDetail(entry) }}</p>

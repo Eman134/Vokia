@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import UiButton from '../../ui/UiButton.vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
+import { HAND_OUTLINE_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import UiMarker from '../../ui/UiMarker.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
@@ -12,11 +14,10 @@ import BacklogCard from './BacklogCard.vue'
 import BacklogItemModal from './BacklogItemModal.vue'
 import PlanDialog from './PlanDialog.vue'
 import { colorVar } from './backlogLabels'
-import { tagColor, tagLabel } from './tags'
+import { tagLabel, tagMarkerTone } from './tags'
 import {
   ALL_FEATURES_LABEL,
   ALL_FEATURES_VALUE,
-  ALL_TRIAGED_LABEL,
   BACKLOG_TITLE,
   COLUMN_META,
   EMPTY_BOARD_TEXT,
@@ -24,12 +25,7 @@ import {
   EMPTY_COLUMN_TEXT,
   LOAD_ERROR_PREFIX,
   LOADING_TEXT,
-  MINE_LABEL,
   NEW_REQUEST_LABEL,
-  PLAN_ALL_LABEL,
-  SEARCH_LABEL,
-  SEARCH_PLACEHOLDER,
-  TYPE_FILTER_OPTIONS,
 } from './backlogPageCopy'
 import {
   DEFAULT_COLUMN,
@@ -44,17 +40,16 @@ import { useRunItem } from './useRunItem'
 
 const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
-const SEARCH_CLASSES =
-  'h-9 w-55 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint disabled:opacity-40'
-const MINE_CLASSES = 'h-7.5 rounded-control-sm border border-line px-3 text-caption text-muted disabled:opacity-40'
-const TAG_FILTER_CLASSES = 'h-7 cursor-pointer rounded-control-sm px-2.5 text-label font-medium hover:opacity-80'
+const TAG_FILTER_BASE_CLASSES = `cursor-pointer border-[1.5px] px-1 py-0.5 text-label font-medium ${INK_FOCUS_CLASSES}`
+const COLUMN_TITLE_CLASSES = 'relative flex w-fit items-baseline gap-2 pb-1.5 text-card-title text-ink'
+const COLUMN_COUNT_CLASSES = 'text-caption text-muted'
+const COLUMN_UNDERLINE_CLASSES = 'pointer-events-none absolute inset-x-0 bottom-0 h-1.5'
+const EMPTY_COLUMN_CLASSES = 'font-hand text-annotation text-faint'
 const GRID_SCROLL_CLASSES = 'min-w-0'
 const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-2 md:grid-cols-[repeat(5,minmax(0,1fr))]'
 const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'
 const BOARD_AREA_CLASSES = 'flex flex-1 flex-col'
 const EMPTY_BOARD_CLASSES = 'flex flex-1 items-center justify-center'
-const TAG_TINT_PERCENT = 11
-const TAG_TINT_ACTIVE_PERCENT = 22
 
 const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
   ready: 'Ready',
@@ -68,7 +63,6 @@ const itemPlan = useItemPlan()
 const runItem = useRunItem()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
-const typeFilter = ref<string>(TYPE_FILTER_OPTIONS[0].value)
 
 function columnOf(item: BacklogItem): BacklogColumn {
   return item.column ?? (item.stage ? STAGE_COLUMN[item.stage] : DEFAULT_COLUMN)
@@ -124,20 +118,6 @@ const columns = computed(() =>
   })),
 )
 
-const pendingCount = computed(() => backlog.items.filter((item) => item.state === 'vazio').length)
-const planAllLabel = computed(() =>
-  pendingCount.value ? PLAN_ALL_LABEL.replace('{count}', String(pendingCount.value)) : ALL_TRIAGED_LABEL,
-)
-function tagStyle(tag: string, active: boolean) {
-  const token = colorVar(tagColor(tag))
-  const percent = active ? TAG_TINT_ACTIVE_PERCENT : TAG_TINT_PERCENT
-  return {
-    color: token,
-    backgroundColor: `color-mix(in srgb, ${token} ${percent}%, transparent)`,
-    border: active ? `1px solid ${token}` : '1px solid transparent',
-  }
-}
-
 watch(
   () => projectsStore.selected?.id,
   () => {
@@ -154,35 +134,21 @@ watch(
         <UiCreateButton :disabled="!projectsStore.selected" @press="backlog.startRequest()">
           {{ NEW_REQUEST_LABEL }}
         </UiCreateButton>
-        <UiButton variant="primary" size="lg" disabled aria-disabled="true">{{ planAllLabel }}</UiButton>
       </template>
     </UiPageHeader>
 
     <div :class="FILTER_ROW_CLASSES">
-      <label for="backlog-search" class="sr-only">{{ SEARCH_LABEL }}</label>
-      <input
-        id="backlog-search"
-        :class="SEARCH_CLASSES"
-        :placeholder="SEARCH_PLACEHOLDER"
-        disabled
-        aria-disabled="true"
-      />
       <UiSegmented v-model="featureFilter" :options="featureOptions" label="Feature" />
-      <UiSegmented v-model="typeFilter" :options="TYPE_FILTER_OPTIONS" label="Tipo" disabled />
-      <button type="button" :class="MINE_CLASSES" aria-pressed="false" disabled aria-disabled="true">
-        {{ MINE_LABEL }}
-      </button>
       <div v-if="availableTags.length" role="group" aria-label="Etiquetas" class="flex flex-wrap gap-1.5">
         <button
           v-for="tag in availableTags"
           :key="tag"
           type="button"
-          :class="TAG_FILTER_CLASSES"
-          :style="tagStyle(tag, activeTag === tag)"
+          :class="[TAG_FILTER_BASE_CLASSES, activeTag === tag ? HAND_OUTLINE_CLASSES : 'border-transparent']"
           :aria-pressed="activeTag === tag"
           @click="activeTag = activeTag === tag ? null : tag"
         >
-          {{ tagLabel(tag) }}
+          <UiMarker :tone="tagMarkerTone(tag)">{{ tagLabel(tag) }}</UiMarker>
         </button>
       </div>
     </div>
@@ -192,12 +158,12 @@ watch(
       <div :class="GRID_SCROLL_CLASSES">
         <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
           <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
-            <div class="flex items-center gap-2 text-control text-ink">
-              <span class="size-2.25 rounded-full" :style="{ backgroundColor: colorVar(column.dotToken) }" />
+            <div :class="COLUMN_TITLE_CLASSES">
               <b>{{ column.name }}</b>
-              <span class="text-caption text-muted">{{ column.cards.length }}</span>
+              <span :class="COLUMN_COUNT_CLASSES">{{ column.cards.length }}</span>
+              <UiHandLine :class="COLUMN_UNDERLINE_CLASSES" :style="{ color: colorVar(column.colorToken) }" />
             </div>
-            <span v-if="!backlog.loading && column.cards.length === 0" class="text-caption text-faint">{{ EMPTY_COLUMN_TEXT }}</span>
+            <span v-if="!backlog.loading && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
             <BacklogCard
               v-for="item in column.cards"
               :key="item.id"

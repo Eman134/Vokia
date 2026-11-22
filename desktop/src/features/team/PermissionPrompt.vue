@@ -49,7 +49,7 @@ const approvals =
         <span class="text-caption font-semibold text-ink">{{ name }}</span>
         <span class="text-caption text-muted">aguardando você</span>
       </header>
-      <div class="mt-1.5 rounded-card border border-line bg-surface px-4 py-3">
+      <div class="mt-1.5 rounded-md border border-line bg-surface px-4 py-3">
         <p class="text-caption text-muted">{{ name }} quer executar ({{ permission.tool }}):</p>
         <code class="mt-1.5 block wrap-break-word whitespace-pre-wrap text-control text-ink">{{ permission.detail }}</code>
         <p class="mt-2 text-caption text-muted">

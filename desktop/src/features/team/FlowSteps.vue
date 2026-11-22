@@ -37,7 +37,7 @@ function stepTitle(name: string, index: number): string {
       <li v-for="(name, index) in flow.names" :key="name" class="min-w-0">
         <button
           type="button"
-          class="flex h-7 min-w-0 items-center gap-1.5 rounded-control px-0.5 text-label"
+          class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-0.5 text-label"
           :class="[STEP_CLASSES[stateOf(index)], stateOf(index) === 'atual' ? 'pr-2.5 max-lg:pr-0.5' : '']"
           :title="stepTitle(name, index)"
           :aria-current="stateOf(index) === 'atual' ? 'step' : undefined"

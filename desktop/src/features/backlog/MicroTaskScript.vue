@@ -30,20 +30,20 @@ const closingNote = (leader: string): string => `Se algo fugir do roteiro, ele p
 </script>
 
 <template>
-  <div class="flex flex-col gap-2 rounded-control-lg bg-surface-2 p-3 text-caption">
+  <div class="flex flex-col gap-2 rounded-md bg-surface-2 p-3 text-caption">
     <p class="flex flex-wrap items-center gap-2">
       <b class="text-ink">Roteiro para o {{ model }}</b>
       <UiBadge v-if="returned?.length" status="precisa de você" :label="DETAILED_TAG" />
       <span class="text-muted">{{ authorNote(leader) }}</span>
     </p>
-    <section v-if="returned?.length" class="flex flex-col gap-1 rounded-control bg-warn-soft p-2">
-      <h5 class="font-semibold text-ink">{{ returnedTitle(leader) }}</h5>
-      <p v-for="line in returned" :key="line" class="text-ink">+ {{ line }}</p>
-      <p class="text-muted">{{ RETURNED_NOTE }}</p>
+    <section v-if="returned?.length" class="flex flex-col gap-1 rounded-sm bg-sticky p-2 text-mark-ink">
+      <h5 class="font-semibold">{{ returnedTitle(leader) }}</h5>
+      <p v-for="line in returned" :key="line">+ {{ line }}</p>
+      <p>{{ RETURNED_NOTE }}</p>
     </section>
-    <section v-if="learned?.length" class="flex flex-col gap-1 rounded-control bg-accent-soft p-2">
-      <h5 class="font-semibold text-ink">{{ LEARNED_TITLE }}</h5>
-      <p v-for="line in learned" :key="line" class="text-ink">{{ line }}</p>
+    <section v-if="learned?.length" class="flex flex-col gap-1 rounded-sm bg-mark-blue p-2 text-mark-ink">
+      <h5 class="font-semibold">{{ LEARNED_TITLE }}</h5>
+      <p v-for="line in learned" :key="line">{{ line }}</p>
     </section>
     <section>
       <h5 class="font-semibold text-ink">Recebe de contexto</h5>
@@ -52,7 +52,7 @@ const closingNote = (leader: string): string => `Se algo fugir do roteiro, ele p
     <section>
       <h5 class="font-semibold text-ink">Pode mexer só em</h5>
       <div class="flex flex-wrap gap-1">
-        <code v-for="file in script.files" :key="file" class="rounded-chip bg-surface px-1.5 font-mono text-meta text-muted">{{ file }}</code>
+        <code v-for="file in script.files" :key="file" class="rounded-sm bg-surface px-1.5 font-mono text-meta text-muted">{{ file }}</code>
       </div>
     </section>
     <section>

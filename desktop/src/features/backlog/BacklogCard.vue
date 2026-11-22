@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiMarker from '../../ui/UiMarker.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import UserAvatar from '../profile/UserAvatar.vue'
@@ -10,7 +12,6 @@ import {
   ACTION_TITLE,
   type ActionLabel,
   BADGE_DOT,
-  colorVar,
   AUTO_CLOSED_LABEL,
   CLOSED_BY_AUTOMATIC,
   COLUMN_CHIP,
@@ -20,7 +21,7 @@ import {
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import type { ParsedProposal } from './planProposal'
-import { tagColor, tagLabel, tagTextColor } from './tags'
+import { tagLabel, tagMarkerTone } from './tags'
 import {
   DEFAULT_COLUMN,
   isUnassigned,
@@ -30,9 +31,9 @@ import {
   type BacklogColumn,
   type BacklogItem,
   type BacklogState,
-  type BacklogTag,
 } from './backlogTypes'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{
   item: BacklogItem
   column: BacklogColumn
@@ -42,19 +43,26 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
 
-const TAG_TINT_PERCENT = 13
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
 const AVATAR_SIZE = 22
 const KEY_POINTS_LIMIT = 3
-const FEATURE_STACK_SHADOW =
-  'shadow-[0_1px_2px_rgb(0_0_0/8%),4px_4px_0_-1px_var(--color-surface),4px_4px_0_0_var(--color-line),8px_8px_0_-1px_var(--color-surface),8px_8px_0_0_var(--color-line)]'
+const VISIBLE_TAGS_LIMIT = 2
+const TAG_CLASSES = 'inline-block max-w-24 truncate align-bottom text-meta whitespace-nowrap'
+const CARD_CLASSES =
+  'relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-sm border border-line bg-surface px-3.25 py-3'
+const STACK_CLASSES = 'mb-2 mr-2 shadow-paper-stack'
+const PAPER_CLASSES = 'shadow-paper'
+// Proposta é um post-it dentro da ficha: o texto escuro vale nos dois temas porque o amarelo é pastel nos dois.
+const PROPOSAL_CLASSES = 'flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink shadow-seg'
 
 const roster = useRoster()
 
 const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
 )
+const visibleTags = computed(() => props.item.tags.slice(0, VISIBLE_TAGS_LIMIT))
+const hiddenTags = computed(() => props.item.tags.slice(VISIBLE_TAGS_LIMIT))
 const isFeature = computed(() => props.item.type === 'feature')
 const isAutoClosed = computed(() => props.column === DONE_COLUMN && props.item.closedBy === CLOSED_BY_AUTOMATIC)
 const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
@@ -86,36 +94,24 @@ const percent = computed(() => {
   return Math.round((progress.value.filled / progress.value.total) * 100)
 })
 
-
-function tagPillStyle(tag: BacklogTag) {
-  const token = colorVar(tagColor(tag))
-  return {
-    color: colorVar(tagTextColor(tag)),
-    backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)`,
-  }
-}
 </script>
 
 <template>
   <article
-    class="flex min-w-0 cursor-pointer flex-col gap-2 rounded-popover border border-line bg-surface px-3.25 py-3 shadow-seg"
-    :class="[item.error && 'border-danger', (isFeature || (item.children && item.children.total > 0)) && ['mb-2 mr-2', FEATURE_STACK_SHADOW]]"
+    :class="[CARD_CLASSES, isFeature || (item.children && item.children.total > 0) ? STACK_CLASSES : PAPER_CLASSES]"
     @click="emit('open')"
   >
+    <UiSketchBox v-if="item.error" tone="danger" class="pointer-events-none absolute inset-0" />
     <header class="flex items-center gap-2">
       <span class="font-mono text-tiny text-muted">{{ item.id }}</span>
-      <span v-if="isFeature" class="rounded-chip bg-accent-soft px-1.5 py-0.5 text-tiny font-bold tracking-[.03em] text-accent uppercase">feature</span>
+      <UiMarker v-if="isFeature" tone="blue" class="text-tiny font-semibold">feature</UiMarker>
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
-      <ul v-if="item.tags.length" class="ml-auto flex min-w-0 flex-wrap justify-end gap-1">
-        <li
-          v-for="tag in item.tags"
-          :key="tag"
-          class="inline-flex h-5.5 items-center rounded-chip px-2 text-meta font-medium whitespace-nowrap"
-          :style="tagPillStyle(tag)"
-        >
-          {{ tagLabel(tag) }}
+      <ul v-if="item.tags.length" class="ml-auto flex min-w-0 flex-nowrap items-center justify-end gap-1">
+        <li v-for="tag in visibleTags" :key="tag" class="min-w-0">
+          <UiMarker :tone="tagMarkerTone(tag)" :class="TAG_CLASSES">{{ tagLabel(tag) }}</UiMarker>
         </li>
+        <li v-if="hiddenTags.length" class="shrink-0 text-meta text-muted" :title="hiddenTags.map(tagLabel).join(', ')">+{{ hiddenTags.length }}</li>
       </ul>
     </header>
 
@@ -130,16 +126,16 @@ function tagPillStyle(tag: BacklogTag) {
       Erro ao ler este item: {{ item.error.reason }}
     </p>
     <p v-if="planLine" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
-    <div v-if="proposal" class="flex flex-col gap-1.5 rounded-control-lg bg-warn-soft px-2.5 py-2">
-      <p v-if="proposal.summary" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-ink">{{ proposal.summary }}</p>
-      <p class="text-meta text-muted">{{ proposal.lots.length }} etapas<template v-if="proposal.estimate"> · {{ proposal.estimate }}</template></p>
-      <ul v-if="proposal.lots.length" class="flex flex-col gap-0.5 pl-3.5 text-meta text-muted list-disc">
+    <div v-if="proposal" :class="PROPOSAL_CLASSES">
+      <p v-if="proposal.summary" class="line-clamp-2 wrap-break-word text-caption leading-[1.45]">{{ proposal.summary }}</p>
+      <p class="text-meta">{{ proposal.lots.length }} etapas<template v-if="proposal.estimate"> · {{ proposal.estimate }}</template></p>
+      <ul v-if="proposal.lots.length" class="flex list-disc flex-col gap-0.5 pl-3.5 text-meta">
         <li v-for="lot in proposal.lots.slice(0, KEY_POINTS_LIMIT)" :key="lot.n" class="truncate">{{ lot.title }}</li>
       </ul>
     </div>
 
     <div v-if="action" class="flex items-center gap-1">
-      <UiButton variant="primary" size="sm" class="h-6.5 gap-1.5 rounded-control-sm pr-2.25 pl-1.75 text-small font-semibold" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
+      <UiButton variant="primary" size="sm" class="h-6.5 gap-1.5 rounded-sm pr-2.25 pl-1.75 text-small font-semibold" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
         <svg v-if="action.id === 'triar'" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
         </svg>
@@ -148,7 +144,7 @@ function tagPillStyle(tag: BacklogTag) {
       <button
         v-if="action.id === 'triar'"
         type="button"
-        class="inline-flex size-6.5 shrink-0 cursor-pointer items-center justify-center rounded-control-sm border border-line text-muted hover:bg-hover hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="inline-flex size-6.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-line text-muted hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
         :aria-label="ACTION_TITLE.vincular"
         :title="ACTION_TITLE.vincular"
         @click.stop="emit('action', 'vincular')"
@@ -174,7 +170,7 @@ function tagPillStyle(tag: BacklogTag) {
         <span
           v-for="segment in progress.total"
           :key="segment"
-          class="h-1 flex-1 rounded-tail"
+          class="h-1 flex-1 rounded-sm"
           :class="segment <= progress.filled ? progress.fillClass : 'bg-surface-2'"
         />
       </div>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, useId } from 'vue'
 import type { ActivityRowModel, RowIconKind } from './activitySummary'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 defineProps<{ row: ActivityRowModel }>()
 
 const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
@@ -32,10 +33,10 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
 }
 
 const SVG_CLASSES = 'size-3.5 shrink-0 fill-none stroke-current stroke-2'
-const CHIP_CLASSES = 'inline-flex min-w-0 max-w-full items-center gap-1 rounded-chip bg-surface-2 px-1.5 py-0.5 text-ink'
+const CHIP_CLASSES = 'inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-surface-2 px-1.5 py-0.5 text-ink'
 const OPEN_HINT = 'Clique para abrir o arquivo'
 const PREVIEW_CLASSES =
-  'absolute left-0 z-10 flex w-96 max-w-full flex-col gap-1.5 rounded-card border border-line bg-surface p-3 text-caption shadow-float'
+  'absolute left-0 z-10 flex w-96 max-w-full flex-col gap-1.5 rounded-md border border-line bg-surface p-3 text-caption shadow-paper'
 const PREVIEW_OFFSET_PX = 4
 const PREVIEW_BELOW_CLASSES = 'top-full mt-1'
 const PREVIEW_ABOVE_CLASSES = 'bottom-full mb-1'
@@ -96,7 +97,7 @@ async function showPreview(): Promise<void> {
       <button
         v-if="row.items"
         type="button"
-        class="shrink-0 cursor-pointer text-muted hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="shrink-0 cursor-pointer text-muted hover:text-ink" :class="INK_FOCUS_CLASSES"
         :aria-expanded="open"
         :aria-controls="listId"
         @click="open = !open"

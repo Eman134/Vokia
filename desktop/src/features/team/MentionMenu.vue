@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="absolute bottom-full mb-2 w-65 rounded-popover border border-line bg-surface p-1.5 shadow-float"
+    class="absolute bottom-full mb-2 w-65 rounded-md border border-line bg-surface p-1.5 shadow-paper"
     :style="{ left: `${left}px` }"
   >
     <ul v-if="agents.length > 0" :id="id" role="listbox" aria-label="Agentes" class="flex flex-col gap-px">
@@ -27,7 +27,7 @@ const emit = defineEmits<{
         :key="agent.id"
         role="option"
         :aria-selected="index === activeIndex"
-        class="flex cursor-pointer items-center gap-2.5 rounded-control-lg px-2 py-1.5"
+        class="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5"
         :class="index === activeIndex ? 'bg-accent-soft' : undefined"
         @mousedown.prevent
         @click="emit('choose', agent)"

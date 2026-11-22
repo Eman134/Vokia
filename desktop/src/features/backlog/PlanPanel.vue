@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { DEFAULT_RECIPIENT } from '../team/agents'
@@ -12,7 +13,8 @@ import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type BacklogItem } from './backlogT
 import { useBacklog } from './useBacklog'
 import { parseProposal } from './planProposal'
 import PlanAdjustForm from './PlanAdjustForm.vue'
-import { tagLabel } from './tags'
+import UiMarker from '../../ui/UiMarker.vue'
+import { tagLabel, tagMarkerTone } from './tags'
 import {
   DEFAULT_DEPTH,
   NO_PLAN_TEXT,
@@ -31,6 +33,7 @@ const DEPTH_OPTIONS: { id: PlanDepth; label: string }[] = [
   { id: 'completo', label: 'Completo · com pesquisa' },
 ]
 const RECOMMENDED_LABEL = ' (recomendada)'
+const DISCARD_MESSAGE = 'Descarta a proposta do plano. Dá para pedir outra depois.'
 const PENDING_QUESTION_TEXT = 'Há uma pergunta esperando você no painel de Decisões.'
 const UNREVIEWED_PLAN_HINT = 'Plano ainda não revisado; ele só vai para Ready depois da revisão.'
 
@@ -88,7 +91,7 @@ function triage(): void {
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 rounded-control-lg border border-line p-3" data-testid="plan-panel">
+  <div class="flex flex-col gap-3 rounded-md border border-line p-3" data-testid="plan-panel">
     <template v-if="current.state === 'vazio'">
       <p class="text-control text-ink">{{ NO_PLAN_TEXT }}</p>
       <p v-if="current.error" class="text-small text-danger">{{ current.error }}</p>
@@ -114,7 +117,7 @@ function triage(): void {
         </ul>
         <button
           type="button"
-          class="h-9 cursor-pointer self-start rounded-control bg-ink px-3.5 text-control font-medium text-bg hover:bg-ink/85"
+          class="h-9 cursor-pointer self-start rounded-md bg-ink px-3.5 text-control font-medium text-bg hover:bg-ink/85"
           :class="chosenPlanId === null && 'opacity-50'"
           :aria-disabled="chosenPlanId === null"
           @click="linkChosen"
@@ -193,7 +196,7 @@ function triage(): void {
         <p v-if="parsed.risk" class="text-caption text-ink">Risco: {{ parsed.risk }}</p>
         <div v-if="parsed.tags.length" class="flex flex-wrap items-center gap-1.5">
           <span class="text-caption text-muted">Etiquetas sugeridas</span>
-          <span v-for="tag in parsed.tags" :key="tag" class="rounded-chip bg-surface-2 px-2 text-meta text-ink">{{ tagLabel(tag) }}</span>
+          <UiMarker v-for="tag in parsed.tags" :key="tag" :tone="tagMarkerTone(tag)" class="text-meta">{{ tagLabel(tag) }}</UiMarker>
         </div>
         <p v-if="parsed.summary" class="whitespace-pre-wrap text-caption text-muted">{{ parsed.summary }}</p>
       </template>
@@ -204,7 +207,12 @@ function triage(): void {
       <div class="flex flex-wrap gap-2">
         <UiButton variant="approve" size="lg" @press="itemPlan.accept(item.id)">Aceitar e vincular</UiButton>
         <UiButton variant="quiet" size="lg" @press="adjusting = !adjusting">Ajustar</UiButton>
-        <UiButton variant="quiet" size="lg" @press="itemPlan.discard(item.id)">Descartar</UiButton>
+        <UiConfirm
+          label="Descartar"
+          :message="DISCARD_MESSAGE"
+          confirm-label="Descartar proposta"
+          @confirm="itemPlan.discard(item.id)"
+        />
       </div>
       <PlanAdjustForm v-if="adjusting" @submit="sendAdjust" />
     </template>

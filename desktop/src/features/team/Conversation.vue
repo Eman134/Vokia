@@ -3,6 +3,8 @@ export const EMPTY_FEED_TITLE = 'Nenhuma mensagem ainda.'
 export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
 export const EMPTY_SCREEN_TITLE_PREFIX = 'Nenhuma mensagem com '
 export const EMPTY_SCREEN_TITLE_SUFFIX = ' ainda.'
+export const EMPTY_ACTION_LABEL = 'Pedir na barra de ação'
+export const EMPTY_ACTION_HINT = 'a barra fica aqui embaixo'
 export const NO_PROJECT_TITLE = 'Nenhum projeto ainda.'
 export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o time.'
 </script>
@@ -12,7 +14,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
-import { agentName } from './agents'
+import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import MessageEntry from './MessageEntry.vue'
@@ -25,6 +27,9 @@ import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiButton from '../../ui/UiButton.vue'
+import { useRequests } from './useRequests'
+import UiHandLine from '../../ui/UiHandLine.vue'
+import { HAND_MARK_CLASSES, INK_FOCUS_CLASSES, handReveal } from '../../ui/handDrawn'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
@@ -35,24 +40,25 @@ import { STATE_LABELS } from './agentStateStyle'
 
 const GROUP_SEPARATOR = ' ↔ '
 const PANEL_CLASSES =
-  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-dialog border border-line bg-surface min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
+  'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
-const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4.5 py-4'
+const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3'
 const TABS_LABEL = 'Abas da conversa'
 const TABS_CLASSES = 'flex gap-5'
-const TAB_CLASSES = 'cursor-pointer whitespace-nowrap border-b-2 pb-1 text-label font-medium focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
-const TAB_ON = 'border-ink text-ink'
-const TAB_OFF = 'border-transparent text-muted hover:text-ink'
+const TAB_CLASSES = `group relative cursor-pointer whitespace-nowrap pb-1.5 text-label font-medium ${INK_FOCUS_CLASSES}`
+const TAB_ON = 'text-ink'
+const TAB_OFF = 'text-muted hover:text-ink'
+const TAB_MARK = `${HAND_MARK_CLASSES} -bottom-0.5 left-0 w-full`
 const TAB_LABELS = { conversa: 'Conversa', fila: 'Fila' } as const
 const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
 const CLEAR_CONVERSATION_TITLE = 'Limpar conversa?'
 const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
-const CLEAR_BUTTON_CLASSES =
-  'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
+const CLEAR_BUTTON_CLASSES = `flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink ${INK_FOCUS_CLASSES}`
 const CLEAR_POPUP_CLASSES =
-  'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-float'
+  'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-paper'
 
 const feed = useFeed()
+const requests = useRequests()
 
 const roster = useRoster()
 const channels = useChannels()
@@ -183,6 +189,7 @@ watch(
             @click="aba = 'conversa'"
           >
             {{ TAB_LABELS.conversa }}
+            <UiHandLine :class="[TAB_MARK, handReveal(aba === 'conversa')]" />
           </button>
           <button
             v-if="filaEmAba"
@@ -193,6 +200,7 @@ watch(
             @click="aba = 'fila'"
           >
             {{ TAB_LABELS.fila }}
+            <UiHandLine :class="[TAB_MARK, handReveal(aba === 'fila')]" />
           </button>
         </div>
         <div v-if="feed.feed.length > 0" ref="clearWrap" class="relative flex items-center">
@@ -252,9 +260,20 @@ watch(
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
-      <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE" :text="EMPTY_FEED_TEXT">
+      <UiEmpty
+        v-else-if="feed.feed.length === 0"
+        class="m-auto"
+        :title="EMPTY_FEED_TITLE"
+        :text="EMPTY_FEED_TEXT"
+        :hint="EMPTY_ACTION_HINT"
+      >
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
+        </template>
+        <template #action>
+          <UiButton variant="primary" size="lg" @press="requests.requestMention(DEFAULT_RECIPIENT)">
+            {{ EMPTY_ACTION_LABEL }}
+          </UiButton>
         </template>
       </UiEmpty>
       <UiEmpty
@@ -262,28 +281,34 @@ watch(
         class="m-auto"
         :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
         :text="EMPTY_FEED_TEXT"
+        :hint="EMPTY_ACTION_HINT"
       >
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
         </template>
+        <template #action>
+          <UiButton variant="primary" size="lg" @press="requests.requestMention(DEFAULT_RECIPIENT)">
+            {{ EMPTY_ACTION_LABEL }}
+          </UiButton>
+        </template>
       </UiEmpty>
-      <ol class="flex max-w-3xl flex-col gap-3">
+      <ol class="flex max-w-3xl flex-col gap-2">
         <li v-for="item in feed.timeline" :key="item.start">
           <details
             v-if="item.type === 'group' && collapsesGroup(item.messages)"
-            class="rounded-card border border-line bg-surface px-4 py-3"
+            class="rounded-md border border-line bg-surface px-3 py-2"
           >
             <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
               <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
               <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
             </summary>
-            <ol class="mt-3 flex flex-col gap-3">
+            <ol class="mt-2 flex flex-col gap-2">
               <li v-for="(message, index) in item.messages" :key="index">
                 <MessageEntry :entry="message" />
               </li>
             </ol>
           </details>
-          <div v-else-if="item.type === 'group'" class="flex flex-col gap-3">
+          <div v-else-if="item.type === 'group'" class="flex flex-col gap-2">
             <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
           </div>
           <MessageEntry v-else :entry="item.entry" />

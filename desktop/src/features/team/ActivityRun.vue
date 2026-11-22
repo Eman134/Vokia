@@ -6,7 +6,8 @@ import ActivityRow from './ActivityRow.vue'
 import MarkdownText from './MarkdownText.vue'
 import { useBacklog } from '../backlog/useBacklog'
 import { useRoster } from './useRoster'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{ activity: TurnActivity; live?: boolean }>()
 
 const backlog = useBacklog()
@@ -30,7 +31,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
       <template v-if="activity.thinkingText">
         <button
           type="button"
-          class="flex w-fit cursor-pointer items-center gap-1 pl-5 text-left hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+          class="flex w-fit cursor-pointer items-center gap-1 pl-5 text-left hover:text-ink" :class="INK_FOCUS_CLASSES"
           :aria-expanded="thinkingOpen"
           :aria-controls="thinkingListId"
           data-testid="activity-thinking-toggle"
@@ -50,7 +51,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
     <template v-else-if="rows.length > 0">
       <button
         type="button"
-        class="flex w-fit cursor-pointer items-center gap-1 text-left hover:text-ink focus:outline-2 focus:outline-solid focus:outline-accent"
+        class="flex w-fit cursor-pointer items-center gap-1 text-left hover:text-ink" :class="INK_FOCUS_CLASSES"
         :aria-expanded="open"
         :aria-controls="listId"
         data-testid="activity-toggle"

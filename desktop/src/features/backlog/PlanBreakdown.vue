@@ -20,12 +20,12 @@ const expanded = defineModel<Set<string>>('expanded', { required: true })
 const listRoot = ref<HTMLElement>()
 
 const MICRO_PORTRAIT_SIZE = 20
-const HEADER_TITLE_CLASSES = 'text-label font-semibold uppercase tracking-wider text-muted'
-const ROW_CARD_CLASSES = 'flex flex-col gap-2 rounded-control-lg border border-line p-3'
+const HEADER_TITLE_CLASSES = 'text-label font-semibold text-muted'
+const ROW_CARD_CLASSES = 'flex flex-col gap-2 rounded-md border border-line p-3'
 const ROW_BUTTON_CLASSES =
   'flex min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-2 text-left text-control text-ink hover:opacity-80 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 const BADGES_WRAP_CLASSES = 'ml-auto flex flex-wrap items-center gap-2 max-md:w-full max-md:pl-5'
-const FALLBACK_PANEL_CLASSES = 'flex flex-col gap-2 rounded-control-lg bg-surface-2 p-3 text-caption'
+const FALLBACK_PANEL_CLASSES = 'flex flex-col gap-2 rounded-md bg-surface-2 p-3 text-caption'
 
 const doneCount = computed(() => props.breakdown.steps.filter((step) => step.status === 'feito').length)
 const hasAnyValidScript = computed(() =>

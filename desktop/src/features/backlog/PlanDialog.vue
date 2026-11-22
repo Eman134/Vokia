@@ -57,7 +57,7 @@ watch(
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      class="flex max-h-full w-105 max-w-full flex-col gap-3 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="itemPlan.closeDialog()"
       @keydown.tab="trapFocus($event, dialog)"
     >

@@ -7,7 +7,8 @@ import DecisionPanel from '../decisions/DecisionPanel.vue'
 import { PANEL_TITLE } from '../decisions/decisionCopy'
 import { useDecisions } from '../decisions/useDecisions'
 import { usePanelTab, type PanelTab } from './usePanelTab'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 interface TabEntry {
   id: PanelTab
   label: string
@@ -42,7 +43,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     v-if="decisions.open"
     :aria-label="PANEL_TITLE"
     data-testid="decision-panel"
-    class="pointer-events-auto absolute bottom-full mb-3 w-96 max-w-full rounded-popover border border-line bg-surface p-3 shadow-float"
+    class="pointer-events-auto absolute bottom-full mb-3 w-96 max-w-full rounded-md border border-line bg-surface p-3 shadow-paper"
   >
     <div role="tablist" class="mb-2 flex gap-3">
       <button
@@ -51,8 +52,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         type="button"
         role="tab"
         :aria-selected="panelTab.tab === entry.id"
-        class="cursor-pointer text-label font-semibold focus:outline-2 focus:outline-solid focus:outline-accent"
-        :class="panelTab.tab === entry.id ? 'text-ink' : 'text-muted hover:text-ink'"
+        class="cursor-pointer text-label font-semibold"
+        :class="[INK_FOCUS_CLASSES, panelTab.tab === entry.id ? 'text-ink' : 'text-muted hover:text-ink']"
         @click="panelTab.tab = entry.id"
       >
         {{ entry.label }} <span data-testid="panel-tab-count">{{ entry.count }}</span>

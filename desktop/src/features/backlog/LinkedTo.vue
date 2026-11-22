@@ -14,9 +14,9 @@ const emit = defineEmits<{
   'open-link': [link: BacklogLink]
 }>()
 
-const CHIP_CLASSES = 'shrink-0 rounded-chip bg-surface-2 px-1.5 py-0.5 font-mono text-tiny text-muted'
+const CHIP_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-tiny text-muted'
 const LINK_BUTTON_CLASSES =
-  'flex w-full cursor-pointer items-center gap-2 rounded-control px-1.5 py-1 text-left text-caption text-ink transition-colors hover:bg-hover focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
+  'flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-caption text-ink transition-colors hover:bg-hover focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 
 const visible = computed(() => props.hasPlan || (props.links?.length ?? 0) > 0)
 </script>

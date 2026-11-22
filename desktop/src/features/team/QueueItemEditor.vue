@@ -4,6 +4,7 @@ import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_KEEP, QUEUE_SAVE } from './queueCopy'
 import UiButton from '../../ui/UiButton.vue'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{ request: QueuedRequest }>()
 
 const requests = useRequests()
@@ -39,7 +40,7 @@ function onKeydown(event: KeyboardEvent): void {
       v-model="text"
       rows="2"
       aria-label="Editar pedido na fila"
-      class="w-full resize-none rounded-control border border-line bg-surface-2 px-3 py-2 text-label text-ink outline-none focus:outline-2 focus:outline-solid focus:outline-accent"
+      class="w-full resize-none rounded-md border border-line bg-surface-2 px-3 py-2 text-label text-ink outline-none" :class="INK_FOCUS_CLASSES"
       @keydown="onKeydown"
     />
     <div class="flex justify-end gap-1">

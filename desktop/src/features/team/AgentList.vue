@@ -18,29 +18,31 @@ import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useProjects } from '../projects/useProjects'
-import UiCreateButton from '../../ui/UiCreateButton.vue'
+import UiChip from '../../ui/UiChip.vue'
+import UiHandDivider from '../../ui/UiHandDivider.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
+import { HAND_DRAWN_RADIUS, HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const PANEL_CLASSES =
-  'flex min-h-0 w-full shrink-0 flex-col overflow-y-auto rounded-dialog border border-line bg-surface p-2.5 max-md:max-h-72 md:w-52'
+  'relative flex min-h-0 w-full shrink-0 flex-col overflow-y-auto p-2.5 max-md:max-h-72 md:w-52 md:pr-4'
 const QUEUE_BADGE_CLASSES =
   'absolute right-2 top-2 grid min-w-5 place-items-center rounded-full bg-accent-soft px-1.5 text-tiny font-semibold text-accent'
 const MENTION_LABEL = 'Mencionar'
 const OPEN_CONVERSATION_PREFIX = 'Abrir conversa de '
-const CARD_CLASSES =
-  'flex w-full cursor-pointer items-center gap-2 rounded-card border p-2 pr-8 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
+const CARD_CLASSES = `flex w-full cursor-pointer items-center gap-2 rounded-md p-2 pr-8 text-left ${INK_FOCUS_CLASSES}`
 const MENTION_CLASSES =
-  'absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent focus:outline-2 focus:outline-solid focus:outline-accent disabled:opacity-40 motion-reduce:transition-none'
+  `absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent disabled:opacity-40 motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const MENTION_GLYPH = '@'
-const SELECTED_CLASSES = 'border-accent bg-accent-soft'
-const UNSELECTED_CLASSES = 'border-line hover:bg-hover'
-const CHANNEL_CLASSES =
-  'flex w-full cursor-pointer items-center rounded-control border py-1.5 pl-3 pr-8 text-left text-label text-ink focus:outline-2 focus:outline-solid focus:outline-accent'
-const COPY_CLASSES =
-  'flex w-full cursor-pointer flex-col gap-0.5 rounded-control border border-line px-2.5 py-1.5 text-left focus:outline-2 focus:outline-solid focus:outline-accent'
-const COPY_SELECTED_CLASSES = 'outline-2 outline-solid outline-accent bg-accent-soft'
+const SELECTED_TEXT_CLASSES = 'text-ink-pen'
+const UNSELECTED_CLASSES = 'hover:bg-hover'
+const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
+const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-3 w-[calc(100%-3.75rem)]`
+const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1.5 pl-3 pr-8 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
+const COPY_CLASSES = `flex w-full cursor-pointer flex-col gap-0.5 rounded-md border border-line px-2.5 py-1.5 text-left ${INK_FOCUS_CLASSES}`
+// COPY_CLASSES já fixa border-line; o `!` faz a tinta vencer.
+const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
 const COPIES_LIST_LABEL = 'Cópias'
 const COPY_MARK_TEXT = 'Cópia'
 const COPY_NOUN_SINGULAR = 'cópia'
@@ -124,32 +126,35 @@ function closeChannelDialog(): void {
       Canais e agentes
       <span aria-hidden="true">{{ stripCollapsed ? '▾' : '▴' }}</span>
     </button>
+    <UiHandDivider class="absolute inset-y-0 right-0 h-full max-md:hidden" />
     <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
-        <UiCreateButton @press="openChannelDialog()">{{ NEW_CHANNEL_LABEL }}</UiCreateButton>
+        <UiChip kind="add" :label="`+ ${NEW_CHANNEL_LABEL}`" @press="openChannelDialog()" />
       </div>
       <ul class="mb-2 flex flex-col gap-2">
         <li>
           <button
             type="button"
-            :class="[CHANNEL_CLASSES, channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :class="[CHANNEL_CLASSES, channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
             :aria-label="`Abrir canal #${GENERAL_CHANNEL_NAME}`"
             :aria-pressed="channelShown(GENERAL_CHANNEL_NAME)"
             @click="feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })"
           >
             #{{ GENERAL_CHANNEL_NAME }}
+            <UiHandLine v-if="channelShown(GENERAL_CHANNEL_NAME)" draw :class="CHANNEL_MARK_CLASSES" />
           </button>
         </li>
         <li v-for="channel in channels.channels" :key="channel.id" class="group relative">
           <button
             type="button"
-            :class="[CHANNEL_CLASSES, channelShown(channel.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :class="[CHANNEL_CLASSES, channelShown(channel.id) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
             :aria-label="`Abrir canal #${channel.name}`"
             :aria-pressed="channelShown(channel.id)"
             @click="feed.showScreen({ kind: 'channel', channel: channel.id })"
           >
             #{{ channel.name }}
+            <UiHandLine v-if="channelShown(channel.id)" draw :class="CHANNEL_MARK_CLASSES" />
           </button>
           <ChannelMenu :name="channel.name" @edit="openChannelDialog(channel)" @remove="removeChannel(channel)" />
         </li>
@@ -161,16 +166,17 @@ function closeChannelDialog(): void {
         <li v-for="agent in roster.agents" :key="agent.id" class="relative">
           <button
             type="button"
-            :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_CLASSES : UNSELECTED_CLASSES]"
+            :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
             :aria-label="OPEN_CONVERSATION_PREFIX + agent.name"
             :aria-pressed="isShown(agent.id)"
             @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
           >
-            <span class="flex shrink-0" aria-hidden="true">
+            <span class="relative flex shrink-0" aria-hidden="true">
               <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
+              <UiHandLine v-if="isShown(agent.id)" variant="circle" draw :class="PORTRAIT_CIRCLE_CLASSES" />
             </span>
             <span class="flex min-w-0 flex-col">
-              <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold text-ink">
+              <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold">
                 <span class="truncate">{{ agent.name }}</span>
                 <AgentProjectIcons :agent="agent.id" />
               </span>

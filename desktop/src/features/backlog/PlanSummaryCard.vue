@@ -14,7 +14,7 @@ const props = defineProps<{
   breakdown: PlanBreakdown
 }>()
 
-const CARD_CLASSES = 'flex flex-col gap-2.5 rounded-control-lg border border-line bg-surface-2 p-3'
+const CARD_CLASSES = 'flex flex-col gap-2.5 rounded-md border border-line bg-surface-2 p-3'
 const TITLE_CLASSES = 'text-label font-semibold text-ink'
 const SUMMARY_CLASSES = 'text-control font-semibold text-ink'
 const HINT_CLASSES = 'text-caption text-muted'

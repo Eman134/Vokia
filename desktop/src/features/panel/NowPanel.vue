@@ -77,7 +77,7 @@ watch(workingRows, (active) => {
       <li
         v-for="row in workingRows"
         :key="row.agent.id"
-        class="flex items-center gap-2 rounded-card border border-line bg-surface px-3 py-2"
+        class="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2"
         :data-testid="`now-row-${row.agent.id}`"
       >
         <AgentPortrait :who="row.agent.id" :size="PORTRAIT_SIZES.stack" />

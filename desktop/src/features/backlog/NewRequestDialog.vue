@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
 import { useProjects } from '../projects/useProjects'
 import {
   NEW_REQUEST_CANCEL_LABEL,
@@ -15,11 +16,16 @@ import {
 import { trapFocus } from './dialogFocus'
 import { useBacklog } from './useBacklog'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
+const FRAME_CLASSES = 'w-105 max-w-full rounded-md bg-surface shadow-paper'
+// O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
+const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 const TITLE_FIELD_SELECTOR = 'input'
 const DESCRIPTION_ROWS = 4
 const LABEL_CLASSES = 'text-label font-medium text-muted'
 const CONTROL_CLASSES =
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `w-full min-w-0 rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 
 const backlog = useBacklog()
 const projects = useProjects()
@@ -55,11 +61,8 @@ function submit(): void {
 </script>
 
 <template>
-  <div
-    v-if="draft"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-    @click.self="backlog.cancelRequest()"
-  >
+  <div v-if="draft" :class="OVERLAY_CLASSES" @click.self="backlog.cancelRequest()">
+    <UiSketchBox :class="FRAME_CLASSES" bold>
     <section
       ref="dialog"
       data-testid="new-request-dialog"
@@ -67,7 +70,7 @@ function submit(): void {
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      :class="DIALOG_CLASSES"
       @keydown.esc.stop="backlog.cancelRequest()"
       @keydown.tab="trapFocus($event, dialog)"
     >
@@ -110,5 +113,6 @@ function submit(): void {
         </UiButton>
       </div>
     </section>
+    </UiSketchBox>
   </div>
 </template>

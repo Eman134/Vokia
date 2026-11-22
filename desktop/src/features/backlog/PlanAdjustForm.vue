@@ -8,7 +8,7 @@ const emit = defineEmits<{
 
 const ADJUST_LABEL = 'O que ajustar'
 const INPUT_CLASSES =
-  'w-full rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint'
+  'w-full rounded-md border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint'
 
 const text = ref('')
 

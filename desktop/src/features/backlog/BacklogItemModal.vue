@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
+import UiMarker from '../../ui/UiMarker.vue'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiChip from '../../ui/UiChip.vue'
@@ -19,7 +21,7 @@ import {
 } from './backlogLabels'
 import { returnTask } from './backlogApi'
 import { useFeed } from '../team/useFeed'
-import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagColor, tagLabel, tagTextColor } from './tags'
+import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagLabel, tagMarkerTone } from './tags'
 import {
   AUTO_COLUMNS_HINT,
   CONVERSATIONS_LABEL,
@@ -59,10 +61,15 @@ import { useRoster } from '../team/useRoster'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 
-const TAG_TINT_PERCENT = 13
-const OTHER_INPUT_CLASSES = 'h-9 w-full rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint'
+const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
+const FRAME_CLASSES = 'w-215 max-w-full rounded-md bg-surface shadow-paper'
+// O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
+const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden'
+const OTHER_INPUT_CLASSES = 'h-9 w-full rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint'
 const TRIAGE_PLAN_TEXT = 'Plano sai da triagem'
 const ARCHIVE_LABEL = 'Arquivar'
+const ARCHIVE_MESSAGE = 'Tira o card do quadro. Dá para encontrá-lo arquivado depois.'
+const ARCHIVE_CONFIRM_LABEL = 'Arquivar card'
 const DELETE_LABEL = 'Remover'
 const DELETE_MESSAGE = 'Remove o card de vez. Não dá para desfazer.'
 const DELETE_CONFIRM_LABEL = 'Remover card'
@@ -146,14 +153,6 @@ const details = computed(() => {
   ]
   return rows.filter((row): row is [string, string] => Boolean(row[1]))
 })
-
-function tagPillStyle(tag: BacklogTag) {
-  const token = colorVar(tagColor(tag))
-  return {
-    color: colorVar(tagTextColor(tag)),
-    backgroundColor: `color-mix(in srgb, ${token} ${TAG_TINT_PERCENT}%, transparent)`,
-  }
-}
 
 // O botão acionado sai do DOM com a ação; sem isso o foco cai no body e Esc/Tab deixam de valer.
 function addTag(raw: string): void {
@@ -271,18 +270,15 @@ watch(
 </script>
 
 <template>
-  <div
-    v-if="item"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
-    @click.self="closeModal()"
-  >
+  <div v-if="item" :class="OVERLAY_CLASSES" @click.self="closeModal()">
+    <UiSketchBox :class="FRAME_CLASSES" bold>
     <section
       ref="dialog"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-215 max-w-full flex-col overflow-hidden rounded-dialog border border-line bg-surface shadow-float"
+      :class="DIALOG_CLASSES"
       @keydown.esc.stop="closeModal()"
       @keydown.tab="trapFocus($event, dialog)"
     >
@@ -306,15 +302,15 @@ watch(
         </header>
 
         <section class="flex flex-wrap items-center gap-1.5" aria-label="Etiquetas">
-          <span
+          <UiMarker
             v-for="tag in item.tags"
             :key="tag"
-            class="inline-flex h-5.5 items-center gap-1 rounded-chip px-2 text-meta font-medium whitespace-nowrap"
-            :style="tagPillStyle(tag)"
+            :tone="tagMarkerTone(tag)"
+            class="inline-flex items-center gap-1 text-meta whitespace-nowrap"
           >
             {{ tagLabel(tag) }}
             <button type="button" :aria-label="`Remover ${tagLabel(tag)}`" @click="removeTag(tag)">×</button>
-          </span>
+          </UiMarker>
           <UiChip kind="add" label="+ etiqueta" @press="addingTag = !addingTag" />
         </section>
         <div v-if="addingTag" class="flex flex-wrap items-center gap-1.5">
@@ -330,7 +326,7 @@ watch(
             :maxlength="TAG_MAX_LENGTH"
             aria-label="Nova etiqueta"
             placeholder="Nova etiqueta"
-            class="h-7 rounded-control-sm border border-line bg-surface px-2.5 text-label text-ink placeholder:text-faint"
+            class="h-7 rounded-sm border border-line bg-surface px-2.5 text-label text-ink placeholder:text-faint"
             @keydown.enter.prevent="submitNewTag"
           />
         </div>
@@ -471,7 +467,7 @@ watch(
             :busy="runItem.isRunning(item.id)"
             @confirm="removeItem"
           />
-          <UiButton variant="quiet" size="lg" @press="archiveItem">{{ ARCHIVE_LABEL }}</UiButton>
+          <UiConfirm :label="ARCHIVE_LABEL" :message="ARCHIVE_MESSAGE" :confirm-label="ARCHIVE_CONFIRM_LABEL" @confirm="archiveItem" />
           <UiButton variant="quiet" size="lg" @press="openConversations">{{ CONVERSATIONS_LABEL }}</UiButton>
           <UiButton
             variant="primary"
@@ -485,5 +481,6 @@ watch(
         </div>
       </footer>
     </section>
+    </UiSketchBox>
   </div>
 </template>

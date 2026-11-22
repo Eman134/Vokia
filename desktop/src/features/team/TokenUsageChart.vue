@@ -13,9 +13,9 @@ const FULL_TURN_DEGREES = 360
 const CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS
 const DIMMED_OPACITY = 0.4
 const TRIGGER_CLASSES =
-  'flex cursor-default items-center gap-1 rounded-control focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
+  'flex cursor-default items-center gap-1 rounded-md focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent'
 const TOOLTIP_CLASSES =
-  'pointer-events-none invisible absolute right-0 top-full z-30 mt-1.5 flex w-56 flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-xs opacity-0 shadow-float transition-opacity duration-150 group-hover/donut:visible group-hover/donut:opacity-100 group-focus-within/donut:visible group-focus-within/donut:opacity-100 motion-reduce:transition-none'
+  'pointer-events-none invisible absolute right-0 top-full z-30 mt-1.5 flex w-56 flex-col gap-1 rounded-lg border border-line bg-surface p-3 text-xs opacity-0 shadow-paper transition-opacity duration-150 group-hover/donut:visible group-hover/donut:opacity-100 group-focus-within/donut:visible group-focus-within/donut:opacity-100 motion-reduce:transition-none'
 
 const tooltipId = useId()
 const split = computed(() => tokenSplit(props.usage))

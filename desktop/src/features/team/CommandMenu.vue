@@ -15,7 +15,7 @@ const emit = defineEmits<{
 
 <template>
   <div
-    class="absolute bottom-full mb-2 w-75 rounded-xl border border-line bg-surface p-1.25 shadow-float"
+    class="absolute bottom-full mb-2 w-75 rounded-xl border border-line bg-surface p-1.25 shadow-paper"
     :style="{ left: `${left}px` }"
   >
     <ul v-if="commands.length > 0" :id="id" role="listbox" aria-label="Comandos" class="flex flex-col gap-px">

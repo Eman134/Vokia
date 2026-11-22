@@ -13,7 +13,7 @@ const UNPIN_LABEL = 'Desafixar'
 const PIN_GLYPH_PATH = 'M5.5 2.5h5M6 2.5v4L4.5 9h7L10 6.5v-4M8 9v5'
 const ROOT_CLASSES = 'relative flex shrink-0 items-center'
 const MENU_CLASSES = 'absolute bottom-full left-0 pb-2'
-const MENU_FRAME_CLASSES = 'w-60 rounded-popover border border-line bg-surface p-1.5 shadow-float'
+const MENU_FRAME_CLASSES = 'w-60 rounded-md border border-line bg-surface p-1.5 shadow-paper'
 const MENU_TITLE_CLASSES = 'px-2 py-1.5 text-caption text-muted'
 const PIN_ICON_CLASSES = 'size-4 shrink-0 text-faint'
 

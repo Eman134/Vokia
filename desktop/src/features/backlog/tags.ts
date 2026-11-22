@@ -1,3 +1,5 @@
+import type { MarkerTone } from '../../ui/UiMarker.vue'
+
 const KNOWN_LABEL: Record<string, string> = { ui: 'interface', divida: 'dívida técnica', cliente: 'pedido de cliente' }
 const KNOWN_COLOR: Record<string, string> = {
   bug: 'danger',
@@ -8,7 +10,18 @@ const KNOWN_COLOR: Record<string, string> = {
   divida: 'muted',
   cliente: 'client',
 }
-const TEXT_COLOR: Record<string, string> = { urgente: 'warn-text' }
+// Só há quatro marca-textos: as cores de etiqueta que não têm par direto caem no mais próximo.
+const MARKER_TONE: Record<string, MarkerTone> = {
+  danger: 'pink',
+  client: 'pink',
+  warn: 'yellow',
+  'feature-orange': 'yellow',
+  muted: 'yellow',
+  'feature-blue': 'blue',
+  'feature-purple': 'blue',
+  accent: 'blue',
+  'feature-green': 'green',
+}
 const FREE_COLORS = ['feature-blue', 'feature-green', 'feature-purple', 'feature-orange', 'client', 'accent'] as const
 
 export const TAG_MAX_LENGTH = 24
@@ -27,6 +40,6 @@ export function tagColor(tag: string): string {
   return KNOWN_COLOR[tag] ?? FREE_COLORS[[...tag].reduce((sum, char) => sum + char.charCodeAt(0), 0) % FREE_COLORS.length]
 }
 
-export function tagTextColor(tag: string): string {
-  return TEXT_COLOR[tag] ?? tagColor(tag)
+export function tagMarkerTone(tag: string): MarkerTone {
+  return MARKER_TONE[tagColor(tag)] ?? 'yellow'
 }
