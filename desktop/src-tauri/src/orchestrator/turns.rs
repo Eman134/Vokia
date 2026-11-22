@@ -441,6 +441,7 @@ pub(super) async fn run_turns(
                         *channel_id,
                     );
                     context.batch = Some(batch);
+                    context.ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
                     count_branch(state, project_id, *item_id)?;
                     dispatch_request(
                         app,
@@ -682,7 +683,8 @@ pub(super) async fn run_turns(
                         .as_ref()
                         .and_then(|intent| intent.item_id.as_deref())
                         .or(line_item);
-                    dispatch_async_branch(exchange, target_item, helper, helper_request)?;
+                    let ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
+                    dispatch_async_branch(exchange, target_item, helper, helper_request, ping_seconds)?;
                     emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
                     return Ok(TaskOutcome::Finished);
                 }
@@ -1039,17 +1041,19 @@ fn dispatch_async_branch(
     item_id: Option<&str>,
     helper: &Agent,
     request: &str,
+    ping_seconds: Option<u64>,
 ) -> Result<(), FlowError> {
     let snapshot = exchange.orchestration;
     let max_instances = snapshot
         .and_then(|snapshot| placement_of(snapshot, helper))
         .map_or(1, |placement| placement.max_instances);
     let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
-    let context = RequestContext::new(
+    let mut context = RequestContext::new(
         exchange.run_id,
         item_id.map(str::to_string),
         exchange.channel_id,
     );
+    context.ping_seconds = ping_seconds;
     count_branch(exchange.state, exchange.key.project_id, item_id)?;
     dispatch_request(
         exchange.app,

@@ -162,6 +162,9 @@ pub(super) fn emit_state(
     agent: Agent,
     state: AgentState,
 ) -> Result<(), FlowError> {
+    if matches!(state, AgentState::Sending | AgentState::Thinking) {
+        mark_delegations_activated(app, project_id, &agent)?;
+    }
     emit(
         app,
         VokiaEvent::AgentState {
@@ -170,6 +173,16 @@ pub(super) fn emit_state(
             project_id: Some(project_id),
         },
     )
+}
+
+fn mark_delegations_activated(app: &AppHandle, project_id: i64, agent: &Agent) -> Result<(), FlowError> {
+    let state = app.state::<AppState>();
+    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    flow.active_delegations
+        .values_mut()
+        .filter(|delegation| delegation.project_id == project_id && &delegation.to_agent == agent)
+        .for_each(|delegation| delegation.activated = true);
+    Ok(())
 }
 
 pub(super) fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
@@ -68,6 +69,8 @@ pub struct RequestContext {
     pub attachments: Vec<String>,
     // Pedido interrompido em retomada: reaproveita o registro original e não regrava a mensagem do usuário.
     pub resumed_run: Option<i64>,
+    // Intervalo de verificação pedido pelo agente que delegou; o watchdog aplica padrão e limites.
+    pub ping_seconds: Option<u64>,
 }
 
 impl RequestContext {
@@ -83,6 +86,7 @@ impl RequestContext {
             batch: None,
             attachments: Vec::new(),
             resumed_run: None,
+            ping_seconds: None,
         }
     }
 }
@@ -97,6 +101,22 @@ pub struct WaitingDelegation {
     pub base: crate::events::Agent,
     pub text: String,
     pub context: RequestContext,
+}
+
+pub const DEFAULT_DELEGATION_PING_SECS: u64 = 20;
+pub const MIN_DELEGATION_PING_SECS: u64 = 5;
+pub const MAX_DELEGATION_PING_SECS: u64 = 300;
+pub const MAX_WATCHDOG_RETRIES: u32 = 2;
+
+// Delegação despachada; `activated` vira true quando o agente destino começa a trabalhar.
+pub struct ActiveDelegation {
+    pub project_id: i64,
+    pub to_agent: Agent,
+    pub item_id: Option<String>,
+    pub created_at: Instant,
+    pub ping_interval: Duration,
+    pub activated: bool,
+    pub retries: u32,
 }
 
 // Uma chave presente é um fluxo em andamento; os pedidos que chegam nesse meio-tempo esperam aqui.
@@ -114,6 +134,8 @@ pub struct FlowQueue {
     pub ended: HashMap<(i64, String), crate::events::Agent>,
     // Card com algum ramo que parou por erro: a validação final não abre enquanto o card não tiver todos os ramos concluídos.
     pub stopped: HashSet<(i64, String)>,
+    // Delegações despachadas por (projeto, agente destino, card); a nova entrada da mesma chave substitui a anterior.
+    pub active_delegations: HashMap<(i64, Agent, Option<String>), ActiveDelegation>,
 }
 
 // Um lote: as trocas paralelas de um turno do líder. A junção sai quando a última volta.

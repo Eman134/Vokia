@@ -724,7 +724,7 @@ fn parse_request_decision(rest: &[String]) -> Result<Action, String> {
 }
 
 fn parse_delegate(rest: &[String]) -> Result<Action, String> {
-    let flags = parse_flags(rest, &["--agent", "--request", "--kind", "--event", "--item-id"])?;
+    let flags = parse_flags(rest, &["--agent", "--request", "--kind", "--event", "--item-id", "--ping-seconds"])?;
     let agent = require_one(&flags, "--agent")?;
     let request = require_one(&flags, "--request")?;
     let mut map = Map::new();
@@ -738,6 +738,12 @@ fn parse_delegate(rest: &[String]) -> Result<Action, String> {
     }
     if let Some(id) = get_one(&flags, "--item-id") {
         map.insert("item_id".to_string(), json!(id));
+    }
+    if let Some(seconds) = get_one(&flags, "--ping-seconds") {
+        let seconds: u64 = seconds
+            .parse()
+            .map_err(|_| "--ping-seconds precisa ser um número inteiro de segundos".to_string())?;
+        map.insert("ping_seconds".to_string(), json!(seconds));
     }
     Ok(Action::CallTool {
         name: "delegate".to_string(),
@@ -1027,7 +1033,7 @@ Uso:
   vokia-cli delete-card --item-id <id>
   vokia-cli request-decision --kind <k> --title <t> [--detail <d>] [--option <o>]...
   vokia-cli propose-request --title <t> [--detail <d>]
-  vokia-cli delegate --agent <a> --request <r> [--kind <k>] [--event <e>] [--item-id <id>]
+  vokia-cli delegate --agent <a> --request <r> [--kind <k>] [--event <e>] [--item-id <id>] [--ping-seconds <s>]
   vokia-cli get-variables
   vokia-cli set-variable --name <n> --op <set|append> --value <v> [--int] [--share]
   vokia-cli get-orchestration

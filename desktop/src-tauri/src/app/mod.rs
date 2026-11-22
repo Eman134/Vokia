@@ -3,7 +3,7 @@ mod bootstrap;
 use tauri::{Manager, RunEvent};
 
 use crate::state::AppState;
-use crate::{claude, commands, shell};
+use crate::{claude, commands, orchestrator, shell};
 
 pub(crate) fn run() {
     let cli = tauri::async_runtime::block_on(claude::locate());
@@ -126,7 +126,11 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(bootstrap::setup)
+        .setup(|app| {
+            bootstrap::setup(app)?;
+            orchestrator::spawn_delegation_watchdog(app.handle().clone());
+            Ok(())
+        })
         .on_window_event(shell::hide_main_window_on_close)
         .build(tauri::generate_context!())
         .expect("falha ao iniciar o app Vokia")

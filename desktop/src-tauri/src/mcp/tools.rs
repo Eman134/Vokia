@@ -17,7 +17,7 @@ use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestration::policy::check_intent;
 use crate::orchestration::snapshot::{find_team, team_leader, team_leaders, TeamLeader};
 use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
-use crate::state::AppState;
+use crate::state::{AppState, MAX_DELEGATION_PING_SECS, MIN_DELEGATION_PING_SECS};
 use crate::task::{Change, VarValue};
 
 use super::registry::Binding;
@@ -180,6 +180,7 @@ struct DelegateArgs {
     kind: Option<String>,
     event: Option<String>,
     item_id: Option<String>,
+    ping_seconds: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -351,6 +352,7 @@ pub fn definitions() -> Vec<Value> {
                 "kind": { "type": "string", "enum": REQUEST_KIND_VALUES },
                 "event": { "type": "string", "enum": WHEN_EVENT_VALUES },
                 "item_id": { "type": "string" },
+                "ping_seconds": { "type": "integer", "minimum": MIN_DELEGATION_PING_SECS, "maximum": MAX_DELEGATION_PING_SECS },
             }),
             &["agent", "request"],
         ),
@@ -949,6 +951,7 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         kind: kind.map(str::to_string),
         event: event.map(str::to_string),
         item_id,
+        ping_seconds: args.ping_seconds,
     });
     Ok(DELEGATION_REGISTERED.to_string())
 }

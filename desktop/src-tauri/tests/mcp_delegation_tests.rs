@@ -460,3 +460,27 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
         assert_eq!(request_of(&after_text.delegation), Some("Responda em texto"));
     }
 }
+
+#[test]
+fn delegate_leva_ping_seconds_ao_slot_e_o_schema_publica_os_limites() {
+    let world = world();
+    let project = world.project("a");
+    let axiom = world.leader(project);
+
+    axiom.slot.begin(None, None);
+    let outcome = world.call(&axiom, "delegate", json!({ "agent": "vexa", "request": "Revise", "ping_seconds": 45 }));
+    let with_ping = axiom.slot.end();
+    axiom.slot.begin(None, None);
+    world.call(&axiom, "delegate", json!({ "agent": "vexa", "request": "Revise" }));
+    let without_ping = axiom.slot.end();
+
+    assert!(!outcome.is_error, "{}", outcome.text);
+    assert_eq!(with_ping.delegation_intent.unwrap().ping_seconds, Some(45));
+    assert_eq!(without_ping.delegation_intent.unwrap().ping_seconds, None);
+
+    let definitions = crate::mcp::tools::definitions();
+    let delegate = definitions.iter().find(|tool| tool["name"] == "delegate").expect("tool delegate");
+    let ping = &delegate["inputSchema"]["properties"]["ping_seconds"];
+    assert_eq!(ping["minimum"], 5);
+    assert_eq!(ping["maximum"], 300);
+}

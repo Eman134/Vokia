@@ -34,6 +34,7 @@ pub struct DelegationIntent {
     pub kind: Option<String>,
     pub event: Option<String>,
     pub item_id: Option<String>,
+    pub ping_seconds: Option<u64>,
 }
 
 #[derive(Debug, Default)]

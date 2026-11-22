@@ -1,6 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
@@ -23,7 +24,8 @@ use crate::orchestration::worktree_policy::{leader_limit, should_use};
 use crate::projects::worktree;
 use crate::session_key::SessionKey;
 use crate::state::{
-    AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
+    ActiveDelegation, AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
+    DEFAULT_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS, MAX_WATCHDOG_RETRIES, MIN_DELEGATION_PING_SECS,
 };
 use crate::task::{
     fast_definition, long_request_text, needs_llm_interpreter, parse_definition, ActiveTask, TaskDefinition,
@@ -372,9 +374,30 @@ fn start_dispatch(
     }
     let key = key_of(&agent);
     flow.pending.insert(key.clone(), VecDeque::new());
+    flow.active_delegations.insert(
+        (project_id, agent.clone(), parallel.item_id.clone()),
+        new_delegation(project_id, &agent, &parallel),
+    );
     drop(flow);
     spawn_flow(app, key, request.to_string(), parallel);
     Ok(())
+}
+
+fn new_delegation(project_id: i64, to_agent: &Agent, context: &RequestContext) -> ActiveDelegation {
+    ActiveDelegation {
+        project_id,
+        to_agent: to_agent.clone(),
+        item_id: context.item_id.clone(),
+        created_at: Instant::now(),
+        ping_interval: Duration::from_secs(
+            context
+                .ping_seconds
+                .unwrap_or(DEFAULT_DELEGATION_PING_SECS)
+                .clamp(MIN_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS),
+        ),
+        activated: false,
+        retries: 0,
+    }
 }
 
 // Abre o lote de um turno do líder; o id devolvido vai nas trocas paralelas.
@@ -661,6 +684,8 @@ fn abandon_flow(app: &AppHandle, state: &AppState, key: &SessionKey, item_id: Op
     if let Ok(mut flow) = state.flow.lock() {
         flow.pending.remove(key);
         flow.running.remove(key);
+        flow.active_delegations
+            .remove(&(key.project_id, key.agent.clone(), item_id.map(str::to_string)));
     }
     if let Some(item) = item_id {
         close_branch(state, key.project_id, item, true);
@@ -692,6 +717,8 @@ fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, Flow
     if next.is_none() {
         flow.pending.remove(&key);
         flow.running.remove(&key);
+        flow.active_delegations
+            .retain(|(project_id, agent, _), _| !(*project_id == key.project_id && agent == &key.agent));
     }
     Ok(next)
 }
@@ -1421,6 +1448,60 @@ fn parallel_definition(
     }
 }
 
+pub(crate) fn spawn_delegation_watchdog(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(MIN_DELEGATION_PING_SECS));
+        loop {
+            ticker.tick().await;
+            sweep_silent_delegations(&app);
+        }
+    });
+}
+
+// Delegação ativada já cumpriu o papel do registro e sai; a silenciosa recebe novas tentativas de drenar a fila
+// e, esgotadas, vira erro para o usuário.
+fn sweep_silent_delegations(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let (retry_projects, gave_up) = {
+        let Ok(mut flow) = state.flow.lock() else {
+            return;
+        };
+        flow.active_delegations.retain(|_, delegation| !delegation.activated);
+        let mut retry_projects = HashSet::new();
+        let mut gave_up = Vec::new();
+        for (key, delegation) in flow.active_delegations.iter_mut() {
+            if delegation.created_at.elapsed() < delegation.ping_interval {
+                continue;
+            }
+            if delegation.retries < MAX_WATCHDOG_RETRIES {
+                delegation.retries += 1;
+                delegation.created_at = Instant::now();
+                retry_projects.insert(delegation.project_id);
+            } else {
+                gave_up.push(key.clone());
+            }
+        }
+        let gave_up: Vec<ActiveDelegation> = gave_up
+            .iter()
+            .filter_map(|key| flow.active_delegations.remove(key))
+            .collect();
+        (retry_projects, gave_up)
+    };
+    for project_id in retry_projects {
+        drain_waiting(app, &state, project_id);
+    }
+    for delegation in gave_up {
+        let target = delegation
+            .item_id
+            .map_or_else(String::new, |item| format!(" do card {item}"));
+        let message = format!(
+            "O agente {} não respondeu à delegação{target}.",
+            delegation.to_agent.as_str()
+        );
+        let _ = emit(app, VokiaEvent::Error { message });
+    }
+}
+
 // Ao fim de um fluxo, as delegações que esperavam o teto (ou worktree livre) entram enquanto houver vaga.
 // Cada espera é tentada uma vez por chamada: a que continua bloqueada volta ao fim da fila.
 fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
@@ -1820,3 +1901,7 @@ fn set_agents_idle(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
 #[cfg(test)]
 #[path = "../../tests/flow_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/delegation_watchdog_tests.rs"]
+mod watchdog_tests;

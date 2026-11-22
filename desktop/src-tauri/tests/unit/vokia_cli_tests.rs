@@ -361,3 +361,40 @@ fn parse_cmd_artifacts_kebab_case_to_camel_case() {
         }
     );
 }
+
+#[test]
+fn delegate_envia_ping_seconds_como_inteiro_e_omite_quando_ausente() {
+    let with_ping = parse_args(
+        &s(&["delegate", "--agent", "vexa", "--request", "Revise", "--ping-seconds", "45"]),
+        || Ok(String::new()),
+    )
+    .unwrap();
+    assert_eq!(
+        with_ping,
+        Action::CallTool {
+            name: "delegate".to_string(),
+            arguments: json!({ "agent": "vexa", "request": "Revise", "ping_seconds": 45 }),
+        }
+    );
+
+    let without = parse_args(&s(&["delegate", "--agent", "vexa", "--request", "Revise"]), || Ok(String::new())).unwrap();
+    assert_eq!(
+        without,
+        Action::CallTool {
+            name: "delegate".to_string(),
+            arguments: json!({ "agent": "vexa", "request": "Revise" }),
+        }
+    );
+}
+
+#[test]
+fn delegate_recusa_ping_seconds_que_nao_e_inteiro_positivo() {
+    for invalid in ["abc", "-5", "2.5", ""] {
+        let error = parse_args(
+            &s(&["delegate", "--agent", "vexa", "--request", "Revise", "--ping-seconds", invalid]),
+            || Ok(String::new()),
+        )
+        .unwrap_err();
+        assert_eq!(error, "--ping-seconds precisa ser um número inteiro de segundos", "{invalid:?}");
+    }
+}
