@@ -120,7 +120,7 @@ function onOpenCard(itemId: string): void {
 const columns = computed(() =>
   COLUMN_META.map((column) => ({
     ...column,
-    cards: visibleItems.value.filter((item) => columnOf(item) === column.name),
+    cards: visibleItems.value.filter((item) => !item.parent && columnOf(item) === column.name),
   })),
 )
 

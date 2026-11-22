@@ -99,7 +99,7 @@ function tagPillStyle(tag: BacklogTag) {
 <template>
   <article
     class="flex min-w-0 cursor-pointer flex-col gap-2 rounded-popover border border-line bg-surface px-3.25 py-3 shadow-seg"
-    :class="[item.error && 'border-danger', isFeature && ['mb-2 mr-2', FEATURE_STACK_SHADOW]]"
+    :class="[item.error && 'border-danger', (isFeature || (item.children && item.children.total > 0)) && ['mb-2 mr-2', FEATURE_STACK_SHADOW]]"
     @click="emit('open')"
   >
     <header class="flex items-center gap-2">
