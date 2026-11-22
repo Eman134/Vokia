@@ -629,6 +629,32 @@ impl Db {
         Ok(())
     }
 
+    pub fn delete_plan_cascade(&self, project_id: i64, plan_id: &str) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let item_id: String = tx
+            .query_row(
+                "SELECT item_id FROM artifacts WHERE project_id = ?1 AND id = ?2",
+                params![project_id, plan_id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| DbError::ArtifactNotFound(plan_id.to_string()))?;
+        tx.execute(
+            "DELETE FROM backlog_items WHERE project_id = ?1 AND id LIKE ?2",
+            params![project_id, format!("{plan_id}.%")],
+        )?;
+        tx.execute(
+            "DELETE FROM item_plans WHERE project_id = ?1 AND (plan_id = ?2 OR item_id = ?3)",
+            params![project_id, plan_id, item_id],
+        )?;
+        delete_artifact(&tx, project_id, &item_id)?;
+        refresh_children(&tx, project_id, &item_id)?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn create_card(&self, project_id: i64, card: &NewCard) -> Result<BacklogItem, DbError> {
         let title = normalized_title(&card.title)?;
         let origin = user_origin(&card.origin)?;

@@ -64,6 +64,7 @@ const PLAN_FILE_FILTER_NAME: &str = "Markdown";
 const PLAN_SAVE_EXTENSIONS: [&str; 1] = ["md"];
 const PLAN_PICK_EXTENSIONS: [&str; 2] = ["md", "txt"];
 pub(crate) const PLAN_IMPORT_MAX_BYTES: u64 = 200_000;
+const PLAN_ID_PREFIX: &str = "plano-";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -147,8 +148,12 @@ pub(crate) fn update_artifact_exec(
 pub(crate) fn delete_artifact_exec(app: &AppHandle, args: ArtifactRefArgs) -> Result<(), String> {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
-    db.delete_artifact_document(args.project_id, &args.id)
-        .map_err(|error| error.to_string())?;
+    let deleted = if args.id.starts_with(PLAN_ID_PREFIX) {
+        db.delete_plan_cascade(args.project_id, &args.id)
+    } else {
+        db.delete_artifact_document(args.project_id, &args.id)
+    };
+    deleted.map_err(|error| error.to_string())?;
     notify_artifacts_changed(app, args.project_id);
     Ok(())
 }

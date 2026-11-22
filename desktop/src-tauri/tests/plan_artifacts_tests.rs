@@ -787,3 +787,89 @@ fn importar_plano_sem_lote_ou_em_projeto_inexistente_nao_deixa_card_orfao() {
     assert_eq!(items(&db, project_id).len(), before + 1);
     assert_eq!(db.list_artifacts(project_id).unwrap()[0].item_id, ok.id);
 }
+
+fn table_count(dir: &TempDir, table: &str) -> i64 {
+    dir.raw()
+        .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn excluir_plano_aceito_apaga_artefato_criterios_vinculo_e_todas_as_etapas_e_mantem_o_card_pai() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+    assert_eq!(plan_card_ids(&db, project_id, &item_id).len(), 4);
+
+    db.delete_plan_cascade(project_id, &plan_id).unwrap();
+
+    assert!(db.list_artifacts(project_id).unwrap().is_empty());
+    assert!(plan_card_ids(&db, project_id, &item_id).is_empty());
+    assert!(db.list_backlog(project_id).unwrap().plans.is_empty());
+    assert_eq!(item(&db, project_id, &item_id).title, "Login");
+    assert_eq!(progress(&db, project_id, &item_id), None);
+    for table in ["artifacts", "artifact_criteria", "item_plans"] {
+        assert_eq!(table_count(&dir, table), 0, "{table} não deveria ter órfãos");
+    }
+    assert_eq!(table_count(&dir, "backlog_items"), 1);
+}
+
+#[test]
+fn excluir_plano_so_apaga_as_etapas_do_proprio_plano_mesmo_com_prefixo_de_id_parecido() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let other_project = project(&db, "b");
+    let mut accepted_plans = Vec::new();
+    for index in 0..10 {
+        accepted_plans.push(accepted(&db, project_id, &format!("Card {index}")));
+    }
+    let (other_item, other_plan) = accepted(&db, other_project, "Outro");
+    let (target_item, target_plan) = accepted_plans.remove(0);
+    let ids: Vec<String> = accepted_plans.iter().map(|(_, plan)| plan.clone()).collect();
+    assert!(ids.iter().any(|id| id.starts_with(&target_plan)), "o cenário precisa de prefixo parecido");
+
+    db.delete_plan_cascade(project_id, &target_plan).unwrap();
+
+    assert!(plan_card_ids(&db, project_id, &target_item).is_empty());
+    for (item_id, plan_id) in &accepted_plans {
+        assert_eq!(plan_card_ids(&db, project_id, item_id).len(), 4, "{plan_id} deveria manter as etapas");
+    }
+    assert_eq!(db.list_artifacts(project_id).unwrap().len(), 9);
+    assert_eq!(plan_card_ids(&db, other_project, &other_item).len(), 4);
+    assert_eq!(db.list_artifacts(other_project).unwrap()[0].id, other_plan);
+}
+
+#[test]
+fn excluir_plano_ainda_proposto_apaga_artefato_e_criterios_sem_etapas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    db.save_item_plan(project_id, &item_id, &proposed(PROPOSAL)).unwrap();
+
+    db.delete_plan_cascade(project_id, &format!("plano-{item_id}")).unwrap();
+
+    for table in ["artifacts", "artifact_criteria", "item_plans"] {
+        assert_eq!(table_count(&dir, table), 0, "{table} não deveria ter órfãos");
+    }
+    assert_eq!(item(&db, project_id, &item_id).title, "Login");
+}
+
+#[test]
+fn excluir_plano_inexistente_ou_de_outro_projeto_e_recusado_e_nada_muda() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let other_project = project(&db, "b");
+    let (item_id, plan_id) = accepted(&db, project_id, "Login");
+
+    let missing = db.delete_plan_cascade(project_id, "plano-999").unwrap_err();
+    assert!(matches!(missing, DbError::ArtifactNotFound(ref id) if id == "plano-999"), "{missing:?}");
+    let foreign = db.delete_plan_cascade(other_project, &plan_id).unwrap_err();
+    assert!(matches!(foreign, DbError::ArtifactNotFound(_)), "{foreign:?}");
+
+    assert_eq!(db.list_artifacts(project_id).unwrap().len(), 1);
+    assert_eq!(plan_card_ids(&db, project_id, &item_id).len(), 4);
+}

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
@@ -16,12 +17,16 @@ import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useRoster } from '../team/useRoster'
 import {
   fetchPlanArtifact,
+  planArtifactId,
   savePlanMarkdown,
   setArtifactCriterion,
   type ArtifactCriterion,
   type PlanArtifactDetail,
 } from './artifactApi'
 import {
+  DOCUMENT_DELETE_CONFIRM_LABEL,
+  DOCUMENT_DELETE_LABEL,
+  DOCUMENT_DELETE_MESSAGE,
   PLAN_CARD_CRITERIA_TITLE,
   PLAN_CRITERIA_TITLE,
   PLAN_DOWNLOAD_ARIA,
@@ -37,6 +42,7 @@ import PlanEditorDialog from './PlanEditorDialog.vue'
 import { planFileName, planToMarkdown } from './planMarkdown'
 import PlanStageRow from './PlanStageRow.vue'
 import { planProgress } from './planProgress'
+import { useArtifacts } from './useArtifacts'
 
 const WRAP_CLASSES = 'wrap-break-word'
 const SECTION_CLASSES = 'flex min-w-0 flex-col gap-3'
@@ -52,8 +58,10 @@ const props = defineProps<{
   state: BacklogState
   stages: BacklogItem[]
 }>()
+const emit = defineEmits<{ removed: [] }>()
 
 const backlog = useBacklog()
+const artifactsStore = useArtifacts()
 const itemPlan = useItemPlan()
 const projects = useProjects()
 const roster = useRoster()
@@ -134,6 +142,17 @@ async function download(): Promise<void> {
   }
 }
 
+async function remove(): Promise<void> {
+  const projectId = projects.selected?.id
+  if (projectId === undefined) return
+  if (!(await artifactsStore.remove(planArtifactId(props.item.id)))) {
+    notice.value = artifactsStore.error
+    return
+  }
+  await backlog.load(projectId)
+  emit('removed')
+}
+
 function saved(fresh: PlanArtifactDetail): void {
   artifact.value = fresh
   editing.value = false
@@ -176,6 +195,13 @@ function saved(fresh: PlanArtifactDetail): void {
           <UiButton variant="quiet" size="sm" data-testid="plan-edit" :disabled="!artifact" @press="editing = true">
             {{ PLAN_EDIT_LABEL }}
           </UiButton>
+          <UiConfirm
+            :label="DOCUMENT_DELETE_LABEL"
+            :message="DOCUMENT_DELETE_MESSAGE"
+            :confirm-label="DOCUMENT_DELETE_CONFIRM_LABEL"
+            :busy="artifactsStore.saving"
+            @confirm="remove"
+          />
         </div>
       </div>
       <p v-if="proposal.estimate" class="text-small text-muted">Estimativa: {{ proposal.estimate }}</p>

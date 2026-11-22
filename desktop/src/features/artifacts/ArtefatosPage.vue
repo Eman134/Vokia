@@ -194,6 +194,7 @@ function saved(document: ArtifactDocument): void {
         :proposal="openedPlan.proposal"
         :state="openedPlan.state"
         :stages="openedPlan.stages"
+        @removed="back"
       />
     </template>
 

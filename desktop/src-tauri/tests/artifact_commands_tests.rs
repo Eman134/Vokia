@@ -523,3 +523,79 @@ fn recusas_de_erro_db_error_sao_tratadas_com_refusal_claro_e_nao_system_failure(
         "não pode ser SYSTEM_FAILURE"
     );
 }
+
+#[test]
+fn delete_artifact_de_plano_pelo_dispatcher_apaga_em_cascata_emite_evento_e_nao_deixa_etapas() {
+    use crate::commands::dispatcher::dispatch;
+    use crate::db::{ItemPlanInput, NewCard};
+
+    let world = world();
+    let project = world.project("proj_plan_delete");
+    let db = world.db();
+    let item_id = db
+        .create_card(
+            project,
+            &NewCard {
+                title: "Login".to_string(),
+                description: None,
+                origin: "usuario".to_string(),
+                links: Vec::new(),
+            },
+        )
+        .expect("card")
+        .id;
+    db.save_item_plan(
+        project,
+        &item_id,
+        &serde_json::from_value::<ItemPlanInput>(json!({
+            "state": "vinculado",
+            "proposal": "Resumo
+#lote 1|Base|Base pronta|Criar tabela
+#lote 2|Tela|Tela pronta",
+            "plan": { "id": item_id, "name": "Plano", "meta": "proposta aceita" },
+            "agent": "axiom"
+        }))
+        .expect("entrada do plano"),
+    )
+    .expect("plano aceito");
+    let plan_id = format!("plano-{item_id}");
+    let stage_prefix = format!("{plan_id}.");
+    assert!(db.list_backlog(project).unwrap().items.iter().any(|item| item.id.starts_with(&stage_prefix)));
+
+    let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let sink = events.clone();
+    world.app.handle().listen(EVENT_NAME, move |event| {
+        if let Ok(val) = serde_json::from_str::<Value>(event.payload()) {
+            if val["type"] == json!("artifacts-changed") {
+                sink.lock().unwrap().push(val);
+            }
+        }
+    });
+
+    let deleted = tauri::async_runtime::block_on(dispatch(
+        world.app.handle(),
+        "delete_artifact",
+        json!({ "projectId": project, "id": plan_id }),
+    ))
+    .expect("delete_artifact reconhecido")
+    .expect("delete_artifact de plano deveria funcionar");
+    assert_eq!(deleted, Value::Null);
+
+    assert!(db.list_artifacts(project).unwrap().is_empty());
+    let backlog = db.list_backlog(project).unwrap();
+    assert_eq!(backlog.items.len(), 1);
+    assert_eq!(backlog.items[0].id, item_id);
+    assert!(backlog.plans.is_empty());
+    std::thread::sleep(EVENT_SETTLE);
+    assert_eq!(events.lock().unwrap().len(), 1);
+
+    let again = tauri::async_runtime::block_on(dispatch(
+        world.app.handle(),
+        "delete_artifact",
+        json!({ "projectId": project, "id": plan_id }),
+    ))
+    .expect("delete_artifact reconhecido");
+    assert!(again.is_err(), "excluir plano já removido deve falhar: {again:?}");
+    std::thread::sleep(EVENT_SETTLE);
+    assert_eq!(events.lock().unwrap().len(), 1, "falha não emite evento");
+}
