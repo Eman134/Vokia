@@ -124,6 +124,7 @@ export interface VokiaPermission {
   expiresAt: number
   approvedBefore: number
   suggestAlways: boolean
+  rootCommand?: string | null
 }
 
 export interface VokiaPermissionClosed {

@@ -8,7 +8,7 @@ use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use crate::claude::{PermissionRequest, PermissionVerdict};
-use crate::db::{ApprovalHistory, Db, DbError, DbState};
+use crate::db::{root_command, ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
 
@@ -16,6 +16,8 @@ pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const COMMAND_FIELD: &str = "command";
 const PATH_FIELD: &str = "file_path";
 const APPROVAL_SEPARATOR: char = '\u{1f}';
+const ROOT_GRANT_PREFIX: &str = "root:";
+const ROOT_RULE_SUFFIX: &str = " *";
 const ALWAYS_SUGGESTION_MIN_APPROVALS: u32 = 3;
 const DENIAL_SUGGESTION_WINDOW_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 
@@ -36,7 +38,7 @@ impl fmt::Display for PermissionError {
 
 #[derive(Clone)]
 pub enum Answer {
-    Allow { always: bool },
+    Allow { always: bool, root: bool },
     // O motivo só segue ao agente; nunca vai ao banco, ao console nem a evento.
     Deny { reason: Option<String> },
     // Sessão encerrada pelo app: negado, mas não é uma recusa do usuário.
@@ -70,15 +72,21 @@ impl PermissionGate<'_> {
             return PermissionVerdict::Allow;
         }
         let approval = approval_key(&request);
-        if self.grant_per_session && self.is_granted(&approval) {
+        let root_grant = root_grant_key(&request);
+        if self.grant_per_session
+            && (self.is_granted(&approval) || root_grant.as_deref().is_some_and(|key| self.is_granted(key)))
+        {
             return PermissionVerdict::Allow;
         }
-        let verdict = self
+        let (verdict, root) = self
             .broker
             .request(self.app, self.agent.clone(), self.project_id, request)
             .await;
         if verdict == PermissionVerdict::Allow && self.grant_per_session {
-            self.remember(approval);
+            match root_grant.filter(|_| root) {
+                Some(key) => self.remember(key),
+                None => self.remember(approval),
+            }
         }
         verdict
     }
@@ -105,22 +113,23 @@ impl PermissionBroker {
         agent: Agent,
         project_id: i64,
         request: PermissionRequest,
-    ) -> PermissionVerdict {
+    ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
         if self.register(&request.id, project_id, sender).is_err() {
-            return PermissionVerdict::Deny(None);
+            return (PermissionVerdict::Deny(None), false);
         }
         let Ok(now) = now_millis() else {
             self.forget(&request.id);
-            return PermissionVerdict::Deny(None);
+            return (PermissionVerdict::Deny(None), false);
         };
         let command = detail(&request);
         let target = target_of(&request);
+        let root = root_of(&request);
         let db_state = app.state::<DbState>();
         let db = db_state.db();
         // Falha ao ler o histórico não pode travar o pedido.
         let history = db
-            .and_then(|db| db.approval_history(project_id, &request.tool, &target).ok())
+            .and_then(|db| db.approval_history(project_id, &request.tool, &target, root.as_deref()).ok())
             .unwrap_or_default();
         let event = VokiaEvent::Permission {
             id: request.id.clone(),
@@ -131,10 +140,11 @@ impl PermissionBroker {
             expires_at: now + PERMISSION_WAIT_LIMIT.as_millis() as u64,
             approved_before: history.approved,
             suggest_always: suggests_always(&history, now),
+            root_command: root.clone(),
         };
         if app.emit(EVENT_NAME, event).is_err() {
             self.forget(&request.id);
-            return PermissionVerdict::Deny(None);
+            return (PermissionVerdict::Deny(None), false);
         }
         emit_agent_state(app, &agent, AgentState::Waiting, project_id);
         let (outcome, answer) = match timeout(PERMISSION_WAIT_LIMIT, receiver).await {
@@ -144,7 +154,7 @@ impl PermissionBroker {
         };
         self.forget(&request.id);
         if let Some(db) = db {
-            record_answer(app, db, project_id, &request.tool, &target, answer.as_ref());
+            record_answer(app, db, project_id, &request.tool, &target, root.as_deref(), answer.as_ref());
         }
         // Sem este aviso o balão ficaria aberto depois de negado por tempo.
         let _ = app.emit(
@@ -156,7 +166,8 @@ impl PermissionBroker {
             },
         );
         emit_agent_state(app, &agent, AgentState::Thinking, project_id);
-        verdict_of(answer)
+        let granted_root = matches!(answer, Some(Answer::Allow { root: true, .. }));
+        (verdict_of(answer), granted_root)
     }
 
     pub fn answer(&self, id: &str, answer: Answer) -> Result<(), PermissionError> {
@@ -230,12 +241,13 @@ fn record_answer(
     project_id: i64,
     tool: &str,
     target: &str,
+    root: Option<&str>,
     answer: Option<&Answer>,
 ) {
     let recorded = now_millis()
         .map_err(|error| error.to_string())
         .and_then(|time| {
-            store_answer(db, project_id, tool, target, time, answer).map_err(|error| error.to_string())
+            store_answer(db, project_id, tool, target, root, time, answer).map_err(|error| error.to_string())
         });
     if let Err(message) = recorded {
         let _ = app.emit(EVENT_NAME, VokiaEvent::Error { message });
@@ -247,14 +259,20 @@ fn store_answer(
     project_id: i64,
     tool: &str,
     target: &str,
+    root: Option<&str>,
     time: u64,
     answer: Option<&Answer>,
 ) -> Result<(), DbError> {
     match answer {
-        Some(Answer::Allow { always }) => {
-            db.record_approval(project_id, tool, target, time)?;
+        Some(Answer::Allow { always, root: by_root }) => {
+            db.record_approval(project_id, tool, target, root, time)?;
             if *always {
-                db.save_permission_rule(project_id, tool, target, time)?;
+                match root.filter(|_| *by_root) {
+                    Some(root) => {
+                        db.save_permission_rule(project_id, tool, &format!("{root}{ROOT_RULE_SUFFIX}"), time)?
+                    }
+                    None => db.save_permission_rule(project_id, tool, target, time)?,
+                }
             }
             Ok(())
         }
@@ -302,6 +320,16 @@ fn emit_agent_state(app: &AppHandle, agent: &Agent, state: AgentState, project_i
     );
 }
 
+// Só pedidos com campo de comando têm comando raiz; caminho de arquivo não é comando.
+fn root_of(request: &PermissionRequest) -> Option<String> {
+    request.input.get(COMMAND_FIELD)?;
+    root_command(&target_of(request)).map(str::to_string)
+}
+
+fn root_grant_key(request: &PermissionRequest) -> Option<String> {
+    root_of(request).map(|root| format!("{ROOT_GRANT_PREFIX}{}{APPROVAL_SEPARATOR}{root}", request.tool))
+}
+
 fn approval_key(request: &PermissionRequest) -> String {
     format!("{}{APPROVAL_SEPARATOR}{}", request.tool, detail(request))
 }
@@ -317,3 +345,7 @@ fn detail(request: &PermissionRequest) -> String {
         .find_map(|field| request.input.get(field).and_then(|value| value.as_str()))
         .map_or_else(|| request.input.to_string(), str::to_string)
 }
+
+#[cfg(test)]
+#[path = "../../tests/permission_broker_tests.rs"]
+mod tests;

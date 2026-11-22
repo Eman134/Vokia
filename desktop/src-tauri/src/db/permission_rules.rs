@@ -12,6 +12,20 @@ pub struct PermissionRule {
     pub created_at: i64,
 }
 
+const COMPOUND_OPERATORS: [&str; 11] = ["&&", "||", ";", "|", "&", "$(", "`", ">", "<", "\n", "\r"];
+const ASSIGNMENT_MARK: char = '=';
+const ROOT_RULE_SUFFIX: &str = " *";
+
+/// Primeiro token de um comando simples; `None` quando há operador composto ou prefixo `VAR=val`,
+/// porque liberar a raiz de uma composição liberaria o que vem depois dela.
+pub fn root_command(target: &str) -> Option<&str> {
+    if COMPOUND_OPERATORS.iter().any(|operator| target.contains(operator)) {
+        return None;
+    }
+    let token = target.split_whitespace().next()?;
+    (!token.contains(ASSIGNMENT_MARK)).then_some(token)
+}
+
 impl Db {
     pub fn has_permission_rule(
         &self,
@@ -20,10 +34,11 @@ impl Db {
         command: &str,
     ) -> Result<bool, DbError> {
         let conn = self.conn()?;
+        let root_pattern = root_command(command).map(|root| format!("{root}{ROOT_RULE_SUFFIX}"));
         let matching: i64 = conn.query_row(
             "SELECT COUNT(*) FROM permission_rules \
-             WHERE project_id = ?1 AND tool = ?2 AND command = ?3",
-            params![project_id, tool, command],
+             WHERE project_id = ?1 AND tool = ?2 AND (command = ?3 OR (?4 IS NOT NULL AND command = ?4))",
+            params![project_id, tool, command, root_pattern],
             |row| row.get(0),
         )?;
         Ok(matching > 0)
@@ -78,3 +93,7 @@ impl Db {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/permission_root_db_tests.rs"]
+mod tests;

@@ -19,6 +19,10 @@ function deny(): void {
   emit('decide', false, Array.from(reason.value.trim()).slice(0, PERMISSION_REASON_MAX_CHARS).join(''))
 }
 
+function rootLabel(rootCommand: string): string {
+  return `Permitir comandos iniciados com '${rootCommand}'`
+}
+
 const name = agentName(props.permission.agent)
 const { label } = usePermissionCountdown(props.permission.expiresAt)
 
@@ -63,6 +67,14 @@ const approvals =
               Permitir sempre
             </UiButton>
           </span>
+          <UiButton
+            v-if="permission.rootCommand"
+            variant="approve"
+            size="sm"
+            @press="feed.decidePermission(permission.id, true, true, undefined, true)"
+          >
+            {{ rootLabel(permission.rootCommand) }}
+          </UiButton>
           <UiButton variant="danger" size="sm" @press="deny">Negar</UiButton>
         </div>
       </div>

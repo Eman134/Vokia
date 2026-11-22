@@ -38,6 +38,8 @@ pub(crate) struct AnswerPermissionArgs {
     pub id: String,
     pub allow: bool,
     pub always: bool,
+    #[serde(default)]
+    pub root: bool,
     pub reason: Option<String>,
 }
 
@@ -123,6 +125,7 @@ pub(crate) fn answer_permission_exec(
     let answer = if args.allow {
         Answer::Allow {
             always: args.always,
+            root: args.root,
         }
     } else {
         Answer::Deny {
@@ -235,6 +238,7 @@ pub fn answer_permission(
     id: String,
     allow: bool,
     always: bool,
+    root: Option<bool>,
     reason: Option<String>,
 ) -> Result<(), String> {
     answer_permission_exec(
@@ -243,6 +247,7 @@ pub fn answer_permission(
             id,
             allow,
             always,
+            root: root.unwrap_or_default(),
             reason,
         },
     )

@@ -29,6 +29,15 @@ const feed = useFeed()
     >
       Sempre
     </UiButton>
+    <UiButton
+      v-if="feed.permissions[0].rootCommand"
+      variant="approve"
+      size="sm"
+      :title="`Permitir comandos iniciados com '${feed.permissions[0].rootCommand}'`"
+      @press="feed.decidePermission(feed.permissions[0].id, true, true, undefined, true)"
+    >
+      Raiz
+    </UiButton>
     <UiButton variant="danger" size="sm" @press="feed.decidePermission(feed.permissions[0].id, false)">
       Negar
     </UiButton>

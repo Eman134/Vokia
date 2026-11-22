@@ -15,15 +15,17 @@ impl Db {
         project_id: i64,
         tool: &str,
         command: &str,
+        root: Option<&str>,
     ) -> Result<ApprovalHistory, DbError> {
         let conn = self.conn()?;
+        let approval_key = root.unwrap_or(command);
         let (approved, last_denied_at) = conn.query_row(
             "SELECT \
                COALESCE((SELECT approved_count FROM permission_approvals \
                          WHERE project_id = ?1 AND tool = ?2 AND command = ?3), 0), \
                (SELECT last_denied_at FROM permission_denials \
-                WHERE project_id = ?1 AND tool = ?2 AND command = ?3)",
-            params![project_id, tool, command],
+                WHERE project_id = ?1 AND tool = ?2 AND command = ?4)",
+            params![project_id, tool, approval_key, command],
             |row| Ok((row.get::<_, u32>(0)?, row.get::<_, Option<i64>>(1)?)),
         )?;
         Ok(ApprovalHistory {
@@ -37,15 +39,17 @@ impl Db {
         project_id: i64,
         tool: &str,
         command: &str,
+        root: Option<&str>,
         time: u64,
     ) -> Result<(), DbError> {
         let conn = self.conn()?;
+        let approval_key = root.unwrap_or(command);
         conn.execute(
             "INSERT INTO permission_approvals(project_id, tool, command, approved_count, last_approved_at) \
              VALUES (?1, ?2, ?3, 1, ?4) \
              ON CONFLICT(project_id, tool, command) \
              DO UPDATE SET approved_count = approved_count + 1, last_approved_at = ?4",
-            params![project_id, tool, command, time as i64],
+            params![project_id, tool, approval_key, time as i64],
         )?;
         Ok(())
     }

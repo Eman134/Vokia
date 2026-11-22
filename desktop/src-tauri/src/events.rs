@@ -170,6 +170,7 @@ pub enum VokiaEvent {
         expires_at: u64,
         approved_before: u32,
         suggest_always: bool,
+        root_command: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     PermissionClosed {
