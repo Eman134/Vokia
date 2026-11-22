@@ -13,7 +13,10 @@ import {
 } from './railNav'
 import { useNavigation } from './useNavigation'
 import { useRail } from './useRail'
+import UiHandDivider from '../ui/UiHandDivider.vue'
 import UiHandLine from '../ui/UiHandLine.vue'
+import UiIcon from '../ui/UiIcon.vue'
+import { HAND_MARK_CLASSES, INK_FOCUS_CLASSES, handReveal } from '../ui/handDrawn'
 import UsageAvatar from '../features/usage/UsageAvatar.vue'
 import VokiaLogo from '../features/brand/VokiaLogo.vue'
 import ProjectIcon from '../features/projects/ProjectIcon.vue'
@@ -24,16 +27,25 @@ import { useFeed } from '../features/team/useFeed'
 
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
-const ITEM = 'relative flex h-9.5 cursor-pointer items-center rounded-control whitespace-nowrap text-left'
+const ITEM = `group relative flex h-9.5 cursor-pointer items-center rounded-md whitespace-nowrap text-left ${INK_FOCUS_CLASSES}`
 const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
 const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
 const PROJECT_BADGE = 'size-4.5 flex-none'
-const ACTIVE_MARK = 'pointer-events-none absolute inset-x-2.5 bottom-0.5 h-1.5 text-accent'
-const ITEM_ON = 'bg-accent-soft text-accent'
+// SVG não estica por left/right como uma div: a largura precisa ser explícita para o traço não vazar do botão.
+const ACTIVE_MARK = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-2.5 w-[calc(100%-1.25rem)]`
+const ITEM_ON = 'text-ink-pen'
 const ITEM_OFF = 'text-muted hover:bg-hover hover:text-ink'
 const TOGGLE = 'cursor-pointer bg-transparent text-ink'
-const CARD = 'flex flex-col gap-0.5 rounded-card border border-line bg-surface p-1.25 shadow-float'
+const GROUP = 'flex flex-col gap-0.5'
+const GROUP_LABEL = 'pl-1.25 text-caption text-muted'
+const ICON_SIZE = 17
+const NEW_PROJECT_ICON = 'M8 3v10M3 8h10'
+const SETTINGS_ICON =
+  'M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 1 0 0-4.4z M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z'
+const PANEL_ICON = 'M2 2.5h12v11H2zM6 2.5v11'
+const PANEL_COLLAPSE_ARROW = 'M11 6L9 8l2 2'
+const PANEL_EXPAND_ARROW = 'M9 6l2 2-2 2'
 const LABEL = 'overflow-hidden text-ellipsis text-label'
 const RAIL_MOTION = 'duration-180 ease-[ease]'
 const SUBLIST = `grid transition-[grid-template-rows,opacity] ${RAIL_MOTION}`
@@ -57,6 +69,7 @@ watch(
   },
 )
 const itemSize = computed(() => [ITEM, expanded.value && ITEM_EXPANDED_PAD])
+const togglePath = computed(() => `${PANEL_ICON} ${expanded.value ? PANEL_COLLAPSE_ARROW : PANEL_EXPAND_ARROW}`)
 const toggleLabel = computed(() => (expanded.value ? 'Recolher menu' : 'Expandir menu'))
 const hasSingleProject = computed(() => projectsStore.projects.length === 1)
 
@@ -100,13 +113,14 @@ function toggleProject(project: Project) {
 
 <template>
   <div
-    :class="`flex h-full shrink-0 flex-col items-start gap-3 border-r border-line bg-bg px-4.75 py-5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
+    :class="`relative flex h-full shrink-0 flex-col items-start gap-3 bg-paper px-4.75 py-5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
     :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
   >
+    <UiHandDivider class="absolute inset-y-0 right-0 h-full" />
     <div class="flex shrink-0 items-center gap-2.5 pl-1.25">
       <button
         type="button"
-        class="grid size-10 flex-none place-items-center rounded-control-lg bg-ink text-bg [--logo-cut:var(--color-ink)]"
+        :class="`grid size-10 flex-none place-items-center rounded-md text-ink [--logo-cut:var(--color-paper)] ${INK_FOCUS_CLASSES}`"
         aria-label="Vokia, início"
         title="Vokia"
         @click="navigation.goTo(PROJECT_LIST_PAGE)"
@@ -116,7 +130,8 @@ function toggleProject(project: Project) {
       <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
     </div>
 
-    <nav aria-label="Workspace" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+    <p v-if="expanded" :class="GROUP_LABEL" aria-hidden="true">workspace</p>
+    <nav aria-label="Workspace" :class="[GROUP, 'shrink-0', expanded && 'w-full']">
       <button
         v-for="item in WORKSPACE_ITEMS"
         :key="item.page"
@@ -128,28 +143,18 @@ function toggleProject(project: Project) {
         @click="navigation.goTo(item.page)"
       >
         <span :class="ICON_BOX">
-          <svg
-            class="size-4.25 flex-none"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path :d="item.path" />
-          </svg>
+          <UiIcon class="flex-none" :path="item.path" :size="ICON_SIZE" />
         </span>
         <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
-        <UiHandLine v-if="isActive(item.page)" :class="ACTIVE_MARK" />
+        <UiHandLine :class="[ACTIVE_MARK, handReveal(isActive(item.page))]" />
       </button>
     </nav>
 
+    <p v-if="expanded && (projectsStore.projects.length > 0 || projectsStore.loaded)" :class="GROUP_LABEL" aria-hidden="true">projetos</p>
     <nav
       v-if="projectsStore.projects.length > 0"
       aria-label="Projetos"
-      :class="[CARD, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
+      :class="[GROUP, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
     >
       <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
         <button
@@ -184,28 +189,17 @@ function toggleProject(project: Project) {
               @click="navigation.goTo(item.page)"
             >
               <span :class="ICON_BOX">
-                <svg
-                  class="size-4.25 flex-none"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path :d="item.path" />
-                </svg>
+                <UiIcon class="flex-none" :path="item.path" :size="ICON_SIZE" />
               </span>
               <span v-if="expanded" :class="LABEL">{{ item.label }}</span>
-              <UiHandLine v-if="isActiveSubpage(project.name, item.page)" :class="ACTIVE_MARK" />
+              <UiHandLine :class="[ACTIVE_MARK, handReveal(isActiveSubpage(project.name, item.page))]" />
             </button>
           </div>
         </div>
       </div>
     </nav>
     <div v-else class="min-h-0 flex-1">
-      <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[CARD, 'shrink-0', expanded && 'w-full']">
+      <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[GROUP, 'shrink-0', expanded && 'w-full']">
         <button
           type="button"
           :class="[itemSize, ITEM_OFF]"
@@ -214,17 +208,7 @@ function toggleProject(project: Project) {
           @click="navigation.goTo(NEW_PROJECT_PAGE)"
         >
           <span :class="ICON_BOX">
-            <svg
-              class="size-4.25 flex-none"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.4"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <path d="M8 3v10M3 8h10" />
-            </svg>
+            <UiIcon class="flex-none" :path="NEW_PROJECT_ICON" :size="ICON_SIZE" />
           </span>
           <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS[NEW_PROJECT_PAGE] }}</span>
         </button>
@@ -241,23 +225,10 @@ function toggleProject(project: Project) {
         @click="navigation.goTo('config')"
       >
         <span :class="ICON_BOX">
-          <svg
-            class="size-4.25 flex-none"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            aria-hidden="true"
-          >
-            <circle cx="8" cy="8" r="2.2" />
-            <path
-              d="M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z"
-            />
-          </svg>
+          <UiIcon class="flex-none" :path="SETTINGS_ICON" :size="ICON_SIZE" />
         </span>
         <span v-if="expanded" :class="LABEL">{{ PAGE_LABELS.config }}</span>
-        <UiHandLine v-if="isActive('config')" :class="ACTIVE_MARK" />
+        <UiHandLine :class="[ACTIVE_MARK, handReveal(isActive('config'))]" />
       </button>
       <button
         v-if="rail.canExpand"
@@ -269,19 +240,7 @@ function toggleProject(project: Project) {
         @click="rail.toggle"
       >
         <span :class="ICON_BOX">
-          <svg
-            class="size-4.25 flex-none"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M2 2.5h12v11H2zM6 2.5v11" />
-            <path :d="expanded ? 'M11 6L9 8l2 2' : 'M9 6l2 2-2 2'" />
-          </svg>
+          <UiIcon class="flex-none" :path="togglePath" :size="ICON_SIZE" />
         </span>
         <span v-if="expanded" :class="LABEL">Recolher</span>
       </button>

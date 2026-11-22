@@ -44,6 +44,7 @@ export const PROJECT_LIST_PAGE: AppPage = 'projetos'
 export const RAIL_COLLAPSED_WIDTH = 88
 export const RAIL_EXPANDED_WIDTH = 232
 
+// Skills e Memória ficam fora do trilho: as páginas ainda mostram só dados de exemplo.
 export const WORKSPACE_ITEMS: readonly RailItem[] = [
   {
     page: 'projetos',
@@ -59,11 +60,6 @@ export const WORKSPACE_ITEMS: readonly RailItem[] = [
     page: 'estatisticas',
     label: PAGE_LABELS.estatisticas,
     path: 'M2 13.5h12M4 11V8M7 11V4.5M10 11V6.5M13 11V3',
-  },
-  {
-    page: 'skills',
-    label: PAGE_LABELS.skills,
-    path: 'M9 1.5L3.5 9h4L6.5 14.5 12.5 6.5h-4z',
   },
   {
     page: 'mapa',
@@ -92,11 +88,6 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
     page: 'diff',
     label: PAGE_LABELS.diff,
     path: 'M4 2v8M4 12.5a1.5 1.5 0 100-.1M12 3.5a1.5 1.5 0 100-.1M12 5v2c0 2-2 3-5.5 3.5',
-  },
-  {
-    page: 'memoria',
-    label: PAGE_LABELS.memoria,
-    path: 'M4 4a2 2 0 100-.1M12 4a2 2 0 100-.1M8 12a2 2 0 100-.1M5.5 5.5L7 10.5M10.5 5.5L9 10.5M6 4h4',
   },
 ]
 

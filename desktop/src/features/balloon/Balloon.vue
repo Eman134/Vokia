@@ -2,10 +2,13 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useBalloons } from './useBalloons'
 import UiButton from '../../ui/UiButton.vue'
+import { STICKY_INK_VARS } from '../../ui/handDrawn'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 
 const store = useBalloons()
 // Centralizado sobre a barra; a largura cabe na tela com 16 px de margem de cada lado.
+// A inclinação fica ≤ 1,5°.
+const STICKY_CLASSES = `pointer-events-auto absolute bottom-full mb-3 -rotate-1 rounded-sm bg-mark-yellow p-3 text-ink shadow-paper ${STICKY_INK_VARS}`
 const POSITION_CLASSES = 'left-1/2 -translate-x-1/2 w-80 max-w-[calc(100vw-2rem)]'
 
 function onKeydown(event: KeyboardEvent): void {
@@ -22,7 +25,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   <div
     v-if="store.current && !store.panelOpen"
     role="status"
-    :class="['pointer-events-auto absolute bottom-full mb-3 rounded-popover border border-line bg-surface p-3 shadow-float', POSITION_CLASSES]"
+    :class="[STICKY_CLASSES, POSITION_CLASSES]"
   >
     <div class="flex items-start gap-2">
       <VokiaMascot v-if="store.current.mascot" :look="store.current.mascot" />

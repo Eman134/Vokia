@@ -7,7 +7,8 @@ import { FLOW_LABEL } from '../flowSteps'
 import { PAUSED_DOT_CLASS } from '../agentStateStyle'
 import type { Agent } from '../events'
 import { useAgentControl } from '../../panel/useAgentControl'
-import { MAX_PERCENT, ringDash } from '../../usage/usagePlans'
+import { MAX_PERCENT } from '../../usage/usagePlans'
+import { DEFAULT_JITTER, sketchEllipse } from '../../../ui/sketch/sketchPath'
 
 defineProps<{
   expanded: boolean
@@ -19,18 +20,26 @@ const RING_BOX = 28
 const RING_CENTER = RING_BOX / 2
 const RING_RADIUS = 11
 const RING_STROKE = 2.5
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
-const SPINNING_ARC = RING_CIRCUMFERENCE / 4
-const FULL_RING_DASH = `${RING_CIRCUMFERENCE} 0`
-const SPINNING_RING_DASH = `${SPINNING_ARC} ${RING_CIRCUMFERENCE - SPINNING_ARC}`
+const RING_OFFSET = RING_CENTER - RING_RADIUS
+const RING_SEED = 5
+const RING_PATH = sketchEllipse(RING_RADIUS * 2, RING_RADIUS * 2, RING_SEED, DEFAULT_JITTER)
+// O traço irregular não tem raio fixo: pathLength normaliza o comprimento e os dashes ficam em percentual.
+const PATH_LENGTH = MAX_PERCENT
+const SPINNING_ARC = PATH_LENGTH / 4
+const FULL_RING_DASH = `${PATH_LENGTH} 0`
+const DRAWING_RING_DASH = `${PATH_LENGTH} ${PATH_LENGTH}`
+const SPINNING_RING_DASH = `${SPINNING_ARC} ${PATH_LENGTH - SPINNING_ARC}`
 
 const feed = useFeed()
 const flow = useFlow()
 const statusStore = useTeamStatus()
 const control = useAgentControl()
-const ringDashArray = computed(() =>
-  flow.active ? ringDash(flow.progress * MAX_PERCENT, RING_RADIUS) : statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH,
-)
+const needsYou = computed(() => !flow.active && statusStore.status === 'needs-you')
+const ringDashArray = computed(() => {
+  if (flow.active) return `${flow.progress * PATH_LENGTH} ${PATH_LENGTH}`
+  if (needsYou.value) return DRAWING_RING_DASH
+  return statusStore.status === 'working' ? SPINNING_RING_DASH : FULL_RING_DASH
+})
 const stepTitle = computed(() =>
   flow.active ? `Etapa ${flow.step} de ${flow.total} · ${flow.names[flow.step - 1]}` : '',
 )
@@ -51,24 +60,22 @@ function dashClass(agent: Agent): string {
   <svg
     v-if="feed.activeAgents.length < 2"
     class="size-6.5 shrink-0"
-    :class="{
-      'animate-spin': !flow.active && statusStore.status === 'working',
-      'animate-pulse motion-reduce:animate-none': !flow.active && statusStore.status === 'needs-you',
-    }"
+    :class="{ 'animate-spin': !flow.active && statusStore.status === 'working' }"
     :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
     fill="none"
     :stroke-width="RING_STROKE"
     aria-hidden="true"
   >
-    <circle :cx="RING_CENTER" :cy="RING_CENTER" :r="RING_RADIUS" class="stroke-line" />
-    <circle
-      :cx="RING_CENTER"
-      :cy="RING_CENTER"
-      :r="RING_RADIUS"
-      :class="statusStore.ring"
-      stroke-linecap="round"
-      :stroke-dasharray="ringDashArray"
-    />
+    <g :transform="`translate(${RING_OFFSET} ${RING_OFFSET})`">
+      <path :d="RING_PATH" class="stroke-line" />
+      <path
+        :d="RING_PATH"
+        :class="[statusStore.ring, needsYou && 'ring-draw']"
+        :pathLength="PATH_LENGTH"
+        stroke-linecap="round"
+        :stroke-dasharray="ringDashArray"
+      />
+    </g>
   </svg>
   <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
     <span
@@ -99,3 +106,25 @@ function dashClass(agent: Agent): string {
     >
   </span>
 </template>
+
+<style scoped>
+.ring-draw {
+  animation: ring-draw 1.6s ease-out infinite;
+}
+
+@keyframes ring-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+  60%,
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-draw {
+    animation: none;
+  }
+}
+</style>
