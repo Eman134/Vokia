@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
-import UiSketchBox from '../../ui/UiSketchBox.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { useProjects } from '../projects/useProjects'
 import {
   NEW_REQUEST_CANCEL_LABEL,
@@ -18,7 +18,7 @@ import { useBacklog } from './useBacklog'
 
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
-const FRAME_CLASSES = 'w-105 max-w-full rounded-md bg-surface shadow-paper'
+const FRAME_CLASSES = 'relative border border-line w-105 max-w-full rounded-md bg-surface shadow-paper'
 // O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
 const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 const TITLE_FIELD_SELECTOR = 'input'
@@ -62,7 +62,8 @@ function submit(): void {
 
 <template>
   <div v-if="draft" :class="OVERLAY_CLASSES" @click.self="backlog.cancelRequest()">
-    <UiSketchBox :class="FRAME_CLASSES" bold>
+    <div :class="FRAME_CLASSES">
+      <UiCloseButton class="absolute right-3 top-3 z-10" @press="backlog.cancelRequest()" />
     <section
       ref="dialog"
       data-testid="new-request-dialog"
@@ -113,6 +114,6 @@ function submit(): void {
         </UiButton>
       </div>
     </section>
-    </UiSketchBox>
+    </div>
   </div>
 </template>

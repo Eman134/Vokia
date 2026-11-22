@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, useId } from 'vue'
-import UiSketchBox from '../../ui/UiSketchBox.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 
 defineProps<{ title: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
-const FRAME_CLASSES = 'w-120 max-w-full rounded-md bg-surface shadow-paper'
+const FRAME_CLASSES = 'relative border border-line w-120 max-w-full rounded-md bg-surface shadow-paper'
 // O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
 const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-4 overflow-y-auto p-5'
 
@@ -32,7 +32,8 @@ onMounted(async () => {
 
 <template>
   <div :class="OVERLAY_CLASSES" @click.self="close()">
-    <UiSketchBox :class="FRAME_CLASSES" bold>
+    <div :class="FRAME_CLASSES">
+      <UiCloseButton class="absolute right-3 top-3 z-10" @press="close()" />
       <section
         ref="dialog"
         role="dialog"
@@ -46,6 +47,6 @@ onMounted(async () => {
         <h2 :id="titleId" class="text-control font-bold text-ink">{{ title }}</h2>
         <slot />
       </section>
-    </UiSketchBox>
+    </div>
   </div>
 </template>

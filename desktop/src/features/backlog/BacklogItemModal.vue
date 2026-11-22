@@ -61,7 +61,7 @@ import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
-const FRAME_CLASSES = 'w-215 max-w-full rounded-md bg-surface shadow-paper'
+const FRAME_CLASSES = 'w-215 max-w-full rounded-md border border-line bg-surface shadow-paper'
 // O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
 const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden'
 const OTHER_INPUT_CLASSES = 'h-9 w-full rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint'

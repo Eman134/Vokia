@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, useId } from 'vue'
 import { PAGE_LABELS } from '../../shell/railNav'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSelect from '../../ui/UiSelect.vue'
@@ -323,11 +324,12 @@ async function saveFallbackConfig(): Promise<void> {
         aria-modal="true"
         :aria-labelledby="removeTitleId"
         tabindex="-1"
-        class="flex w-100 max-w-full flex-col gap-4 rounded-md border border-line bg-surface p-5 shadow-paper"
+        class="relative flex w-100 max-w-full flex-col gap-4 rounded-md border border-line bg-surface p-5 shadow-paper"
         @keydown.esc.stop="cancelRemoveFallback()"
         @keydown.tab="trapFocus($event, removeDialog)"
       >
-        <h3 :id="removeTitleId" class="text-control font-bold text-ink">
+        <UiCloseButton class="absolute right-3 top-3 z-10" @press="cancelRemoveFallback()" />
+        <h3 :id="removeTitleId" class="text-control font-bold text-ink pr-8">
           Remover {{ providerLabel(fallbackChain[removingFallbackIndex]?.cli ?? '') }} do fallback?
         </h3>
         <p class="text-caption text-muted">

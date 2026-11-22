@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, useId } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
@@ -31,7 +32,7 @@ const DIALOG_TITLE = 'Editar projeto'
 const NAME_FIELD_SELECTOR = 'input'
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4'
 const DIALOG_CLASSES =
-  'flex max-h-full w-120 max-w-full min-w-0 flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5.5 shadow-paper'
+  'relative flex max-h-full w-120 max-w-full min-w-0 flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5.5 shadow-paper'
 const PATH_CLASSES =
   'flex h-9 items-center truncate rounded-md border border-line bg-surface px-3 font-mono text-meta text-faint opacity-60'
 const FOOTER_CLASSES = 'flex flex-wrap items-center justify-end gap-2.5'
@@ -89,6 +90,7 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
       @keydown.esc.stop="close()"
       @keydown.tab="trapFocus($event, dialog)"
     >
+    <UiCloseButton class="absolute right-3 top-3 z-10" @press="close()" />
     <h2 :id="titleId" class="text-control font-bold text-ink">{{ DIALOG_TITLE }}</h2>
     <UiField v-model="name" label="Nome" data-testid="edit-name" />
     <div class="flex flex-col gap-1.5">

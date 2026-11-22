@@ -46,7 +46,7 @@ const installLabel = computed<string>(() => {
       role="dialog"
       aria-modal="true"
       aria-labelledby="update-prompt-title"
-      class="w-130 max-w-full rounded-sm border border-graphite bg-surface p-6 shadow-paper"
+      class="w-130 max-w-full rounded-md border border-line bg-surface p-6 shadow-paper"
     >
       <template v-if="updater.status === 'ready'">
         <div class="flex flex-col items-center gap-3 text-center">

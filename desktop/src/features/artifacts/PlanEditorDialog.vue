@@ -56,10 +56,10 @@ import {
 import { isStageStarted, matchStages } from './planProgress'
 
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
-import UiSketchBox from '../../ui/UiSketchBox.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
-const FRAME_CLASSES = 'w-200 max-w-full rounded-md bg-surface shadow-paper'
+const FRAME_CLASSES = 'relative border border-line w-200 max-w-full rounded-md bg-surface shadow-paper'
 // O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
 const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 interface StageDraft {
@@ -323,7 +323,8 @@ async function reload(): Promise<void> {
 
 <template>
   <div :class="OVERLAY_CLASSES" @click.self="requestClose">
-    <UiSketchBox :class="FRAME_CLASSES" bold>
+    <div :class="FRAME_CLASSES">
+      <UiCloseButton class="absolute right-3 top-3 z-10" @press="requestClose" />
     <section
       ref="dialog"
       data-testid="plan-editor"
@@ -483,6 +484,6 @@ async function reload(): Promise<void> {
         </UiButton>
       </div>
     </section>
-    </UiSketchBox>
+    </div>
   </div>
 </template>

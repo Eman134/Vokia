@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiCombobox from '../../ui/UiCombobox.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
@@ -252,10 +253,11 @@ onMounted(focusName)
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
+      class="relative flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="close()"
       @keydown.tab="trapFocus($event, dialog)"
     >
+      <UiCloseButton class="absolute right-3 top-3 z-10" @press="close()" />
       <h2 :id="titleId" class="text-control font-bold text-ink">{{ agent ? EDIT_TITLE : DIALOG_TITLE }}</h2>
       <fieldset :disabled="submitting" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         <div class="flex flex-col gap-3" @keydown.enter.prevent="submit()">
