@@ -625,6 +625,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;
     ensure_column(&tx, "backlog_items", "worktree_path", "TEXT")?;
+    ensure_column(&tx, "backlog_items", "plan_note", "TEXT")?;
     ensure_column(&tx, "projects", "setup_command", "TEXT")?;
     ensure_column(&tx, "orch_teams", "leader_agent", "TEXT")?;
     ensure_column(&tx, "messages", "usage", "TEXT")?;

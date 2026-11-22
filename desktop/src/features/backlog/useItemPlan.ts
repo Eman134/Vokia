@@ -13,6 +13,7 @@ import {
   DEFAULT_COLUMN,
   ORIGIN_USER,
   READY_COLUMN,
+  type TaskCardAction,
   type BacklogItem,
   type BacklogState,
 } from './backlogTypes'
@@ -31,6 +32,11 @@ export type PlanTab = 'vincular' | 'pedir'
 export type PlanDepth = 'rapido' | 'completo'
 
 export const DEFAULT_PLAN_TAB: PlanTab = 'pedir'
+export const PLAN_TAB_BY_ACTION: Record<Exclude<TaskCardAction, 'iniciar'>, PlanTab> = {
+  triar: 'pedir',
+  revisar: 'pedir',
+  vincular: 'vincular',
+}
 export const DEFAULT_DEPTH: PlanDepth = 'completo'
 export const PLAN_STEPS = [
   'Ler o item e o backlog',
@@ -38,7 +44,7 @@ export const PLAN_STEPS = [
   'Quebrar em lotes e tarefas',
   'Estimar e escolher quem faz',
 ] as const
-export const NO_PLAN_TEXT = 'Este item ainda não tem plano. Os agentes só começam depois que ele tiver um.'
+export const NO_PLAN_TEXT = 'Este item ainda não tem plano. O plano é opcional: você pode iniciar a task direto.'
 
 export const REVIEWED_PLAN_META = 'proposta aceita'
 const PLAN_LINE_SEPARATOR = ' · '
@@ -81,7 +87,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const states = ref<Record<string, ItemPlan>>({})
   const plans = ref<LinkedPlan[]>([])
   const dialogItemId = ref<string | null>(null)
-  const preferredTab = ref<PlanTab | null>(null)
+  const dialogTab = ref<PlanTab>(DEFAULT_PLAN_TAB)
   const feed = useFeed()
   const backlog = useBacklog()
   const triage = useTriage()
@@ -114,20 +120,15 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return item.plan
   }
 
+  // Pedir e Vincular são modais distintos: o modo vale enquanto o diálogo estiver aberto.
   function openDialog(itemId: string, tab: PlanTab): void {
-    preferredTab.value = tab
+    dialogTab.value = tab
     dialogItemId.value = itemId
   }
 
   function closeDialog(): void {
     dialogItemId.value = null
-    preferredTab.value = null
-  }
-
-  function takePreferredTab(): PlanTab {
-    const tab = preferredTab.value ?? DEFAULT_PLAN_TAB
-    preferredTab.value = null
-    return tab
+    dialogTab.value = DEFAULT_PLAN_TAB
   }
 
   function persist(itemId: string): void {
@@ -207,9 +208,10 @@ export const useItemPlan = defineStore('itemPlan', () => {
     else if (outcome === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
   }
 
-  async function request(itemId: string, agent: Agent, depth: PlanDepth): Promise<void> {
+  async function request(itemId: string, agent: Agent, depth: PlanDepth, note = ''): Promise<void> {
     const item = backlog.items.find((current) => current.id === itemId)
     if (!item || isAgentAwaiting(agent)) return
+    backlog.setPlanNote(itemId, note)
     void triage.requestTriage(item)
     await dispatch(item, agent, buildPlanPrompt(item, depth))
   }
@@ -358,6 +360,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     states,
     plans,
     dialogItemId,
+    dialogTab,
     planOf,
     stateOf,
     stateFor,
@@ -365,7 +368,6 @@ export const useItemPlan = defineStore('itemPlan', () => {
     proposalFor,
     openDialog,
     closeDialog,
-    takePreferredTab,
     isAgentAwaiting,
     isReviewed,
     request,

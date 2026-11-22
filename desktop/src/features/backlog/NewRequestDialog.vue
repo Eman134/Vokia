@@ -12,7 +12,7 @@ import {
   NEW_REQUEST_SUBMIT_LABEL,
   NEW_REQUEST_TITLE_LABEL,
   NEW_REQUEST_TITLE_PLACEHOLDER,
-} from './backlogPageCopy'
+} from './tasksPageCopy'
 import { trapFocus } from './dialogFocus'
 import { useBacklog } from './useBacklog'
 

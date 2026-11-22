@@ -27,7 +27,7 @@ import {
   DEFAULT_COLUMN,
   DELEGATE_LABEL,
   isUnassigned,
-  MAIN_ACTION,
+  MAIN_ACTION_LABEL,
   UNASSIGNED_TEXT,
   MODAL_STATE_CHIP,
   MOVABLE_COLUMNS,
@@ -132,6 +132,8 @@ const breakdown = computed(() =>
     : undefined,
 )
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
+// Sem plano ou com a proposta esperando o usuário, o selo só repetiria o que o conteúdo do modal já mostra.
+const showStateBadge = computed(() => planState.value !== 'vazio' && planState.value !== 'proposto')
 const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : undefined))
 function responsibleLabel(current: BacklogItem): string {
   if (!isUnassigned(current)) return roster.nameOf(current.who)
@@ -294,8 +296,8 @@ watch(
               {{ item.feature }}
             </span>
             <UiBadge v-if="autoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
-            <UiBadge class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
-            <UiCloseButton @press="closeModal()" />
+            <UiBadge v-if="showStateBadge" class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
+            <UiCloseButton :class="!showStateBadge && 'ml-auto'" @press="closeModal()" />
           </div>
           <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
         </header>
@@ -475,7 +477,7 @@ watch(
             :disabled="!runItem.canRun(item.id)"
             @press="onMainAction"
           >
-            {{ MAIN_ACTION[planState] }}
+            {{ MAIN_ACTION_LABEL }}
           </UiButton>
         </div>
       </footer>

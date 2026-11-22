@@ -8,7 +8,7 @@ import OnboardingPage from '../features/onboarding/OnboardingPage.vue'
 import MemoriaPage from '../features/memory/MemoriaPage.vue'
 import ProjetosPage from '../features/projects/ProjetosPage.vue'
 import NovoProjetoPage from '../features/projects/NovoProjetoPage.vue'
-import BacklogPage from '../features/backlog/BacklogPage.vue'
+import TasksPage from '../features/backlog/TasksPage.vue'
 import MapaPage from '../features/teammap/MapaPage.vue'
 import type { AppPage } from './railNav'
 
@@ -22,6 +22,6 @@ export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
   memoria: [MemoriaPage],
   projetos: [ProjetosPage],
   'novo-projeto': [NovoProjetoPage],
-  backlog: [BacklogPage],
+  backlog: [TasksPage],
   mapa: [MapaPage],
 }

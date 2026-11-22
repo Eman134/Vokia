@@ -2,14 +2,12 @@
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiSketchBox from '../../ui/UiSketchBox.vue'
-import UiButton from '../../ui/UiButton.vue'
 import UiMarker from '../../ui/UiMarker.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import UserAvatar from '../profile/UserAvatar.vue'
 import {
   ACTION_ID,
-  ACTION_TITLE,
   type ActionLabel,
   BADGE_DOT,
   AUTO_CLOSED_LABEL,
@@ -21,19 +19,18 @@ import {
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import type { ParsedProposal } from './planProposal'
-import { tagLabel, tagMarkerTone } from './tags'
 import {
   DEFAULT_COLUMN,
   isUnassigned,
   READY_COLUMN,
   UNASSIGNED_TEXT,
-  type BacklogCardAction,
+  type TaskCardAction,
   type BacklogColumn,
   type BacklogItem,
   type BacklogState,
 } from './backlogTypes'
+import BacklogPlanActions from './BacklogPlanActions.vue'
 
-import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{
   item: BacklogItem
   column: BacklogColumn
@@ -41,14 +38,12 @@ const props = defineProps<{
   planLine?: string
   proposal?: ParsedProposal
 }>()
-const emit = defineEmits<{ open: []; action: [action: BacklogCardAction] }>()
+const emit = defineEmits<{ open: []; action: [action: TaskCardAction] }>()
 
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
 const AVATAR_SIZE = 22
 const KEY_POINTS_LIMIT = 3
-const VISIBLE_TAGS_LIMIT = 2
-const TAG_CLASSES = 'inline-block max-w-24 truncate align-bottom text-meta whitespace-nowrap'
 const CARD_CLASSES =
   'relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-sm border border-line bg-surface px-3.25 py-3'
 // Proposta é um post-it dentro da ficha: o texto escuro vale nos dois temas porque o amarelo é pastel nos dois.
@@ -59,14 +54,12 @@ const roster = useRoster()
 const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
 )
-const visibleTags = computed(() => props.item.tags.slice(0, VISIBLE_TAGS_LIMIT))
-const hiddenTags = computed(() => props.item.tags.slice(VISIBLE_TAGS_LIMIT))
 const isFeature = computed(() => props.item.type === 'feature')
 const isAutoClosed = computed(() => props.column === DONE_COLUMN && props.item.closedBy === CLOSED_BY_AUTOMATIC)
 const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
 const createdOn = computed(() => props.item.activity?.[0]?.at.split(',')[0])
 
-const action = computed<{ label: ActionLabel; id: BacklogCardAction } | undefined>(() => {
+const action = computed<{ label: ActionLabel; id: TaskCardAction } | undefined>(() => {
   if (props.item.error) return undefined
   if (props.column === READY_COLUMN && props.state === 'vinculado') return { label: 'Iniciar', id: 'iniciar' }
   if (props.column !== DEFAULT_COLUMN) return undefined
@@ -105,12 +98,10 @@ const percent = computed(() => {
       <UiMarker v-if="isFeature" tone="blue" class="text-tiny font-semibold">feature</UiMarker>
       <UiBadge v-if="item.isNew" status="lote" label="novo" />
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
-      <ul v-if="item.tags.length" class="ml-auto flex min-w-0 flex-nowrap items-center justify-end gap-1">
-        <li v-for="tag in visibleTags" :key="tag" class="min-w-0">
-          <UiMarker :tone="tagMarkerTone(tag)" :class="TAG_CLASSES">{{ tagLabel(tag) }}</UiMarker>
-        </li>
-        <li v-if="hiddenTags.length" class="shrink-0 text-meta text-muted" :title="hiddenTags.map(tagLabel).join(', ')">+{{ hiddenTags.length }}</li>
-      </ul>
+      <span class="ml-auto shrink-0" :title="ownerName">
+        <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
+        <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
+      </span>
     </header>
 
     <p v-if="item.parent" class="truncate text-meta text-muted">↳ {{ item.parent }}</p>
@@ -132,32 +123,7 @@ const percent = computed(() => {
       </ul>
     </div>
 
-    <div v-if="action" class="flex items-center gap-1">
-      <UiButton variant="primary" size="sm" class="h-6.5 gap-1.5 rounded-sm pr-2.25 pl-1.75 text-small font-semibold" :title="ACTION_TITLE[action.id]" @click.stop @press="emit('action', action.id)">
-        <svg v-if="action.id === 'triar'" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2 3h12l-4.5 5.5V13l-3 1.5V8.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-        </svg>
-        {{ action.label }}
-      </UiButton>
-      <button
-        v-if="action.id === 'triar'"
-        type="button"
-        class="inline-flex size-6.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-line text-muted hover:bg-hover hover:text-ink" :class="INK_FOCUS_CLASSES"
-        :aria-label="ACTION_TITLE.vincular"
-        :title="ACTION_TITLE.vincular"
-        @click.stop="emit('action', 'vincular')"
-      >
-        <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 014.5 9l1-1"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-          />
-        </svg>
-      </button>
-    </div>
+    <BacklogPlanActions v-if="action" :action="action" @action="emit('action', $event)" />
 
     <div v-if="progress" class="flex flex-col gap-1.25">
       <p v-if="progress.showText" class="flex justify-between text-meta text-muted">
@@ -175,8 +141,6 @@ const percent = computed(() => {
     </div>
 
     <footer class="flex items-center gap-2 pt-0.5">
-      <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
-      <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
       <span class="text-meta text-muted">{{ ownerName }}<template v-if="createdOn"> · {{ createdOn }}</template></span>
     </footer>
   </article>

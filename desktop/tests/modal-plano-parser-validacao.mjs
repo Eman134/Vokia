@@ -15,6 +15,8 @@ const {
   parseProposal,
   isFinalReply,
   PLAN_READY_MARKER,
+  buildPlanPrompt,
+  buildAdjustPrompt,
 } = jiti('../src/features/backlog/planProposal.ts')
 
 const {
@@ -364,6 +366,36 @@ test('funções utilitárias modelTierLabel, planSummaryLabel e linkKind funcion
   assert.equal(linkKind('doc-guia-api'), 'doc')
   assert.equal(linkKind('spec-pix'), 'spec')
   assert.equal(linkKind('issue-42'), 'link')
+})
+
+// -------------------------------------------------------------
+// Nota do usuário no prompt do plano
+// -------------------------------------------------------------
+const NOTE_PREFIX = 'Instruções do usuário (têm prioridade sobre o resto):'
+const baseItem = { id: 'BL-12', title: 'Checkout com Pix', description: 'Pagar com QR.', tags: [] }
+const lastParagraph = (prompt) => prompt.split('\n\n').at(-1)
+
+test('Prompt sem nota (ausente, vazia ou só espaços) fica idêntico', () => {
+  const plain = buildPlanPrompt(baseItem, 'completo')
+  assert.ok(!plain.includes(NOTE_PREFIX))
+  assert.equal(buildPlanPrompt({ ...baseItem, planNote: '' }, 'completo'), plain)
+  assert.equal(buildPlanPrompt({ ...baseItem, planNote: ' \n\t ' }, 'completo'), plain)
+  const adjust = buildAdjustPrompt(baseItem, '#plano-pronto', 'junte os lotes')
+  assert.equal(buildAdjustPrompt({ ...baseItem, planNote: '   ' }, '#plano-pronto', 'junte os lotes'), adjust)
+})
+
+test('Nota entra no pedido com quebras de linha e antes da instrução final', () => {
+  const note = 'Reaproveite o fluxo do cartão.\nNão mexa no schema de pedidos.'
+  const prompt = buildPlanPrompt({ ...baseItem, planNote: `  ${note}\n` }, 'rapido')
+  assert.ok(prompt.includes(`${NOTE_PREFIX}\n${note}`))
+  assert.ok(lastParagraph(prompt).startsWith('Quando terminar'))
+  assert.ok(prompt.indexOf(NOTE_PREFIX) > prompt.indexOf('Seja rápido'))
+})
+
+test('Nota entra no ajuste antes da instrução final', () => {
+  const prompt = buildAdjustPrompt({ ...baseItem, planNote: 'QR expira em 30 min.' }, '#plano-pronto', 'junte os lotes')
+  assert.ok(prompt.includes(`${NOTE_PREFIX}\nQR expira em 30 min.`))
+  assert.ok(lastParagraph(prompt).startsWith('Quando terminar'))
 })
 
 // -------------------------------------------------------------

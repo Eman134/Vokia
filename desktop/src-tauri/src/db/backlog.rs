@@ -57,14 +57,14 @@ const PLAN_IMPORTED_TEXT: &str = "Plano importado";
 const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
     questions, links, activity, children_total, children_done, origin, branch, worktree_path, \
-    closed_by, auto_attempts";
+    closed_by, auto_attempts, plan_note";
 
 const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
     priority, estimate, tags, tasks, criteria, questions, links, activity, children_total, \
-    children_done, origin, position) \
+    children_done, origin, plan_note, position) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
-    ?20, ?21, ?22, ?23, ?24, ?25, ?26, \
+    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, \
     (SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1)) \
     ON CONFLICT(project_id, id) DO UPDATE SET \
     title = excluded.title, \"type\" = excluded.\"type\", state = excluded.state, \
@@ -74,7 +74,8 @@ const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title,
     \"column\" = excluded.\"column\", priority = excluded.priority, estimate = excluded.estimate, \
     tags = excluded.tags, tasks = excluded.tasks, criteria = excluded.criteria, \
     questions = excluded.questions, links = excluded.links, activity = excluded.activity, \
-    children_total = excluded.children_total, children_done = excluded.children_done";
+    children_total = excluded.children_total, children_done = excluded.children_done, \
+    plan_note = excluded.plan_note";
 
 const INSERT_CARD_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     is_new, \"column\", who, \"by\", description, origin, activity, links, position) \
@@ -189,6 +190,9 @@ pub struct BacklogItem {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+    // Instrução do usuário para quem planeja: entra no prompt do pedido e dos ajustes do plano.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub children: Option<Children>,
     pub who: String,
@@ -1103,6 +1107,7 @@ fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
         tags: Vec::new(),
         description: draft.description,
         plan: None,
+        plan_note: None,
         children: None,
         who: draft.owner.to_string(),
         by: draft.owner.to_string(),
@@ -1650,6 +1655,7 @@ fn upsert_item(conn: &Connection, project_id: i64, item: &BacklogItem) -> Result
             children.map(|children| children.total),
             children.map(|children| children.done),
             item.origin,
+            normalized_description(item.plan_note.as_deref()),
         ],
     )?;
     Ok(())
@@ -1697,6 +1703,7 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
         tags: Vec::new(),
         description: None,
         plan: None,
+        plan_note: row.get("plan_note")?,
         children: None,
         who: row.get("who")?,
         by: row.get("by")?,
@@ -1746,6 +1753,7 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         tags: json_column(row, "tags", &id)?,
         description: row.get("description")?,
         plan: row.get("plan")?,
+        plan_note: row.get("plan_note")?,
         children,
         who: row.get("who")?,
         by: row.get("by")?,
@@ -1814,3 +1822,7 @@ fn plan_from_row(row: &Row<'_>) -> Result<ItemPlanEntry, DbError> {
         agent,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/plan_note_tests.rs"]
+mod plan_note_tests;

@@ -41,6 +41,8 @@ export const DEFAULT_PAGE: AppPage = 'conversas'
 
 export const PROJECT_LIST_PAGE: AppPage = 'projetos'
 
+export const BACKLOG_ICON_PATH = 'M3 3h2M3 8h2M3 13h2M7.5 3h6M7.5 8h6M7.5 13h6'
+
 export const RAIL_COLLAPSED_WIDTH = 88
 export const RAIL_EXPANDED_WIDTH = 232
 
@@ -72,7 +74,7 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
   {
     page: 'backlog',
     label: PAGE_LABELS.backlog,
-    path: 'M3 3h2M3 8h2M3 13h2M7.5 3h6M7.5 8h6M7.5 13h6',
+    path: BACKLOG_ICON_PATH,
   },
   {
     page: 'conversas',

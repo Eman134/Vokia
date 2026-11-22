@@ -15,7 +15,7 @@ import {
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
-import { NEW_REQUEST_NO_PROJECT_NOTICE } from './backlogPageCopy'
+import { NEW_REQUEST_NO_PROJECT_NOTICE } from './tasksPageCopy'
 import {
   DEFAULT_COLUMN,
   MOVABLE_COLUMNS,
@@ -270,6 +270,14 @@ export const useBacklog = defineStore('backlog', () => {
     addActivity(id, note)
   }
 
+  function setPlanNote(id: string, note: string): void {
+    const item = editable(id)
+    const next = note.trim() || undefined
+    if (!item || item.planNote === next) return
+    item.planNote = next
+    saveItem(id)
+  }
+
   function addTags(id: string, raws: string[]): void {
     const item = editable(id)
     if (!item) return
@@ -358,6 +366,7 @@ export const useBacklog = defineStore('backlog', () => {
     moveTo,
     archive,
     remove,
+    setPlanNote,
     addTags,
     removeTag,
     addActivity,

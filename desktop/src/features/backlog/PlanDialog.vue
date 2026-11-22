@@ -2,11 +2,17 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
+import UiIcon from '../../ui/UiIcon.vue'
+import { BACKLOG_ICON_PATH } from '../../shell/railNav'
 import { PLAN_DIALOG_CHIP, STATE_BADGE } from './backlogLabels'
+import type { BacklogState } from './backlogTypes'
 import { trapFocus } from './dialogFocus'
 import PlanPanel from './PlanPanel.vue'
 import { useBacklog } from './useBacklog'
 import { useItemPlan } from './useItemPlan'
+
+// Sem plano ou com a proposta esperando o usuário, o selo só repetiria o que o conteúdo do modal já mostra.
+const HIDDEN_BADGE_STATES: readonly BacklogState[] = ['vazio', 'proposto']
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
@@ -16,6 +22,12 @@ let previousFocus: HTMLElement | null = null
 
 const item = computed(() => backlog.items.find((current) => current.id === itemPlan.dialogItemId) ?? null)
 const state = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
+// Sem plano, o título diz qual dos dois modais está aberto; depois do pedido, os dois viram o acompanhamento do plano.
+const title = computed(() => {
+  const name = item.value?.title ?? ''
+  if (state.value !== 'vazio') return `Plano para ${name}`
+  return itemPlan.dialogTab === 'vincular' ? `Vincular plano a ${name}` : `Pedir plano para ${name}`
+})
 
 watch(item, (current) => {
   if (itemPlan.dialogItemId !== null && current === null) itemPlan.closeDialog()
@@ -57,26 +69,18 @@ watch(
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-3 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
+      class="flex max-h-full w-130 max-w-full flex-col gap-3 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="itemPlan.closeDialog()"
       @keydown.tab="trapFocus($event, dialog)"
     >
       <header class="flex flex-wrap items-center gap-2">
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" class="text-muted">
-          <path
-            d="M3 3h2M3 8h2M3 13h2M7.5 3h6M7.5 8h6M7.5 13h6"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-          />
-        </svg>
-        <b :id="titleId" class="text-control text-ink">Plano</b>
-        <span class="text-caption text-muted">{{ item.id }} · {{ item.title }}</span>
-        <UiBadge :status="STATE_BADGE[state]" :label="PLAN_DIALOG_CHIP[state]" />
+        <UiIcon :path="BACKLOG_ICON_PATH" :size="14" class="text-muted" />
+        <b :id="titleId" class="min-w-0 text-control text-ink">{{ title }}</b>
+        <span class="font-mono text-meta text-muted">{{ item.id }}</span>
+        <UiBadge v-if="!HIDDEN_BADGE_STATES.includes(state)" :status="STATE_BADGE[state]" :label="PLAN_DIALOG_CHIP[state]" />
         <UiCloseButton class="ml-auto" @press="itemPlan.closeDialog()" />
       </header>
-      <PlanPanel :item="item" />
+      <PlanPanel :key="item.id" :item="item" />
     </section>
   </div>
 </template>

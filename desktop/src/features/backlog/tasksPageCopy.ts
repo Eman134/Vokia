@@ -1,6 +1,6 @@
 import type { BacklogColumn } from './backlogTypes'
 
-export const BACKLOG_TITLE = 'Tasks'
+export const TASKS_TITLE = 'Tasks'
 export const NEW_REQUEST_LABEL = 'Novo pedido'
 export const NEW_REQUEST_DIALOG_TITLE = 'Novo pedido'
 export const NEW_REQUEST_TITLE_LABEL = 'Título'

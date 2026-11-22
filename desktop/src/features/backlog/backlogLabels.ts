@@ -1,5 +1,5 @@
 import type UiBadge from '../../ui/UiBadge.vue'
-import type { BacklogCardAction, BacklogColumn, BacklogOrigin, BacklogState } from './backlogTypes'
+import type { TaskCardAction, BacklogColumn, BacklogOrigin, BacklogState } from './backlogTypes'
 import type { BreakdownStatus } from './planBreakdown'
 
 type BadgeStatus = InstanceType<typeof UiBadge>['$props']['status']
@@ -64,12 +64,12 @@ export const STATE_ACTION: Partial<Record<BacklogState, ActionLabel>> = {
   vazio: 'Triar',
   proposto: 'Revisar',
 }
-export const ACTION_ID: Record<ActionLabel, BacklogCardAction> = {
+export const ACTION_ID: Record<ActionLabel, TaskCardAction> = {
   Triar: 'triar',
   Revisar: 'revisar',
   Iniciar: 'iniciar',
 }
-export const ACTION_TITLE: Record<BacklogCardAction, string> = {
+export const ACTION_TITLE: Record<TaskCardAction, string> = {
   triar: 'Mandar para a triagem da líder',
   revisar: 'Ver a proposta do plano',
   vincular: 'Vincular plano',

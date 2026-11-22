@@ -35,6 +35,7 @@ const QUICK_INSTRUCTION = 'Seja rápido: um lote e sem pesquisa extensa.'
 const FULL_INSTRUCTION = 'Faça uma pesquisa completa antes de propor.'
 const QUESTION_INSTRUCTION =
   'Se faltar informação, pergunte antes de propor terminando a resposta com uma linha: #decisao pergunta|<título>|<detalhe>|<opção1>;<opção2>. Quando o usuário responder, continue a pesquisa.'
+const USER_NOTE_PREFIX = 'Instruções do usuário (têm prioridade sobre o resto):'
 const FINAL_INSTRUCTION =
   'Quando terminar, responda em português com a primeira linha #plano-pronto e depois, um marcador por linha: #estimativa ~<tempo>, uma linha #lote <n>|<título>|<meta>|<tarefa>; <tarefa> por lote, se quiser uma linha #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>, <arquivo>~passo:<passo>~pronto:<critério>~nao:<limite> por lote (passo, pronto e nao podem se repetir), #risco <frase curta>, #etiquetas <etiqueta>, <etiqueta> (livres, em minúsculas) e, se quiser, um resumo. Mesmo depois das respostas do usuário, termine sempre com #plano-pronto.'
 const IMPORT_INSTRUCTION =
@@ -161,11 +162,17 @@ export function parseProposal(text: string): ParsedProposal {
   return parsed
 }
 
+function userNoteParagraphs(item: BacklogItem): string[] {
+  const note = item.planNote?.trim()
+  return note ? [`${USER_NOTE_PREFIX}\n${note}`] : []
+}
+
 export function buildPlanPrompt(item: BacklogItem, depth: PlanDepth): string {
   const parts = [`Triagem do item "${item.title}".`]
   if (item.description) parts.push(`Descrição: ${item.description}`)
   if (item.criteria?.length) parts.push(`Critérios:\n${item.criteria.map((criterion) => `- ${criterion.text}`).join(LINE_SEPARATOR)}`)
-  parts.push(RESEARCH_INSTRUCTION, depth === 'rapido' ? QUICK_INSTRUCTION : FULL_INSTRUCTION, QUESTION_INSTRUCTION, FINAL_INSTRUCTION)
+  parts.push(RESEARCH_INSTRUCTION, depth === 'rapido' ? QUICK_INSTRUCTION : FULL_INSTRUCTION, QUESTION_INSTRUCTION)
+  parts.push(...userNoteParagraphs(item), FINAL_INSTRUCTION)
   return parts.join(PARAGRAPH_SEPARATOR)
 }
 
@@ -173,6 +180,7 @@ export function buildAdjustPrompt(item: BacklogItem, proposal: string, instructi
   return [
     `Ajuste o plano do item "${item.title}" conforme o pedido do usuário: ${instruction}`,
     `Plano atual:\n${proposal}`,
+    ...userNoteParagraphs(item),
     FINAL_INSTRUCTION,
   ].join(PARAGRAPH_SEPARATOR)
 }

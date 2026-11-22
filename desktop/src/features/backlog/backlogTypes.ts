@@ -5,7 +5,7 @@ export type KanbanStage = 'ready' | 'progress' | 'review' | 'done'
 export type BacklogTag = string
 
 
-export type BacklogCardAction = 'triar' | 'revisar' | 'vincular' | 'iniciar'
+export type TaskCardAction = 'triar' | 'revisar' | 'vincular' | 'iniciar'
 
 export type BacklogOrigin = 'usuario' | 'conversa' | 'agente'
 
@@ -51,7 +51,7 @@ export const UNASSIGNED_TEXT = 'Sem responsável'
 export const isUnassigned = (item: BacklogItem): boolean => item.who === USER_OWNER || item.who === ''
 export const AUTO_COLUMNS_HINT = 'In progress e In review andam sozinhos'
 export const READY_COLUMN: BacklogColumn = 'Ready'
-export const READY_BLOCKED_HINT = 'Ready só recebe item com plano revisado'
+export const READY_BLOCKED_HINT = 'Ready é para item com plano revisado; sem plano, inicie a task direto'
 export const DELEGATE_LABEL = 'Delegar a'
 export const UNLINKABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready']
 export const OTHER_OPTION = 'Outro…'
@@ -63,13 +63,7 @@ export const MICRO_EXPLANATION = (leader: string): string =>
   `Cada micro-tarefa vem com um roteiro fechado: contexto, arquivos, passos, teste e limites. Modelos leves só executam; quem decide é a ${leader}. Se uma micro-tarefa volta da revisão, a ${leader} detalha o roteiro com o que faltou e o mesmo modelo tenta de novo; só na 2ª vez sobe o modelo; depois disso, chama você. O que faltou vira fato na memória, e os próximos roteiros parecidos já nascem detalhados.`
 export const CONVERSATIONS_LABEL = 'Abrir conversas'
 export const DECISION_QUESTION_PREFIX = 'dec-'
-export const MAIN_ACTION: Record<BacklogState, string> = {
-  triagem: 'Responder à líder',
-  vazio: 'Mandar para a triagem',
-  gerando: 'Ver o plano em andamento',
-  proposto: 'Ver a proposta',
-  vinculado: 'Iniciar',
-}
+export const MAIN_ACTION_LABEL = 'Iniciar'
 export const MODAL_STATE_CHIP: Record<BacklogState, string> = {
   triagem: 'Triagem',
   vazio: 'Não triado',
@@ -79,9 +73,9 @@ export const MODAL_STATE_CHIP: Record<BacklogState, string> = {
 }
 export const PLAN_HINT: Record<BacklogState, string> = {
   triagem: 'A líder lê o código e a memória, pergunta o que faltar e desdobra a feature.',
-  vazio: 'Mande para a triagem da líder ou vincule um plano que já existe.',
+  vazio: 'O plano é opcional: inicie a task direto, mande para a triagem da líder ou vincule um plano que já existe.',
   gerando: 'Atualiza sozinho enquanto o agente escreve.',
-  proposto: 'Aprove ou ajuste antes de o time começar.',
+  proposto: 'Aprove ou ajuste a proposta; o plano é opcional e você pode iniciar a task sem ele.',
   vinculado: 'Os cards entram no kanban do time.',
 }
 
@@ -97,6 +91,7 @@ export interface BacklogItem {
   tags: BacklogTag[]
   description?: string
   plan?: string
+  planNote?: string
   children?: { total: number; done: number }
   who: 'voce' | string
   by: string
