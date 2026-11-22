@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, type UnwrapNestedRefs } from 'vue'
+import { computed, reactive, ref, watch, type UnwrapNestedRefs } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
@@ -45,6 +45,11 @@ function activityOf(agent: Agent): AgentActivity {
 
 const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: activityOf(agent.id) })))
 const workingRows = computed(() => rows.value.filter((row) => feed.activeAgents.some((active) => active.id === row.agent.id)))
+
+// O chip do agente que ficou ocioso some; sem voltar para "Todos" a aba abriria um agente que não está na lista.
+watch(workingRows, (active) => {
+  if (tab.value !== 'todos' && !active.some((row) => row.agent.id === tab.value)) tab.value = 'todos'
+})
 </script>
 
 <template>
@@ -59,7 +64,7 @@ const workingRows = computed(() => rows.value.filter((row) => feed.activeAgents.
         @press="tab = 'todos'"
       />
       <UiChip
-        v-for="row in rows"
+        v-for="row in workingRows"
         :key="row.agent.id"
         :label="agentTabLabel(row.agent.name, row.activity.queue.length)"
         :selected="tab === row.agent.id"
