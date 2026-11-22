@@ -97,12 +97,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
 </script>
 
 <template>
-  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 items-start gap-3">
+  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 flex-row-reverse items-start gap-3">
     <div class="mt-0.5 shrink-0">
       <UserAvatar :size="AVATAR_SIZE" :title="userProfile.displayName" />
     </div>
-    <div class="flex min-w-0 flex-1 flex-col gap-1">
-      <div class="flex flex-wrap items-center gap-2">
+    <div class="flex min-w-0 flex-1 flex-col items-end gap-1">
+      <div class="flex flex-wrap items-center justify-end gap-2">
         <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
         <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-small text-muted">
           → {{ speakerName(entry.to) }}
@@ -123,7 +123,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       </div>
       <ul
         v-if="userContent.attachments.length > 0"
-        class="flex flex-wrap gap-1.5"
+        class="flex flex-wrap justify-end gap-1.5"
         data-testid="message-attachments"
       >
         <li
