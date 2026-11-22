@@ -141,35 +141,32 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   </div>
   <div
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
-    class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1"
-    :title="`${TIME_FORMAT.format(entry.time)}${usageTooltip ? ` — ${usageTooltip}` : ''}`"
+    class="flex min-w-0 flex-col gap-1"
+    :title="[TIME_FORMAT.format(entry.time), entry.text, usageTooltip].filter(Boolean).join(' — ')"
     data-testid="agent-exchange"
   >
-    <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
-      <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
-      {{ speakerName(entry.from) }}
-      <TemporaryOverrideBadge
-        v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
-        :override="overrides.byAgent(entry.from)!"
-        :restoring="Boolean(overrides.restoring[entry.from])"
-        @restore="overrides.restore(entry.from)"
-      />
-    </span>
-    <span aria-hidden="true" class="shrink-0 text-caption text-muted">→</span>
-    <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
-      <AgentPortrait :who="entry.to" :size="META_AVATAR_SIZE" />
-      {{ speakerName(entry.to) }}
-    </span>
-    <div class="min-w-64 flex-1">
-      <ActivityRun v-if="entry.activity" :activity="entry.activity" />
-      <ul v-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
+    <div class="flex min-w-0 items-center gap-x-2">
+      <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
+        <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
+        {{ speakerName(entry.from) }}
+        <TemporaryOverrideBadge
+          v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
+          :override="overrides.byAgent(entry.from)!"
+          :restoring="Boolean(overrides.restoring[entry.from])"
+          @restore="overrides.restore(entry.from)"
+        />
+      </span>
+      <span aria-hidden="true" class="shrink-0 text-caption text-muted">→</span>
+      <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
+        <AgentPortrait :who="entry.to" :size="META_AVATAR_SIZE" />
+        {{ speakerName(entry.to) }}
+      </span>
+      <ul v-if="protocolRow" class="flex min-w-0 flex-1 flex-col text-caption text-muted">
         <ActivityRow :row="protocolRow" />
       </ul>
-      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
-        <ActivityRow :row="protocolRow" />
-      </ul>
-      <MarkdownText v-else :text="entry.text" />
+      <span v-else class="min-w-0 flex-1 truncate text-caption text-muted">{{ entry.text }}</span>
     </div>
+    <ActivityRun v-if="entry.activity" :activity="entry.activity" />
   </div>
   <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-3">
     <span class="mt-0.5 flex shrink-0" aria-hidden="true">
