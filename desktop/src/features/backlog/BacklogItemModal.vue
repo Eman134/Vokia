@@ -2,7 +2,6 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiMarker from '../../ui/UiMarker.vue'
-import UiSketchBox from '../../ui/UiSketchBox.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiChip from '../../ui/UiChip.vue'
@@ -271,7 +270,7 @@ watch(
 
 <template>
   <div v-if="item" :class="OVERLAY_CLASSES" @click.self="closeModal()">
-    <UiSketchBox :class="FRAME_CLASSES" bold>
+    <div :class="FRAME_CLASSES">
     <section
       ref="dialog"
       role="dialog"
@@ -481,6 +480,6 @@ watch(
         </div>
       </footer>
     </section>
-    </UiSketchBox>
+    </div>
   </div>
 </template>

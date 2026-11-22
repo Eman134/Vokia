@@ -51,8 +51,6 @@ const VISIBLE_TAGS_LIMIT = 2
 const TAG_CLASSES = 'inline-block max-w-24 truncate align-bottom text-meta whitespace-nowrap'
 const CARD_CLASSES =
   'relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-sm border border-line bg-surface px-3.25 py-3'
-const STACK_CLASSES = 'mb-2 mr-2 shadow-paper-stack'
-const PAPER_CLASSES = 'shadow-paper'
 // Proposta é um post-it dentro da ficha: o texto escuro vale nos dois temas porque o amarelo é pastel nos dois.
 const PROPOSAL_CLASSES = 'flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink shadow-seg'
 
@@ -98,7 +96,7 @@ const percent = computed(() => {
 
 <template>
   <article
-    :class="[CARD_CLASSES, isFeature || (item.children && item.children.total > 0) ? STACK_CLASSES : PAPER_CLASSES]"
+    :class="CARD_CLASSES"
     @click="emit('open')"
   >
     <UiSketchBox v-if="item.error" tone="danger" class="pointer-events-none absolute inset-0" />
