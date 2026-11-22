@@ -55,6 +55,13 @@ import {
 } from './artifactsCopy'
 import { isStageStarted, matchStages } from './planProgress'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
+
+const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
+const FRAME_CLASSES = 'w-200 max-w-full rounded-md bg-surface shadow-paper'
+// O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
+const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 interface StageDraft {
   key: string
   // Card da etapa no plano salvo, casado como o backend faz: título primeiro, posição depois.
@@ -80,10 +87,10 @@ const TEXTAREA_ROWS = 3
 const SUMMARY_ROWS = 4
 const LABEL_CLASSES = 'text-label font-medium text-muted'
 const CONTROL_CLASSES =
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `w-full min-w-0 rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 const INPUT_CLASSES = `${CONTROL_CLASSES} h-9`
 const TEXTAREA_CLASSES = `${CONTROL_CLASSES} py-2`
-const STAGE_CLASSES = 'flex min-w-0 flex-col gap-2.5 rounded-control-lg border p-3'
+const STAGE_CLASSES = 'flex min-w-0 flex-col gap-2.5 rounded-md border p-3'
 const STAGE_MARK_CLASSES =
   'grid size-5.5 flex-none place-items-center rounded-full border-[1.5px] border-line text-tiny font-bold text-muted'
 
@@ -315,7 +322,8 @@ async function reload(): Promise<void> {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4" @click.self="requestClose">
+  <div :class="OVERLAY_CLASSES" @click.self="requestClose">
+    <UiSketchBox :class="FRAME_CLASSES" bold>
     <section
       ref="dialog"
       data-testid="plan-editor"
@@ -323,7 +331,7 @@ async function reload(): Promise<void> {
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-200 max-w-full flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      :class="DIALOG_CLASSES"
       @keydown.esc.stop="requestClose"
       @keydown.tab="trapFocus($event, dialog)"
       @keydown.enter.ctrl.exact.prevent="submit"
@@ -405,13 +413,14 @@ async function reload(): Promise<void> {
 
             <button
               type="button"
-              class="flex cursor-pointer items-center gap-1.5 self-start text-label font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent"
+              class="flex cursor-pointer items-center gap-1.5 self-start text-label font-medium text-muted hover:text-ink"
+              :class="INK_FOCUS_CLASSES"
               :aria-expanded="stage.scriptOpen"
               @click="stage.scriptOpen = !stage.scriptOpen"
             >
               <span aria-hidden="true">{{ stage.scriptOpen ? '▾' : '▸' }}</span>{{ PLAN_EDITOR_SCRIPT_LABEL }}
             </button>
-            <div v-if="stage.scriptOpen" class="flex flex-col gap-2.5 rounded-control-lg bg-surface-2 p-3">
+            <div v-if="stage.scriptOpen" class="flex flex-col gap-2.5 rounded-md bg-surface-2 p-3">
               <div class="grid gap-3 sm:grid-cols-2">
                 <div class="flex flex-col gap-1.5">
                   <span :class="LABEL_CLASSES">{{ PLAN_EDITOR_WHO_LABEL }}</span>
@@ -454,7 +463,7 @@ async function reload(): Promise<void> {
 
       <div
         v-if="conflict"
-        class="flex min-w-0 flex-wrap items-center gap-3 rounded-control bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink"
+        class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink"
         role="alert"
       >
         <p class="min-w-0 flex-1">{{ PLAN_EDITOR_CONFLICT_MESSAGE }}</p>
@@ -474,5 +483,6 @@ async function reload(): Promise<void> {
         </UiButton>
       </div>
     </section>
+    </UiSketchBox>
   </div>
 </template>

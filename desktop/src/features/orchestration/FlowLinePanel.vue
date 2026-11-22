@@ -28,13 +28,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <section class="flex min-w-0 flex-col gap-4 rounded-[24px] border border-line bg-surface p-4.5">
+  <section class="flex min-w-0 flex-col gap-4 rounded-md border border-line bg-surface p-4.5">
     <header class="flex items-center justify-between gap-3">
       <h3 class="truncate text-control font-bold text-ink">{{ title }}</h3>
       <UiButton variant="quiet" size="sm" @press="emit('close')">{{ VIEW_COPY.close }}</UiButton>
     </header>
     <p v-if="lines.length === 0" class="text-small text-muted">{{ VIEW_COPY.endNoLines }}</p>
-    <div v-for="line in lines" :key="line.key" class="flex min-w-0 flex-col gap-3" :class="lines.length > 1 ? 'rounded-control border border-line p-3' : ''">
+    <div v-for="line in lines" :key="line.key" class="flex min-w-0 flex-col gap-3" :class="lines.length > 1 ? 'rounded-md border border-line p-3' : ''">
       <div class="flex items-center justify-between gap-2">
         <span v-if="lines.length > 1" class="truncate text-control font-semibold text-ink">{{ line.label }}</span>
         <UiButton v-if="line.removable" class="ml-auto" variant="quiet" size="sm" @press="emit('remove', line.key)">

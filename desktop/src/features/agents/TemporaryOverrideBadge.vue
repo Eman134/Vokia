@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { resetCountdownLabel } from '../usage/usagePlans'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 export interface TemporaryOverrideInfo {
   cli: string
   model: string
@@ -101,7 +102,7 @@ function onRestore() {
       :aria-label="`Uso temporário: ${override.cli} ${override.model}. Original: ${override.originalCli} ${override.originalModel}`"
       :aria-expanded="isOpen"
       aria-haspopup="dialog"
-      class="inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-chip bg-warn-soft px-1.5 text-small font-medium text-warn-text hover:opacity-90 focus:outline-2 focus:outline-solid focus:outline-accent"
+      class="inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-sm bg-warn-soft px-1.5 text-small font-medium text-warn-text hover:opacity-90" :class="INK_FOCUS_CLASSES"
       @click.stop="togglePopover"
     >
       <svg
@@ -126,7 +127,7 @@ function onRestore() {
       v-if="isOpen"
       role="dialog"
       aria-label="Detalhes da troca temporária"
-      class="absolute top-full left-0 z-30 mt-1.5 w-64 rounded-control border border-line bg-surface p-3 text-caption text-ink shadow-seg"
+      class="absolute top-full left-0 z-30 mt-1.5 w-64 rounded-md border border-line bg-surface p-3 text-caption text-ink shadow-seg"
       @click.stop
     >
       <dl class="flex flex-col gap-1.5">
@@ -149,7 +150,7 @@ function onRestore() {
           type="button"
           data-testid="temporary-override-restore"
           :disabled="restoring"
-          class="inline-flex h-7 cursor-pointer items-center justify-center rounded-control bg-warn-soft px-2.5 text-label font-medium text-warn-text hover:opacity-90 focus:outline-2 focus:outline-solid focus:outline-accent disabled:cursor-default disabled:opacity-40"
+          class="inline-flex h-7 cursor-pointer items-center justify-center rounded-md bg-warn-soft px-2.5 text-label font-medium text-warn-text hover:opacity-90 disabled:cursor-default disabled:opacity-40" :class="INK_FOCUS_CLASSES"
           @click="onRestore"
         >
           {{ restoring ? 'Restaurando...' : 'Restaurar original' }}

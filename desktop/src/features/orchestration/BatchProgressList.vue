@@ -36,7 +36,7 @@ function isComplete(batch: VokiaBatchProgress): boolean {
   <section
     v-if="openBatches.length > 0"
     aria-label="Lotes em andamento"
-    class="flex flex-col gap-2 rounded-card border border-line bg-surface p-3"
+    class="flex flex-col gap-2 rounded-md border border-line bg-surface p-3"
   >
     <div v-for="batch in openBatches" :key="`${batch.projectId}:${batch.leader}`" class="flex flex-col gap-0.5">
       <p class="text-caption text-ink">{{ progressText(batch) }}</p>

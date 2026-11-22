@@ -36,6 +36,13 @@ import {
 } from './artifactsCopy'
 import { useArtifacts } from './useArtifacts'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
+
+const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
+const FRAME_CLASSES = 'w-160 max-w-full rounded-md bg-surface shadow-paper'
+// O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
+const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 const WRITE_TAB = 'escrever'
 const PREVIEW_TAB = 'preview'
 const TAG_SEPARATOR = ','
@@ -43,7 +50,7 @@ const BODY_ROWS = 14
 const FIRST_FIELD_SELECTOR = 'input'
 const LABEL_CLASSES = 'text-label font-medium text-muted'
 const CONTROL_CLASSES =
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `w-full min-w-0 rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 
 type BodyTab = typeof WRITE_TAB | typeof PREVIEW_TAB
 
@@ -165,7 +172,8 @@ async function reload(): Promise<void> {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4" @click.self="requestClose">
+  <div :class="OVERLAY_CLASSES" @click.self="requestClose">
+    <UiSketchBox :class="FRAME_CLASSES" bold>
     <section
       ref="dialog"
       data-testid="artifact-editor"
@@ -173,7 +181,7 @@ async function reload(): Promise<void> {
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-160 max-w-full flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      :class="DIALOG_CLASSES"
       @keydown.esc.stop="requestClose"
       @keydown.tab="trapFocus($event, dialog)"
       @keydown.enter.ctrl.exact.prevent="submit"
@@ -238,13 +246,13 @@ async function reload(): Promise<void> {
           class="py-2 font-mono text-small"
           :class="CONTROL_CLASSES"
         />
-        <div v-else class="max-h-96 min-h-40 overflow-y-auto rounded-control border border-line bg-surface p-3" data-testid="artifact-preview">
+        <div v-else class="max-h-96 min-h-40 overflow-y-auto rounded-md border border-line bg-surface p-3" data-testid="artifact-preview">
           <MarkdownText v-if="body.trim()" :text="body" />
           <p v-else class="text-small text-muted">{{ EDITOR_PREVIEW_EMPTY }}</p>
         </div>
       </div>
 
-      <div v-if="artifacts.conflict" class="flex min-w-0 flex-wrap items-center gap-3 rounded-control bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink" role="alert">
+      <div v-if="artifacts.conflict" class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink" role="alert">
         <p class="min-w-0 flex-1">{{ EDITOR_CONFLICT_MESSAGE }}</p>
         <UiButton variant="quiet" size="sm" data-testid="artifact-reload" @press="reload">{{ EDITOR_RELOAD_LABEL }}</UiButton>
       </div>
@@ -264,5 +272,6 @@ async function reload(): Promise<void> {
         </UiButton>
       </div>
     </section>
+    </UiSketchBox>
   </div>
 </template>

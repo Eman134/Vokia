@@ -497,7 +497,7 @@ onUnmounted(() => {
           <li v-for="agent in elencoAgents" :key="agent.id">
             <button
               type="button"
-              class="group flex touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
+              class="group flex touch-none select-none items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-left"
               :class="isChipGreyed(agent.id) ? 'cursor-default opacity-40' : 'cursor-grab'"
               :aria-label="agent.name"
               @pointerdown="startAgentDrag(agent.id, $event)"
@@ -524,7 +524,7 @@ onUnmounted(() => {
           <li v-for="kind in GATEWAY_KIND_VALUES" :key="kind">
             <button
               type="button"
-              class="group flex cursor-grab touch-none select-none items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5 text-left"
+              class="group flex cursor-grab touch-none select-none items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-left"
               :aria-label="kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive"
               @pointerdown="startGatewayDrag(kind, $event)"
             >
@@ -593,7 +593,7 @@ onUnmounted(() => {
           </UiButton>
           <ul
             v-if="problemsOpen"
-            class="absolute left-0 top-full z-20 mt-1 flex w-80 max-w-[80vw] list-none flex-col gap-1 rounded-control border border-line bg-surface p-2 text-small text-ink shadow-float"
+            class="absolute left-0 top-full z-20 mt-1 flex w-80 max-w-[80vw] list-none flex-col gap-1 rounded-md border border-line bg-surface p-2 text-small text-ink shadow-paper"
           >
             <li v-for="(problem, index) in shownProblems" :key="`${problem.code}-${index}`">
               <span class="font-mono text-tiny text-muted">{{ problem.code }}</span> {{ problem.message }}
@@ -683,7 +683,7 @@ onUnmounted(() => {
 
     <div
       v-if="agentDrag?.dragging"
-      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5"
+      class="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5"
       :style="{ left: `${agentDrag.x + GHOST_OFFSET_PX}px`, top: `${agentDrag.y + GHOST_OFFSET_PX}px` }"
     >
       <svg v-if="gatewayKindOfDrag(agentDrag.agent)" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

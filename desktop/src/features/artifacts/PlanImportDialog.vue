@@ -52,6 +52,13 @@ import {
 } from './artifactsCopy'
 import { extractPlanBlock, titleFromText } from './planMarkdown'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
+
+const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
+const FRAME_CLASSES = 'w-160 max-w-full rounded-md bg-surface shadow-paper'
+// O backdrop tem p-4 (2rem no total): o diálogo rola por dentro em vez de passar da janela.
+const DIALOG_CLASSES = 'flex max-h-[calc(100dvh-2rem)] flex-col gap-3 overflow-y-auto p-5'
 const FILE_SOURCE = 'arquivo'
 const PASTE_SOURCE = 'colar'
 const ORIGIN_STEP = 'origem'
@@ -63,7 +70,7 @@ const PASTE_ROWS = 10
 const FIRST_FIELD_SELECTOR = 'button, textarea, input'
 const LABEL_CLASSES = 'text-label font-medium text-muted'
 const CONTROL_CLASSES =
-  'w-full min-w-0 rounded-control border border-line bg-surface px-3 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `w-full min-w-0 rounded-md border border-line bg-surface px-3 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 const STATUS_CLASSES = 'text-small font-semibold text-ink'
 
 type Source = typeof FILE_SOURCE | typeof PASTE_SOURCE
@@ -239,7 +246,8 @@ function requestClose(): void {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4" @click.self="requestClose">
+  <div :class="OVERLAY_CLASSES" @click.self="requestClose">
+    <UiSketchBox :class="FRAME_CLASSES" bold>
     <section
       ref="dialog"
       data-testid="plan-import"
@@ -247,7 +255,7 @@ function requestClose(): void {
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-160 max-w-full flex-col gap-3 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      :class="DIALOG_CLASSES"
       @keydown.esc.stop="requestClose"
       @keydown.tab="trapFocus($event, dialog)"
     >
@@ -316,7 +324,7 @@ function requestClose(): void {
           <ol class="flex flex-col gap-1 pl-1 text-caption text-muted">
             <li v-for="planStep in PLAN_STEPS" :key="planStep">○ {{ planStep }}</li>
           </ol>
-          <div v-if="pendingQuestion" class="flex min-w-0 flex-wrap items-center gap-3 rounded-control bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink">
+          <div v-if="pendingQuestion" class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink">
             <p class="min-w-0 flex-1">{{ IMPORT_ANSWER_TEXT }}</p>
             <UiButton variant="quiet" size="sm" data-testid="plan-import-answer" @press="answerInCard">{{ IMPORT_ANSWER_LABEL }}</UiButton>
           </div>
@@ -331,7 +339,7 @@ function requestClose(): void {
 
         <div
           v-if="!triaging && plan?.error"
-          class="flex min-w-0 flex-wrap items-center gap-3 rounded-control bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink"
+          class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink"
           role="alert"
         >
           <p class="min-w-0 flex-1">{{ plan.error }}</p>
@@ -407,5 +415,6 @@ function requestClose(): void {
         </UiButton>
       </div>
     </section>
+    </UiSketchBox>
   </div>
 </template>

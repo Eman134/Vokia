@@ -31,6 +31,7 @@ import {
 import { COMMAND_LABEL, RESTORE_DEFAULT_LABEL } from './agentesCopy'
 import { useRoles } from './useRoles'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{ agent?: AgentProfile }>()
 const emit = defineEmits<{ saved: [profile: AgentProfile]; close: [] }>()
 
@@ -251,7 +252,7 @@ onMounted(focusName)
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      class="flex max-h-full w-105 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="close()"
       @keydown.tab="trapFocus($event, dialog)"
     >
@@ -373,7 +374,7 @@ onMounted(focusName)
             v-model="command"
             :disabled="submitting"
             :class="[
-              'h-9 w-full min-w-0 rounded-control border bg-surface px-3 font-mono text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent',
+              `h-9 w-full min-w-0 rounded-md border bg-surface px-3 font-mono text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`,
               commandError ? 'border-danger' : 'border-line',
             ]"
             :aria-invalid="Boolean(commandError)"

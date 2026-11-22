@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiCheckbox from '../../ui/UiCheckbox.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiProgress from '../../ui/UiProgress.vue'
@@ -48,8 +49,6 @@ const WRAP_CLASSES = 'wrap-break-word'
 const SECTION_CLASSES = 'flex min-w-0 flex-col gap-3'
 const SECTION_TITLE_CLASSES = 'text-small font-semibold text-muted'
 const SUBSECTION_TITLE_CLASSES = 'text-caption font-semibold text-muted'
-const CRITERION_CLASSES = 'flex cursor-pointer items-start gap-2.5 text-control text-ink'
-const CHECKBOX_CLASSES = 'mt-1 size-4 flex-none cursor-pointer'
 const GENERATING_STATE: BacklogState = 'gerando'
 
 const props = defineProps<{
@@ -211,12 +210,12 @@ function saved(fresh: PlanArtifactDetail): void {
           <span>{{ progress.done }} de {{ progress.total }} etapas feitas</span>
           <span>{{ progress.percent }}%</span>
         </div>
-        <UiProgress :value="progress.percent" />
+        <UiProgress :value="progress.percent" pencil />
       </div>
     </header>
 
     <UiNotice v-if="notice" :text="notice" data-testid="plan-notice" @close="notice = null" />
-    <div v-if="loadError" class="flex min-w-0 flex-wrap items-center gap-3 rounded-control bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink" role="alert">
+    <div v-if="loadError" class="flex min-w-0 flex-wrap items-center gap-3 rounded-md bg-surface-2 py-2 pl-3.5 pr-2 text-caption text-ink" role="alert">
       <p class="min-w-0 flex-1">{{ loadError }}</p>
       <UiButton variant="quiet" size="sm" data-testid="plan-retry" @press="load">{{ PLAN_RETRY_LABEL }}</UiButton>
     </div>
@@ -243,10 +242,7 @@ function saved(fresh: PlanArtifactDetail): void {
       <h4 :class="SECTION_TITLE_CLASSES">{{ PLAN_CRITERIA_TITLE }}</h4>
       <ul v-if="artifact?.criteria.length" class="flex flex-col gap-2" data-testid="plan-criteria">
         <li v-for="criterion in artifact.criteria" :key="criterion.id">
-          <label :class="CRITERION_CLASSES">
-            <input type="checkbox" :checked="criterion.done" :class="CHECKBOX_CLASSES" @change="toggleCriterion(criterion)" />
-            <span :class="['min-w-0 flex-1', WRAP_CLASSES, criterion.done && 'text-muted line-through']">{{ criterion.text }}</span>
-          </label>
+          <UiCheckbox :checked="criterion.done" @change="toggleCriterion(criterion)">{{ criterion.text }}</UiCheckbox>
         </li>
       </ul>
 
@@ -254,15 +250,9 @@ function saved(fresh: PlanArtifactDetail): void {
         <h5 :class="SUBSECTION_TITLE_CLASSES">{{ PLAN_CARD_CRITERIA_TITLE }}</h5>
         <ul class="flex flex-col gap-2">
           <li v-for="criterion in item.criteria" :key="criterion.id">
-            <label :class="CRITERION_CLASSES">
-              <input
-                type="checkbox"
-                :checked="criterion.done"
-                :class="CHECKBOX_CLASSES"
-                @change="backlog.toggleCriterion(item.id, criterion.id)"
-              />
-              <span :class="['min-w-0 flex-1', WRAP_CLASSES, criterion.done && 'text-muted line-through']">{{ criterion.text }}</span>
-            </label>
+            <UiCheckbox :checked="criterion.done" @change="backlog.toggleCriterion(item.id, criterion.id)">
+              {{ criterion.text }}
+            </UiCheckbox>
           </li>
         </ul>
       </div>

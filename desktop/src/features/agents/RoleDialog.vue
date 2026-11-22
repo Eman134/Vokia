@@ -15,6 +15,7 @@ import {
 import type { Role } from './rolesApi'
 import { useRoles } from './useRoles'
 
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const props = defineProps<{ role?: Role }>()
 const emit = defineEmits<{ saved: [role: Role]; close: [] }>()
 
@@ -30,8 +31,8 @@ const submitting = ref(false)
 const failure = ref<string | null>(null)
 
 const TEXTAREA_CLASSES =
-  'min-h-40 w-full min-w-0 rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
-const READ_ONLY_NAME_CLASSES = 'flex h-9 items-center rounded-control border border-line bg-surface px-3 text-control text-muted'
+  `min-h-40 w-full min-w-0 rounded-md border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
+const READ_ONLY_NAME_CLASSES = 'flex h-9 items-center rounded-md border border-line bg-surface px-3 text-control text-muted'
 
 function focusFirst(): void {
   dialog.value?.querySelector<HTMLElement>('input, textarea')?.focus()
@@ -80,7 +81,7 @@ onMounted(focusFirst)
       aria-modal="true"
       :aria-labelledby="titleId"
       tabindex="-1"
-      class="flex max-h-full w-120 max-w-full flex-col gap-4 overflow-y-auto rounded-dialog border border-line bg-surface p-5 shadow-float"
+      class="flex max-h-full w-120 max-w-full flex-col gap-4 overflow-y-auto rounded-md border border-line bg-surface p-5 shadow-paper"
       @keydown.esc.stop="close()"
       @keydown.tab="trapFocus($event, dialog)"
     >

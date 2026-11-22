@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import {
+  DEFAULT_JITTER,
+  sketchDiamond,
+  sketchQuadratic,
+  sketchRect,
+  sketchScribble,
+} from '../../ui/sketch/sketchPath'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { DEFAULT_RECIPIENT } from '../team/agents'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { VIEW_COPY } from './orchestrationLabels'
+import { DOT_GRID_CLASSES } from '../../ui/dotGrid'
 import { FLOW_END, FLOW_START } from './orchestrationTypes'
 import {
   AGENT_HALF,
@@ -25,6 +33,7 @@ import {
   contentFitsView,
   endLineKey,
   frameContent,
+  hashSeed,
   lineKey,
   portAt,
   snapPoint,
@@ -44,9 +53,12 @@ import type { DraftGateway, FlowNodeConfig } from './useFlowDraft'
 
 const ARROWHEAD_ID = 'flow-arrowhead'
 const ARROWHEAD_INK_ID = 'flow-arrowhead-ink'
-const SHADOW_ID = 'flow-soft-shadow'
-const DOT_BACKGROUND_CLASSES =
-  'pointer-events-none absolute inset-0 bg-[radial-gradient(var(--color-dot)_1.2px,transparent_1.2px)] bg-[length:18px_18px] [mask-image:radial-gradient(ellipse_at_center,black_55%,transparent_100%)]'
+const SHADOW_OFFSET = 3
+const NODE_ERROR_SCRIBBLE_SIZE = { width: 22, height: 10 }
+const NODE_ERROR_SCRIBBLE_INSET = 28
+const NODE_ERROR_SCRIBBLE_TOP = 6
+const NODE_SELECTED_WIDTH = 2
+const NODE_STROKE_WIDTH = 1.4
 const ARROW_WIDTH = 1.5
 const ARROW_SELECTED_WIDTH = 2.5
 const ARROW_HIT_WIDTH = 14
@@ -57,7 +69,6 @@ const COMMUNICATION_LABEL_DY = -6
 const GATEWAY_ICON_ARM = 7
 const LEGEND_SAMPLE_WIDTH = 28
 const LEGEND_SAMPLE_Y = 4
-const LEADER_STROKE_WIDTH = 2
 const PREVIEW_DASH = '6 5'
 const HANDLE_RADIUS = 6
 const TOOLBAR_HEIGHT = 24
@@ -147,6 +158,7 @@ interface LinkDrag {
 interface Line {
   key: string
   d: string
+  sketch: string
   middle: FlowPoint
   start: FlowPoint
   end: FlowPoint
@@ -234,6 +246,34 @@ const gatewayNodes = computed(() =>
 )
 const gatewayById = computed(() => new Map(gatewayNodes.value.map((gateway) => [gateway.id, gateway])))
 
+// O traço de um nó só depende do id: guardado, arrastar o nó apenas move o path pronto.
+const nodeSketches = new Map<string, string>()
+
+function nodeSketch(id: string): string {
+  let path = nodeSketches.get(id)
+  if (path === undefined) {
+    path = sketchRect(FLOW_GEOMETRY.nodeWidth, FLOW_GEOMETRY.nodeHeight, hashSeed(id), DEFAULT_JITTER)
+    nodeSketches.set(id, path)
+  }
+  return path
+}
+
+function gatewaySketch(id: string): string {
+  let path = nodeSketches.get(id)
+  if (path === undefined) {
+    path = sketchDiamond(GATEWAY_HALF.width * 2, GATEWAY_HALF.height * 2, hashSeed(id), DEFAULT_JITTER)
+    nodeSketches.set(id, path)
+  }
+  return path
+}
+
+const NODE_ERROR_SCRIBBLE = sketchScribble(
+  NODE_ERROR_SCRIBBLE_SIZE.width,
+  NODE_ERROR_SCRIBBLE_SIZE.height,
+  hashSeed('node-error'),
+  DEFAULT_JITTER,
+)
+
 // Centro e meia medida de qualquer nó do desenho: agente (cartão) ou gateway (losango).
 function nodeCenter(id: string): FlowPoint | undefined {
   return placementOf.value.get(id) ?? gatewayById.value.get(id)
@@ -279,6 +319,7 @@ const lines = computed<Line[]>(() => {
     result.push({
       key,
       d: arc.d,
+      sketch: sketchQuadratic(from, arc.control, to, hashSeed(key), DEFAULT_JITTER),
       middle: arc.middle,
       start: from,
       end: to,
@@ -754,7 +795,7 @@ onUnmounted(() => {
 <template>
   <div data-flow-canvas class="flex min-h-0 w-full flex-col gap-2">
   <div ref="containerRef" class="relative min-h-0 w-full flex-1">
-    <div aria-hidden="true" :class="DOT_BACKGROUND_CLASSES" />
+    <div aria-hidden="true" :class="DOT_GRID_CLASSES" />
     <div class="absolute right-2 top-2 z-10 flex gap-1">
       <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.zoomIn" @press="zoomFromCentre(ZOOM_STEP)">+</UiButton>
       <UiButton variant="quiet" size="sm" :aria-label="VIEW_COPY.zoomOut" @press="zoomFromCentre(1 / ZOOM_STEP)">−</UiButton>
@@ -796,9 +837,6 @@ onUnmounted(() => {
         >
           <path d="M0 0 L10 5 L0 10 z" class="fill-ink" />
         </marker>
-        <filter :id="SHADOW_ID" x="-30%" y="-30%" width="160%" height="170%">
-          <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.16" />
-        </filter>
       </defs>
 
       <rect
@@ -825,7 +863,6 @@ onUnmounted(() => {
           :cy="layout.start.y"
           :r="FLOW_GEOMETRY.endpointRadius"
           :class="problems.has(FLOW_START) ? 'fill-danger' : 'fill-ink'"
-          :filter="`url(#${SHADOW_ID})`"
         />
         <circle
           v-if="hoveredEndpoint === 'start' || linkDrag?.from === FLOW_START"
@@ -869,7 +906,6 @@ onUnmounted(() => {
           :r="FLOW_GEOMETRY.endpointRadius"
           :class="problems.has(FLOW_END) ? 'fill-danger/10 stroke-danger' : 'fill-surface stroke-ink'"
           stroke-width="2"
-          :filter="`url(#${SHADOW_ID})`"
         />
         <circle :cx="layout.end.x" :cy="layout.end.y" :r="END_INNER_RADIUS" :class="problems.has(FLOW_END) ? 'fill-danger' : 'fill-ink'" />
         <foreignObject
@@ -914,7 +950,6 @@ onUnmounted(() => {
           :rx="NODE_RADIUS"
           class="fill-surface stroke-line"
           stroke-width="1.5"
-          :filter="`url(#${SHADOW_ID})`"
         />
         <circle :cx="layout.start.x" :cy="emptyBox.top + EMPTY_ICON_DY" :r="EMPTY_ICON_RADIUS" fill="none" class="stroke-muted" stroke-width="1.5" />
         <path
@@ -948,12 +983,13 @@ onUnmounted(() => {
           @click="emit('selectLine', line.key)"
         />
         <path
-          :d="line.d"
+          :d="line.sketch"
           fill="none"
+          stroke-linecap="round"
           :stroke-width="isLineSelected(line) ? ARROW_SELECTED_WIDTH : line.endpoint ? ENDPOINT_ARROW_WIDTH : ARROW_WIDTH"
           :stroke-dasharray="line.dash"
           :marker-end="line.arrow ? `url(#${line.endpoint ? ARROWHEAD_INK_ID : ARROWHEAD_ID})` : undefined"
-          :class="isLineSelected(line) ? 'stroke-accent' : line.endpoint ? 'stroke-ink' : 'stroke-accent/60'"
+          :class="isLineSelected(line) ? 'stroke-ink-pen' : line.endpoint ? 'stroke-ink' : 'stroke-graphite'"
           pointer-events="none"
         />
         <text
@@ -961,7 +997,7 @@ onUnmounted(() => {
           :x="line.middle.x"
           :y="line.middle.y + COMMUNICATION_LABEL_DY"
           text-anchor="middle"
-          class="fill-muted text-tiny pointer-events-none"
+          class="pointer-events-none fill-muted font-hand text-annotation"
         >
           {{ line.label }}
         </text>
@@ -1046,18 +1082,45 @@ onUnmounted(() => {
       >
         <title v-if="problems.has(node.agent)">{{ problems.get(node.agent)?.join(' — ') }}</title>
         <rect
+          :x="nodeLeft(node.x) + SHADOW_OFFSET"
+          :y="nodeTop(node.y) + SHADOW_OFFSET"
+          :width="FLOW_GEOMETRY.nodeWidth"
+          :height="FLOW_GEOMETRY.nodeHeight"
+          :rx="NODE_RADIUS"
+          class="fill-graphite-soft"
+        />
+        <rect
           :x="nodeLeft(node.x)"
           :y="nodeTop(node.y)"
           :width="FLOW_GEOMETRY.nodeWidth"
           :height="FLOW_GEOMETRY.nodeHeight"
           :rx="NODE_RADIUS"
+          :class="problems.has(node.agent) ? 'fill-danger/10' : isHighlighted(node.agent) ? 'fill-mark-blue/40' : 'fill-surface'"
+        />
+        <path
+          :d="nodeSketch(node.agent)"
+          :transform="`translate(${nodeLeft(node.x)} ${nodeTop(node.y)})`"
+          fill="none"
+          stroke-linecap="round"
+          :stroke-width="isHighlighted(node.agent) || isLeader(node.agent) ? NODE_SELECTED_WIDTH : NODE_STROKE_WIDTH"
           :class="
             problems.has(node.agent)
-              ? 'fill-danger/10 stroke-danger'
-              : ['fill-surface', isHighlighted(node.agent) || isLeader(node.agent) ? 'stroke-accent' : 'stroke-line']
+              ? 'stroke-danger'
+              : isHighlighted(node.agent) || isLeader(node.agent)
+                ? 'stroke-ink-pen'
+                : 'stroke-graphite'
           "
-          :stroke-width="isLeader(node.agent) ? LEADER_STROKE_WIDTH : 1.5"
-          :filter="`url(#${SHADOW_ID})`"
+          pointer-events="none"
+        />
+        <path
+          v-if="problems.has(node.agent)"
+          :d="NODE_ERROR_SCRIBBLE"
+          :transform="`translate(${nodeLeft(node.x) + FLOW_GEOMETRY.nodeWidth - NODE_ERROR_SCRIBBLE_INSET} ${nodeTop(node.y) + NODE_ERROR_SCRIBBLE_TOP})`"
+          fill="none"
+          stroke-linecap="round"
+          class="stroke-danger"
+          :stroke-width="NODE_STROKE_WIDTH"
+          pointer-events="none"
         />
         <foreignObject
           :x="nodeLeft(node.x) + PORTRAIT_INSET"
@@ -1131,14 +1194,16 @@ onUnmounted(() => {
         <title v-if="problems.has(gateway.id)">{{ problems.get(gateway.id)?.join(' — ') }}</title>
         <polygon
           :points="`${gateway.x},${gateway.y - GATEWAY_HALF.height} ${gateway.x + GATEWAY_HALF.width},${gateway.y} ${gateway.x},${gateway.y + GATEWAY_HALF.height} ${gateway.x - GATEWAY_HALF.width},${gateway.y}`"
-          :class="
-            problems.has(gateway.id)
-              ? 'fill-danger/10 stroke-danger'
-              : ['fill-surface', isHighlighted(gateway.id) ? 'stroke-accent' : 'stroke-line']
-          "
-          stroke-width="1.5"
-          stroke-linejoin="round"
-          :filter="`url(#${SHADOW_ID})`"
+          :class="problems.has(gateway.id) ? 'fill-danger/10' : isHighlighted(gateway.id) ? 'fill-mark-blue/40' : 'fill-surface'"
+        />
+        <path
+          :d="gatewaySketch(gateway.id)"
+          :transform="`translate(${gateway.x - GATEWAY_HALF.width} ${gateway.y - GATEWAY_HALF.height})`"
+          fill="none"
+          stroke-linecap="round"
+          :stroke-width="isHighlighted(gateway.id) ? NODE_SELECTED_WIDTH : NODE_STROKE_WIDTH"
+          :class="problems.has(gateway.id) ? 'stroke-danger' : isHighlighted(gateway.id) ? 'stroke-ink-pen' : 'stroke-graphite'"
+          pointer-events="none"
         />
         <path
           :d="

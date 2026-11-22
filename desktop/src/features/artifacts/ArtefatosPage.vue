@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import { DOT_GRID_CLASSES } from '../../ui/dotGrid'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
@@ -35,8 +36,10 @@ import { stagesOf } from './planProgress'
 import { useArtifacts } from './useArtifacts'
 
 const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4.5 overflow-y-auto ${PAGE_INSET_CLASSES}`
-const GRID_CLASSES = 'grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3.5'
-const EMPTY_AREA_CLASSES = 'flex flex-1 items-center justify-center'
+const AREA_CLASSES = 'relative flex flex-1 flex-col'
+const GRID_CLASSES = 'relative grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3.5 p-2'
+const EMPTY_AREA_CLASSES = 'relative flex flex-1 items-center justify-center'
+const COUNT_CLASSES = 'ml-auto text-caption text-muted'
 const ALL_FILTER = 'todos'
 const PLANS_FILTER = 'planos'
 const PLAN_SOURCE = 'plano'
@@ -217,9 +220,11 @@ function saved(document: ArtifactDocument): void {
       <UiNotice v-if="artifacts.error" :text="artifacts.error" @close="artifacts.clearFeedback()" />
       <div class="flex flex-wrap items-center gap-3">
         <UiSegmented v-model="filter" :options="filterOptions" :label="ARTIFACTS_FILTER_LABEL" wrap />
-        <span class="ml-auto text-caption text-muted">{{ countLabel }}</span>
+        <span :class="COUNT_CLASSES">{{ countLabel }}</span>
       </div>
 
+      <div :class="AREA_CLASSES">
+      <div aria-hidden="true" :class="DOT_GRID_CLASSES" />
       <div v-if="visiblePlans.length || visibleDocuments.length" :class="GRID_CLASSES">
         <PlanCard
           v-for="plan in visiblePlans"
@@ -242,6 +247,7 @@ function saved(document: ArtifactDocument): void {
       <div v-else :class="EMPTY_AREA_CLASSES">
         <p v-if="artifacts.loading" class="text-small text-muted">{{ ARTIFACTS_LOADING_TEXT }}</p>
         <UiEmpty v-else :title="ARTIFACTS_EMPTY_TITLE" />
+      </div>
       </div>
     </template>
 

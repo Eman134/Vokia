@@ -2,8 +2,11 @@
 import { computed, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
+import UiHandLine from '../../ui/UiHandLine.vue'
+import UiMarker from '../../ui/UiMarker.vue'
 import UiNotice from '../../ui/UiNotice.vue'
-import { tagLabel } from '../backlog/tags'
+import { DEFAULT_JITTER, sketchLine } from '../../ui/sketch/sketchPath'
+import { tagLabel, tagMarkerTone } from '../backlog/tags'
 import { agentName } from '../team/agents'
 import MarkdownText from '../team/MarkdownText.vue'
 import type { ArtifactDocument } from './artifactApi'
@@ -18,8 +21,15 @@ import {
 } from './artifactsCopy'
 import { useArtifacts } from './useArtifacts'
 
-const TAG_CLASSES = 'rounded-full bg-surface-2 px-2 py-0.5 text-meta text-muted'
 const DATE_LOCALE = 'pt-BR'
+const MARGIN_HEIGHT = 400
+const MARGIN_SEED = 4
+// A margem de caderno é um traço vertical que estica com a folha; o desenho cabe numa altura fixa.
+const MARGIN_PATH = sketchLine(4, 0, 4, MARGIN_HEIGHT, MARGIN_SEED, DEFAULT_JITTER)
+const SHEET_CLASSES =
+  'relative flex min-w-0 max-w-[68ch] flex-col gap-6 rounded-sm border border-line bg-surface py-6 pr-6 pl-14 shadow-paper'
+const MARGIN_CLASSES = 'pointer-events-none absolute inset-y-0 left-9 h-full w-2 overflow-visible text-danger opacity-40'
+const TITLE_CLASSES = `text-card-title text-ink ${WRAP_CLASSES}`
 
 const props = defineProps<{ document: ArtifactDocument; kindLabel: string }>()
 const emit = defineEmits<{ edit: []; removed: [] }>()
@@ -43,11 +53,17 @@ async function remove(): Promise<void> {
 </script>
 
 <template>
-  <article class="flex min-w-0 flex-col gap-6" :aria-label="`Artefato ${document.title}`">
+  <article :class="SHEET_CLASSES" :aria-label="`Artefato ${document.title}`">
+    <svg :class="MARGIN_CLASSES" :viewBox="`0 0 8 ${MARGIN_HEIGHT}`" preserveAspectRatio="none" fill="none" stroke="currentColor" aria-hidden="true">
+      <path :d="MARGIN_PATH" stroke-width="1.2" stroke-linecap="round" vector-effect="non-scaling-stroke" />
+    </svg>
     <header class="flex min-w-0 flex-col gap-2">
       <p class="text-caption text-muted">Artefatos › {{ kindLabel }} · <span class="font-mono">{{ document.id }}</span></p>
       <div class="flex flex-wrap items-center gap-2.5">
-        <h3 :class="['min-w-0 flex-1 text-lead text-ink', WRAP_CLASSES]">{{ document.title }}</h3>
+        <div class="min-w-0 flex-1">
+          <h3 :class="TITLE_CLASSES">{{ document.title }}</h3>
+          <UiHandLine class="h-1.5 w-full max-w-40 text-graphite" />
+        </div>
         <div class="flex shrink-0 flex-wrap items-center gap-2">
           <UiButton variant="quiet" size="sm" :disabled="artifacts.saving" data-testid="artifact-edit" @press="emit('edit')">
             {{ DOCUMENT_EDIT_LABEL }}
@@ -64,7 +80,7 @@ async function remove(): Promise<void> {
       <p class="text-small text-muted">{{ author }} · criado em {{ created }} · atualizado em {{ updated }}</p>
       <p v-if="document.summary" :class="['whitespace-pre-wrap text-body text-ink', WRAP_CLASSES]">{{ document.summary }}</p>
       <div v-if="document.tags.length" class="flex flex-wrap gap-1.5">
-        <span v-for="tag in document.tags" :key="tag" :class="TAG_CLASSES">{{ tagLabel(tag) }}</span>
+        <UiMarker v-for="tag in document.tags" :key="tag" :tone="tagMarkerTone(tag)" class="text-meta">{{ tagLabel(tag) }}</UiMarker>
       </div>
     </header>
 

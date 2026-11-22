@@ -5,9 +5,12 @@ import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
 import { useProviders } from '../providers/useProviders'
 import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import UiSketchBox from '../../ui/UiSketchBox.vue'
+import { hashSeed } from '../orchestration/flowGraph'
 import type { AgentProfile, ModelTier } from '../team/teamApi'
 import { normalizeName, useRoster } from '../team/useRoster'
 import AgentInstructions from './AgentInstructions.vue'
@@ -30,11 +33,13 @@ import {
 import { ROLE_LABEL } from './agentFormCopy'
 
 const COLUMNS_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]'
-const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-[28px] bg-surface p-5'
-const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-[28px] border border-line p-6'
-const ROW_BASE_CLASSES = 'flex cursor-pointer items-center gap-3 rounded-control border px-3 py-2 text-left'
-const ROW_ACTIVE_CLASSES = 'border-accent bg-accent-soft'
-const ROW_INACTIVE_CLASSES = 'border-line hover:bg-hover'
+const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-md bg-surface p-5'
+const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-md border border-line p-6'
+const ROW_BASE_CLASSES = 'flex cursor-pointer items-center gap-3 rounded-md border-[1.5px] px-3 py-2 text-left'
+const ROW_ACTIVE_CLASSES = HAND_SELECTED_CLASSES
+const ROW_INACTIVE_CLASSES = 'border-transparent hover:bg-hover'
+const NAME_CLASSES = 'truncate text-control font-semibold text-ink'
+const FRAME_CLASSES = 'shrink-0 p-0.5'
 const PORTRAIT_SIZE = 32
 const FICHA_PORTRAIT_SIZE = 56
 const MUTED_TEXT_CLASSES = 'text-caption text-muted'
@@ -116,10 +121,12 @@ async function removeSelected(): Promise<void> {
         :aria-pressed="selected?.id === agent.id"
         @click="selectedId = agent.id"
       >
-        <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZE" />
+        <UiSketchBox :class="FRAME_CLASSES" :seed="hashSeed(agent.id)">
+          <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZE" />
+        </UiSketchBox>
         <span class="flex min-w-0 flex-1 flex-col">
           <span class="flex items-center gap-1.5">
-            <b class="truncate text-ink">{{ agent.name }}</b>
+            <b :class="NAME_CLASSES">{{ agent.name }}</b>
             <TemporaryOverrideBadge
               v-if="overrides.byAgent(agent.id)"
               :override="overrides.byAgent(agent.id)!"
@@ -134,10 +141,12 @@ async function removeSelected(): Promise<void> {
 
     <aside v-if="selected" :class="FICHA_CLASSES">
       <div class="flex items-center gap-3">
-        <AgentPortrait :who="selected.id" :size="FICHA_PORTRAIT_SIZE" />
+        <UiSketchBox :class="FRAME_CLASSES" :seed="hashSeed(selected.id)" bold>
+          <AgentPortrait :who="selected.id" :size="FICHA_PORTRAIT_SIZE" />
+        </UiSketchBox>
         <div class="flex min-w-0 flex-1 flex-col">
           <div class="flex items-center gap-2">
-            <b class="truncate text-control text-ink">{{ selected.name }}</b>
+            <b :class="NAME_CLASSES">{{ selected.name }}</b>
             <TemporaryOverrideBadge
               v-if="overrides.byAgent(selected.id)"
               :override="overrides.byAgent(selected.id)!"
@@ -156,7 +165,7 @@ async function removeSelected(): Promise<void> {
             <span class="truncate">{{ selected.followDefaultLlm ? 'Padrão global' : selected.cli }}</span>
             <span
               v-if="!selected.followDefaultLlm"
-              class="inline-flex h-5 items-center rounded-chip bg-surface-2 px-2 text-small font-medium text-muted"
+              class="inline-flex h-5 items-center rounded-sm bg-surface-2 px-2 text-small font-medium text-muted"
             >
               {{
                 (roster.presets.find((p) => p.id === selected.cli)?.toolTransport ??

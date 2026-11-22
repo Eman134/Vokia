@@ -283,7 +283,7 @@ export function borderPoint(center: FlowPoint, toward: FlowPoint, half: HalfSize
 
 // Seta em arco: curva quadrática; o deslocamento (com sinal) é o que o usuário muda arrastando a bolinha do meio.
 // Sem deslocamento salvo, a curva se abre para um lado fixo, então A→B e B→A não se sobrepõem.
-export function arcPath(from: FlowPoint, to: FlowPoint, offset?: number): { d: string; middle: FlowPoint } {
+export function arcPath(from: FlowPoint, to: FlowPoint, offset?: number): { d: string; middle: FlowPoint; control: FlowPoint } {
   const dx = to.x - from.x
   const dy = to.y - from.y
   const length = Math.hypot(dx, dy) || 1
@@ -294,11 +294,19 @@ export function arcPath(from: FlowPoint, to: FlowPoint, offset?: number): { d: s
   }
   return {
     d: `M ${from.x} ${from.y} Q ${control.x} ${control.y} ${to.x} ${to.y}`,
+    control,
     middle: {
       x: 0.25 * from.x + 0.5 * control.x + 0.25 * to.x,
       y: 0.25 * from.y + 0.5 * control.y + 0.25 * to.y,
     },
   }
+}
+
+// Seed estável por id: o traço à mão de um nó ou ligação não muda ao arrastar nem ao redesenhar.
+export function hashSeed(id: string): number {
+  let hash = 0
+  for (const char of id) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0
+  return hash
 }
 
 // Deslocamento que faz a curva passar pela bolinha do meio (o ponto médio do arco fica na metade do controle).

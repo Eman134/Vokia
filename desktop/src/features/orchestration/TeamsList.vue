@@ -98,7 +98,7 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
 
     <UiEmpty v-if="teams.length === 0" :title="VIEW_COPY.noTeams" />
     <ul v-else class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
-      <li v-for="team in teams" :key="team.id" class="flex min-w-0 flex-col rounded-card border border-line bg-surface">
+      <li v-for="team in teams" :key="team.id" class="flex min-w-0 flex-col rounded-md border border-line bg-surface">
         <div class="flex min-w-0 items-center gap-2 px-4 pt-4">
           <button type="button" class="min-w-0 flex-1 cursor-pointer truncate text-left text-control font-semibold text-ink" @click="emit('open', team.id)">
             {{ team.name }}
@@ -112,12 +112,12 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
           <div
             v-if="openMenuId === team.id"
             role="menu"
-            class="absolute right-0 top-full z-20 mt-1 flex min-w-40 flex-col gap-0.5 rounded-control border border-line bg-surface p-1 shadow-float"
+            class="absolute right-0 top-full z-20 mt-1 flex min-w-40 flex-col gap-0.5 rounded-md border border-line bg-surface p-1 shadow-paper"
           >
             <button
               type="button"
               role="menuitem"
-              class="cursor-pointer rounded-control px-3 py-2 text-left text-control text-ink hover:bg-hover"
+              class="cursor-pointer rounded-md px-3 py-2 text-left text-control text-ink hover:bg-hover"
               @click="openEdit(team)"
             >
               {{ VIEW_COPY.editTeam }}
@@ -125,7 +125,7 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
             <button
               type="button"
               role="menuitem"
-              class="cursor-pointer rounded-control px-3 py-2 text-left text-control text-danger hover:bg-hover"
+              class="cursor-pointer rounded-md px-3 py-2 text-left text-control text-danger hover:bg-hover"
               @click="openDelete(team)"
             >
               {{ VIEW_COPY.removeTeam }}

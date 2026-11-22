@@ -4,6 +4,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
 import {
   DELETE_CONFIRM_LABEL,
   DELETE_LABEL,
@@ -18,11 +19,12 @@ import RoleDialog from './RoleDialog.vue'
 import type { Role } from './rolesApi'
 import { useRoles } from './useRoles'
 
-const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-[28px] bg-surface p-5'
-const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-[28px] border border-line p-6'
-const ROW_BASE_CLASSES = 'flex cursor-pointer flex-col gap-0.5 rounded-control border px-3 py-2 text-left'
-const ROW_ACTIVE_CLASSES = 'border-accent bg-accent-soft'
-const ROW_INACTIVE_CLASSES = 'border-line hover:bg-hover'
+const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-md bg-surface p-5'
+const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-md border border-line p-6'
+const ROW_BASE_CLASSES = 'flex cursor-pointer flex-col gap-0.5 rounded-md border-[1.5px] px-3 py-2 text-left'
+const ROW_ACTIVE_CLASSES = HAND_SELECTED_CLASSES
+const ROW_INACTIVE_CLASSES = 'border-transparent hover:bg-hover'
+const NAME_CLASSES = 'truncate text-control font-semibold text-ink'
 const COLUMNS_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]'
 const BODY_CLASSES = 'whitespace-pre-wrap text-body text-ink'
 
@@ -69,14 +71,14 @@ async function removeSelected(): Promise<void> {
         :aria-pressed="selected?.id === role.id"
         @click="selectedId = role.id"
       >
-        <b class="truncate text-ink">{{ role.name }}</b>
+        <b :class="NAME_CLASSES">{{ role.name }}</b>
         <span class="truncate text-caption text-muted">{{ role.description || ROLE_EMPTY_DESCRIPTION }}</span>
       </button>
     </div>
 
     <aside v-if="selected" :class="FICHA_CLASSES">
       <div class="flex flex-col gap-1">
-        <b class="text-control text-ink">{{ selected.name }}</b>
+        <b :class="NAME_CLASSES">{{ selected.name }}</b>
         <span class="text-caption text-muted">{{ selected.description || ROLE_EMPTY_DESCRIPTION }}</span>
       </div>
       <p :class="BODY_CLASSES">{{ selected.instructions || ROLE_EMPTY_INSTRUCTIONS }}</p>

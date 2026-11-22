@@ -29,7 +29,7 @@ const KIND_OPTIONS = GATEWAY_KIND_VALUES.map((value) => ({
 </script>
 
 <template>
-  <section class="flex min-w-0 flex-col gap-4 rounded-[24px] border border-line bg-surface p-4.5">
+  <section class="flex min-w-0 flex-col gap-4 rounded-md border border-line bg-surface p-4.5">
     <header class="flex items-center justify-between gap-3">
       <h3 class="truncate text-control font-bold text-ink">{{ kind === 'paralelo' ? VIEW_COPY.gatewayParallel : VIEW_COPY.gatewayExclusive }}</h3>
       <div class="flex shrink-0 items-center gap-1">
@@ -51,7 +51,7 @@ const KIND_OPTIONS = GATEWAY_KIND_VALUES.map((value) => ({
     <div v-if="kind === 'exclusivo'" class="flex flex-col gap-2">
       <span class="text-label font-medium text-muted">{{ VIEW_COPY.gatewayExits }}</span>
       <p v-if="exits.length === 0" class="text-small text-muted">{{ VIEW_COPY.gatewayNoExits }}</p>
-      <div v-for="exit in exits" :key="exit.key" class="flex flex-col gap-1.5 rounded-control border border-line p-2.5">
+      <div v-for="exit in exits" :key="exit.key" class="flex flex-col gap-1.5 rounded-md border border-line p-2.5">
         <span class="truncate text-control font-semibold text-ink">{{ exit.label }}</span>
         <div class="flex items-center justify-between gap-2">
           <span class="text-small text-muted">{{ VIEW_COPY.exitEvent }}</span>

@@ -26,7 +26,7 @@ const instructionsCount = computed(() => `${props.config.instructions.length} / 
 </script>
 
 <template>
-  <section class="flex min-w-0 flex-col gap-4 rounded-[24px] border border-line bg-surface p-4.5">
+  <section class="flex min-w-0 flex-col gap-4 rounded-md border border-line bg-surface p-4.5">
     <header class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-2.5">
         <AgentPortrait :who="agent" :size="PORTRAIT_SIZE" />

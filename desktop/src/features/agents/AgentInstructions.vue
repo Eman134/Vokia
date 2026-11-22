@@ -9,10 +9,11 @@ import {
   EXTRA_INSTRUCTIONS_LABEL,
   EXTRA_INSTRUCTIONS_SAVE_LABEL,
 } from './agentesCopy'
-
+
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const EXTRA_INSTRUCTIONS_MAX_CHARS = 4000
 const TEXTAREA_CLASSES =
-  'min-h-32 w-full min-w-0 rounded-control border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint focus:outline-2 focus:outline-solid focus:outline-accent'
+  `min-h-32 w-full min-w-0 rounded-md border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
 
 const props = defineProps<{ agent: AgentProfile }>()
 
