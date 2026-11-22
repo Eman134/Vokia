@@ -25,8 +25,9 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   quiet: 'text-muted enabled:hover:text-ink',
   danger: 'bg-danger/10 text-danger enabled:hover:bg-danger/20',
 }
+// SVG não estica por inset-x como uma div: sem largura explícita ele assume a proporção do viewBox e vaza do botão.
 const QUIET_UNDERLINE_CLASSES =
-  'pointer-events-none absolute inset-x-2 bottom-0.5 h-1.5 opacity-0 group-enabled:group-hover:opacity-100'
+  'pointer-events-none absolute bottom-0.5 left-2 h-1.5 w-[calc(100%-1rem)] opacity-0 group-enabled:group-hover:opacity-100'
 
 // Botão desabilitado ainda recebe click disparado por código; o guard impede o evento de sair.
 function press() {
