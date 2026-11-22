@@ -34,6 +34,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { useFollowEnd } from '../../ui/useFollowEnd'
 import ActivityRun from './ActivityRun.vue'
+import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 import { STATE_LABELS } from './agentStateStyle'
@@ -344,5 +345,6 @@ watch(
     </template>
     <slot v-else name="fila" />
     </section>
+    <ConversationComposer v-if="!filaAberta && projectsStore.selected !== null" />
   </section>
 </template>

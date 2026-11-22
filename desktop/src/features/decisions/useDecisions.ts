@@ -37,6 +37,7 @@ export interface AnswerLogEntry {
 }
 
 const ANSWER_LOG_LIMIT = 200
+const DECISION_PENDING_TITLE = 'Decisão pendente'
 
 export const useDecisions = defineStore('decisions', () => {
   const feed = useFeed()
@@ -76,6 +77,10 @@ export const useDecisions = defineStore('decisions', () => {
   function apply(event: VokiaDecision): void {
     if (!pending.value.some((decision) => decision.id === event.id)) {
       pending.value.push(event)
+      // Com o painel aberto a decisão já está à vista.
+      if (!open.value) {
+        balloons.alert(DECISION_PENDING_TITLE, event.title)
+      }
     }
   }
 

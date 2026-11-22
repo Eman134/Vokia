@@ -38,7 +38,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <p v-if="store.confirmation !== null" class="mt-2 text-label font-semibold text-ok">
       {{ store.confirmation }}
     </p>
-    <div v-else class="mt-2 flex justify-end gap-2">
+    <div v-else-if="store.current.actions.length > 0" class="mt-2 flex justify-end gap-2">
       <UiButton
         v-for="action in store.current.actions"
         :key="action.id"

@@ -1,6 +1,6 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, type BalloonItem } from './balloonTypes'
+import { ALERT_TIMEOUT_MS, CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, type BalloonItem, type BalloonSource } from './balloonTypes'
 
 export const useBalloons = defineStore('balloons', () => {
   const queue = ref<BalloonItem[]>([])
@@ -9,6 +9,7 @@ export const useBalloons = defineStore('balloons', () => {
   const suggestions = ref<BalloonItem[]>([])
   const panelOpen = ref(false)
   let momentTimer: ReturnType<typeof setTimeout> | null = null
+  let alertCount = 0
   let confirmTimer: ReturnType<typeof setTimeout> | null = null
 
   function cancelMomentTimer(): void {
@@ -49,10 +50,21 @@ export const useBalloons = defineStore('balloons', () => {
     close()
   }
 
+  // Alerta só avisa: some sozinho e não vira sugestão guardada.
+  function onAlertTimeout(): void {
+    momentTimer = null
+    close()
+  }
+
   watch(current, (item) => {
     cancelMomentTimer()
-    if (item?.kind === 'moment' && !panelOpen.value) {
+    if (panelOpen.value) {
+      return
+    }
+    if (item?.kind === 'moment') {
       momentTimer = setTimeout(onMomentTimeout, MOMENT_TIMEOUT_MS)
+    } else if (item?.kind === 'alert') {
+      momentTimer = setTimeout(onAlertTimeout, ALERT_TIMEOUT_MS)
     }
   })
 
@@ -66,6 +78,12 @@ export const useBalloons = defineStore('balloons', () => {
     }
     queue.value.push(item)
     advance()
+  }
+
+  // Aviso temporário de uma ação importante: sem botões, fecha em ALERT_TIMEOUT_MS ou com Esc.
+  function alert(title: string, text?: string, source: BalloonSource = 'conversa'): void {
+    alertCount += 1
+    enqueue({ id: `alert:${alertCount}`, kind: 'alert', source, title, text, actions: [] })
   }
 
   async function act(actionId: string): Promise<void> {
@@ -125,6 +143,7 @@ export const useBalloons = defineStore('balloons', () => {
     suggestions,
     panelOpen,
     enqueue,
+    alert,
     replace,
     act,
     dismiss,

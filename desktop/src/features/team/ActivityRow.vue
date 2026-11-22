@@ -29,6 +29,8 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
   provider: 'M9 3v5 M15 3v5 M6 8h12v4a6 6 0 0 1-12 0z M12 18v3',
   artifact: 'M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6',
   attachment: 'M20 11l-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7',
+  check: 'M5 12.5l4.5 4.5L19 7',
+  warning: 'M12 4L22 20H2z M12 10v4 M12 17v.5',
   team: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20a6 6 0 0 1 12 0 M17 11a2.5 2.5 0 1 0 0-5 M17 14a5 5 0 0 1 4 6',
 }
 

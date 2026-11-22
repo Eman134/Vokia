@@ -107,6 +107,8 @@ export type RowIconKind =
   | 'artifact'
   | 'attachment'
   | 'team'
+  | 'check'
+  | 'warning'
 
 const ROW_ICON: Record<ToolCategory, RowIconKind> = {
   read: 'document',
@@ -353,6 +355,20 @@ function startedRow(tool: ToolActivity, detail: StartedDetail, titleOf: CardTitl
   const title = titleOf(detail.cardId)
   if (tool.status !== 'ok' || title === undefined) return []
   return [{ id: tool.callId, icon: ROW_ICON[tool.category], verb: STARTED_VERB, text: title, failed: false }]
+}
+
+const TASK_CONCLUDED_VERB = 'Tarefa concluída'
+const TASK_INTERRUPTED_VERB = 'Tarefa interrompida'
+
+// Resultado da tarefa em uma linha; o detalhe (turnos, agentes, hora) fica no tooltip do objetivo.
+export function taskResultRow(id: string, objective: string, concluded: boolean, detail: string): ActivityRowModel {
+  return {
+    id,
+    icon: concluded ? 'check' : 'warning',
+    verb: concluded ? TASK_CONCLUDED_VERB : TASK_INTERRUPTED_VERB,
+    chip: { label: objective, title: `${objective} — ${detail}`, icon: 'generic' },
+    failed: !concluded,
+  }
 }
 
 // O prompt inteiro fica na lista expansível; a linha mostra só o título da task.

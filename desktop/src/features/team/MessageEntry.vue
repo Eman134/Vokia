@@ -9,7 +9,7 @@ import type { AgentProfile } from './teamApi'
 import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
-import { protocolMessageRow, splitVokiaConfirmations, taskStartedRow } from './activitySummary'
+import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStartedRow, type ActivityRowModel } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
@@ -79,16 +79,14 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
 }
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
-const CHECK_ICON_PATH = 'M3.5 8.5l3 3 6-6.5'
-const WARNING_ICON_PATH = 'M8 2.5L14 13.5H2Z M8 6.5v3M8 11.2v.3'
 const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
 const ICON_SIZE = 16
 const USER_TEXT_CLASSES = 'w-fit max-w-full wrap-break-word px-3 py-1.5'
 const ERROR_SCRIBBLE_CLASSES = 'pointer-events-none absolute inset-x-0 -bottom-1.5 h-2 w-full text-danger/70'
 const AUTHOR_CLASSES = 'text-control font-semibold text-ink'
 
-function taskResultTitle(entry: VokiaTaskResult): string {
-  return entry.concluded ? `Tarefa concluída: ${entry.objective}` : `Tarefa interrompida: ${entry.objective}`
+function taskResultLine(entry: VokiaTaskResult): ActivityRowModel {
+  return taskResultRow(`task-result-${entry.time}`, entry.objective, entry.concluded, taskResultDetail(entry))
 }
 
 function taskResultDetail(entry: VokiaTaskResult): string {
@@ -242,22 +240,13 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     </div>
   </div>
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
-  <div
+  <ul
     v-else-if="entry.type === 'task-result'"
     data-testid="task-result"
-    class="flex items-start gap-2.5 rounded-md border border-line bg-surface px-3 py-2"
+    class="flex min-w-0 flex-col gap-1 text-caption text-muted"
   >
-    <UiIcon
-      class="mt-0.5 shrink-0"
-      :class="entry.concluded ? 'text-ok' : 'text-warn-text'"
-      :path="entry.concluded ? CHECK_ICON_PATH : WARNING_ICON_PATH"
-      :size="ICON_SIZE"
-    />
-    <div class="flex min-w-0 flex-col gap-0.5">
-      <p class="wrap-break-word text-control font-semibold text-ink">{{ taskResultTitle(entry) }}</p>
-      <p class="wrap-break-word text-caption text-muted">{{ taskResultDetail(entry) }}</p>
-    </div>
-  </div>
+    <ActivityRow :row="taskResultLine(entry)" />
+  </ul>
   <p
     v-else-if="entry.type === 'permission-result'"
     data-testid="permission-result"

@@ -18,6 +18,7 @@ import PausedAgents from './PausedAgents.vue'
 import UsageLimitNotice from './UsageLimitNotice.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
+import { useDelegationNotices } from '../balloon/useDelegationNotices'
 import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
 import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
@@ -83,6 +84,7 @@ const decisions = useDecisions()
 const control = useAgentControl()
 const usageLimit = useUsageLimit()
 useErrorNotices()
+useDelegationNotices()
 // Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
 const layoutKey = computed(() =>
   [

@@ -5,6 +5,7 @@ import { sendRequest, type RequestOutcome } from '../team/teamApi'
 import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
 import { agentName } from '../team/agents'
+import { useBalloons } from '../balloon/useBalloons'
 import { useFeed } from '../team/useFeed'
 import { importPlan, updateItemPlan, type PlanArtifactDetail } from '../artifacts/artifactApi'
 import { createBacklogItem, EMPTY_PLAN_STATE, type ItemPlanEntry, type ItemPlanInput } from './backlogApi'
@@ -44,6 +45,7 @@ export const PLAN_STEPS = [
   'Quebrar em lotes e tarefas',
   'Estimar e escolher quem faz',
 ] as const
+const PLAN_STARTED_TITLE = 'Plano iniciado'
 export const NO_PLAN_TEXT = 'Este item ainda não tem plano. O plano é opcional: você pode iniciar a task direto.'
 
 export const REVIEWED_PLAN_META = 'proposta aceita'
@@ -93,6 +95,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const triage = useTriage()
   const projects = useProjects()
   const decisions = useDecisions()
+  const balloons = useBalloons()
 
   function planOf(itemId: string): ItemPlan {
     return states.value[itemId] ?? EMPTY_PLAN
@@ -213,6 +216,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (!item || isAgentAwaiting(agent)) return
     backlog.setPlanNote(itemId, note)
     void triage.requestTriage(item)
+    balloons.alert(PLAN_STARTED_TITLE, `${agentName(agent)} está escrevendo o plano de ${item.title}.`)
     await dispatch(item, agent, buildPlanPrompt(item, depth))
   }
 
