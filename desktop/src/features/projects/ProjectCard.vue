@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiButton from '../../ui/UiButton.vue'
-import UiHandDivider from '../../ui/UiHandDivider.vue'
 import ProjectIcon from './ProjectIcon.vue'
 import { projectColorOf } from './projectColors'
 import { EDIT_LABEL, EMPTY_PATH_TEXT, OPEN_LABEL } from './projetosCopy'
@@ -17,9 +16,8 @@ const PIN_LABEL = 'Fixar'
 const UNPIN_LABEL = 'Desafixar'
 const PINNED_BADGE_LABEL = 'Fixado'
 
-const CARD_CLASSES = 'relative flex min-w-0 flex-col gap-4 overflow-hidden rounded-sm bg-surface py-5.5 pr-5.5 pl-9 shadow-paper'
-const SPINE_CLASSES = 'absolute inset-y-0 left-0 w-4'
-const SPINE_SEAM_CLASSES = 'absolute inset-y-0 left-4 h-full'
+const CARD_CLASSES = 'relative flex min-w-0 flex-col gap-4 overflow-hidden rounded-sm bg-surface py-5.5 pr-5.5 pl-7 shadow-paper'
+const SPINE_CLASSES = 'absolute inset-y-0 left-0 w-1.5'
 const HEADER_CLASSES = 'flex min-w-0 items-center gap-3.5'
 const BADGE_CLASSES = 'size-7 shrink-0'
 const NAME_CLASSES = 'truncate text-card-title font-bold text-ink'
@@ -38,7 +36,6 @@ const originLabel = computed(() =>
 <template>
   <article :class="CARD_CLASSES" data-testid="project-card">
     <span :class="SPINE_CLASSES" :style="{ backgroundColor: spineColor }" aria-hidden="true" />
-    <UiHandDivider :class="SPINE_SEAM_CLASSES" />
     <div :class="HEADER_CLASSES">
       <ProjectIcon :icon="project.symbol" :color="projectColorOf(project)" :class="BADGE_CLASSES" data-testid="project-card-icon" />
       <div class="min-w-0">

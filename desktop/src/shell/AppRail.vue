@@ -116,7 +116,7 @@ function toggleProject(project: Project) {
     :class="`relative flex h-full shrink-0 flex-col items-start gap-3 bg-paper px-4.75 py-5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
     :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
   >
-    <UiHandDivider class="absolute inset-y-0 right-0 h-full" />
+    <UiHandDivider class="absolute inset-y-0 right-0 h-full text-line!" />
     <div class="flex shrink-0 items-center gap-2.5 pl-1.25">
       <button
         type="button"
