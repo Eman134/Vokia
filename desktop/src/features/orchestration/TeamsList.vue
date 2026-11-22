@@ -98,7 +98,7 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
 
     <UiEmpty v-if="teams.length === 0" :title="VIEW_COPY.noTeams" />
     <ul v-else class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
-      <li v-for="team in teams" :key="team.id" class="flex min-w-0 flex-col rounded-md border border-line bg-surface">
+      <li v-for="team in teams" :key="team.id" class="flex min-w-0 flex-col rounded-md border border-line bg-surface transition-colors hover:bg-surface-2 motion-reduce:transition-none">
         <div class="flex min-w-0 items-center gap-2 px-4 pt-4">
           <button type="button" class="min-w-0 flex-1 cursor-pointer truncate text-left text-control font-semibold text-ink" @click="emit('open', team.id)">
             {{ team.name }}

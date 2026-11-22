@@ -36,7 +36,7 @@ const MENTION_CLASSES =
   `absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent disabled:opacity-40 motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const MENTION_GLYPH = '@'
 const SELECTED_TEXT_CLASSES = 'text-ink-pen'
-const UNSELECTED_CLASSES = 'hover:bg-hover'
+const UNSELECTED_CLASSES = 'hover:bg-surface-2'
 const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
 const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-3 w-[calc(100%-3.75rem)]`
 const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1.5 pl-3 pr-8 text-left text-label text-ink ${INK_FOCUS_CLASSES}`

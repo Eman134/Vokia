@@ -13,13 +13,13 @@
   --color-graphite-soft: light-dark(#d9d3c6, #34343b);
   --color-ink: light-dark(#1c1c21, #ececf0);
   --color-muted: light-dark(#6a6a75, #aeaeb8);
-  --color-faint: light-dark(#a6a6b0, #686873);
+  --color-faint: light-dark(#6b6b75, #8e8e9a);
   --color-ink-pen: light-dark(#2f4f9e, #9db4f0);
   --color-accent: var(--color-ink-pen);
   --color-accent-soft: light-dark(#e6ecf8, #1f2638);
   --color-accent-ink: light-dark(#ffffff, #121214);
   /* Véu de hover sobre superfícies neutras: tinta sobre fundo claro, claro sobre fundo escuro. */
-  --color-hover: light-dark(rgb(28 28 33 / 6%), rgb(236 236 240 / 8%));
+  --color-hover: light-dark(rgb(28 28 33 / 9%), rgb(236 236 240 / 12%));
   --color-ok: light-dark(#2f9e5b, #5fd08e);
   --color-ok-soft: light-dark(#e7f5ec, #1b2e23);
   --color-warn: light-dark(#e07b24, #ffa257);
