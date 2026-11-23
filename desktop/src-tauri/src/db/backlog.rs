@@ -953,6 +953,13 @@ fn write_item_plan(
             create_plan_cards(conn, project_id, &item, author, &draft)?;
         }
     }
+    if item.column.as_deref().unwrap_or(DEFAULT_COLUMN) == DEFAULT_COLUMN {
+        conn.execute(
+            "UPDATE backlog_items SET \"column\" = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id, READY_COLUMN],
+        )?;
+        refresh_parent_of(conn, project_id, item_id)?;
+    }
     Ok(())
 }
 

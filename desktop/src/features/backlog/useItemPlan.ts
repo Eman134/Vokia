@@ -183,6 +183,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     }
     states.value[itemId] = { state: 'proposto', agent: current.agent, proposal: current.interim }
     persist(itemId)
+    promoteToReady(itemId)
   }
 
   function selectedProjectId(): number {
@@ -326,6 +327,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (isFinalReply(entry.text)) {
       states.value[id] = { state: 'proposto', agent: entry.from, proposal: entry.text }
       persist(id)
+      promoteToReady(id)
       return
     }
     const current = states.value[id]
