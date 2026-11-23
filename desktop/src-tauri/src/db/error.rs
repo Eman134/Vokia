@@ -23,7 +23,6 @@ pub enum DbError {
     ProjectHasNoFolder,
     ProjectPathTaken(String),
     InvalidProject(&'static str),
-    InvalidSpeaker(String),
     InvalidAgent(String),
     InvalidSetting(String, String),
     ChannelNameTaken(String),
@@ -189,9 +188,6 @@ impl fmt::Display for DbError {
                 write!(f, "Já existe um projeto na pasta {path}.")
             }
             DbError::InvalidProject(reason) => write!(f, "{reason}"),
-            DbError::InvalidSpeaker(value) => {
-                write!(f, "O histórico guarda um remetente desconhecido: {value}.")
-            }
             DbError::InvalidAgent(value) => {
                 write!(
                     f,

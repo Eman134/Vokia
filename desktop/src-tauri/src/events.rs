@@ -12,6 +12,8 @@ pub const EVENT_NAME: &str = "vokia://event";
 pub enum Speaker {
     User,
     Agent(Agent),
+    /// Id bruto de um remetente que não existe mais nesta instância (ex.: agente de outra instância excluída).
+    Foreign(String),
 }
 
 impl Speaker {
@@ -19,6 +21,7 @@ impl Speaker {
         match self {
             Speaker::User => "user",
             Speaker::Agent(agent) => agent.as_str(),
+            Speaker::Foreign(raw) => raw.as_str(),
         }
     }
 
@@ -144,6 +147,9 @@ pub enum VokiaEvent {
         usage: Option<TurnUsage>,
         #[serde(default, skip_serializing_if = "is_false")]
         is_error: bool,
+        /// true quando algum lado da mensagem vem de uma instância excluída (o id bruto fica em `from`/`to`).
+        #[serde(default, skip_serializing_if = "is_false")]
+        foreign_instance: bool,
     },
     #[serde(rename_all = "camelCase")]
     AgentState {

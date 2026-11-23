@@ -136,7 +136,10 @@ impl Db {
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
             let (from, to, text, time, channel_id, activity, request_proposal, usage, task_result, item_id) = row?;
-            let from = parse_speaker(&from)?;
+            // Instâncias excluídas deixam remetentes que já não existem: o id bruto segue como Speaker::Foreign e a mensagem é carregada, marcada.
+            let foreign_instance = Speaker::parse(&from).is_none() || Speaker::parse(&to).is_none();
+            let from = Speaker::parse(&from).unwrap_or_else(|| Speaker::Foreign(from.clone()));
+            let to = Speaker::parse(&to).unwrap_or_else(|| Speaker::Foreign(to.clone()));
             // JSON ilegível não derruba o histórico: a linha cai como mensagem vazia, como qualquer outra sem texto útil.
             if let Some(result) = task_result.and_then(|json| serde_json::from_str::<StoredTaskResult>(&json).ok()) {
                 return Ok(VokiaEvent::TaskResult {
@@ -160,7 +163,8 @@ impl Db {
                     || text.starts_with("Não foi possível preparar o MCP "));
             Ok(VokiaEvent::Message {
                 from,
-                to: parse_speaker(&to)?,
+                to,
+                foreign_instance,
                 is_error,
                 text,
                 time: time as u64,
@@ -176,10 +180,6 @@ impl Db {
         })
         .collect()
     }
-}
-
-fn parse_speaker(value: &str) -> Result<Speaker, DbError> {
-    Speaker::parse(value).ok_or_else(|| DbError::InvalidSpeaker(value.to_string()))
 }
 
 #[cfg(test)]

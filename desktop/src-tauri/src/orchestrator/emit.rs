@@ -64,6 +64,7 @@ pub(crate) fn emit_feed_note(
             request_proposal: None,
             usage: None,
             is_error: false,
+            foreign_instance: false,
         },
     )
 }
@@ -110,6 +111,7 @@ pub(crate) fn emit_message(
             request_proposal,
             usage,
             is_error: false,
+            foreign_instance: false,
         },
     )
 }
@@ -151,6 +153,7 @@ pub(crate) fn emit_error_message(
             request_proposal: None,
             usage: None,
             is_error: true,
+            foreign_instance: false,
         },
     )
 }

@@ -2,6 +2,8 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { ALERT_TIMEOUT_MS, CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, type BalloonItem, type BalloonSource } from './balloonTypes'
 
+const DISMISS_LABEL = 'Dispensar'
+
 export const useBalloons = defineStore('balloons', () => {
   const queue = ref<BalloonItem[]>([])
   const current = ref<BalloonItem | null>(null)
@@ -80,10 +82,10 @@ export const useBalloons = defineStore('balloons', () => {
     advance()
   }
 
-  // Aviso temporário de uma ação importante: sem botões, fecha em ALERT_TIMEOUT_MS ou com Esc.
+  // Aviso temporário de uma ação importante: fecha em ALERT_TIMEOUT_MS, com Esc ou no botão Dispensar.
   function alert(title: string, text?: string, source: BalloonSource = 'conversa'): void {
     alertCount += 1
-    enqueue({ id: `alert:${alertCount}`, kind: 'alert', source, title, text, actions: [] })
+    enqueue({ id: `alert:${alertCount}`, kind: 'alert', source, title, text, actions: [{ id: 'dismiss', label: DISMISS_LABEL }] })
   }
 
   async function act(actionId: string): Promise<void> {

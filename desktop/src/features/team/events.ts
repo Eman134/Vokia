@@ -84,6 +84,8 @@ export interface VokiaMessage {
   requestProposal?: RequestProposal
   usage?: TurnUsage
   isError?: boolean
+  /** true quando algum lado veio de uma instância excluída; `from`/`to` trazem o id bruto, que pode não estar em `Speaker`. */
+  foreignInstance?: boolean
 }
 
 export interface VokiaAgentState {

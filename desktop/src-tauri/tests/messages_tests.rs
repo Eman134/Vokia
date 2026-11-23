@@ -177,6 +177,7 @@ fn evento_serializa_request_proposal_em_camel_case_e_omite_quando_nao_ha() {
         request_proposal,
         usage: None,
         is_error: false,
+        foreign_instance: false,
     };
     let with = serde_json::to_value(message(Some(RequestProposal {
         title: "T".to_string(),
@@ -389,4 +390,38 @@ fn banco_sem_a_coluna_item_id_migra_e_mantem_as_mensagens() {
     assert_eq!(history.len(), 2);
     assert!(matches!(&history[0], VokiaEvent::Message { text, item_id: None, .. } if text == "antiga"));
     assert!(matches!(&history[1], VokiaEvent::Message { item_id: Some(item), .. } if item == "PP-9"));
+}
+
+#[test]
+fn mensagem_de_instancia_excluida_carrega_com_id_bruto_e_marca_foreign_instance() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "instancia-excluida");
+    db.insert_message(project_id, agent("vexa"), Speaker::User, "de fora", 1, None, None, None, None, None)
+        .unwrap();
+    db.insert_message(project_id, Speaker::User, agent("axiom"), "local", 2, None, None, None, None, None)
+        .unwrap();
+    db.conn()
+        .unwrap()
+        .execute("UPDATE messages SET from_agent = 'vexa-antiga' WHERE text = 'de fora'", [])
+        .unwrap();
+
+    let history = db.load_history(project_id).unwrap();
+
+    assert_eq!(history.len(), 2, "a mensagem de instância excluída não pode sumir do histórico");
+    match &history[0] {
+        VokiaEvent::Message { from, to, text, foreign_instance, .. } => {
+            assert_eq!(from.as_str(), "vexa-antiga");
+            assert_eq!(*to, Speaker::User);
+            assert_eq!(text, "de fora");
+            assert!(*foreign_instance);
+        }
+        other => panic!("esperava VokiaEvent::Message, veio {other:?}"),
+    }
+    assert!(matches!(&history[1], VokiaEvent::Message { foreign_instance: false, .. }));
+
+    let json = serde_json::to_value(&history[0]).unwrap();
+    assert_eq!(json["from"], serde_json::json!("vexa-antiga"));
+    assert_eq!(json["foreignInstance"], serde_json::json!(true));
+    assert!(serde_json::to_value(&history[1]).unwrap().get("foreignInstance").is_none());
 }
