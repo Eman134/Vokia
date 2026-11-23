@@ -3,6 +3,8 @@ import type { TurnUsage } from './events'
 const THOUSAND = 1_000
 const MILLION = 1_000_000
 const CENT = 0.01
+const MS_PER_SECOND = 1_000
+const SECONDS_PER_MINUTE = 60
 const INT_FORMAT = new Intl.NumberFormat('pt-BR')
 
 export function formatTokenCount(value: number): string {
@@ -26,6 +28,19 @@ export function formatCostUsd(value?: number): string | null {
 
 export function formatUsageModel(usage?: TurnUsage): string | null {
   return usage?.model?.trim() || null
+}
+
+export function formatThinkingDuration(thinkingMs?: number): string | null {
+  if (thinkingMs === undefined || !Number.isFinite(thinkingMs) || thinkingMs < 0) {
+    return null
+  }
+  const totalSeconds = Math.floor(Math.max(thinkingMs, MS_PER_SECOND) / MS_PER_SECOND)
+  if (totalSeconds < SECONDS_PER_MINUTE) {
+    return `${totalSeconds}s`
+  }
+  const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE)
+  const seconds = totalSeconds % SECONDS_PER_MINUTE
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`
 }
 
 export type TokenSide = 'in' | 'out'

@@ -11,7 +11,7 @@ import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStartedRow, type ActivityRowModel } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
-import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
+import { formatCostUsd, formatThinkingDuration, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
@@ -42,6 +42,11 @@ const agentUsage = computed(() =>
 const usageModel = computed(() => formatUsageModel(agentUsage.value))
 const usageCost = computed(() => formatCostUsd(agentUsage.value?.costUsd))
 const usageSplit = computed(() => tokenSplit(agentUsage.value))
+const thinkingDuration = computed(() =>
+  props.entry.type === 'message' && props.entry.from !== 'user'
+    ? formatThinkingDuration(props.entry.activity?.thinkingMs)
+    : null,
+)
 const usageTooltip = computed(() =>
   props.entry.type === 'message' && props.entry.from !== 'user'
     ? formatUsageTooltip(props.entry.usage)
@@ -84,6 +89,8 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
+const THINKING_ICON_PATH =
+  'M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 3 3 3 3 0 0 0 3-3V7a3 3 0 0 0-3-3z M15 4a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-3 3 3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z'
 const ICON_SIZE = 16
 const EXCHANGE_ARROW_WIDTH = 40
 const EXCHANGE_ARROW_HEIGHT = 14
@@ -177,7 +184,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   <UiTooltip
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
     class="flex min-w-0 flex-col items-center gap-1 text-center"
-    :text="[TIME_FORMAT.format(entry.time), entry.text, usageTooltip].filter(Boolean).join('\n')"
+    :text="[TIME_FORMAT.format(entry.time), thinkingDuration ? `Pensou: ${thinkingDuration}` : '', entry.text, usageTooltip].filter(Boolean).join('\n')"
     data-testid="agent-exchange"
   >
     <div class="flex min-w-0 items-center gap-x-2">
@@ -248,6 +255,27 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         />
         <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
         <span v-if="usageModel" data-testid="message-usage" class="text-xs text-muted">· {{ usageModel }}</span>
+        <span
+          v-if="thinkingDuration"
+          data-testid="message-thinking-duration"
+          class="inline-flex items-center gap-1 text-xs text-muted tabular-nums"
+          :title="`Pensou por ${thinkingDuration}`"
+        >
+          <span aria-hidden="true">·</span>
+          <svg
+            viewBox="0 0 24 24"
+            class="size-3 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path :d="THINKING_ICON_PATH" />
+          </svg>
+          <span>{{ thinkingDuration }}</span>
+        </span>
         <span
           v-if="usageCost || usageSplit"
           data-testid="message-usage-detail"
