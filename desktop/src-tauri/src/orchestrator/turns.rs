@@ -7,7 +7,7 @@ use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, ToolCategory, TurnActivity, TurnUsage};
 use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot, StoredTaskResult};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
-use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
+use crate::mcp::{Delegation, DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::policy::{self, Passage, Verdict};
 use crate::orchestration::snapshot::placement_of;
@@ -210,8 +210,7 @@ pub(super) async fn run_turns(
             confirmations,
             decision,
             mut proposal,
-            delegation: registered_delegation,
-            delegation_intent,
+            delegations: registered_delegations,
             variables,
         } = outcome;
         // Líder com julgamento de fluxo ligado: a linha #fluxo grava o modo da task e não vai para a tela.
@@ -272,28 +271,26 @@ pub(super) async fn run_turns(
                 usage,
             );
         }
-        let intent = delegation_intent.filter(|_| registered_delegation.is_some());
-        let mut delegation =
-            merged_delegation(registered_delegation, text_delegation, definition.alternate).map(
-                |(helper, request)| {
-                    let request = match &intent {
-                        Some(intent) => labeled_request(&request, intent),
-                        None => request,
-                    };
-                    (helper, request)
-                },
-            );
+        let (notices, work): (Vec<Delegation>, Vec<Delegation>) =
+            resolve_delegations(registered_delegations, text_delegation, definition.alternate)
+                .into_iter()
+                .partition(|delegation| delegation.intent.notify);
         let mut passage: Option<Passage> = None;
         let mut escalation: Option<String> = None;
-        let line_item = intent
-            .as_ref()
-            .and_then(|intent| intent.item_id.as_deref())
-            .or(*item_id);
-        // Gateway paralelo: a delegação vira uma entrega a cada saída, no mesmo lote.
-        let mut parallel_checked: Vec<(Agent, String, Passage)> = Vec::new();
+        let mut delegation: Option<(Agent, String)> = None;
+        let mut intent: Option<DelegationIntent> = None;
+        let mut parallel_checked: Vec<Branch> = Vec::new();
         if rejected.is_empty() {
-            if let Some((helper, helper_request)) = delegation.clone() {
-                let event = intent.as_ref().and_then(|intent| intent.event.as_deref());
+            let mut deliveries: Vec<Branch> = Vec::new();
+            // Gateway paralelo: a delegação vira uma entrega a cada saída, no mesmo lote.
+            let mut forks: Vec<Branch> = Vec::new();
+            for Delegation {
+                agent: helper,
+                request,
+                intent: work_intent,
+            } in work
+            {
+                let line_item = work_intent.item_id.as_deref().or(*item_id);
                 match policy::check(
                     exchange.orchestration,
                     team,
@@ -301,18 +298,17 @@ pub(super) async fn run_turns(
                     &helper,
                     &counters.task,
                     &edge_passages(app, project_id, line_item, &counters.task),
-                    event,
+                    work_intent.event.as_deref(),
                 ) {
                     Verdict::Deliver(found) => {
-                        if let Some(motive) =
-                            skip_refusal(exchange, &turn.speaker, line_item, &found)
+                        if let Some(motive) = skip_refusal(exchange, &turn.speaker, line_item, &found)
                         {
                             rejected.push(motive);
-                        } else {
-                            // Gateway exclusivo: o evento escolhe o destino, e o que o agente citou não vale.
-                            if let Some(routed) =
-                                found.routed.as_ref().filter(|routed| routed.to != helper)
-                            {
+                            continue;
+                        }
+                        // Gateway exclusivo: o evento escolhe o destino, e o que o agente citou não vale.
+                        let to = match found.routed.as_ref().filter(|routed| routed.to != helper) {
+                            Some(routed) => {
                                 let text = format!(
                                     "Gateway enviou a {} pelo evento {}.",
                                     team.name_of(&routed.to),
@@ -325,10 +321,16 @@ pub(super) async fn run_turns(
                                     &text,
                                     now_millis()?,
                                 )?;
-                                delegation = Some((routed.to.clone(), helper_request));
+                                routed.to.clone()
                             }
-                            passage = Some(found);
-                        }
+                            None => helper,
+                        };
+                        deliveries.push(Branch {
+                            to,
+                            request,
+                            passage: found,
+                            intent: work_intent.clone(),
+                        });
                     }
                     Verdict::Fork(found) => {
                         let refused = found
@@ -336,23 +338,42 @@ pub(super) async fn run_turns(
                             .find_map(|branch| skip_refusal(exchange, &turn.speaker, line_item, branch));
                         match refused {
                             Some(motive) => rejected.push(motive),
-                            None => {
-                                parallel_checked = found
-                                    .into_iter()
-                                    .filter_map(|branch| {
-                                        let to = branch.routed.as_ref()?.to.clone();
-                                        Some((to, helper_request.clone(), branch))
-                                    })
-                                    .collect();
-                            }
+                            None => forks.extend(found.into_iter().filter_map(|branch| {
+                                let to = branch.routed.as_ref()?.to.clone();
+                                Some(Branch {
+                                    to,
+                                    request: request.clone(),
+                                    passage: branch,
+                                    intent: work_intent.clone(),
+                                })
+                            })),
                         }
-                        delegation = None;
                     }
                     Verdict::Refuse(motive) => rejected.push(motive),
                     Verdict::Escalate(motive) => escalation = Some(motive),
                 }
             }
+            // Uma entrega em série segue o caminho normal; várias, ou uma bifurcação, viram lote paralelo.
+            if forks.is_empty() && deliveries.len() == 1 {
+                if let Some(Branch {
+                    to,
+                    request,
+                    passage: found,
+                    intent: only,
+                }) = deliveries.pop()
+                {
+                    delegation = Some((to, request));
+                    passage = Some(found);
+                    intent = Some(only);
+                }
+            } else {
+                parallel_checked = deliveries.into_iter().chain(forks).collect();
+            }
         }
+        let line_item = intent
+            .as_ref()
+            .and_then(|intent| intent.item_id.as_deref())
+            .or(*item_id);
         if !rejected.is_empty() {
             let shown = with_confirmations(
                 (!visible.is_empty()).then(|| visible.clone()),
@@ -393,6 +414,30 @@ pub(super) async fn run_turns(
             continue;
         }
         rejections = 0;
+        for Delegation {
+            agent,
+            request,
+            intent: notice,
+        } in notices
+        {
+            let notice_item = notice.item_id.as_deref().or(*item_id);
+            say(
+                app,
+                project_id,
+                transcript,
+                &turn.speaker,
+                Speaker::from(agent),
+                &request,
+                team,
+                MessageScope {
+                    channel_id: scope.channel_id,
+                    item_id: notice_item,
+                },
+                None,
+                None,
+                None,
+            )?;
+        }
         let mut confirmations = confirmations;
         confirmations.extend(cards.confirmations);
         let advanced = applied.created_variable
@@ -402,7 +447,7 @@ pub(super) async fn run_turns(
         let helpers = delegation
             .iter()
             .map(|(helper, _)| helper)
-            .chain(parallel_checked.iter().map(|(helper, _, _)| helper));
+            .chain(parallel_checked.iter().map(|branch| &branch.to));
         let mut delegated = false;
         for helper in helpers {
             counters.act(helper);
@@ -469,8 +514,8 @@ pub(super) async fn run_turns(
         if !parallel_checked.is_empty() {
             let snapshot = exchange.orchestration;
             let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
-            for (helper, _, found) in &parallel_checked {
-                count_passage(&mut counters.task, &turn.speaker, helper, found);
+            for branch in &parallel_checked {
+                count_passage(&mut counters.task, &turn.speaker, &branch.to, &branch.passage);
             }
             let batch = open_batch(
                 state,
@@ -496,12 +541,19 @@ pub(super) async fn run_turns(
                 return Ok(TaskOutcome::Paused);
             }
             let fork_result: Result<(), FlowError> = (|| {
-                for (helper, request, found) in parallel_checked {
+                for Branch {
+                    to: helper,
+                    request,
+                    passage: found,
+                    intent: branch_intent,
+                } in parallel_checked
+                {
+                    let branch_item = branch_intent.item_id.as_deref().or(*item_id);
                     record_passage(
                         app,
                         exchange.run_id,
                         project_id,
-                        line_item,
+                        branch_item,
                         None,
                         &turn.speaker,
                         &helper,
@@ -512,12 +564,12 @@ pub(super) async fn run_turns(
                         .map_or(1, |placement| placement.max_instances);
                     let mut context = RequestContext::new(
                         exchange.run_id,
-                        line_item.map(str::to_string),
+                        branch_item.map(str::to_string),
                         *channel_id,
                     );
                     context.batch = Some(batch);
-                    context.ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
-                    count_branch(state, project_id, line_item)?;
+                    context.ping_seconds = branch_intent.ping_seconds;
+                    count_branch(state, project_id, branch_item)?;
                     dispatch_request(
                         app,
                         state,
@@ -538,7 +590,7 @@ pub(super) async fn run_turns(
                         team,
                         MessageScope {
                             channel_id: scope.channel_id,
-                            item_id: line_item,
+                            item_id: branch_item,
                         },
                         None,
                         None,
@@ -1383,12 +1435,40 @@ fn feed_text(visible: &str, accepted: &[Change]) -> Option<String> {
 
 // Um turno delega no máximo uma vez: pedido igual pela ferramenta e pela linha `@Nome:` conta uma vez,
 // e a ferramenta vale se os dois divergirem. Em tarefa alternada o revezamento já decide quem fala.
-fn merged_delegation(
-    registered: Option<(Agent, String)>,
+// Delegações registradas valem; sem nenhuma, a linha `@Nome:` do texto vira uma. No modo alternado ninguém é delegado.
+fn resolve_delegations(
+    registered: Vec<Delegation>,
     from_text: Option<(Agent, String)>,
     alternate: bool,
-) -> Option<(Agent, String)> {
-    registered.or(from_text).filter(|_| !alternate)
+) -> Vec<Delegation> {
+    if alternate {
+        return Vec::new();
+    }
+    if registered.is_empty() {
+        return from_text
+            .map(|(agent, request)| Delegation {
+                agent,
+                request,
+                intent: DelegationIntent::default(),
+            })
+            .into_iter()
+            .collect();
+    }
+    registered
+        .into_iter()
+        .map(|delegation| Delegation {
+            request: labeled_request(&delegation.request, &delegation.intent),
+            ..delegation
+        })
+        .collect()
+}
+
+// Saída de um turno que vai a um agente; `intent` guarda o item, o evento e o ping pedidos para ela.
+struct Branch {
+    to: Agent,
+    request: String,
+    passage: Passage,
+    intent: DelegationIntent,
 }
 
 fn with_confirmations(feed: Option<String>, confirmations: &[String]) -> Option<String> {

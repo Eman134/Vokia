@@ -28,13 +28,22 @@ impl VariableEffects {
     }
 }
 
-// Tipo, evento e item que a ferramenta `delegate` informou junto do pedido.
-#[derive(Clone, Debug, Default)]
+// Tipo, evento e item que a ferramenta `delegate` informou junto do pedido; `notify` marca só um aviso.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DelegationIntent {
     pub kind: Option<String>,
     pub event: Option<String>,
     pub item_id: Option<String>,
     pub ping_seconds: Option<u64>,
+    pub notify: bool,
+}
+
+// Uma chamada de `delegate` aceita na resposta; cada uma vira uma entrega independente.
+#[derive(Clone, Debug)]
+pub struct Delegation {
+    pub agent: Agent,
+    pub request: String,
+    pub intent: DelegationIntent,
 }
 
 #[derive(Debug, Default)]
@@ -46,8 +55,7 @@ pub struct SlotState {
     pub changed: bool,
     pub decision: Option<SlotDecision>,
     pub proposal: Option<RequestProposal>,
-    pub delegation: Option<(Agent, String)>,
-    pub delegation_intent: Option<DelegationIntent>,
+    pub delegations: Vec<Delegation>,
     pub variables: VariableEffects,
 }
 
@@ -57,8 +65,7 @@ pub struct ExchangeOutcome {
     pub confirmations: Vec<String>,
     pub decision: Option<SlotDecision>,
     pub proposal: Option<RequestProposal>,
-    pub delegation: Option<(Agent, String)>,
-    pub delegation_intent: Option<DelegationIntent>,
+    pub delegations: Vec<Delegation>,
     pub variables: VariableEffects,
 }
 
@@ -68,8 +75,9 @@ impl ExchangeOutcome {
         self.confirmations.extend(other.confirmations);
         self.decision = other.decision.or(self.decision.take());
         self.proposal = other.proposal.or(self.proposal.take());
-        self.delegation = other.delegation.or(self.delegation.take());
-        self.delegation_intent = other.delegation_intent.or(self.delegation_intent.take());
+        if !other.delegations.is_empty() {
+            self.delegations = other.delegations;
+        }
         self.variables.absorb(other.variables);
     }
 }
@@ -102,8 +110,7 @@ impl ExchangeSlot {
             confirmations: std::mem::take(&mut state.confirmations),
             decision: state.decision.take(),
             proposal: state.proposal.take(),
-            delegation: state.delegation.take(),
-            delegation_intent: state.delegation_intent.take(),
+            delegations: std::mem::take(&mut state.delegations),
             variables: std::mem::take(&mut state.variables),
         }
     }

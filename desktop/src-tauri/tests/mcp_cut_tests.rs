@@ -164,25 +164,43 @@ fn mencao_do_usuario_na_barra_chega_intacta_ao_primeiro_turno() {
     assert_eq!(turn.received, "@Vexa revise o login");
 }
 
+fn registered(agent: Agent, request: &str) -> Delegation {
+    Delegation {
+        agent,
+        request: request.to_string(),
+        intent: DelegationIntent::default(),
+    }
+}
+
 #[test]
 fn pedido_igual_pela_ferramenta_e_pelo_texto_conta_uma_delegacao_so() {
     let (_, vexa) = axiom_and_vexa();
-    let same = Some((vexa.clone(), "Revise".to_string()));
 
-    let merged = merged_delegation(same.clone(), same.clone(), false);
+    let merged = resolve_delegations(
+        vec![registered(vexa.clone(), "Revise")],
+        Some((vexa.clone(), "Revise".to_string())),
+        false,
+    );
 
-    assert_eq!(merged, same);
+    assert_eq!(merged.len(), 1);
+    assert_eq!(merged[0].agent, vexa);
 }
 
 #[test]
 fn se_ferramenta_e_texto_divergem_a_ferramenta_vale_e_o_texto_sozinho_tambem_delega() {
     let (axiom, vexa) = axiom_and_vexa();
-    let tool = Some((vexa.clone(), "Da ferramenta".to_string()));
-    let text = Some((axiom, "Do texto".to_string()));
+    let text = Some((axiom.clone(), "Do texto".to_string()));
 
-    assert_eq!(merged_delegation(tool.clone(), text.clone(), false), tool);
-    assert_eq!(merged_delegation(None, text.clone(), false), text);
-    assert!(merged_delegation(tool, text, true).is_none());
+    let by_tool = resolve_delegations(vec![registered(vexa, "Da ferramenta")], text.clone(), false);
+    let by_text = resolve_delegations(Vec::new(), text.clone(), false);
+    let alternate = resolve_delegations(Vec::new(), text, true);
+
+    assert_eq!(by_tool.len(), 1);
+    assert_eq!(by_tool[0].request, "Da ferramenta");
+    assert_eq!(by_text.len(), 1);
+    assert_eq!(by_text[0].agent, axiom);
+    assert_eq!(by_text[0].request, "Do texto");
+    assert!(alternate.is_empty());
 }
 
 #[test]

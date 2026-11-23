@@ -15,7 +15,7 @@ pub use registry::{random_hex, Binding, RandomnessUnavailable};
 #[cfg(test)]
 pub use registry::Token;
 pub use server::{McpConfigFile, McpServer, McpSession};
-pub use slot::{DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
+pub use slot::{Delegation, DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
 
 pub const SERVER_NAME: &str = "vokia";
 pub const CONFIG_DIR: &str = "mcp";

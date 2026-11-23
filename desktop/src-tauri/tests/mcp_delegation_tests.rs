@@ -4,17 +4,24 @@ use super::backlog_tests::world;
 use super::*;
 use crate::agents::Agent;
 
-const REGISTERED: &str = "Delegação registrada. Termine a resposta agora.";
-const ALREADY: &str = "Já há uma delegação registrada nesta resposta. Termine a resposta agora.";
+const REGISTERED: &str = "Delegação registrada.";
+const DUPLICATE: &str =
+    "Delegação repetida ignorada: esse agente já recebeu este tipo de pedido neste item nesta resposta.";
+const LIMIT: &str = "Limite de delegações por resposta atingido.";
 const EMPTY_REQUEST: &str = "O pedido da delegação não pode ser vazio.";
 const TO_SELF: &str = "Você não pode delegar a si mesmo.";
+const MAX_PER_REPLY: usize = 5;
 
 fn agent(id: &str) -> Agent {
     Agent::from_stored(id).expect("agente")
 }
 
-fn request_of(delegation: &Option<(Agent, String)>) -> Option<&str> {
-    delegation.as_ref().map(|(_, request)| request.as_str())
+fn requests(collected: &ExchangeOutcome) -> Vec<&str> {
+    collected
+        .delegations
+        .iter()
+        .map(|delegation| delegation.request.as_str())
+        .collect()
 }
 
 #[test]
@@ -32,11 +39,10 @@ fn delegate_registra_agente_e_pedido_no_slot_sem_bloquear() {
     let collected = axiom.slot.end();
 
     assert!(!outcome.is_error, "{}", outcome.text);
-    assert_eq!(outcome.text, REGISTERED);
-    assert_eq!(
-        collected.delegation,
-        Some((agent("vexa"), "Revise o login".to_string()))
-    );
+    assert!(outcome.text.starts_with(REGISTERED), "{}", outcome.text);
+    assert_eq!(collected.delegations.len(), 1);
+    assert_eq!(collected.delegations[0].agent, agent("vexa"));
+    assert_eq!(collected.delegations[0].request, "Revise o login");
 }
 
 #[test]
@@ -54,7 +60,7 @@ fn delegar_a_si_mesmo_e_recusado_e_nada_e_gravado() {
 
     assert!(outcome.is_error);
     assert_eq!(outcome.text, TO_SELF);
-    assert!(axiom.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegations.is_empty());
 }
 
 #[test]
@@ -84,7 +90,7 @@ fn agente_inexistente_e_recusado_e_a_frase_lista_os_colegas_sem_o_proprio_agente
         "{}",
         outcome.text
     );
-    assert!(axiom.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegations.is_empty());
 }
 
 #[test]
@@ -104,11 +110,11 @@ fn pedido_vazio_ou_em_branco_e_recusado() {
         assert_eq!(outcome.text, EMPTY_REQUEST);
     }
 
-    assert!(axiom.slot.end().delegation.is_none());
+    assert!(axiom.slot.end().delegations.is_empty());
 }
 
 #[test]
-fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
+fn delegacao_igual_na_mesma_resposta_e_ignorada_com_aviso_e_a_primeira_fica() {
     let world = world();
     let project = world.project("a");
     let axiom = world.leader(project);
@@ -126,57 +132,119 @@ fn segunda_delegacao_na_mesma_resposta_e_recusada_e_a_primeira_fica() {
     );
     let collected = axiom.slot.end();
 
-    assert!(second.is_error);
-    assert_eq!(second.text, ALREADY);
-    assert_eq!(request_of(&collected.delegation), Some("Primeiro"));
+    assert!(!second.is_error, "{}", second.text);
+    assert_eq!(second.text, DUPLICATE);
+    assert_eq!(requests(&collected), vec!["Primeiro"]);
 }
 
 #[test]
-fn delegacao_de_uma_troca_nao_vaza_para_a_proxima_nem_para_outro_agente() {
+fn varias_delegacoes_na_mesma_resposta_ficam_registradas_com_contexto() {
     let world = world();
     let project = world.project("a");
     let axiom = world.leader(project);
-    let vexa = world.agent("vexa", "Vexa", project);
+    let first_card = world.create(&axiom, "Lote 1");
+    let second_card = world.create(&axiom, "Lote 2");
 
     axiom.slot.begin(None, None);
     world.call(
         &axiom,
         "delegate",
-        json!({ "agent": "Vexa", "request": "Da Axiom" }),
+        json!({ "agent": "Ember", "request": "Começamos o item", "notify": true }),
     );
-    axiom.slot.begin(None, None);
+    world.call(
+        &axiom,
+        "delegate",
+        json!({ "agent": "Vexa", "request": "Lote 1", "item_id": first_card }),
+    );
+    let last = world.call(
+        &axiom,
+        "delegate",
+        json!({ "agent": "Vexa", "request": "Lote 2", "item_id": second_card }),
+    );
+    let collected = axiom.slot.end();
 
-    assert!(vexa.slot.end().delegation.is_none());
-    assert!(axiom.slot.end().delegation.is_none());
+    assert!(!last.is_error, "{}", last.text);
+    assert!(
+        last.text.contains("Ember · geral · sem item · aviso enviado"),
+        "{}",
+        last.text
+    );
+    assert!(
+        last.text.contains(&format!("Vexa · geral · {first_card} · pendente")),
+        "{}",
+        last.text
+    );
+    assert!(
+        last.text.contains(&format!("Vexa · geral · {second_card} · pendente")),
+        "{}",
+        last.text
+    );
+    assert_eq!(collected.delegations.len(), 3);
+    assert!(collected.delegations[0].intent.notify);
+    assert_eq!(
+        requests(&collected),
+        vec!["Começamos o item", "Lote 1", "Lote 2"]
+    );
 }
 
 #[test]
-fn argumentos_fora_do_schema_voltam_como_is_error() {
+fn aviso_nao_ocupa_vaga_e_o_teto_recusa_a_delegacao_alem_de_cinco() {
     let world = world();
     let project = world.project("a");
     let axiom = world.leader(project);
+    let cards: Vec<String> = (1..=MAX_PER_REPLY + 1)
+        .map(|n| world.create(&axiom, &format!("Card {n}")))
+        .collect();
 
-    let outcome = world.call(&axiom, "delegate", json!({ "agent": "Vexa" }));
+    axiom.slot.begin(None, None);
+    world.call(
+        &axiom,
+        "delegate",
+        json!({ "agent": "Ember", "request": "Aviso", "notify": true }),
+    );
+    for card in &cards[..MAX_PER_REPLY] {
+        let outcome = world.call(
+            &axiom,
+            "delegate",
+            json!({ "agent": "Vexa", "request": "Faça", "item_id": card }),
+        );
+        assert!(!outcome.is_error, "{}", outcome.text);
+    }
+    let refused = world.call(
+        &axiom,
+        "delegate",
+        json!({ "agent": "Vexa", "request": "Faça", "item_id": cards[MAX_PER_REPLY] }),
+    );
+    let collected = axiom.slot.end();
 
-    assert!(outcome.is_error);
-    assert!(outcome.text.contains("delegate"), "{}", outcome.text);
+    assert!(refused.is_error);
+    assert_eq!(refused.text, LIMIT);
+    assert_eq!(collected.delegations.len(), 1 + MAX_PER_REPLY);
 }
 
 #[test]
-fn absorb_fica_com_a_delegacao_mais_recente() {
+fn absorb_fica_com_as_delegacoes_mais_recentes() {
     let mut collected = ExchangeOutcome {
-        delegation: Some((agent("vexa"), "Antiga".to_string())),
+        delegations: vec![Delegation {
+            agent: agent("vexa"),
+            request: "Antiga".to_string(),
+            intent: DelegationIntent::default(),
+        }],
         ..ExchangeOutcome::default()
     };
 
     collected.absorb(ExchangeOutcome::default());
-    assert_eq!(request_of(&collected.delegation), Some("Antiga"));
+    assert_eq!(requests(&collected), vec!["Antiga"]);
 
     collected.absorb(ExchangeOutcome {
-        delegation: Some((agent("vexa"), "Nova".to_string())),
+        delegations: vec![Delegation {
+            agent: agent("vexa"),
+            request: "Nova".to_string(),
+            intent: DelegationIntent::default(),
+        }],
         ..ExchangeOutcome::default()
     });
-    assert_eq!(request_of(&collected.delegation), Some("Nova"));
+    assert_eq!(requests(&collected), vec!["Nova"]);
 }
 
 mod map_rules {
@@ -270,7 +338,7 @@ mod map_rules {
             outcome.text,
             "Sentry não é um destino permitido para Axiom. Destinos permitidos: Vexa."
         );
-        assert!(collected.delegation.is_none());
+        assert!(collected.delegations.is_empty());
     }
 
     #[test]
@@ -290,7 +358,7 @@ mod map_rules {
 
         assert!(outcome.is_error);
         assert_eq!(outcome.text, EVENT_NOT_ALLOWED);
-        assert!(collected.delegation.is_none());
+        assert!(collected.delegations.is_empty());
     }
 
     #[test]
@@ -309,10 +377,9 @@ mod map_rules {
         let collected = axiom.slot.end();
 
         assert!(!outcome.is_error, "{}", outcome.text);
-        assert_eq!(
-            collected.delegation,
-            Some((agent("vexa"), "Implemente".to_string()))
-        );
+        assert_eq!(collected.delegations.len(), 1);
+        assert_eq!(collected.delegations[0].agent, agent("vexa"));
+        assert_eq!(collected.delegations[0].request, "Implemente");
     }
 
     #[test]
@@ -335,11 +402,11 @@ mod map_rules {
             outcome.text,
             "O tipo testar não é o da seta de Axiom para Vexa: use implementar."
         );
-        assert!(collected.delegation.is_none());
+        assert!(collected.delegations.is_empty());
     }
 
     #[test]
-    fn segunda_delegacao_ao_mesmo_par_sem_execucao_paralela_e_recusada() {
+    fn segunda_delegacao_ao_mesmo_par_e_ignorada_e_a_primeira_fica() {
         let world = world();
         let project = world.project("a");
         enforced_map(&world, SEQUENTIAL);
@@ -358,9 +425,9 @@ mod map_rules {
         );
         let collected = axiom.slot.end();
 
-        assert!(second.is_error);
-        assert_eq!(second.text, ALREADY);
-        assert_eq!(request_of(&collected.delegation), Some("Um"));
+        assert!(!second.is_error, "{}", second.text);
+        assert_eq!(second.text, DUPLICATE);
+        assert_eq!(requests(&collected), vec!["Um"]);
     }
 
     #[test]
@@ -396,9 +463,9 @@ mod map_rules {
             refused.text,
             format!("O item {foreign} não existe no backlog deste projeto.")
         );
-        assert!(after_refusal.delegation.is_none());
+        assert!(after_refusal.delegations.is_empty());
         assert!(!accepted.is_error, "{}", accepted.text);
-        assert_eq!(request_of(&collected.delegation), Some("Faça"));
+        assert_eq!(requests(&collected), vec!["Faça"]);
     }
 }
 
@@ -444,8 +511,8 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
         );
         let after = axiom.slot.end();
         assert!(!outcome_card.is_error, "deveria aceitar delegação de card para {cli}: {}", outcome_card.text);
-        assert_eq!(outcome_card.text, REGISTERED);
-        assert_eq!(request_of(&after.delegation), Some("Faça o card"));
+        assert!(outcome_card.text.starts_with(REGISTERED), "{}", outcome_card.text);
+        assert_eq!(requests(&after), vec!["Faça o card"]);
 
         // 2. Sem item_id (conversa pura de texto) -> DEVE ACEITAR
         axiom.slot.begin(None, None);
@@ -456,8 +523,8 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
         );
         let after_text = axiom.slot.end();
         assert!(!outcome_text.is_error, "deveria aceitar texto para {cli}: {}", outcome_text.text);
-        assert_eq!(outcome_text.text, REGISTERED);
-        assert_eq!(request_of(&after_text.delegation), Some("Responda em texto"));
+        assert!(outcome_text.text.starts_with(REGISTERED), "{}", outcome_text.text);
+        assert_eq!(requests(&after_text), vec!["Responda em texto"]);
     }
 }
 
@@ -475,12 +542,13 @@ fn delegate_leva_ping_seconds_ao_slot_e_o_schema_publica_os_limites() {
     let without_ping = axiom.slot.end();
 
     assert!(!outcome.is_error, "{}", outcome.text);
-    assert_eq!(with_ping.delegation_intent.unwrap().ping_seconds, Some(45));
-    assert_eq!(without_ping.delegation_intent.unwrap().ping_seconds, None);
+    assert_eq!(with_ping.delegations[0].intent.ping_seconds, Some(45));
+    assert_eq!(without_ping.delegations[0].intent.ping_seconds, None);
 
     let definitions = crate::mcp::tools::definitions();
     let delegate = definitions.iter().find(|tool| tool["name"] == "delegate").expect("tool delegate");
     let ping = &delegate["inputSchema"]["properties"]["ping_seconds"];
     assert_eq!(ping["minimum"], 5);
     assert_eq!(ping["maximum"], 300);
+    assert_eq!(delegate["inputSchema"]["properties"]["notify"]["type"], "boolean");
 }

@@ -21,7 +21,7 @@ use crate::state::{AppState, MAX_DELEGATION_PING_SECS, MIN_DELEGATION_PING_SECS}
 use crate::task::{Change, VarValue};
 
 use super::registry::Binding;
-use super::slot::{DelegationIntent, SlotDecision};
+use super::slot::{Delegation, DelegationIntent, SlotDecision};
 
 const LIST_BACKLOG: &str = "list_backlog";
 const READ_CARD: &str = "read_card";
@@ -97,9 +97,17 @@ const EMPTY_VALUE: &str = "O valor não pode ser vazio.";
 const NON_INTEGER_VALUE: &str = "O valor numérico precisa ser um inteiro.";
 const UNSUPPORTED_VALUE: &str = "O valor precisa ser um texto ou um número inteiro.";
 
-const DELEGATION_REGISTERED: &str = "Delegação registrada. Termine a resposta agora.";
-const DELEGATION_ALREADY_REGISTERED: &str =
-    "Já há uma delegação registrada nesta resposta. Termine a resposta agora.";
+const MAX_DELEGATIONS_PER_REPLY: usize = 5;
+const DELEGATION_REGISTERED: &str = "Delegação registrada.";
+const DELEGATION_CONTINUE: &str =
+    "Pode registrar outra delegação; quando não houver mais pedidos, termine a resposta.";
+const DELEGATION_DUPLICATE: &str =
+    "Delegação repetida ignorada: esse agente já recebeu este tipo de pedido neste item nesta resposta.";
+const DELEGATION_LIMIT: &str = "Limite de delegações por resposta atingido.";
+const DELEGATION_GENERAL_KIND: &str = "geral";
+const DELEGATION_NO_ITEM: &str = "sem item";
+const DELEGATION_NOTICE_STATUS: &str = "aviso enviado";
+const DELEGATION_PENDING_STATUS: &str = "pendente";
 const DELEGATION_EMPTY_REQUEST: &str = "O pedido da delegação não pode ser vazio.";
 const DELEGATION_TO_SELF: &str = "Você não pode delegar a si mesmo.";
 
@@ -181,6 +189,7 @@ struct DelegateArgs {
     event: Option<String>,
     item_id: Option<String>,
     ping_seconds: Option<u64>,
+    notify: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -345,7 +354,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             DELEGATE,
-            "Delega um pedido a outro agente do time e não espera a resposta: depois de chamar, termine a resposta.",
+            "Delega um pedido a outro agente do time sem esperar a resposta. Pode chamar de novo para outros pedidos da mesma resposta (até 5); com notify true só avisa o agente, sem dar trabalho. Quando não houver mais pedidos, termine a resposta.",
             json!({
                 "agent": { "type": "string" },
                 "request": { "type": "string" },
@@ -353,6 +362,7 @@ pub fn definitions() -> Vec<Value> {
                 "event": { "type": "string", "enum": WHEN_EVENT_VALUES },
                 "item_id": { "type": "string" },
                 "ping_seconds": { "type": "integer", "minimum": MIN_DELEGATION_PING_SECS, "maximum": MAX_DELEGATION_PING_SECS },
+                "notify": { "type": "boolean" },
             }),
             &["agent", "request"],
         ),
@@ -915,6 +925,7 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
     }
     let kind = optional_choice(args.kind.as_deref(), REQUEST_KIND_VALUES, KIND_INVALID)?;
     let event = optional_choice(args.event.as_deref(), WHEN_EVENT_VALUES, EVENT_INVALID)?;
+    let notify = args.notify.unwrap_or(false);
     let item_id = args
         .item_id
         .as_deref()
@@ -922,7 +933,7 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         .filter(|item| !item.is_empty())
         .map(str::to_string)
         .or_else(|| binding.slot.lock().item_id.clone());
-    if item_id.is_some() {
+    if item_id.is_some() && !notify {
         let providers = app.state::<crate::providers::ProviderRegistry>();
         let has_tools = team
             .profile(&helper)
@@ -935,30 +946,87 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         }
     }
     check_item(app, binding.project_id, item_id.as_deref())?;
-    if binding.agent == Agent::ember() {
-        ember_delegation_to_leader(app, binding, &helper, item_id.as_deref())?;
-    }
-    let snapshot = orchestration_snapshot(app)?;
-    check_intent(
-        snapshot.as_ref(),
-        &team,
-        &binding.agent,
-        &helper,
-        kind,
-        event,
-    )?;
-    let mut slot = binding.slot.lock();
-    if slot.delegation.is_some() {
-        return Err(DELEGATION_ALREADY_REGISTERED.to_string());
-    }
-    slot.delegation = Some((helper, request.to_string()));
-    slot.delegation_intent = Some(DelegationIntent {
+    let intent = DelegationIntent {
         kind: kind.map(str::to_string),
         event: event.map(str::to_string),
         item_id,
         ping_seconds: args.ping_seconds,
+        notify,
+    };
+    match delegation_room(&binding.slot.lock().delegations, &helper, &intent)? {
+        Room::Repeated => return Ok(DELEGATION_DUPLICATE.to_string()),
+        Room::Open => {}
+    }
+    if !notify {
+        if binding.agent == Agent::ember() {
+            ember_delegation_to_leader(app, binding, &helper, intent.item_id.as_deref())?;
+        }
+        let snapshot = orchestration_snapshot(app)?;
+        check_intent(snapshot.as_ref(), &team, &binding.agent, &helper, kind, event)?;
+    }
+    let mut slot = binding.slot.lock();
+    slot.delegations.push(Delegation {
+        agent: helper,
+        request: request.to_string(),
+        intent,
     });
-    Ok(DELEGATION_REGISTERED.to_string())
+    Ok(delegation_registered(&slot.delegations, &team))
+}
+
+enum Room {
+    Open,
+    Repeated,
+}
+
+// Repetido não ocupa vaga; o teto é só de pedidos de trabalho, para um aviso não tomar a vaga de uma delegação.
+fn delegation_room(
+    registered: &[Delegation],
+    helper: &Agent,
+    intent: &DelegationIntent,
+) -> Result<Room, String> {
+    let repeated = registered.iter().any(|delegation| {
+        delegation.agent == *helper
+            && delegation.intent.item_id == intent.item_id
+            && delegation.intent.kind == intent.kind
+    });
+    if repeated {
+        return Ok(Room::Repeated);
+    }
+    let work = registered
+        .iter()
+        .filter(|delegation| !delegation.intent.notify)
+        .count();
+    if !intent.notify && work >= MAX_DELEGATIONS_PER_REPLY {
+        return Err(DELEGATION_LIMIT.to_string());
+    }
+    Ok(Room::Open)
+}
+
+fn delegation_registered(delegations: &[Delegation], team: &Team) -> String {
+    let lines: Vec<String> = delegations
+        .iter()
+        .map(|delegation| {
+            let status = if delegation.intent.notify {
+                DELEGATION_NOTICE_STATUS
+            } else {
+                DELEGATION_PENDING_STATUS
+            };
+            format!(
+                "- {} · {} · {} · {status}",
+                team.name_of(&delegation.agent),
+                delegation.intent.kind.as_deref().unwrap_or(DELEGATION_GENERAL_KIND),
+                delegation.intent.item_id.as_deref().unwrap_or(DELEGATION_NO_ITEM),
+            )
+        })
+        .collect();
+    format!(
+        "{DELEGATION_REGISTERED}
+Delegações nesta resposta:
+{}
+{DELEGATION_CONTINUE}",
+        lines.join("
+")
+    )
 }
 
 const KIND_INVALID: &str = "Tipo de pedido inválido.";

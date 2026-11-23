@@ -1397,12 +1397,28 @@ async fn answer_once(
             limit_decision(motive),
         )?;
     }
-    let delegations: Vec<(Agent, String)> = reply
-        .outcome
-        .delegation
-        .or(read.delegation)
-        .into_iter()
-        .collect();
+    let mut delegations: Vec<(Agent, String)> = Vec::new();
+    if reply.outcome.delegations.is_empty() {
+        delegations.extend(read.delegation);
+    } else {
+        for delegation in reply.outcome.delegations {
+            if delegation.intent.notify {
+                emit_message(
+                    exchange.app,
+                    project_id,
+                    Speaker::from(agent.clone()),
+                    Speaker::from(delegation.agent),
+                    &delegation.request,
+                    exchange.scope(),
+                    None,
+                    None,
+                    None,
+                )?;
+            } else {
+                delegations.push((delegation.agent, delegation.request));
+            }
+        }
+    }
     let max_parallel = snapshot.map_or(1, |snapshot| snapshot.settings.max_parallel);
     for (helper, request) in delegations {
         let name = team.name_of(&helper).to_string();
