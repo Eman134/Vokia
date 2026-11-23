@@ -388,6 +388,7 @@ pub(crate) async fn ask_with_fallback(
                     broker: &broker,
                     agent: agent.clone(),
                     project_id: 0,
+                    item_id: None,
                     granted: &granted,
                     grant_per_session: false,
                 };
@@ -398,6 +399,7 @@ pub(crate) async fn ask_with_fallback(
                         project_id: 0,
                         agent: agent.clone(),
                     },
+                    None,
                 );
                 let call = super::agent_session::AgentCall::for_text_ask(
                     adapter.clone(),

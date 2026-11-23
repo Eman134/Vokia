@@ -94,6 +94,7 @@ pub(super) fn pause_run(
     key: &SessionKey,
     id: Option<i64>,
     limit: UsageLimit,
+    item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     if let Some(id) = id {
         let state = app.state::<DbState>();
@@ -106,7 +107,7 @@ pub(super) fn pause_run(
             )?;
         }
     }
-    emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting)?;
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting, item_id)?;
     emit(
         app,
         VokiaEvent::UsageLimit {

@@ -59,13 +59,20 @@ pub(super) async fn ask_step(
     prompts: &StepPrompts,
 ) -> Result<StepReply, FlowError> {
     let Exchange { app, key, .. } = exchange;
-    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
+    emit_state(
+        app,
+        key.project_id,
+        agent.clone(),
+        AgentState::Thinking,
+        exchange.item_id,
+    )?;
     let console = ConsoleSink::new(
         app,
         SessionKey {
             project_id: key.project_id,
             agent: agent.clone(),
         },
+        exchange.item_id.map(str::to_string),
     );
     console.started();
     let result = run_step(exchange, sessions, agent, prompts, &console).await;
@@ -213,6 +220,7 @@ async fn run_step(
             broker: &state.permissions,
             agent: agent.clone(),
             project_id: key.project_id,
+            item_id: exchange.item_id.map(str::to_string),
             granted: &granted,
             grant_per_session,
         };

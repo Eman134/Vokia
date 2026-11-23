@@ -150,6 +150,8 @@ pub enum VokiaEvent {
         agent: Agent,
         state: AgentState,
         project_id: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
     },
     Error {
         message: String,
@@ -223,6 +225,8 @@ pub enum VokiaEvent {
         agent: Agent,
         project_id: i64,
         activity: TurnActivity,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     GoalState {

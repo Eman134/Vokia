@@ -12,7 +12,8 @@ import {
   type VokiaTaskResult,
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
-import { selectPendingAgents } from './pendingAgents'
+import { replicaOf } from './agentCopies'
+import { isPendingState, selectPendingAgents } from './pendingAgents'
 import { buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
@@ -41,7 +42,9 @@ export const useFeed = defineStore('feed', () => {
   const roster = useRoster()
   const states = ref<Record<Agent, AgentState>>({})
   const stateSince = ref<Partial<Record<Agent, number>>>({})
+  const stateItem = ref<Record<Agent, string | undefined>>({})
   const liveActivity = ref<Record<string, TurnActivity>>({})
+  const liveActivityItem = ref<Record<string, string | undefined>>({})
   const permissions = ref<VokiaPermission[]>([])
   const control = useAgentControl()
   const projects = useProjects()
@@ -64,15 +67,54 @@ export const useFeed = defineStore('feed', () => {
   const pendingSince = computed<number | undefined>(() =>
     pendingAgent.value ? stateSince.value[pendingAgent.value.id] : undefined,
   )
-  const pendingAgents = computed<AgentProfile[]>(() => selectPendingAgents(roster.agents, states.value))
+  function itemOf(agent: Agent): string | undefined {
+    return stateItem.value[agent]
+  }
+  function activeAgentsForItem(itemId: string): Set<Agent> {
+    const agents = new Set<Agent>()
+    for (const [agent, agentItemId] of Object.entries(stateItem.value)) {
+      if (agentItemId === itemId && stateOf(agent) !== 'idle') {
+        agents.add(agent)
+      }
+    }
+    return agents
+  }
+  function profileForPending(id: Agent): AgentProfile {
+    const existing = roster.profileOf(id)
+    if (existing) return existing
+    const replica = replicaOf(id)
+    const base = replica ? roster.profileOf(replica.base) : undefined
+    return {
+      id,
+      name: roster.nameOf(id),
+      role: base?.role ?? '',
+      avatar: roster.avatarOf(id),
+      cli: base?.cli ?? '',
+      model: base?.model ?? '',
+      command: base?.command ?? '',
+      builtin: base?.builtin ?? false,
+      extraInstructions: base?.extraInstructions ?? '',
+      followDefaultLlm: base?.followDefaultLlm ?? true,
+      fallback: base?.fallback ?? [],
+    }
+  }
+  const pendingAgents = computed<AgentProfile[]>(() => {
+    const known = selectPendingAgents(roster.agents, states.value)
+    const knownIds = new Set(roster.agents.map((agent) => agent.id))
+    const extras = Object.entries(states.value)
+      .filter(([id, state]) => !knownIds.has(id) && isPendingState(state))
+      .map(([id]) => profileForPending(id))
+    return [...known, ...extras]
+  })
   function sinceOf(agent: Agent): number | undefined {
     return stateSince.value[agent]
   }
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
   const channels = useChannels()
-  const timeline = computed<TimelineItem[]>(() =>
-    buildTimeline(screenEntries(feed.value, screen.value, channels.channels)),
-  )
+  const timeline = computed<TimelineItem[]>(() => {
+    const threadAgents = screen.value.kind === 'thread' ? activeAgentsForItem(screen.value.itemId) : undefined
+    return buildTimeline(screenEntries(feed.value, screen.value, channels.channels, threadAgents))
+  })
 
   async function restoreHistory(): Promise<void> {
     try {
@@ -131,9 +173,16 @@ export const useFeed = defineStore('feed', () => {
       case 'error':
         feed.value.push(event)
         break
-      case 'agent-activity':
-        liveActivity.value[projectAgentKey(event.projectId, event.agent)] = event.activity
+      case 'agent-activity': {
+        const key = projectAgentKey(event.projectId, event.agent)
+        liveActivity.value[key] = event.activity
+        if (event.itemId !== undefined) {
+          liveActivityItem.value[key] = event.itemId
+        } else {
+          delete liveActivityItem.value[key]
+        }
         break
+      }
       case 'agent-state':
         recordState(event)
         recordActivity(event)
@@ -227,11 +276,16 @@ export const useFeed = defineStore('feed', () => {
     }
   }
 
-  function recordState({ agent, state }: VokiaAgentState): void {
+  function recordState({ agent, state, itemId }: VokiaAgentState): void {
     if (stateOf(agent) !== state) {
       stateSince.value[agent] = Date.now()
     }
     states.value[agent] = state
+    if (state === 'idle' || itemId === undefined) {
+      delete stateItem.value[agent]
+    } else {
+      stateItem.value[agent] = itemId
+    }
   }
 
   function recordActivity({ agent, state, projectId }: VokiaAgentState): void {
@@ -249,12 +303,19 @@ export const useFeed = defineStore('feed', () => {
     if (projectId === null) {
       return
     }
-    delete liveActivity.value[projectAgentKey(projectId, agent)]
+    const key = projectAgentKey(projectId, agent)
+    delete liveActivity.value[key]
+    delete liveActivityItem.value[key]
   }
 
-  function liveActivityOf(agent: Agent): TurnActivity | undefined {
+  function liveActivityOf(agent: Agent, itemId?: string): TurnActivity | undefined {
     const project = projects.selected
-    return project === null ? undefined : liveActivity.value[projectAgentKey(project.id, agent)]
+    if (project === null) return undefined
+    const key = projectAgentKey(project.id, agent)
+    if (itemId !== undefined && liveActivityItem.value[key] !== itemId) {
+      return undefined
+    }
+    return liveActivity.value[key]
   }
 
   function projectsOf(agent: Agent): number[] {
@@ -309,7 +370,9 @@ export const useFeed = defineStore('feed', () => {
     feed,
     states,
     stateSince,
+    stateItem,
     stateOf,
+    itemOf,
     sinceOf,
     thinkingAgent,
     pendingAgent,

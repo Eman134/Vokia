@@ -916,7 +916,8 @@ fn delegate(app: &AppHandle, binding: &Binding, args: DelegateArgs) -> ToolText 
         .as_deref()
         .map(str::trim)
         .filter(|item| !item.is_empty())
-        .map(str::to_string);
+        .map(str::to_string)
+        .or_else(|| binding.slot.lock().item_id.clone());
     if item_id.is_some() {
         let providers = app.state::<crate::providers::ProviderRegistry>();
         let has_tools = team

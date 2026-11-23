@@ -29,13 +29,18 @@ export const useThreads = defineStore('threads', () => {
     if (activeItems.length === 0) return []
 
     const byItem = new Map<string, { participants: Set<Agent>; lastActivity: number; messageCount: number }>()
-    for (const entry of feed.feed) {
-      if ((entry.type !== 'message' && entry.type !== 'task-result') || !entry.itemId) continue
-      let bucket = byItem.get(entry.itemId)
+    const ensureBucket = (itemId: string) => {
+      let bucket = byItem.get(itemId)
       if (!bucket) {
         bucket = { participants: new Set<Agent>(), lastActivity: 0, messageCount: 0 }
-        byItem.set(entry.itemId, bucket)
+        byItem.set(itemId, bucket)
       }
+      return bucket
+    }
+
+    for (const entry of feed.feed) {
+      if ((entry.type !== 'message' && entry.type !== 'task-result') || !entry.itemId) continue
+      const bucket = ensureBucket(entry.itemId)
       bucket.messageCount += 1
       if (entry.time > bucket.lastActivity) bucket.lastActivity = entry.time
       if (entry.type === 'message') {
@@ -44,6 +49,11 @@ export const useThreads = defineStore('threads', () => {
       } else {
         for (const agent of entry.agents) bucket.participants.add(agent)
       }
+    }
+
+    for (const [agent, itemId] of Object.entries(feed.stateItem)) {
+      if (!itemId || feed.stateOf(agent) === 'idle') continue
+      ensureBucket(itemId).participants.add(agent)
     }
 
     return activeItems

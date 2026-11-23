@@ -112,7 +112,7 @@ fn estado_sending_ou_thinking_do_agente_destino_marca_a_delegacao_como_ativada()
         let vexa = Agent::vexa();
         world.register(delegation(PROJECT, &vexa, Duration::ZERO));
 
-        emit_state(world.app.handle(), PROJECT, vexa.clone(), state).unwrap();
+        emit_state(world.app.handle(), PROJECT, vexa.clone(), state, None).unwrap();
 
         assert_eq!(world.snapshot(PROJECT, &vexa).map(|(activated, _, _)| activated), Some(true));
     }
@@ -125,7 +125,7 @@ fn estado_idle_ou_waiting_nao_ativa_a_delegacao() {
         let vexa = Agent::vexa();
         world.register(delegation(PROJECT, &vexa, Duration::ZERO));
 
-        emit_state(world.app.handle(), PROJECT, vexa.clone(), state).unwrap();
+        emit_state(world.app.handle(), PROJECT, vexa.clone(), state, None).unwrap();
 
         assert_eq!(world.snapshot(PROJECT, &vexa).map(|(activated, _, _)| activated), Some(false));
     }
@@ -140,7 +140,7 @@ fn ativacao_vale_so_para_o_agente_e_o_projeto_do_estado_emitido() {
     world.register(delegation(PROJECT, &axiom, Duration::ZERO));
     world.register(delegation(OTHER_PROJECT, &vexa, Duration::ZERO));
 
-    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Thinking).unwrap();
+    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Thinking, None).unwrap();
 
     assert_eq!(world.snapshot(PROJECT, &vexa).unwrap().0, true);
     assert_eq!(world.snapshot(PROJECT, &axiom).unwrap().0, false);
@@ -207,7 +207,7 @@ fn delegacao_ativada_entre_tentativas_nao_gera_erro() {
     world.sweep();
     world.expire(PROJECT, &vexa);
 
-    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Sending).unwrap();
+    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Sending, None).unwrap();
     world.sweep();
     world.sweep();
 

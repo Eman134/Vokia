@@ -91,6 +91,7 @@ export interface VokiaAgentState {
   agent: Agent
   state: AgentState
   projectId: number | null
+  itemId?: string
 }
 
 export interface FeedNotice {
@@ -260,6 +261,7 @@ export interface VokiaAgentActivity {
   agent: Agent
   projectId: number
   activity: TurnActivity
+  itemId?: string
 }
 
 export type OverrideReason = 'usage-limit' | 'model-unavailable' | 'manual-temp'

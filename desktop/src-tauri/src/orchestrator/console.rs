@@ -16,11 +16,12 @@ const TURN_FAILED_PREFIX: &str = "falhou: ";
 pub(super) struct ConsoleSink<'a> {
     app: &'a AppHandle,
     key: SessionKey,
+    item_id: Option<String>,
 }
 
 impl<'a> ConsoleSink<'a> {
-    pub(super) fn new(app: &'a AppHandle, key: SessionKey) -> Self {
-        Self { app, key }
+    pub(super) fn new(app: &'a AppHandle, key: SessionKey, item_id: Option<String>) -> Self {
+        Self { app, key, item_id }
     }
 
     // O console é auxiliar: falha ao registrar ou emitir não pode derrubar o turno do agente.
@@ -36,6 +37,7 @@ impl<'a> ConsoleSink<'a> {
                 agent: self.key.agent.clone(),
                 project_id: self.key.project_id,
                 activity,
+                item_id: self.item_id.clone(),
             },
         );
     }

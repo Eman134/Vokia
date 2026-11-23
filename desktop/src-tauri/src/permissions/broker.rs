@@ -61,6 +61,7 @@ pub struct PermissionGate<'a> {
     pub broker: &'a PermissionBroker,
     pub agent: Agent,
     pub project_id: i64,
+    pub item_id: Option<String>,
     pub granted: &'a Mutex<HashSet<String>>,
     pub grant_per_session: bool,
 }
@@ -80,7 +81,13 @@ impl PermissionGate<'_> {
         }
         let (verdict, root) = self
             .broker
-            .request(self.app, self.agent.clone(), self.project_id, request)
+            .request(
+                self.app,
+                self.agent.clone(),
+                self.project_id,
+                self.item_id.as_deref(),
+                request,
+            )
             .await;
         if verdict == PermissionVerdict::Allow && self.grant_per_session {
             match root_grant.filter(|_| root) {
@@ -112,6 +119,7 @@ impl PermissionBroker {
         app: &AppHandle,
         agent: Agent,
         project_id: i64,
+        item_id: Option<&str>,
         request: PermissionRequest,
     ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
@@ -146,7 +154,7 @@ impl PermissionBroker {
             self.forget(&request.id);
             return (PermissionVerdict::Deny(None), false);
         }
-        emit_agent_state(app, &agent, AgentState::Waiting, project_id);
+        emit_agent_state(app, &agent, AgentState::Waiting, project_id, item_id);
         let (outcome, answer) = match timeout(PERMISSION_WAIT_LIMIT, receiver).await {
             Ok(Ok(answer)) => (answer_outcome(&answer), Some(answer)),
             Ok(Err(_)) => (PermissionOutcome::Denied, None),
@@ -165,7 +173,7 @@ impl PermissionBroker {
                 outcome,
             },
         );
-        emit_agent_state(app, &agent, AgentState::Thinking, project_id);
+        emit_agent_state(app, &agent, AgentState::Thinking, project_id, item_id);
         let granted_root = matches!(answer, Some(Answer::Allow { root: true, .. }));
         (verdict_of(answer), granted_root)
     }
@@ -309,13 +317,20 @@ fn suggests_always(history: &ApprovalHistory, now: u64) -> bool {
             .is_none_or(|denied| now.saturating_sub(denied) >= DENIAL_SUGGESTION_WINDOW_MS)
 }
 
-fn emit_agent_state(app: &AppHandle, agent: &Agent, state: AgentState, project_id: i64) {
+fn emit_agent_state(
+    app: &AppHandle,
+    agent: &Agent,
+    state: AgentState,
+    project_id: i64,
+    item_id: Option<&str>,
+) {
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::AgentState {
             agent: agent.clone(),
             state,
             project_id: Some(project_id),
+            item_id: item_id.map(str::to_string),
         },
     );
 }

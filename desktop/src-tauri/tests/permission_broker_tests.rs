@@ -127,6 +127,7 @@ impl World {
                 broker: &state.permissions,
                 agent: Agent::ember(),
                 project_id,
+                item_id: None,
                 granted: &granted,
                 grant_per_session: per_session,
             }

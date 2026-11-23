@@ -112,6 +112,36 @@ test('filterPendingAgentsForScreen respeita escopo thread (assignee e participan
   )
 })
 
+test('filterPendingAgentsForScreen usa agentItems para isolar estados por task sem vazar outras tasks', () => {
+  const pending = [ROSTER[1], ROSTER[2], ROSTER[3]]
+  const thread = { assignee: 'vexa', participants: ['kairo', 'vexa'] }
+  const agentItems = {
+    kairo: 'item-16',
+    vexa: 'item-15',
+    sentry: undefined,
+  }
+  assert.deepEqual(
+    filterPendingAgentsForScreen(
+      pending,
+      { kind: 'thread', itemId: 'item-16' },
+      { channels: CHANNELS, thread, agentItems },
+    ).map((a) => a.id),
+    ['kairo'],
+  )
+  assert.deepEqual(
+    filterPendingAgentsForScreen(
+      pending,
+      { kind: 'thread', itemId: 'item-15' },
+      { channels: CHANNELS, thread, agentItems },
+    ).map((a) => a.id),
+    ['vexa'],
+  )
+  assert.equal(
+    isAgentInScreen('sentry', { kind: 'thread', itemId: 'item-16' }, { channels: CHANNELS, thread, agentItems }),
+    false,
+  )
+})
+
 test('groupPendingAgentsByState agrupa por estado preservando thinking antes de sending e stateSince por agente', () => {
   const states = {
     ember: 'sending',
