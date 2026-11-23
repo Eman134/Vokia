@@ -902,3 +902,41 @@ fn excluir_o_item_com_cascade_remove_item_plano_e_etapas_filhas() {
         .unwrap();
     assert_eq!(remaining, 0);
 }
+
+#[test]
+fn salvar_plano_promove_card_em_backlog_para_ready_sem_alterar_outras_colunas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+
+    let backlog_proposed = card(&db, project_id, "Triagem proposta");
+    db.save_item_plan(project_id, &backlog_proposed, &proposed(PROPOSAL))
+        .unwrap();
+    assert_eq!(item(&db, project_id, &backlog_proposed).column.as_deref(), Some("Ready"));
+
+    let backlog_linked = card(&db, project_id, "Triagem vinculada");
+    db.save_item_plan(
+        project_id,
+        &backlog_linked,
+        &linked(&backlog_linked, &backlog_linked, Some(SINGLE_LOT_PROPOSAL)),
+    )
+    .unwrap();
+    assert_eq!(item(&db, project_id, &backlog_linked).column.as_deref(), Some("Ready"));
+
+    let backlog_empty = card(&db, project_id, "Sem plano");
+    db.save_item_plan(project_id, &backlog_empty, &empty()).unwrap();
+    assert_eq!(item(&db, project_id, &backlog_empty).column.as_deref(), Some("Backlog"));
+
+    for column in ["Ready", "In progress", "In review", "Done"] {
+        let id = card(&db, project_id, &format!("Card {column}"));
+        if column == "Done" {
+            db.close_card(project_id, &id, "usuario").unwrap();
+        } else if column == "Ready" {
+            db.move_backlog_item(project_id, &id, column).unwrap();
+        } else {
+            db.advance_card(project_id, &id, column).unwrap();
+        }
+        db.save_item_plan(project_id, &id, &proposed(PROPOSAL)).unwrap();
+        assert_eq!(item(&db, project_id, &id).column.as_deref(), Some(column));
+    }
+}
