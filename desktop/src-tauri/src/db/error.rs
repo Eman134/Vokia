@@ -30,6 +30,8 @@ pub enum DbError {
     InvalidPermissionLevel(String),
     InvalidBacklogColumn(String),
     ColumnNotMovable(String),
+    InvalidBacklogPriority(String),
+    InvalidBacklogReorder(String),
     InvalidBacklogState(String),
     InvalidBacklogType(String),
     InvalidMicroTaskStatus(String),
@@ -109,6 +111,8 @@ impl DbError {
             DbError::EmptyCardTitle
                 | DbError::DuplicateCardTitle(_)
                 | DbError::InvalidBacklogColumn(_)
+                | DbError::InvalidBacklogPriority(_)
+                | DbError::InvalidBacklogReorder(_)
                 | DbError::AgentForbiddenColumn(_)
                 | DbError::ReturnMotiveRequired
                 | DbError::InvalidClosedBy(_)
@@ -213,6 +217,13 @@ impl fmt::Display for DbError {
                     "A coluna {value:?} é automática e não aceita movimento manual."
                 )
             }
+            DbError::InvalidBacklogPriority(value) => {
+                write!(
+                    f,
+                    "A prioridade {value:?} não é válida. Use Baixa, Média, Alta, Urgente ou vazio para limpar."
+                )
+            }
+            DbError::InvalidBacklogReorder(reason) => f.write_str(reason),
             DbError::InvalidBacklogState(value) => {
                 write!(f, "O item do backlog não aceita o estado {value:?}.")
             }

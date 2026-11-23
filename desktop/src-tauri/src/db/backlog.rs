@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::Local;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -19,6 +21,7 @@ const IN_PROGRESS_COLUMN: &str = "In progress";
 const IN_REVIEW_COLUMN: &str = "In review";
 pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", IN_PROGRESS_COLUMN, "In review", "Done"];
 const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
+pub const BACKLOG_PRIORITIES: &[&str] = &["Baixa", "Média", "Alta", "Urgente"];
 const ITEM_TYPES: &[&str] = &["task", "feature"];
 const ITEM_STATES: &[&str] = &["vazio", "triagem", "gerando", "proposto", "vinculado"];
 const MICRO_TASK_STATUSES: &[&str] = &["proposta", "ready", "em andamento", "em revisão", "feito"];
@@ -405,6 +408,86 @@ impl Db {
         }
         refresh_parent_of(&tx, project_id, id)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    pub fn reorder_column_items(
+        &self,
+        project_id: i64,
+        column: &str,
+        item_ids: &[String],
+    ) -> Result<(), DbError> {
+        let column = board_column(column)?;
+        let mut seen = HashSet::with_capacity(item_ids.len());
+        for id in item_ids {
+            if !seen.insert(id.as_str()) {
+                return Err(DbError::InvalidBacklogReorder(format!(
+                    "O card {id} está duplicado na reordenação."
+                )));
+            }
+        }
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        if item_ids.is_empty() {
+            tx.commit()?;
+            return Ok(());
+        }
+        let mut positions = Vec::with_capacity(item_ids.len());
+        for id in item_ids {
+            let row = tx
+                .query_row(
+                    "SELECT \"column\", archived_at, position FROM backlog_items \
+                     WHERE project_id = ?1 AND id = ?2",
+                    params![project_id, id],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    },
+                )
+                .optional()?
+                .ok_or_else(|| DbError::BacklogItemNotFound(id.clone()))?;
+            if row.1.is_some() || row.0 != column {
+                return Err(DbError::InvalidBacklogReorder(format!(
+                    "O card {id} não está ativo na coluna {column}."
+                )));
+            }
+            positions.push(row.2);
+        }
+        // Preserva as posições existentes da coluna em ordem crescente para não reduzir MAX(position).
+        positions.sort_unstable();
+        let mut prev_pos = i64::MIN;
+        for (id, pos) in item_ids.iter().zip(positions) {
+            let target_pos = if pos <= prev_pos { prev_pos + 1 } else { pos };
+            prev_pos = target_pos;
+            tx.execute(
+                "UPDATE backlog_items SET position = ?3 WHERE project_id = ?1 AND id = ?2",
+                params![project_id, id, target_pos],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_item_priority(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        priority: &str,
+    ) -> Result<(), DbError> {
+        let normalized = parse_priority(priority)?;
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let changed = conn.execute(
+            "UPDATE backlog_items SET priority = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id, normalized],
+        )?;
+        if changed == 0 {
+            return Err(DbError::BacklogItemNotFound(item_id.to_string()));
+        }
         Ok(())
     }
 
@@ -1104,6 +1187,20 @@ pub fn board_column(requested: &str) -> Result<&'static str, DbError> {
         .copied()
         .find(|column| column.eq_ignore_ascii_case(requested))
         .ok_or_else(|| DbError::InvalidBacklogColumn(requested.to_string()))
+}
+
+fn parse_priority(raw: &str) -> Result<Option<&'static str>, DbError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let lowered = trimmed.to_lowercase();
+    BACKLOG_PRIORITIES
+        .iter()
+        .copied()
+        .find(|allowed| allowed.to_lowercase() == lowered)
+        .map(Some)
+        .ok_or_else(|| DbError::InvalidBacklogPriority(raw.to_string()))
 }
 
 fn next_card_id(conn: &Connection, project_id: i64) -> Result<(String, i64), DbError> {

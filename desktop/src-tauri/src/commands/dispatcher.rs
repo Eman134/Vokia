@@ -373,6 +373,8 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "create_backlog_item", "Cria um card no backlog.", "Para criar um card no backlog de um projeto com título e descrição.", empty_object_schema),
     exposed("backlog", "create_request_from_proposal", "Cria um card de origem agente a partir de uma proposta.", "Para transformar uma proposta de um agente em card de origem agente; título repetido é recusado.", empty_object_schema),
     exposed("backlog", "move_backlog_item", "Move um item do backlog para outra coluna.", "Para mover um card de coluna; as colunas válidas são as do quadro, e Done só o usuário conclui.", empty_object_schema),
+    exposed("backlog", "reorder_backlog_column", "Reordena os cards de uma coluna do backlog.", "Para definir a ordem dos cards dentro de uma coluna (projectId, column, itemIds).", empty_object_schema),
+    exposed("backlog", "set_item_priority", "Define ou limpa a prioridade de um item do backlog.", "Para definir a prioridade de um card (projectId, itemId, priority: Baixa|Média|Alta|Urgente ou vazio para limpar).", empty_object_schema),
     exposed("backlog", "return_task", "Devolve uma task concluída ao líder com um motivo.", "Para devolver ao líder uma task concluída com um motivo obrigatório; o card volta a In progress.", empty_object_schema),
     exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog.", "Para gravar o plano de execução de um card.", empty_object_schema),
     exposed("backlog", "add_backlog_label", "Adiciona um rótulo a um item do backlog.", "Para marcar um card com um rótulo.", empty_object_schema),
@@ -614,6 +616,14 @@ async fn run(
         "move_backlog_item" => {
             json_result(backlog::move_backlog_item_exec(app, parse_args(arguments)?))
         }
+        "reorder_backlog_column" => json_result(backlog::reorder_backlog_column_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "set_item_priority" => json_result(backlog::set_item_priority_exec(
+            app,
+            parse_args(arguments)?,
+        )),
         "return_task" => json_result(backlog::return_task_exec(app, parse_args(arguments)?).await),
         "save_item_plan" => json_result(backlog::save_item_plan_exec(app, parse_args(arguments)?)),
         "add_backlog_label" => {

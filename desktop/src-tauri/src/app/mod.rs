@@ -58,6 +58,8 @@ pub(crate) fn run() {
             commands::backlog::create_backlog_item,
             commands::backlog::create_request_from_proposal,
             commands::backlog::move_backlog_item,
+            commands::backlog::reorder_backlog_column,
+            commands::backlog::set_item_priority,
             commands::backlog::return_task,
             commands::backlog::save_item_plan,
             commands::backlog::add_backlog_label,
