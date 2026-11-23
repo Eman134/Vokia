@@ -267,7 +267,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       {
         kind: 'row',
         label: 'Aprovar permissões automaticamente',
-        hint: 'vale para o projeto selecionado e desliga ao fechar o app; comandos destrutivos continuam pedindo a sua decisão',
+        hint: 'vale para o projeto selecionado e desliga ao fechar o app; nada pede confirmação, nem apagar nem push forçado fora do projeto',
         control: { kind: 'bypass' },
       },
       { kind: 'group', label: 'Comandos' },

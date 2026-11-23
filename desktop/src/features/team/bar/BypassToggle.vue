@@ -10,7 +10,7 @@ const props = defineProps<{ expanded: boolean }>()
 
 const WARNING_TITLE = 'Ligar o modo bypass?'
 const WARNING_TEXT =
-  'Com o bypass ligado, os agentes deste projeto passam a ter os pedidos de permissão aprovados automaticamente, sem perguntar. Comandos destrutivos ainda pedem a sua decisão. Use só em projetos em que você confia nos agentes; o modo desliga ao fechar o app.'
+  'Com o bypass ligado, os agentes deste projeto passam a ter os pedidos de permissão aprovados automaticamente, sem perguntar. Nada pede a sua confirmação, nem apagar nem push forçado fora do projeto. Use só em projetos em que você confia nos agentes; o modo desliga ao fechar o app.'
 const ENABLE_LABEL = 'Ligar modo bypass'
 const DISABLE_LABEL = 'Desligar modo bypass (aprovando permissões automaticamente)'
 const OVERLAY_CLASSES = 'fixed inset-0 z-60 flex items-center justify-center bg-paper/70 p-4'

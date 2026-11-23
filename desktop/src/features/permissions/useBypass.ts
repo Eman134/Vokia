@@ -6,7 +6,7 @@ import { fetchBypassMode, saveBypassMode } from './bypassApi'
 
 const WARNING_ACK_KEY = 'vokia.bypass.warning-acknowledged'
 const ON_TITLE = 'Modo bypass ligado'
-const ON_TEXT = 'Os pedidos de permissão deste projeto são aprovados sozinhos. Comandos destrutivos ainda pedem a sua decisão.'
+const ON_TEXT = 'Os pedidos de permissão deste projeto são aprovados sozinhos. Nada pede a sua confirmação, nem apagar nem push forçado fora do projeto.'
 const OFF_TITLE = 'Modo bypass desligado'
 const OFF_TEXT = 'Os pedidos de permissão voltam a esperar pela sua decisão.'
 
