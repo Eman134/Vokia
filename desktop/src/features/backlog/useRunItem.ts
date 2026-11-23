@@ -13,6 +13,8 @@ const RUN_TITLE_PREFIX = 'Execute o item'
 const DESCRIPTION_HEADING = 'Descrição'
 const CRITERIA_HEADING = 'Critérios'
 const PLAN_HEADING = 'Plano'
+const THREAD_NOTE = (itemId: string) =>
+  `Card: ${itemId}. Responda e avise nesta thread, sempre citando o id do card.`
 const RUN_CLOSING = 'Avise Ember ao começar e ao terminar.'
 const SENT_PREFIX = 'Execução enviada para '
 const QUEUED_SUFFIX = ' está ocupado; o pedido espera na fila dele.'
@@ -45,7 +47,7 @@ interface AwayRun {
 }
 
 export function buildRunPrompt(item: BacklogItem, planText: string): string {
-  const sections = [`${RUN_TITLE_PREFIX} "${item.title}".`]
+  const sections = [`${RUN_TITLE_PREFIX} "${item.title}".`, THREAD_NOTE(item.id)]
   if (item.description) sections.push(`${DESCRIPTION_HEADING}: ${item.description}`)
   const criteria = item.criteria ?? []
   if (criteria.length > 0) {
@@ -184,6 +186,7 @@ export const useRunItem = defineStore('runItem', () => {
     backlog.setRunColumn(itemId, 'In progress', SENT_NOTE(agentName(agent)))
     const accepted = await requests.send(buildRunPrompt(item, planTextOf(itemId)), agent, {
       projectId,
+      itemId,
       onQueued: () => noteQueued(projectId, itemId, agent),
       onSettled: (result) => settle(projectId, itemId, { result, agent }),
     })
