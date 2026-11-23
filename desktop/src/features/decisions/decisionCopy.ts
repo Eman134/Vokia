@@ -3,7 +3,6 @@ import type { DecisionKind } from '../team/events'
 export type CardKind = DecisionKind | 'permissao'
 
 export const UNDO_WINDOW_MS = 8000
-export const OTHER_OPTION = 'Outro…'
 export const PANEL_TITLE = 'Decisões'
 const PANEL_TITLE_SINGULAR = 'Decisão'
 
@@ -14,10 +13,10 @@ export const RESOLVED_TITLE = 'Resolvidas agora'
 export const UNDO_LABEL = 'Desfazer'
 export const EMPTY_TITLE = 'Nada esperando você'
 export const EMPTY_TEXT = 'Os agentes seguem sozinhos. Avisamos aqui quando alguém parar.'
-export const CHOOSE_HINT = 'escolha uma opção'
+export const CHOOSE_HINT = 'escolha uma opção ou escreva a sua'
 export const CHOOSE_LABEL = 'Escolher'
 export const ANSWER_LABEL = 'Responder'
-export const OTHER_PLACEHOLDER = 'Sua resposta'
+export const OTHER_FIELD_LABEL = 'Ou escreva outra opção'
 
 export const PERMISSION_ALLOW = 'allow'
 export const PERMISSION_DENY = 'deny'
@@ -127,4 +126,13 @@ export function actionsFor(kind: CardKind, agent: string): CardAction[] {
 
 export function optionMessage(kind: DecisionKind, agent: string, answer: string): string {
   return kind === 'escolha' ? `${agent} segue com: ${answer}` : `${agent} vai usar: ${answer}`
+}
+
+// Escolha, pergunta e revisão com opções aceitam também uma resposta digitada; o texto tem prioridade sobre a opção marcada.
+export function acceptsTypedAnswer(kind: CardKind, optionCount: number): boolean {
+  return kind === 'escolha' || kind === 'pergunta' || (kind === 'revisao' && optionCount > 0)
+}
+
+export function chosenAnswer(selected: string | null, typed: string): string {
+  return typed.trim() || (selected ?? '')
 }

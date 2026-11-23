@@ -13,7 +13,7 @@ const props = withDefaults(
 const emit = defineEmits<{ press: [] }>()
 
 const BASE_CLASSES =
-  `group relative inline-flex h-7 shrink-0 cursor-pointer items-center rounded-full px-3 text-label font-medium ${INK_FOCUS_CLASSES}`
+  `group relative inline-flex min-h-7 min-w-0 max-w-full cursor-pointer items-center rounded-full px-3 py-1 text-left text-label font-medium wrap-break-word ${INK_FOCUS_CLASSES}`
 const OPTION_CLASSES: Record<'selected' | 'unselected', string> = {
   selected: 'bg-surface-2 text-ink',
   unselected: 'bg-surface-2 text-muted hover:text-ink',

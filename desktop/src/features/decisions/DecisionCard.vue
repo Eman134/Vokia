@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiChip from '../../ui/UiChip.vue'
 import UiField from '../../ui/UiField.vue'
 import { agentName } from '../team/agents'
+import AgentPortrait from '../team/AgentPortrait.vue'
+import { PORTRAIT_SIZES } from '../team/portraitArt'
 import {
+  acceptsTypedAnswer,
   actionsFor,
   ANSWER_LABEL,
   CHOOSE_HINT,
   CHOOSE_LABEL,
+  chosenAnswer as pickAnswer,
   KIND_LABELS,
-  OTHER_OPTION,
-  OTHER_PLACEHOLDER,
+  OTHER_FIELD_LABEL,
   optionMessage,
   PERMISSION_ALWAYS,
   PERMISSION_DENY,
@@ -33,11 +36,18 @@ const returnMotive = ref('')
 
 const name = computed(() => agentName(props.card.agent))
 const actions = computed(() => actionsFor(props.card.kind, name.value))
-const isChoice = computed(() => props.card.kind === 'escolha' || props.card.kind === 'pergunta')
-const allowsOther = computed(() => props.card.kind === 'pergunta')
-const typingOther = computed(() => selected.value === OTHER_OPTION)
+const isChoice = computed(() => acceptsTypedAnswer(props.card.kind, props.card.options.length))
 const subject = computed(() => (props.card.kind === 'permissao' ? props.card.detail : props.card.title))
-const chosenAnswer = computed(() => (typingOther.value ? otherText.value.trim() : (selected.value ?? '')))
+const chosenAnswer = computed(() => pickAnswer(selected.value, otherText.value))
+
+watch(otherText, (text) => {
+  if (text.trim() !== '') selected.value = null
+})
+
+function choose(option: string): void {
+  selected.value = option
+  otherText.value = ''
+}
 
 function run(action: CardAction): void {
   const message = action.message(name.value, subject.value)
@@ -71,12 +81,15 @@ function submitChoice(): void {
 
 <template>
   <li
-    class="rounded-md border border-line bg-surface px-3 py-2.5"
+    class="min-w-0 rounded-md border border-line bg-surface px-3 py-2.5"
     :data-testid="`decision-card-${card.key}`"
     :data-kind="card.kind"
   >
     <p class="text-tiny text-muted">{{ KIND_LABELS[card.kind] }}</p>
-    <p class="wrap-break-word text-label font-semibold text-ink">{{ name }} · {{ card.title }}</p>
+    <p class="flex items-start gap-1.5 wrap-break-word text-label font-semibold text-ink">
+      <AgentPortrait :who="card.agent" :size="PORTRAIT_SIZES.stack" class="mt-0.5 shrink-0" />
+      <span class="min-w-0">{{ name }} · {{ card.title }}</span>
+    </p>
     <p v-if="card.detail" class="wrap-break-word whitespace-pre-wrap text-caption text-muted">{{ card.detail }}</p>
     <template v-if="isChoice">
       <div class="mt-2 flex flex-wrap gap-1.5">
@@ -85,18 +98,12 @@ function submitChoice(): void {
           :key="option"
           :label="option"
           :selected="selected === option"
-          @press="selected = option"
-        />
-        <UiChip
-          v-if="allowsOther"
-          :label="OTHER_OPTION"
-          :selected="typingOther"
-          @press="selected = OTHER_OPTION"
+          @press="choose(option)"
         />
       </div>
-      <UiField v-if="typingOther" v-model="otherText" class="mt-2" :label="OTHER_PLACEHOLDER" />
+      <UiField v-model="otherText" class="mt-2" :label="OTHER_FIELD_LABEL" @keydown.enter.prevent="submitChoice" />
       <div class="mt-2 flex items-center justify-end gap-2">
-        <span v-if="card.kind === 'escolha' && selected === null" class="text-caption text-muted">{{ CHOOSE_HINT }}</span>
+        <span v-if="card.kind === 'escolha' && chosenAnswer === ''" class="text-caption text-muted">{{ CHOOSE_HINT }}</span>
         <UiButton variant="approve" size="sm" :disabled="chosenAnswer === ''" @press="submitChoice">
           {{ card.kind === 'escolha' ? CHOOSE_LABEL : ANSWER_LABEL }}
         </UiButton>
