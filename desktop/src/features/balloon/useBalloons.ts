@@ -1,8 +1,12 @@
 import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { ALERT_TIMEOUT_MS, CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, type BalloonItem, type BalloonSource } from './balloonTypes'
+import { ALERT_TIMEOUT_MS, CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, REQUEST_TIMEOUT_MS, type BalloonItem, type BalloonSource } from './balloonTypes'
 
 const DISMISS_LABEL = 'Dispensar'
+
+// Avisos de conversa: não empilham, o mais novo substitui o anterior e conta quantos ele agrupa.
+const isChatNotice = (item: BalloonItem): boolean => item.kind === 'alert' || item.kind === 'request'
+const noticeCount = (item: BalloonItem): number => item.count ?? 1
 
 export const useBalloons = defineStore('balloons', () => {
   const queue = ref<BalloonItem[]>([])
@@ -13,6 +17,7 @@ export const useBalloons = defineStore('balloons', () => {
   let momentTimer: ReturnType<typeof setTimeout> | null = null
   let alertCount = 0
   let confirmTimer: ReturnType<typeof setTimeout> | null = null
+  let hovered = false
 
   function cancelMomentTimer(): void {
     if (momentTimer !== null) {
@@ -39,6 +44,7 @@ export const useBalloons = defineStore('balloons', () => {
     cancelMomentTimer()
     cancelConfirmTimer()
     confirmation.value = null
+    hovered = false
     current.value = null
     advance()
   }
@@ -58,17 +64,31 @@ export const useBalloons = defineStore('balloons', () => {
     close()
   }
 
-  watch(current, (item) => {
+  function startTimer(item: BalloonItem | null): void {
     cancelMomentTimer()
-    if (panelOpen.value) {
+    if (panelOpen.value || hovered || confirmation.value !== null) {
       return
     }
     if (item?.kind === 'moment') {
       momentTimer = setTimeout(onMomentTimeout, MOMENT_TIMEOUT_MS)
     } else if (item?.kind === 'alert') {
       momentTimer = setTimeout(onAlertTimeout, ALERT_TIMEOUT_MS)
+    } else if (item?.kind === 'request') {
+      momentTimer = setTimeout(onAlertTimeout, REQUEST_TIMEOUT_MS)
     }
-  })
+  }
+
+  watch(current, startTimer)
+
+  // O mouse sobre o balão congela o tempo; ao sair, a contagem recomeça do zero.
+  function setHovered(value: boolean): void {
+    hovered = value
+    if (value) {
+      cancelMomentTimer()
+    } else {
+      startTimer(current.value)
+    }
+  }
 
   function isKnown(id: string): boolean {
     return current.value?.id === id || queue.value.some((item) => item.id === id)
@@ -78,7 +98,25 @@ export const useBalloons = defineStore('balloons', () => {
     if (isKnown(item.id)) {
       return
     }
+    if (isChatNotice(item)) {
+      groupChatNotice(item)
+      return
+    }
     queue.value.push(item)
+    advance()
+  }
+
+  function groupChatNotice(item: BalloonItem): void {
+    const showing = current.value !== null && confirmation.value === null && isChatNotice(current.value) ? current.value : null
+    const stale = queue.value.filter(isChatNotice)
+    queue.value = queue.value.filter((queued) => !isChatNotice(queued))
+    const count = [showing, ...stale].reduce((total, notice) => total + (notice ? noticeCount(notice) : 0), 1)
+    const grouped = { ...item, count }
+    if (showing) {
+      current.value = grouped
+      return
+    }
+    queue.value.push(grouped)
     advance()
   }
 
@@ -113,14 +151,14 @@ export const useBalloons = defineStore('balloons', () => {
 
   function replace(id: string, item: BalloonItem): boolean {
     if (current.value?.id === id) {
-      current.value = item
+      current.value = { ...item, count: current.value.count }
       return true
     }
     const index = queue.value.findIndex((candidate) => candidate.id === id)
     if (index === -1) {
       return false
     }
-    queue.value.splice(index, 1, item)
+    queue.value.splice(index, 1, { ...item, count: queue.value[index]?.count })
     return true
   }
 
@@ -150,5 +188,6 @@ export const useBalloons = defineStore('balloons', () => {
     act,
     dismiss,
     setPanelOpen,
+    setHovered,
   }
 })

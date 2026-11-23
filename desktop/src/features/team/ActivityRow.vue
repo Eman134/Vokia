@@ -2,7 +2,8 @@
 import { nextTick, ref, useId } from 'vue'
 import UiTooltip from '../../ui/UiTooltip.vue'
 import type { ActivityRowModel, RowIconKind } from './activitySummary'
-
+
+
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 defineProps<{ row: ActivityRowModel }>()
 
@@ -37,6 +38,7 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
 
 const SVG_CLASSES = 'size-3.5 shrink-0 fill-none stroke-current stroke-2'
 const CHIP_CLASSES = 'inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-surface-2 px-1.5 py-0.5 text-ink'
+const COUNT_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 text-caption font-semibold text-muted'
 const OPEN_HINT = 'Clique para abrir o arquivo'
 const PREVIEW_CLASSES =
   'absolute left-0 z-10 flex w-96 max-w-full flex-col gap-1.5 rounded-md border border-line bg-surface p-3 text-caption shadow-paper'
@@ -97,6 +99,7 @@ async function showPreview(): Promise<void> {
       </UiTooltip>
       <UiTooltip v-else-if="row.text" :text="row.text" class="min-w-0 truncate text-ink">{{ row.text }}</UiTooltip>
       <span v-if="row.meta" class="shrink-0 text-muted">{{ row.meta }}</span>
+      <span v-if="row.count && row.count > 1" :class="COUNT_CLASSES" :title="`${row.count} ocorrências`" data-testid="activity-count">×{{ row.count }}</span>
       <button
         v-if="row.items"
         type="button"

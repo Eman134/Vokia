@@ -160,6 +160,8 @@ export interface ActivityRowModel {
   items?: string[]
   preview?: ToolChange
   failed: boolean
+  // Ocorrências consecutivas idênticas fundidas nesta linha; ausente quando é uma só.
+  count?: number
 }
 
 function capitalize(text: string): string {
@@ -466,6 +468,10 @@ export function splitVokiaConfirmations(text: string): VokiaConfirmations {
 }
 
 export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
+  return groupRepeatedRows(buildRows(tools, titleOf, nameOf))
+}
+
+function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
   // Criação conta desde a entrada da ferramenta: a linha nasce uma vez e só cresce com o contador.
   const created = tools.filter((tool) => tool.detail?.kind === 'created')
   return tools.flatMap((tool) => {
@@ -480,4 +486,27 @@ export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleO
     if (delegation) return [delegationRow(tool, delegation)]
     return [defaultRow(tool, icon, tool.status === 'failed')]
   })
+}
+
+// Só linhas simples se fundem: as que têm lista ou prévia carregam conteúdo próprio que o contador esconderia.
+function repeatKey(row: ActivityRowModel): string | undefined {
+  if (row.items !== undefined || row.preview !== undefined) return undefined
+  return JSON.stringify([row.icon, row.verb, row.chip?.label, row.chip?.title, row.chip?.icon, row.text, row.meta, row.failed])
+}
+
+// Funde linhas consecutivas idênticas (mesmo verbo, alvo e status) em uma, na posição da primeira, com o total em `count`.
+export function groupRepeatedRows(rows: readonly ActivityRowModel[]): ActivityRowModel[] {
+  const grouped: ActivityRowModel[] = []
+  let previousKey: string | undefined
+  for (const row of rows) {
+    const key = repeatKey(row)
+    const last = grouped[grouped.length - 1]
+    if (key !== undefined && key === previousKey && last) {
+      last.count = (last.count ?? 1) + 1
+    } else {
+      grouped.push({ ...row })
+    }
+    previousKey = key
+  }
+  return grouped
 }

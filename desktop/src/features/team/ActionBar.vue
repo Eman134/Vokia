@@ -30,6 +30,7 @@ import QueueButton from './bar/QueueButton.vue'
 import StatusRing from './bar/StatusRing.vue'
 import ActiveLlmSwitcher from '../providers/ActiveLlmSwitcher.vue'
 import { useComposerSubmit } from './bar/useComposerSubmit'
+import { hasComposerContent, showsInlinePermission } from './bar/inlinePermission'
 import { usePageActions } from './bar/usePageActions'
 import { listenFileDrops } from '../attachments/attachmentsApi'
 
@@ -64,7 +65,7 @@ const menuOpen = ref(false)
 const llmSwitcherOpen = ref(false)
 const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
-const hasDraft = computed(() => draft.value !== '' || attachments.attachments.value.length > 0)
+const hasDraft = computed(() => hasComposerContent(draft.value, attachments.attachments.value.length, confirmed.value.size))
 const interacting = computed(
   () =>
     hasDraft.value ||
@@ -76,7 +77,14 @@ const interacting = computed(
     llmSwitcherOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
-const inlinePermission = computed(() => !flow.active && expanded.value && feed.permissions.length > 0)
+const inlinePermission = computed(() =>
+  showsInlinePermission({
+    flowActive: flow.active,
+    expanded: expanded.value,
+    pendingCount: feed.permissions.length,
+    hasContent: hasDraft.value,
+  }),
+)
 const canAsk = computed(() => flow.flow !== 'onboarding')
 const statusStore = useTeamStatus()
 const requests = useRequests()

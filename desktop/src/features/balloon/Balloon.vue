@@ -26,11 +26,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     v-if="store.current && !store.panelOpen"
     role="status"
     :class="[STICKY_CLASSES, POSITION_CLASSES]"
+    @mouseenter="store.setHovered(true)"
+    @mouseleave="store.setHovered(false)"
   >
     <div class="flex items-start gap-2">
       <VokiaMascot v-if="store.current.mascot" :look="store.current.mascot" />
       <div class="min-w-0">
-        <p v-if="store.current.kind !== 'error'" class="text-tiny text-muted">{{ store.current.origin ?? store.current.source }}</p>
+        <p v-if="store.current.kind !== 'error'" class="text-tiny text-muted">
+          {{ store.current.origin ?? store.current.source }}
+          <span v-if="(store.current.count ?? 1) > 1">· {{ store.current.count }} novas</span>
+        </p>
         <p class="text-label font-semibold text-ink">{{ store.current.title }}</p>
       </div>
     </div>

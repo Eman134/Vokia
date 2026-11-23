@@ -1,4 +1,4 @@
-export const QUEUE_BADGE = (count: number): string => `Na fila ${count}`
+export const QUEUE_BUTTON_LABEL = (count: number): string => `Na fila, ${count} ${count === 1 ? 'pedido' : 'pedidos'}`
 export const QUEUE_POPOVER_TITLE = 'Pedidos na fila'
 export const QUEUED_TAG = 'Na fila'
 export const QUEUE_EDIT = 'Editar'

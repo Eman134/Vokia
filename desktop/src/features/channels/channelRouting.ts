@@ -23,20 +23,3 @@ export function channelOf(message: VokiaMessage, channels: readonly Channel[]): 
   }
   return best?.id ?? null
 }
-
-// Conjunto igual, ordem ignorada (P7). #geral só nomeia o grupo que tem o roster inteiro.
-export function namingChannel(
-  participants: readonly Agent[],
-  channels: readonly Channel[],
-  roster: readonly Agent[],
-): string | null {
-  const match = channels.find((channel) => sameAgents(channel.members, participants))
-  if (match !== undefined) {
-    return match.name
-  }
-  return sameAgents(roster, participants) ? GENERAL_CHANNEL_NAME : null
-}
-
-function sameAgents(left: readonly Agent[], right: readonly Agent[]): boolean {
-  return left.length === right.length && left.every((agent) => right.includes(agent))
-}

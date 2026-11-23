@@ -9,10 +9,10 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import type { TurnActivity, VokiaMessage } from './events'
+import type { TurnActivity } from './events'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
-import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
+import { ALL_SCREEN_LABEL } from './timeline'
 import { useFeed } from './useFeed'
 import type { AgentProfile } from './teamApi'
 import { filterPendingAgentsForScreen, formatPendingStatusLabel, groupPendingAgentsByState, isPendingState } from './pendingAgents'
@@ -23,7 +23,7 @@ import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useChannels } from '../channels/useChannels'
 import { useThreads } from './useThreads'
-import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiButton from '../../ui/UiButton.vue'
@@ -37,7 +37,6 @@ import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 
-const GROUP_SEPARATOR = ' ↔ '
 const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex max-w-3xl flex-col gap-3'
 const STATUS_GROUP_CLASSES = 'flex items-start gap-2.5'
 const STATUS_PORTRAITS_CLASSES = 'flex shrink-0 items-center gap-1.5'
@@ -71,24 +70,11 @@ const { tab: aba } = storeToRefs(useConversationTab())
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
 const filaAberta = computed(() => props.filaEmAba && aba.value === 'fila')
 
-function groupTitle(messages: readonly VokiaMessage[]): string {
-  return groupParticipants(messages).map(agentName).join(GROUP_SEPARATOR)
-}
-
 function channelName(target: number | typeof GENERAL_CHANNEL_NAME): string | null {
   if (target === GENERAL_CHANNEL_NAME) {
     return GENERAL_CHANNEL_NAME
   }
   return channels.channels.find((channel) => channel.id === target)?.name ?? null
-}
-
-function groupLabel(messages: readonly VokiaMessage[]): string {
-  const name = namingChannel(
-    groupParticipants(messages),
-    channels.channels,
-    roster.agents.map((agent) => agent.id),
-  )
-  return name === null ? groupTitle(messages) : `#${name}`
 }
 
 const threads = useThreads()
@@ -175,10 +161,6 @@ function onClearPointerDown(event: PointerEvent): void {
   if (event.target instanceof Node && !clearWrap.value?.contains(event.target)) {
     confirmingClear.value = false
   }
-}
-
-function countLabel(count: number): string {
-  return count === 1 ? '1 mensagem' : `${count} mensagens`
 }
 
 async function clearConversation(): Promise<void> {
@@ -334,21 +316,7 @@ watch(
       </UiEmpty>
       <ol class="flex max-w-3xl flex-col gap-2">
         <li v-for="item in feed.timeline" :key="item.start">
-          <details
-            v-if="item.type === 'group' && collapsesGroup(item.messages)"
-            class="rounded-md border border-line bg-surface px-3 py-2"
-          >
-            <summary class="flex min-w-0 cursor-pointer list-none items-baseline gap-2">
-              <span class="min-w-0 truncate text-caption font-semibold text-ink" :title="groupTitle(item.messages)">{{ groupLabel(item.messages) }}</span>
-              <span class="text-caption text-muted">{{ countLabel(item.messages.length) }}</span>
-            </summary>
-            <ol class="mt-2 flex flex-col gap-2">
-              <li v-for="(message, index) in item.messages" :key="index">
-                <MessageEntry :entry="message" />
-              </li>
-            </ol>
-          </details>
-          <div v-else-if="item.type === 'group'" class="flex flex-col gap-2">
+          <div v-if="item.type === 'group'" class="flex flex-col gap-2">
             <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
           </div>
           <MessageEntry v-else :entry="item.entry" />

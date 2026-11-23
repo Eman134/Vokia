@@ -19,9 +19,12 @@ export interface BalloonItem {
   title: string
   text?: string
   mascot?: MascotLook
+  // Quantas notificações de conversa este balão agrupa; ausente = 1.
+  count?: number
   actions: BalloonAction[]
 }
 
 export const MOMENT_TIMEOUT_MS = 8000
 export const ALERT_TIMEOUT_MS = 5000
+export const REQUEST_TIMEOUT_MS = 5000
 export const CONFIRM_VISIBLE_MS = 2000
