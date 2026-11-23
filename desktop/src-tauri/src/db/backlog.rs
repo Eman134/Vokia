@@ -599,6 +599,15 @@ impl Db {
     }
 
     pub fn delete_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
+        self.delete_backlog_item_with_cascade(project_id, item_id, false)
+    }
+
+    pub fn delete_backlog_item_with_cascade(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        cascade: bool,
+    ) -> Result<(), DbError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
@@ -613,13 +622,33 @@ impl Db {
         if column == IN_PROGRESS_COLUMN {
             return Err(DbError::BacklogDeleteInProgress);
         }
-        let has_plan: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM item_plans WHERE project_id = ?1 AND item_id = ?2)",
-            params![project_id, item_id],
-            |row| row.get(0),
-        )?;
-        if has_plan {
-            return Err(DbError::BacklogDeleteWithPlan);
+        let plan_id: Option<String> = tx
+            .query_row(
+                "SELECT plan_id FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(plan_id) = plan_id {
+            if !cascade {
+                return Err(DbError::BacklogDeleteWithPlan);
+            }
+            if !plan_id.is_empty() {
+                tx.execute(
+                    "DELETE FROM backlog_items WHERE project_id = ?1 AND (parent = ?2 OR id LIKE ?3)",
+                    params![project_id, item_id, format!("{plan_id}.%")],
+                )?;
+            } else {
+                tx.execute(
+                    "DELETE FROM backlog_items WHERE project_id = ?1 AND parent = ?2",
+                    params![project_id, item_id],
+                )?;
+            }
+            tx.execute(
+                "DELETE FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+            )?;
+            delete_artifact(&tx, project_id, item_id)?;
         }
         let parent = parent_of(&tx, project_id, item_id)?;
         tx.execute(

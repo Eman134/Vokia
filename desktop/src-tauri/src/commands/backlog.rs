@@ -234,9 +234,17 @@ pub(crate) fn delete_backlog_item_exec(
     app: &AppHandle,
     args: BacklogItemArgs,
 ) -> Result<(), String> {
+    delete_backlog_item_with_cascade_exec(app, args, false)
+}
+
+pub(crate) fn delete_backlog_item_with_cascade_exec(
+    app: &AppHandle,
+    args: BacklogItemArgs,
+    cascade: bool,
+) -> Result<(), String> {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
-    db.delete_backlog_item(args.project_id, &args.item_id)
+    db.delete_backlog_item_with_cascade(args.project_id, &args.item_id, cascade)
         .map_err(|error| error.to_string())?;
     notify_backlog_changed(app, args.project_id);
     Ok(())
@@ -414,13 +422,19 @@ pub fn restore_backlog_item(
 }
 
 #[tauri::command]
-pub fn delete_backlog_item(app: AppHandle, project_id: i64, item_id: String) -> Result<(), String> {
-    delete_backlog_item_exec(
+pub fn delete_backlog_item(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+    cascade: Option<bool>,
+) -> Result<(), String> {
+    delete_backlog_item_with_cascade_exec(
         &app,
         BacklogItemArgs {
             project_id,
             item_id,
         },
+        cascade.unwrap_or(false),
     )
 }
 

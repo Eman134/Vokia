@@ -348,7 +348,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("projects", "delete_project", "Exclui um projeto.", "Para excluir um projeto e seus dados; ação destrutiva, confirme com o usuário antes.", empty_object_schema),
     exposed("projects", "pin_project", "Fixa ou desafixa um projeto.", "Para fixar um projeto como padrão do orquestrador ou desafixar.", empty_object_schema),
     exposed("projects", "clear_conversation", "Apaga a conversa de um projeto.", "Para apagar a conversa de um projeto; ação destrutiva, confirme com o usuário antes.", empty_object_schema),
-    exposed("projects", "load_history", "Carrega o histórico de eventos de um projeto.", "Para ler o histórico de eventos de um projeto ao reconstruir o contexto.", empty_object_schema),
+    exposed("projects", "load_history", "Carrega o histórico de eventos de um projeto (mensagens incluem channelId e itemId quando vinculados).", "Para ler o histórico de eventos de um projeto ao reconstruir o contexto.", empty_object_schema),
     exposed("projects", "set_permission_level", "Define o nível de permissão de um projeto.", "Para mudar o nível de permissão dos agentes em um projeto; recusa se houver fluxo em andamento.", empty_object_schema),
     exposed("projects", "list_permission_rules", "Lista as regras de permissão de um projeto.", "Para ver as regras de permissão já gravadas em um projeto.", empty_object_schema),
     exposed("projects", "delete_permission_rule", "Remove uma regra de permissão de um projeto.", "Para remover uma regra de permissão gravada; precisa da ferramenta e do comando exatos.", empty_object_schema),

@@ -87,6 +87,6 @@ export function archiveBacklogItem(projectId: number, itemId: string): Promise<v
   return invoke<void>(ARCHIVE_BACKLOG_ITEM_COMMAND, { projectId, itemId })
 }
 
-export function deleteBacklogItem(projectId: number, itemId: string): Promise<void> {
-  return invoke<void>(DELETE_BACKLOG_ITEM_COMMAND, { projectId, itemId })
+export function deleteBacklogItem(projectId: number, itemId: string, cascade = false): Promise<void> {
+  return invoke<void>(DELETE_BACKLOG_ITEM_COMMAND, { projectId, itemId, cascade })
 }

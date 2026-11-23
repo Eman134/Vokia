@@ -73,6 +73,7 @@ const DELETE_LABEL = 'Remover'
 const DELETE_MESSAGE = 'Remove o card de vez. Não dá para desfazer.'
 const DELETE_CONFIRM_LABEL = 'Remover card'
 const NO_LEADER_TEXT = 'Sem responsável · nenhum líder configurado'
+const OPEN_THREAD_LABEL = 'Abrir thread'
 
 const backlog = useBacklog()
 const itemQuestions = useItemQuestions()
@@ -231,6 +232,13 @@ function closeModal(): void {
   backlog.close()
 }
 
+function openThread(): void {
+  if (!item.value) return
+  feed.showScreen({ kind: 'thread', itemId: item.value.id })
+  backlog.close()
+  navigation.goTo('conversas')
+}
+
 function openConversations(): void {
   closeModal()
   navigation.goTo('conversas')
@@ -242,10 +250,10 @@ function archiveItem(): void {
   backlog.archive(id)
 }
 
-function removeItem(): void {
+function removeItem(cascade = false): void {
   const id = item.value!.id
   closeModal()
-  backlog.remove(id)
+  backlog.remove(id, cascade)
 }
 
 watch(
@@ -463,12 +471,13 @@ watch(
           </template>
           <UiConfirm
             :label="DELETE_LABEL"
-            :message="DELETE_MESSAGE"
-            :confirm-label="DELETE_CONFIRM_LABEL"
+            :message="item.plan ? 'Este item tem um plano vinculado. Remover mesmo assim apagará o item, o plano e as etapas filhas.' : DELETE_MESSAGE"
+            :confirm-label="item.plan ? 'Remover mesmo assim' : DELETE_CONFIRM_LABEL"
             :busy="runItem.isRunning(item.id)"
-            @confirm="removeItem"
+            @confirm="removeItem(Boolean(item.plan))"
           />
           <UiConfirm :label="ARCHIVE_LABEL" :message="ARCHIVE_MESSAGE" :confirm-label="ARCHIVE_CONFIRM_LABEL" @confirm="archiveItem" />
+          <UiButton variant="quiet" size="lg" @press="openThread">{{ OPEN_THREAD_LABEL }}</UiButton>
           <UiButton variant="quiet" size="lg" @press="openConversations">{{ CONVERSATIONS_LABEL }}</UiButton>
           <UiButton
             variant="primary"

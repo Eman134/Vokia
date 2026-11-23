@@ -240,10 +240,10 @@ export const useBacklog = defineStore('backlog', () => {
     enqueue(id, (projectId) => archiveBacklogItem(projectId, id))
   }
 
-  function remove(id: string): void {
+  function remove(id: string, cascade = false): void {
     if (!editable(id)) return
     dropItem(id)
-    enqueue(id, (projectId) => deleteBacklogItem(projectId, id))
+    enqueue(id, (projectId) => deleteBacklogItem(projectId, id, cascade))
   }
 
   function moveTo(id: string, column: BacklogColumn): void {

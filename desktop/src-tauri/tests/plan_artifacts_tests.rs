@@ -873,3 +873,32 @@ fn excluir_plano_inexistente_ou_de_outro_projeto_e_recusado_e_nada_muda() {
     assert_eq!(db.list_artifacts(project_id).unwrap().len(), 1);
     assert_eq!(plan_card_ids(&db, project_id, &item_id).len(), 4);
 }
+
+#[test]
+fn excluir_o_item_com_cascade_remove_item_plano_e_etapas_filhas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    db.save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, Some(SINGLE_LOT_PROPOSAL)))
+        .unwrap();
+
+    let blocked = db
+        .delete_backlog_item_with_cascade(project_id, &item_id, false)
+        .unwrap_err();
+    assert!(matches!(blocked, DbError::BacklogDeleteWithPlan), "{blocked:?}");
+
+    db.delete_backlog_item_with_cascade(project_id, &item_id, true)
+        .unwrap();
+
+    assert!(db.list_artifacts(project_id).unwrap().is_empty());
+    let remaining: i64 = dir
+        .raw()
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM backlog_items) + (SELECT COUNT(*) FROM item_plans) + (SELECT COUNT(*) FROM artifacts) + (SELECT COUNT(*) FROM artifact_criteria)",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 0);
+}
