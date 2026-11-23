@@ -134,6 +134,7 @@ fn criar_grava_card_do_agente_em_backlog_com_atividade_e_origem() {
     let item = &db.list_backlog(project_id).unwrap().items[0];
     assert_eq!(item.id, results[0].id);
     assert_eq!(item.origin, "agente");
+    assert_eq!(item.state, "triagem");
     assert_eq!(item.who, "vexa");
     assert_eq!(item.by, "vexa");
     assert_eq!(item.description.as_deref(), Some("Checar o token"));

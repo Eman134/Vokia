@@ -251,7 +251,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             CREATE_CARD,
-            "Cria um card no backlog; o título não pode repetir o de outro card.",
+            "Cria um card no backlog já em triagem (leia o código, pergunte via request_decision se faltar definição e grave o plano via save_item_plan antes de delegar a implementação); o título não pode repetir o de outro card.",
             json!({
                 "title": { "type": "string", "maxLength": MAX_TITLE_CHARS },
                 "description": { "type": "string" },

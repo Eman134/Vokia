@@ -244,3 +244,40 @@ fn role_prompt_inclui_regras_de_ferramenta_conforme_tool_mode() {
         assert!(!role_none.contains("vokia-cli commands"));
     });
 }
+
+#[test]
+fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() {
+    with_test_context(|team, profile| {
+        let choices = ProjectChoices {
+            pinned: Some("projeto-a".to_string()),
+            labels: vec!["projeto-a".to_string()],
+        };
+        let maestro = maestro_role(
+            "Base Ember.",
+            &[],
+            &choices,
+            None,
+            None,
+            team,
+            &[],
+            ToolPromptMode::Mcp,
+        );
+        assert!(maestro.contains("triagem"));
+        assert!(maestro.contains("request_decision"));
+        assert!(maestro.contains("save_item_plan"));
+
+        assert!(MAESTRO_TEAM_RULE.contains("triagem"));
+        assert!(MAESTRO_TEAM_RULE.contains("request_decision"));
+        assert!(MAESTRO_TEAM_RULE.contains("save_item_plan"));
+
+        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp);
+        assert!(role_mcp.contains("triagem"));
+        assert!(role_mcp.contains("request_decision"));
+        assert!(role_mcp.contains("save_item_plan"));
+
+        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli);
+        assert!(role_cli.contains("triagem"));
+        assert!(role_cli.contains("request-decision"));
+        assert!(role_cli.contains("save_item_plan"));
+    });
+}
