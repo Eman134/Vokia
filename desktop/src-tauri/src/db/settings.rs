@@ -9,11 +9,13 @@ const SETTING_THEME: &str = "theme";
 // Espelha THEME_CHOICES de src/features/theme/useTheme.ts.
 const THEME_VALUES: &[&str] = &["light", "dark", "system"];
 pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
+pub const SETTING_AUTO_TRIAGE: &str = "auto_triage";
 pub const SETTING_ACTIVE_LLM: &str = "active_llm";
 pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
+const AUTO_TRIAGE_VALUES: &[&str] = &["true", "false"];
 const SETTING_AVATAR_PROFILES: &str = "avatar_profiles";
 const SETTING_USER_NAME: &str = "user_name";
 const SETTING_USER_AVATAR: &str = "user_avatar";
@@ -35,6 +37,7 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
         SETTING_PERMISSION_GRANT,
         SettingRule::OneOf(PERMISSION_GRANT_VALUES),
     ),
+    (SETTING_AUTO_TRIAGE, SettingRule::OneOf(AUTO_TRIAGE_VALUES)),
     (SETTING_AVATAR_PROFILES, SettingRule::Json),
     (
         SETTING_USER_NAME,
