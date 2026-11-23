@@ -4,12 +4,14 @@ import { useTeamStatus } from '../useTeamStatus'
 import { useFlow } from '../useFlow'
 import { panelTitleFor } from '../../decisions/decisionCopy'
 import { useDecisions } from '../../decisions/useDecisions'
+import { usePanelTab } from '../../panel/usePanelTab'
 import UiButton from '../../../ui/UiButton.vue'
 
 const props = defineProps<{ expanded: boolean }>()
 
 const statusStore = useTeamStatus()
 const decisions = useDecisions()
+const panelTab = usePanelTab()
 const flow = useFlow()
 const decisionsTitle = computed(() => panelTitleFor(decisions.pendingCount))
 // Minimizada e sem pendência nem check, o botão ficaria vazio e deixaria um vão à direita da pílula.
@@ -27,7 +29,7 @@ const showDecisionsButton = computed(
     :aria-expanded="decisions.open"
     class="gap-1.75"
     data-testid="decisions-button"
-    @press="decisions.toggle()"
+    @press="panelTab.toggle()"
   >
     <span
       v-if="decisions.pendingCount > 0"

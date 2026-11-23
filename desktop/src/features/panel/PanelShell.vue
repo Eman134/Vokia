@@ -28,7 +28,7 @@ const tabs = computed<TabEntry[]>(() => [
 function onKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.code === TOGGLE_KEY_CODE) {
     event.preventDefault()
-    decisions.toggle()
+    panelTab.toggle()
   } else if (event.key === 'Escape' && decisions.open && !event.defaultPrevented) {
     decisions.setOpen(false)
   }

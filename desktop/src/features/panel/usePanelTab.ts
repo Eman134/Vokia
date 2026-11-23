@@ -12,5 +12,15 @@ export const usePanelTab = defineStore('panelTab', () => {
     useDecisions().setOpen(true)
   }
 
-  return { tab, openOn }
+  // Com decisão pendente, o atalho/botão de decisões leva direto para a aba 'decisoes'.
+  function toggle(): void {
+    const decisions = useDecisions()
+    if (decisions.pendingCount > 0 && (!decisions.open || tab.value !== 'decisoes')) {
+      openOn('decisoes')
+      return
+    }
+    decisions.toggle()
+  }
+
+  return { tab, openOn, toggle }
 })
