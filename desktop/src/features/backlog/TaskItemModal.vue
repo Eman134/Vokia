@@ -61,6 +61,7 @@ import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
+import MarkdownText from '../team/MarkdownText.vue'
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
 const FRAME_CLASSES = 'w-215 max-w-full rounded-md border border-line bg-surface shadow-paper'
@@ -348,7 +349,7 @@ watch(
         <div class="flex min-w-0 flex-col gap-5 border-r border-line px-6 py-5 max-md:border-r-0">
           <section v-if="item.description">
             <h3 class="mb-1 text-label font-semibold text-ink">Descrição</h3>
-            <p v-if="descriptionContent.text" class="whitespace-pre-wrap text-control text-ink">{{ descriptionContent.text }}</p>
+            <MarkdownText v-if="descriptionContent.text" :text="descriptionContent.text" />
             <AttachmentPreviewList
               v-if="descriptionContent.attachments.length > 0"
               :attachments="descriptionContent.attachments"

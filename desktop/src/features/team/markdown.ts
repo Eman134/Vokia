@@ -28,7 +28,9 @@ const OL_ITEM = /^\s*\d+[.)]\s+(.*)$/
 // Mesma regra de set_artifact_check no backend: só "- [ ]" e "- [x]", com o índice contado na ordem do texto fora de blocos de código.
 const TASK_ITEM = /^\s*- \[( |x|X)\](.*)$/
 const CODE_SPAN = /`([^`]+)`/g
-const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g
+const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+|file:\/\/[^\s)]+)\)/g
+const FILE_ICON_SVG =
+  '<svg viewBox="0 0 20 20" class="size-3.5 shrink-0 text-muted" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3.5h6.2l3.8 3.8v9.2a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" /><path d="M11.5 3.5v3.8h4" /></svg>'
 const BOLD = /\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__/g
 const STRIKE = /~~(?=\S)(.+?)(?<=\S)~~/g
 const ITALIC_STAR = /(^|[^*\w])\*(?=\S)([^*]+?)(?<=\S)\*(?!\*)/g
@@ -80,6 +82,21 @@ function startsBlock(line: string, fences: FenceRules): boolean {
   )
 }
 
+function renderFileLink(label: string, escapedUrl: string): string {
+  let fullPath = escapedUrl.slice('file://'.length)
+  if (fullPath.startsWith('localhost/')) fullPath = fullPath.slice('localhost'.length)
+  if (/^\/[A-Za-z]:\//.test(fullPath)) fullPath = fullPath.slice(1)
+  fullPath = fullPath.replace(/%20/g, ' ')
+
+  const hashIndex = fullPath.indexOf('#')
+  const pathOnly = hashIndex >= 0 ? fullPath.slice(0, hashIndex) : fullPath
+  const anchor = hashIndex >= 0 ? fullPath.slice(hashIndex) : ''
+  const fileName = pathOnly.split(/[\\/]/).filter(Boolean).at(-1) ?? (label || fullPath)
+  const anchorHtml = anchor ? `<span class="text-muted">${anchor}</span>` : ''
+
+  return `<span data-file-link class="inline-flex max-w-full items-center gap-1 rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 align-baseline font-mono text-small text-ink" title="${fullPath}">${FILE_ICON_SVG}<span class="truncate">${fileName}</span>${anchorHtml}</span>`
+}
+
 function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
   // Trechos já prontos (código e links) ficam guardados e só voltam no fim,
   // para que negrito, itálico e menções não mexam dentro deles.
@@ -90,7 +107,11 @@ function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
   text = text.replace(CODE_SPAN, (_, code: string) => hold(`<code>${escapeHtml(code)}</code>`))
   text = escapeHtml(text)
   text = text.replace(LINK, (_, label: string, url: string) =>
-    hold(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`),
+    hold(
+      url.startsWith('file://')
+        ? renderFileLink(label, url)
+        : `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`,
+    ),
   )
   text = text
     .replace(BOLD, (_, a: string | undefined, b: string | undefined) => `<strong>${a ?? b}</strong>`)
