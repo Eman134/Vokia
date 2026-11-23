@@ -20,7 +20,10 @@ mod validation;
 
 pub(crate) use adapters::cli_has_tools;
 pub(crate) use archive::remove_archive;
-pub(crate) use emit::{emit_artifacts_changed, emit_backlog_changed, emit_feed_note, emit_message, MessageScope};
+pub(crate) use emit::{
+    emit_artifacts_changed, emit_backlog_changed, emit_feed_note, emit_message, reconcile_waiting,
+    record_agent_state, MessageScope,
+};
 pub(crate) use prompts::variables_listing;
 pub(crate) use turns::with_cache;
 pub use emit::now_millis;

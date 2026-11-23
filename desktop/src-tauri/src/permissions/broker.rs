@@ -55,6 +55,7 @@ pub struct PermissionBroker {
 
 struct PendingPermission {
     project_id: i64,
+    agent: Agent,
     // Ação destrutiva continua pedindo aprovação mesmo quando o bypass é ligado com pedidos pendentes.
     destructive: bool,
     sender: oneshot::Sender<Answer>,
@@ -127,7 +128,10 @@ impl PermissionBroker {
         destructive: bool,
     ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
-        if self.register(&request.id, project_id, destructive, sender).is_err() {
+        if self
+            .register(&request.id, project_id, agent.clone(), destructive, sender)
+            .is_err()
+        {
             return (PermissionVerdict::Deny(None), false);
         }
         let Ok(now) = now_millis() else {
@@ -177,7 +181,12 @@ impl PermissionBroker {
                 outcome,
             },
         );
-        emit_agent_state(app, &agent, AgentState::Thinking, project_id);
+        let next_state = if matches!(answer, Some(Answer::Closed)) {
+            AgentState::Idle
+        } else {
+            AgentState::Thinking
+        };
+        emit_agent_state(app, &agent, next_state, project_id);
         let granted_root = matches!(answer, Some(Answer::Allow { root: true, .. }));
         (verdict_of(answer), granted_root)
     }
@@ -212,10 +221,19 @@ impl PermissionBroker {
         }
     }
 
+    pub fn has_pending(&self, project_id: i64, agent: &Agent) -> bool {
+        self.pending.lock().is_ok_and(|pending| {
+            pending
+                .values()
+                .any(|entry| entry.project_id == project_id && &entry.agent == agent)
+        })
+    }
+
     fn register(
         &self,
         id: &str,
         project_id: i64,
+        agent: Agent,
         destructive: bool,
         sender: oneshot::Sender<Answer>,
     ) -> Result<(), PermissionError> {
@@ -226,6 +244,7 @@ impl PermissionBroker {
                 id.to_string(),
                 PendingPermission {
                     project_id,
+                    agent,
                     destructive,
                     sender,
                 },
@@ -381,6 +400,7 @@ fn suggests_always(history: &ApprovalHistory, now: u64) -> bool {
 }
 
 fn emit_agent_state(app: &AppHandle, agent: &Agent, state: AgentState, project_id: i64) {
+    crate::orchestrator::record_agent_state(app, project_id, agent, state);
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::AgentState {

@@ -99,11 +99,9 @@ pub(crate) fn select_project_exec(app: &AppHandle, args: SelectProjectArgs) -> R
         // Fechar espera a mensagem em andamento do projeto anterior; a troca de seleção não deve esperar junto.
         let handle = app.clone();
         tauri::async_runtime::spawn(async move {
-            handle
-                .state::<AppState>()
-                .sessions
-                .close_project(previous)
-                .await;
+            let app_state = handle.state::<AppState>();
+            app_state.sessions.close_project(previous).await;
+            orchestrator::reconcile_waiting(&handle, &app_state, previous);
         });
     }
     Ok(())
