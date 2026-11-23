@@ -31,6 +31,7 @@ import UiHandLine from '../../ui/UiHandLine.vue'
 import { HAND_MARK_CLASSES, INK_FOCUS_CLASSES, handReveal } from '../../ui/handDrawn'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
+import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import { useFollowEnd } from '../../ui/useFollowEnd'
 import ActivityRun from './ActivityRun.vue'
 import ConversationComposer from './ConversationComposer.vue'
@@ -44,8 +45,8 @@ const STATUS_DOT_CLASSES = 'absolute -right-0.5 -bottom-0.5 size-2 rounded-full 
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 // Altura fixa: conversa de agente (retrato, nome e papel) e canal ocupam o mesmo cabeçalho.
-const HEADER_CLASSES = 'flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-4.5'
-const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3'
+const HEADER_CLASSES = 'flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-3 md:h-14 md:gap-4 md:px-4.5'
+const BODY_CLASSES = `flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2.5 md:px-4 md:py-3 ${HIDDEN_SCROLLBAR_CLASSES}`
 const TABS_LABEL = 'Abas da conversa'
 const TABS_CLASSES = 'flex gap-5'
 const TAB_CLASSES = `group relative cursor-pointer whitespace-nowrap pb-1.5 text-label font-medium ${INK_FOCUS_CLASSES}`

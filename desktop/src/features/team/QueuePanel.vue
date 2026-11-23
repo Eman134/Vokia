@@ -2,12 +2,13 @@
 import { computed } from 'vue'
 import { agentName } from './agents'
 import UiHandDivider from '../../ui/UiHandDivider.vue'
+import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import QueuedEntry from './QueuedEntry.vue'
 import { useFeed } from './useFeed'
 import { useQueueItems } from './useQueueItems'
 
 const PANEL_CLASSES =
-  'relative flex min-h-0 min-w-0 flex-none max-h-72 flex-col gap-3 overflow-y-auto p-4 transition-[flex] duration-300 ease-in-out motion-reduce:transition-none lg:max-h-none lg:flex-[1_1_240px] lg:pl-6'
+  `relative flex min-h-0 min-w-0 flex-none max-h-72 flex-col gap-3 overflow-y-auto p-4 transition-[flex] duration-300 ease-in-out motion-reduce:transition-none lg:max-h-none lg:flex-[1_1_240px] lg:pl-6 ${HIDDEN_SCROLLBAR_CLASSES}`
 const TEAM_TITLE = 'Fila do time'
 const AGENT_TITLE_PREFIX = 'Fila de '
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
+import { HIDDEN_SCROLLBAR_CLASSES, PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import { useProjects } from '../projects/useProjects'
 import AgentList from './AgentList.vue'
@@ -9,8 +9,8 @@ import QueuePanel from './QueuePanel.vue'
 import { useConversationTab } from './conversationTabs'
 import { useQueueItems } from './useQueueItems'
 
-const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-hidden ${PAGE_INSET_CLASSES}`
-const PANELS_CLASSES = 'flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto md:flex-row md:overflow-hidden'
+const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-3 overflow-hidden md:gap-5 ${PAGE_INSET_CLASSES}`
+const PANELS_CLASSES = `flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto ${HIDDEN_SCROLLBAR_CLASSES} md:flex-row md:gap-3.5 md:overflow-hidden`
 // Abaixo de lg (1024 px) não cabe a coluna de fila: ela vira aba da conversa.
 const WIDE_MEDIA_QUERY = '(min-width: 64rem)'
 

@@ -27,33 +27,34 @@ import UiHandDivider from '../../ui/UiHandDivider.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { HAND_DRAWN_RADIUS, HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const BACKLOG_PAGE: AppPage = 'backlog'
 const OPEN_CARD_LABEL = 'Abrir card no backlog'
 const OPEN_CARD_ICON_PATH = 'M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3M9.5 2.5h4v4M13.5 2.5L7.5 8.5'
-const OPEN_CARD_ICON_SIZE = 14
+const OPEN_CARD_ICON_SIZE = 13
 const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
 const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
 const PANEL_CLASSES =
-  'relative flex min-h-0 w-full shrink-0 flex-col overflow-y-auto p-2.5 max-md:max-h-72 md:w-52 md:pr-4'
+  `relative flex min-h-0 w-full shrink-0 flex-col overflow-y-auto p-1.5 max-md:max-h-[45vh] md:w-56 md:py-2 md:pl-1.5 md:pr-3 lg:w-64 xl:w-72 ${HIDDEN_SCROLLBAR_CLASSES}`
 const QUEUE_BADGE_CLASSES =
-  'absolute right-2 top-2 grid min-w-5 place-items-center rounded-full bg-accent-soft px-1.5 text-tiny font-semibold text-accent'
+  'absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-accent-soft px-1 text-tiny font-semibold text-accent'
 const MENTION_LABEL = 'Mencionar'
 const OPEN_CONVERSATION_PREFIX = 'Abrir conversa de '
-const CARD_CLASSES = `flex w-full cursor-pointer items-center gap-2 rounded-md p-2 pr-8 text-left ${INK_FOCUS_CLASSES}`
+const CARD_CLASSES = `flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 pr-7 text-left ${INK_FOCUS_CLASSES}`
 const MENTION_CLASSES =
-  `absolute right-2 bottom-2 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent disabled:opacity-40 motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
+  `absolute right-1.5 bottom-1 grid size-5 cursor-pointer place-items-center rounded-full text-tiny font-semibold text-muted transition-[transform,color,background-color] duration-150 ease-out enabled:hover:scale-115 enabled:hover:bg-accent-soft enabled:hover:text-accent focus-visible:scale-115 focus-visible:bg-accent-soft focus-visible:text-accent disabled:opacity-40 motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const MENTION_GLYPH = '@'
 const SELECTED_TEXT_CLASSES = 'text-ink-pen'
 const UNSELECTED_CLASSES = 'hover:bg-surface-2'
 const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
-const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-3 w-[calc(100%-3.75rem)]`
-const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1.5 pl-3 pr-8 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
+const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-2 w-[calc(100%-2.75rem)]`
+const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1 pl-2 pr-7 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
 const THREAD_CARD_BUTTON_CLASSES =
-  `absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
-const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-2 rounded-md border border-line px-2.5 py-2 text-left transition-colors hover:bg-surface-2 ${INK_FOCUS_CLASSES}`
+  `absolute right-1 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
+const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-1.5 rounded-md border border-line px-2 py-1 text-left transition-colors hover:bg-surface-2 ${INK_FOCUS_CLASSES}`
 // COPY_CLASSES já fixa border-line; o `!` faz a tinta vencer.
 const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
 const COPY_CONNECTOR_PATH = 'M5 3 C4.6 10 4.8 16 5.6 19.2 C8.5 20 13 19.7 17 19.4'
@@ -177,11 +178,11 @@ function closeChannelDialog(): void {
     </button>
     <UiHandDivider class="absolute inset-y-0 right-0 h-full max-md:hidden" />
     <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
-      <div class="mb-2 flex items-center justify-between">
+      <div class="mb-1 flex flex-wrap items-center justify-between gap-1.5">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
         <UiChip kind="add" :label="`+ ${NEW_CHANNEL_LABEL}`" @press="openChannelDialog()" />
       </div>
-      <ul class="mb-2 flex flex-col gap-2">
+      <ul class="mb-1.5 flex flex-col gap-0.5">
         <li>
           <button
             type="button"
@@ -209,8 +210,8 @@ function closeChannelDialog(): void {
         </li>
       </ul>
       <template v-if="threads.threads.length > 0">
-        <h2 class="mb-2 mt-1 text-small font-semibold text-muted">Threads</h2>
-        <ul class="mb-2 flex flex-col gap-1.5">
+        <h2 class="mb-1 mt-0.5 text-small font-semibold text-muted">Threads</h2>
+        <ul class="mb-1.5 flex flex-col gap-0.5">
           <li v-for="thread in threads.threads" :key="thread.itemId" class="group relative">
             <button
               type="button"
@@ -238,10 +239,10 @@ function closeChannelDialog(): void {
           </li>
         </ul>
       </template>
-      <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
-      <UiHandLine class="mb-3 h-1.5 w-full text-line" />
-      <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
-      <ul class="flex flex-col gap-1.5">
+      <UiNotice v-if="channelError" class="mb-2" :text="channelError" @close="channelError = null" />
+      <UiHandLine class="my-1.5 h-1.5 w-full text-line" />
+      <h2 class="mb-1 text-small font-semibold text-muted">Agentes</h2>
+      <ul class="flex flex-col gap-0.5">
         <li v-for="agent in roster.agents" :key="agent.id">
           <div class="relative">
             <button
@@ -255,19 +256,19 @@ function closeChannelDialog(): void {
                 <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
                 <UiHandLine v-if="isShown(agent.id)" variant="circle" draw :class="PORTRAIT_CIRCLE_CLASSES" />
               </span>
-              <span class="flex min-w-0 flex-col">
+              <span class="flex min-w-0 flex-1 flex-col">
                 <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold">
                   <span class="truncate">{{ agent.name }}</span>
                   <AgentProjectIcons :agent="agent.id" />
+                  <span v-if="agentCopies.copiesOf(agent.id).length" class="ml-auto shrink-0 whitespace-nowrap text-tiny font-normal text-muted">
+                    {{ copiesLabel(agentCopies.copiesOf(agent.id).length) }}
+                  </span>
                 </span>
-                <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
+                <span class="flex min-w-0 items-center gap-1 text-tiny text-ink">
                   <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
-                  <span class="truncate">{{ presence(agent.id).label }}</span>
+                  <span class="shrink-0">{{ presence(agent.id).label }}</span>
+                  <span class="truncate text-muted">· {{ agent.role }}</span>
                 </span>
-                <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
-              </span>
-              <span v-if="agentCopies.copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
-                {{ copiesLabel(agentCopies.copiesOf(agent.id).length) }}
               </span>
             </button>
             <button
@@ -290,7 +291,7 @@ function closeChannelDialog(): void {
           <ul
             v-if="agentCopies.copiesOf(agent.id).length"
             :aria-label="`${COPIES_LIST_LABEL} de ${agent.name}`"
-            class="mt-1 ml-2 flex flex-col gap-1"
+            class="mt-0.5 ml-2 flex flex-col gap-0.5"
           >
             <li v-for="copy in agentCopies.copiesOf(agent.id)" :key="copy.id">
               <button
@@ -301,7 +302,7 @@ function closeChannelDialog(): void {
               >
                 <svg
                   viewBox="0 0 20 24"
-                  class="mt-0.5 h-6 w-5 shrink-0 text-muted"
+                  class="mt-0.5 h-5 w-4 shrink-0 text-muted"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="1.5"
@@ -310,7 +311,7 @@ function closeChannelDialog(): void {
                 >
                   <path :d="COPY_CONNECTOR_PATH" />
                 </svg>
-                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span class="flex min-w-0 flex-1 flex-col">
                   <span class="flex items-center justify-between gap-2">
                     <span class="text-label font-semibold text-ink">{{ COPY_MARK_TEXT }} {{ copy.number }}</span>
                     <span

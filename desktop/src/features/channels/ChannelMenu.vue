@@ -11,7 +11,7 @@ const DELETE_MESSAGE = 'Apaga o canal. As mensagens dele voltam para #geral.'
 const DELETE_LABEL = 'Excluir canal'
 const EDIT_LABEL = 'Editar canal'
 const TRIGGER_CLASSES =
-  `absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-label font-bold text-muted transition-opacity duration-150 hover:bg-hover hover:text-ink focus-visible:opacity-100 ${INK_FOCUS_CLASSES} motion-reduce:transition-none`
+  `absolute right-1 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-label font-bold text-muted transition-opacity duration-150 hover:bg-hover hover:text-ink focus-visible:opacity-100 ${INK_FOCUS_CLASSES} motion-reduce:transition-none`
 const TRIGGER_IDLE_CLASSES = 'opacity-0 group-hover:opacity-100'
 const POPOVER_CLASSES =
   'absolute inset-x-0 top-full z-20 mt-1 flex flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-paper'
