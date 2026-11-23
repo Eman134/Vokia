@@ -27,6 +27,7 @@ const UL_ITEM = /^\s*[-*+]\s+(.*)$/
 const OL_ITEM = /^\s*\d+[.)]\s+(.*)$/
 // Mesma regra de set_artifact_check no backend: só "- [ ]" e "- [x]", com o índice contado na ordem do texto fora de blocos de código.
 const TASK_ITEM = /^\s*- \[( |x|X)\](.*)$/
+const TABLE_SEPARATOR_CELL = /^:?-{1,}:?$/
 const CODE_SPAN = /`([^`]+)`/g
 const LINK = /\[([^\]]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+|file:\/\/[^\s)]+)\)/g
 const FILE_ICON_SVG =
@@ -80,6 +81,66 @@ function startsBlock(line: string, fences: FenceRules): boolean {
     UL_ITEM.test(line) ||
     OL_ITEM.test(line)
   )
+}
+
+type TableAlign = 'left' | 'center' | 'right' | null
+
+function splitTableRow(line: string): string[] {
+  let trimmed = line.trim()
+  if (trimmed.startsWith('|')) trimmed = trimmed.slice(1)
+  if (trimmed.endsWith('|') && !trimmed.endsWith('\\|')) trimmed = trimmed.slice(0, -1)
+
+  const cells: string[] = []
+  let current = ''
+  let inCode = false
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (ch === '\\' && !inCode && i + 1 < trimmed.length && trimmed[i + 1] === '|') {
+      current += '|'
+      i++
+      continue
+    }
+    if (ch === '`') inCode = !inCode
+    if (ch === '|' && !inCode) {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  cells.push(current.trim())
+  return cells
+}
+
+function parseTableAlignments(line: string, expectedCols: number): TableAlign[] | null {
+  if (!line.includes('|')) return null
+  const cells = splitTableRow(line)
+  if (cells.length !== expectedCols) return null
+  const alignments: TableAlign[] = []
+  for (const cell of cells) {
+    if (!TABLE_SEPARATOR_CELL.test(cell)) return null
+    const left = cell.startsWith(':')
+    const right = cell.endsWith(':')
+    alignments.push(left && right ? 'center' : right ? 'right' : left ? 'left' : null)
+  }
+  return alignments
+}
+
+function parseTableHeader(lines: readonly string[], index: number): { headers: string[]; alignments: TableAlign[] } | null {
+  if (index + 1 >= lines.length) return null
+  const headerLine = lines[index]
+  if (!headerLine.includes('|')) return null
+  const headers = splitTableRow(headerLine)
+  if (headers.length === 0) return null
+  const alignments = parseTableAlignments(lines[index + 1], headers.length)
+  if (!alignments) return null
+  return { headers, alignments }
+}
+
+function renderTableCell(tag: 'th' | 'td', raw: string, align: TableAlign, mentions: readonly MentionAgent[]): string {
+  const attr = align ? ` style="text-align:${align}"` : ''
+  return `<${tag}${attr}>${formatInline(raw, mentions)}</${tag}>`
 }
 
 function renderFileLink(label: string, escapedUrl: string): string {
@@ -190,8 +251,32 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
       continue
     }
 
+    const table = parseTableHeader(lines, i)
+    if (table) {
+      const { headers, alignments } = table
+      const headerHtml = headers.map((cell, col) => renderTableCell('th', cell, alignments[col], mentions)).join('')
+      i += 2
+      const bodyRows: string[] = []
+      while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|') && !startsBlock(lines[i], fences)) {
+        const cells = splitTableRow(lines[i])
+        const rowHtml = headers
+          .map((_, col) => renderTableCell('td', cells[col] ?? '', alignments[col], mentions))
+          .join('')
+        bodyRows.push(`<tr>${rowHtml}</tr>`)
+        i++
+      }
+      const tbody = bodyRows.length > 0 ? `<tbody>${bodyRows.join('')}</tbody>` : ''
+      html.push(`<div class="overflow-x-auto"><table><thead><tr>${headerHtml}</tr></thead>${tbody}</table></div>`)
+      continue
+    }
+
     const paragraph: string[] = []
-    while (i < lines.length && lines[i].trim() !== '' && !startsBlock(lines[i], fences)) {
+    while (
+      i < lines.length &&
+      lines[i].trim() !== '' &&
+      !startsBlock(lines[i], fences) &&
+      !parseTableHeader(lines, i)
+    ) {
       paragraph.push(formatInline(lines[i], mentions))
       i++
     }
