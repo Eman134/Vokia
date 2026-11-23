@@ -227,7 +227,7 @@ pub(crate) fn reconcile_waiting(app: &AppHandle, state: &AppState, project_id: i
             .collect()
     };
     for agent in candidates {
-        let _ = emit_state(app, project_id, agent, AgentState::Idle);
+        let _ = emit_state(app, project_id, agent, AgentState::Idle, None);
     }
 }
 

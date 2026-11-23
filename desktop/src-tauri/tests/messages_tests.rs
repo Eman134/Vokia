@@ -315,7 +315,7 @@ fn frontend_balloon_oculta_origem_em_erro_e_use_feed_so_sugere_migracao_para_lim
     let balloon_vue = fs::read_to_string(manifest.join("../src/features/balloon/Balloon.vue"))
         .expect("deve ler Balloon.vue");
     assert!(
-        balloon_vue.contains("v-if=\"store.current.kind !== 'error'\""),
+        balloon_vue.contains("v-if=\"item.kind !== 'error'\""),
         "Balloon.vue deve ocultar o rótulo de origem (conversa) quando kind === 'error'"
     );
 

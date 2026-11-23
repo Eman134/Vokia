@@ -432,7 +432,7 @@ mod waiting_reconcile {
         let state = world.app.state::<AppState>();
         let kairo = agent("kairo");
 
-        emit_state(world.app.handle(), PROJECT, kairo.clone(), AgentState::Waiting).unwrap();
+        emit_state(world.app.handle(), PROJECT, kairo.clone(), AgentState::Waiting, None).unwrap();
         assert_eq!(last_state_for(&world, "kairo").as_deref(), Some("waiting"));
 
         reconcile_waiting(world.app.handle(), &state, PROJECT);
@@ -456,7 +456,7 @@ mod waiting_reconcile {
         let kairo = agent("kairo");
 
         for a in [&ember, &axiom, &vexa, &kairo] {
-            emit_state(world.app.handle(), PROJECT, a.clone(), AgentState::Waiting).unwrap();
+            emit_state(world.app.handle(), PROJECT, a.clone(), AgentState::Waiting, None).unwrap();
         }
 
         let ember_key = SessionKey {
@@ -536,7 +536,7 @@ mod waiting_reconcile {
             agent: vexa.clone(),
         };
         state.flow.lock().unwrap().pending.insert(key.clone(), VecDeque::new());
-        emit_state(world.app.handle(), PROJECT, vexa, AgentState::Waiting).unwrap();
+        emit_state(world.app.handle(), PROJECT, vexa, AgentState::Waiting, None).unwrap();
 
         abandon_flow(world.app.handle(), &state, &key, None);
 
@@ -586,7 +586,7 @@ mod waiting_reconcile {
                 options: vec!["Concluir".to_string(), "Devolver".to_string()],
             },
         );
-        emit_state(world.app.handle(), project.id, axiom, AgentState::Waiting).unwrap();
+        emit_state(world.app.handle(), project.id, axiom, AgentState::Waiting, None).unwrap();
 
         answer_decision(world.app.handle(), &state, 7, "Concluir")
             .await

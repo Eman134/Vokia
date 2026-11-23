@@ -405,6 +405,7 @@ fn ligar_bypass_resolve_pendentes_nao_destrutivos_e_deixa_destrutivo_para_o_usua
                 project_id,
                 granted: &granted,
                 grant_per_session: false,
+                item_id: None,
             }
             .decide(request)
             .await

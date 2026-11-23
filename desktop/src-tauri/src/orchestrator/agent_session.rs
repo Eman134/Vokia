@@ -69,6 +69,7 @@ pub(super) async fn ask_step(
             project_id: key.project_id,
             agent: agent.clone(),
         },
+        item_id.map(str::to_string),
     );
     console.started();
     let result = run_step(exchange, sessions, agent, prompts, &console).await;
@@ -219,6 +220,7 @@ async fn run_step(
             project_id: key.project_id,
             granted: &granted,
             grant_per_session,
+            item_id: exchange.item_id.map(str::to_string),
         };
         let access = if call.adapter.has_tools() {
             Access::Project(*project)

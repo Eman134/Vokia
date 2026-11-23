@@ -262,6 +262,8 @@ pub enum VokiaEvent {
         agent: Agent,
         project_id: i64,
         activity: TurnActivity,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     GoalState {
