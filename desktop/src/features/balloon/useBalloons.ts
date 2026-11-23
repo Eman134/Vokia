@@ -1,185 +1,203 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ALERT_TIMEOUT_MS, CONFIRM_VISIBLE_MS, MOMENT_TIMEOUT_MS, REQUEST_TIMEOUT_MS, type BalloonItem, type BalloonSource } from './balloonTypes'
+import {
+  ALERT_TIMEOUT_MS,
+  CONFIRM_VISIBLE_MS,
+  MOMENT_TIMEOUT_MS,
+  REQUEST_TIMEOUT_MS,
+  type BalloonItem,
+  type BalloonKind,
+  type BalloonSource,
+} from './balloonTypes'
 
 const DISMISS_LABEL = 'Dispensar'
 
-// Avisos de conversa: não empilham, o mais novo substitui o anterior e conta quantos ele agrupa.
-const isChatNotice = (item: BalloonItem): boolean => item.kind === 'alert' || item.kind === 'request'
-const noticeCount = (item: BalloonItem): number => item.count ?? 1
+const KIND_TIMEOUT_MS: Partial<Record<BalloonKind, number>> = {
+  moment: MOMENT_TIMEOUT_MS,
+  alert: ALERT_TIMEOUT_MS,
+  request: REQUEST_TIMEOUT_MS,
+}
 
 export const useBalloons = defineStore('balloons', () => {
-  const queue = ref<BalloonItem[]>([])
-  const current = ref<BalloonItem | null>(null)
-  const confirmation = ref<string | null>(null)
+  const items = ref<BalloonItem[]>([])
+  const confirmations = ref<Record<string, string>>({})
   const suggestions = ref<BalloonItem[]>([])
   const panelOpen = ref(false)
-  let momentTimer: ReturnType<typeof setTimeout> | null = null
+  const autoTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const confirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const hoveredIds = new Set<string>()
   let alertCount = 0
-  let confirmTimer: ReturnType<typeof setTimeout> | null = null
-  let hovered = false
 
-  function cancelMomentTimer(): void {
-    if (momentTimer !== null) {
-      clearTimeout(momentTimer)
-      momentTimer = null
+  function clearAutoTimer(id: string): void {
+    const timer = autoTimers.get(id)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      autoTimers.delete(id)
     }
   }
 
-  function cancelConfirmTimer(): void {
-    if (confirmTimer !== null) {
-      clearTimeout(confirmTimer)
-      confirmTimer = null
+  function clearConfirmTimer(id: string): void {
+    const timer = confirmTimers.get(id)
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      confirmTimers.delete(id)
     }
   }
 
-  function advance(): void {
-    if (current.value !== null || panelOpen.value) {
+  function clearAllTimers(): void {
+    for (const timer of autoTimers.values()) {
+      clearTimeout(timer)
+    }
+    autoTimers.clear()
+    for (const timer of confirmTimers.values()) {
+      clearTimeout(timer)
+    }
+    confirmTimers.clear()
+  }
+
+  function removeConfirmation(id: string): void {
+    if (confirmations.value[id] === undefined) {
       return
     }
-    current.value = queue.value.shift() ?? null
+    const next = { ...confirmations.value }
+    delete next[id]
+    confirmations.value = next
   }
 
-  function close(): void {
-    cancelMomentTimer()
-    cancelConfirmTimer()
-    confirmation.value = null
-    hovered = false
-    current.value = null
-    advance()
-  }
-
-  function onMomentTimeout(): void {
-    momentTimer = null
-    if (current.value === null) {
-      return
-    }
-    suggestions.value.push(current.value)
-    close()
-  }
-
-  // Alerta só avisa: some sozinho e não vira sugestão guardada.
-  function onAlertTimeout(): void {
-    momentTimer = null
-    close()
-  }
-
-  function startTimer(item: BalloonItem | null): void {
-    cancelMomentTimer()
-    if (panelOpen.value || hovered || confirmation.value !== null) {
-      return
-    }
+  function onTimeout(id: string): void {
+    autoTimers.delete(id)
+    const item = items.value.find((candidate) => candidate.id === id)
     if (item?.kind === 'moment') {
-      momentTimer = setTimeout(onMomentTimeout, MOMENT_TIMEOUT_MS)
-    } else if (item?.kind === 'alert') {
-      momentTimer = setTimeout(onAlertTimeout, ALERT_TIMEOUT_MS)
-    } else if (item?.kind === 'request') {
-      momentTimer = setTimeout(onAlertTimeout, REQUEST_TIMEOUT_MS)
+      suggestions.value.push(item)
     }
+    dismiss(id)
   }
 
-  watch(current, startTimer)
+  function startTimer(item: BalloonItem): void {
+    clearAutoTimer(item.id)
+    if (panelOpen.value || hoveredIds.has(item.id) || confirmations.value[item.id] !== undefined) {
+      return
+    }
+    const timeoutMs = KIND_TIMEOUT_MS[item.kind]
+    if (timeoutMs === undefined) {
+      return
+    }
+    autoTimers.set(item.id, setTimeout(() => onTimeout(item.id), timeoutMs))
+  }
 
-  // O mouse sobre o balão congela o tempo; ao sair, a contagem recomeça do zero.
-  function setHovered(value: boolean): void {
-    hovered = value
+  // O mouse sobre o balão congela o tempo dele; ao sair, a contagem recomeça do zero.
+  function setHovered(id: string, value: boolean): void {
     if (value) {
-      cancelMomentTimer()
-    } else {
-      startTimer(current.value)
+      hoveredIds.add(id)
+      clearAutoTimer(id)
+      return
     }
-  }
-
-  function isKnown(id: string): boolean {
-    return current.value?.id === id || queue.value.some((item) => item.id === id)
+    hoveredIds.delete(id)
+    const item = items.value.find((candidate) => candidate.id === id)
+    if (item !== undefined) {
+      startTimer(item)
+    }
   }
 
   function enqueue(item: BalloonItem): void {
-    if (isKnown(item.id)) {
+    if (items.value.some((candidate) => candidate.id === item.id)) {
       return
     }
-    if (isChatNotice(item)) {
-      groupChatNotice(item)
-      return
-    }
-    queue.value.push(item)
-    advance()
-  }
-
-  function groupChatNotice(item: BalloonItem): void {
-    const showing = current.value !== null && confirmation.value === null && isChatNotice(current.value) ? current.value : null
-    const stale = queue.value.filter(isChatNotice)
-    queue.value = queue.value.filter((queued) => !isChatNotice(queued))
-    const count = [showing, ...stale].reduce((total, notice) => total + (notice ? noticeCount(notice) : 0), 1)
-    const grouped = { ...item, count }
-    if (showing) {
-      current.value = grouped
-      return
-    }
-    queue.value.push(grouped)
-    advance()
+    items.value.push(item)
+    startTimer(item)
   }
 
   // Aviso temporário de uma ação importante: fecha em ALERT_TIMEOUT_MS, com Esc ou no botão Dispensar.
   function alert(title: string, text?: string, source: BalloonSource = 'conversa'): void {
     alertCount += 1
-    enqueue({ id: `alert:${alertCount}`, kind: 'alert', source, title, text, actions: [{ id: 'dismiss', label: DISMISS_LABEL }] })
+    enqueue({
+      id: `alert:${alertCount}`,
+      kind: 'alert',
+      source,
+      title,
+      text,
+      actions: [{ id: 'dismiss', label: DISMISS_LABEL }],
+    })
   }
 
-  async function act(actionId: string): Promise<void> {
-    const item = current.value
-    if (item === null || confirmation.value !== null) {
+  async function act(id: string, actionId: string): Promise<void> {
+    const item = items.value.find((candidate) => candidate.id === id)
+    if (item === undefined || confirmations.value[id] !== undefined) {
       return
     }
     const action = item.actions.find((candidate) => candidate.id === actionId)
     if (action === undefined || action.disabled) {
       return
     }
-    cancelMomentTimer()
+    clearAutoTimer(id)
     const text = await action.run?.()
-    if (!text) {
-      close()
+    if (!items.value.some((candidate) => candidate.id === id)) {
       return
     }
-    confirmation.value = `✓ ${text}`
-    confirmTimer = setTimeout(close, CONFIRM_VISIBLE_MS)
+    if (!text) {
+      dismiss(id)
+      return
+    }
+    confirmations.value = { ...confirmations.value, [id]: `✓ ${text}` }
+    confirmTimers.set(id, setTimeout(() => dismiss(id), CONFIRM_VISIBLE_MS))
   }
 
-  function dismiss(): void {
-    close()
+  function dismiss(id: string): void {
+    clearAutoTimer(id)
+    clearConfirmTimer(id)
+    hoveredIds.delete(id)
+    removeConfirmation(id)
+    items.value = items.value.filter((candidate) => candidate.id !== id)
+  }
+
+  function dismissAll(): void {
+    clearAllTimers()
+    hoveredIds.clear()
+    confirmations.value = {}
+    items.value = []
   }
 
   function replace(id: string, item: BalloonItem): boolean {
-    if (current.value?.id === id) {
-      current.value = { ...item, count: current.value.count }
-      return true
-    }
-    const index = queue.value.findIndex((candidate) => candidate.id === id)
+    const index = items.value.findIndex((candidate) => candidate.id === id)
     if (index === -1) {
       return false
     }
-    queue.value.splice(index, 1, { ...item, count: queue.value[index]?.count })
+    if (item.id !== id) {
+      clearAutoTimer(id)
+      clearConfirmTimer(id)
+      if (hoveredIds.delete(id)) {
+        hoveredIds.add(item.id)
+      }
+      removeConfirmation(id)
+    }
+    items.value.splice(index, 1, item)
+    startTimer(item)
     return true
   }
 
   function setPanelOpen(open: boolean): void {
     panelOpen.value = open
-    if (!open) {
-      advance()
+    if (open) {
+      clearAllTimers()
+      // Confirmação em curso já executou a ação: fecha o balão em vez de mantê-lo congelado.
+      const confirmingIds = Object.keys(confirmations.value)
+      if (confirmingIds.length > 0) {
+        for (const id of confirmingIds) {
+          hoveredIds.delete(id)
+        }
+        confirmations.value = {}
+        items.value = items.value.filter((candidate) => !confirmingIds.includes(candidate.id))
+      }
       return
     }
-    cancelMomentTimer()
-    // Confirmação em curso já executou a ação: não volta à fila, o timer só fecha o balão.
-    if (current.value !== null && confirmation.value === null) {
-      queue.value.unshift(current.value)
-      current.value = null
+    for (const item of items.value) {
+      startTimer(item)
     }
   }
 
   return {
-    queue,
-    current,
-    confirmation,
+    items,
+    confirmations,
     suggestions,
     panelOpen,
     enqueue,
@@ -187,6 +205,7 @@ export const useBalloons = defineStore('balloons', () => {
     replace,
     act,
     dismiss,
+    dismissAll,
     setPanelOpen,
     setHovered,
   }
