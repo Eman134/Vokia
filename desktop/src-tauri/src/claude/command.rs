@@ -9,7 +9,7 @@ use crate::permissions::PermissionLevel;
 
 pub const DEFAULT_MODEL: &str = "haiku";
 const TEXT_ONLY_MAX_TURNS: &str = "3";
-const PROJECT_MAX_TURNS: &str = "40";
+const PROJECT_MAX_TURNS: &str = "120";
 const CLI_TIMEOUT: Duration = Duration::from_secs(120);
 const PROJECT_CLI_TIMEOUT: Duration = Duration::from_secs(600);
 // Com uma destas no ambiente a CLI cobraria por uso da API em vez de usar a assinatura. O token OAuth da
