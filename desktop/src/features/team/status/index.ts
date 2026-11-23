@@ -68,7 +68,7 @@ export function workingCopy(agents: readonly AgentProfile[]): StatusCopy {
   if (agents.length > 1) {
     return {
       status: `${agents.length} em paralelo`,
-      detail: 'várias coisas ao mesmo tempo',
+      detail: '',
       placeholder: 'Peça algo e escolha o projeto',
     }
   }

@@ -111,6 +111,9 @@ const highlightSegments = computed(() =>
   ),
 )
 const queueHint = computed(() => {
+  if (draft.value.trim() === '') {
+    return null
+  }
   const target = recipient.value
   if (target === null || feed.stateOf(target) === 'idle') {
     return null
