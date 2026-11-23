@@ -41,9 +41,10 @@ fn world_in(dir: PathBuf) -> World {
 
 fn world() -> World {
     let dir = std::env::temp_dir().join(format!(
-        "vokia-orch-commands-test-{}-{}",
+        "vokia-orch-commands-test-{}-{}-{}",
         std::process::id(),
-        NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        NEXT_DIR.fetch_add(1, Ordering::SeqCst),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos())
     ));
     fs::create_dir_all(&dir).unwrap();
     world_in(dir)
@@ -358,9 +359,10 @@ fn list_movements_devolve_os_20_mais_recentes_sem_semear_nem_emitir() {
 #[test]
 fn elenco_que_nao_carrega_faz_o_comando_falhar_sem_semente_sem_poda_e_sem_evento() {
     let dir = std::env::temp_dir().join(format!(
-        "vokia-orch-commands-test-{}-{}",
+        "vokia-orch-commands-test-{}-{}-{}",
         std::process::id(),
-        NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        NEXT_DIR.fetch_add(1, Ordering::SeqCst),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos())
     ));
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("agents.json"), "{ isto não é json").unwrap();

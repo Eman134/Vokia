@@ -15,9 +15,10 @@ struct TempDb {
 impl TempDb {
     fn open() -> TempDb {
         let dir = std::env::temp_dir().join(format!(
-            "vokia-channels-test-{}-{}",
+            "vokia-channels-test-{}-{}-{}",
             std::process::id(),
-            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos())
         ));
         let db = Db::open(&dir).expect("o banco de teste deveria abrir");
         TempDb { dir, db }

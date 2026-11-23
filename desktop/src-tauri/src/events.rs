@@ -157,6 +157,10 @@ pub enum VokiaEvent {
         state: AgentState,
         project_id: Option<i64>,
     },
+    // Etapa atual de uma task com card: sai a cada movimento, julgamento do líder, conclusão e reenvio ou escalada.
+    TaskStage {
+        stage: crate::db::TaskStage,
+    },
     Error {
         message: String,
     },
@@ -167,6 +171,24 @@ pub enum VokiaEvent {
         window: LimitName,
         resets_at: u64,
         run_id: Option<i64>,
+    },
+    #[serde(rename_all = "camelCase")]
+    UsageLimitFailed {
+        agent: Agent,
+        project_id: i64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        window: Option<LimitName>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        resets_at: Option<u64>,
+        message: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<i64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    AgentPausesChanged {
+        pauses: Vec<crate::db::AgentPause>,
     },
     #[serde(rename_all = "camelCase")]
     Permission {
@@ -191,6 +213,15 @@ pub enum VokiaEvent {
         agent: Agent,
         detail: String,
         project_id: Option<i64>,
+        // true quando a aprovação veio do modo bypass do projeto, e não de uma regra salva.
+        #[serde(default, skip_serializing_if = "is_false")]
+        bypass: bool,
+    },
+    // Modo bypass do projeto ligado ou desligado: a interface atualiza a Actionbar e o aviso ao vivo.
+    #[serde(rename_all = "camelCase")]
+    BypassChanged {
+        project_id: i64,
+        enabled: bool,
     },
     #[serde(rename_all = "camelCase")]
     Decision {

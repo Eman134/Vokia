@@ -55,6 +55,7 @@ fn snapshot_with(implementer_instances: &[i64]) -> OrchestrationSnapshot {
         placements,
         edges: Vec::new(),
         gateways: Vec::new(),
+        task_stages: Vec::new(),
     }
 }
 

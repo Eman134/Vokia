@@ -93,6 +93,7 @@ fn preload_targets_inclui_ember_e_lideres_deduplicados_sem_pausados() {
                 start_y: None,
                 end_x: None,
                 end_y: None,
+                judge_full_flow: false,
             },
             OrchTeam {
                 id: "team-2".into(),
@@ -105,6 +106,7 @@ fn preload_targets_inclui_ember_e_lideres_deduplicados_sem_pausados() {
                 start_y: None,
                 end_x: None,
                 end_y: None,
+                judge_full_flow: false,
             },
             OrchTeam {
                 id: "team-3".into(),
@@ -117,11 +119,13 @@ fn preload_targets_inclui_ember_e_lideres_deduplicados_sem_pausados() {
                 start_y: None,
                 end_x: None,
                 end_y: None,
+                judge_full_flow: false,
             },
         ],
         placements: Vec::new(),
         edges: Vec::new(),
         gateways: Vec::new(),
+        task_stages: Vec::new(),
     };
 
     // Caso 1: Vexa pausado -> Ember e Axiom deduplicados (fantasma ignorado por não estar no Team)

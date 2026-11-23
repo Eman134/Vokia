@@ -297,6 +297,23 @@ const FLOW_POSITIONS_SQL: &str = "
                 AND p.layer_id = orch_placements.layer_id AND p.agent_id < orch_placements.agent_id), 1484.0);
 ";
 
+// Etapa atual de cada task com card: o nó (agente) e a camada onde ela está, e se o líder julgou o fluxo completo ou reduzido.
+// `updated_at` é o último movimento; a task parada é a que está 'em_andamento' há mais tempo sem voltar à tela.
+const TASK_STAGE_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS orch_task_stages (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        layer_id TEXT,
+        edge_id INTEGER,
+        flow_mode TEXT CHECK (flow_mode IS NULL OR flow_mode IN ('completo','reduzido')),
+        state TEXT NOT NULL CHECK (state IN ('em_andamento','aguardando','escalada','concluida')),
+        retries INTEGER NOT NULL DEFAULT 0 CHECK (retries >= 0),
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, item_id)
+    );
+";
+
 const HAS_COLUMN: &str = "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2";
 
 // orch_rules só existe aqui para migrar: o banco por projeto ainda a tem, e a migração do fluxo a lê antes de apagá-la.
@@ -608,6 +625,13 @@ fn migrate_flow(tx: &Transaction) -> rusqlite::Result<()> {
         "final_validation",
         "TEXT NOT NULL DEFAULT 'manual' CHECK (final_validation IN ('manual','automatica'))",
     )?;
+    ensure_column(
+        tx,
+        "orch_teams",
+        "judge_full_flow",
+        "INTEGER NOT NULL DEFAULT 0 CHECK (judge_full_flow IN (0,1))",
+    )?;
+    tx.execute_batch(TASK_STAGE_SCHEMA)?;
     ensure_column(tx, "backlog_items", "closed_by", "TEXT")?;
     ensure_column(
         tx,

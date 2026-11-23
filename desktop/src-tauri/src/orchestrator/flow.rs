@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::replica_of;
 use crate::attachments;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
-use crate::claude::ProjectAccess;
+use crate::claude::{LimitName, ProjectAccess, UsageLimit};
 use crate::db::{
     DbError, DbState, FlowEdge, OrchestrationSnapshot, FLOW_END, GATEWAY_PARALLEL, LINK_FLOW,
 };
@@ -16,6 +16,7 @@ use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
 use crate::mcp::{McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::instances;
+use crate::orchestration::stages::{self, StallAction};
 use crate::orchestration::policy::{
     self, placed_participants, Passage, Verdict, HUMAN_GATE_END, HUMAN_GATE_NEVER,
     REVIEW_BATCH_TITLE, REVIEW_TASK_TITLE,
@@ -45,7 +46,10 @@ use super::project_context::{
 };
 use super::prompts::NO_NAMES;
 use super::prompts::{channel_note, interpreter_role, StepPrompts};
-use super::runs::{begin_run, end_run, pause_run, RESUME_NOTE};
+use super::runs::{
+    auto_pause_on_limit, begin_run, end_run, interrupt_paused_run, is_agent_paused, pause_run,
+    RESUME_NOTE,
+};
 use super::session_pool::ExchangeSessions;
 use super::text_fallback::{read_reply, TextContext};
 use super::turns::{
@@ -143,6 +147,9 @@ pub(super) async fn handle_request_from(
         project_id,
         agent: recipient,
     };
+    if context.resumed_run.is_none() && is_agent_paused(app, project_id, &key.agent) {
+        return Ok(RequestOutcome::Paused);
+    }
     if !start_or_enqueue(app, state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
@@ -329,6 +336,18 @@ fn start_dispatch(
         project_id,
         agent: agent.clone(),
     };
+    if is_agent_paused(app, project_id, base) {
+        let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+        flow.waiting
+            .entry(project_id)
+            .or_default()
+            .push_back(WaitingDelegation {
+                base: base.clone(),
+                text: request.to_string(),
+                context: parallel,
+            });
+        return Ok(());
+    }
     if let Some(wait) = worktree_wait(app, project_id, &parallel)? {
         if announce {
             if let Some(leader) = Agent::from_stored(&wait.leader) {
@@ -991,24 +1010,47 @@ async fn run_flow(
             Ok(_) => Some("a troca terminou sem concluir".to_string()),
             Err(error) => Some(error.to_string()),
         };
-        let (this, limit) = match exchange {
-            Ok(TaskOutcome::Finished) => (RequestOutcome::Finished, None),
-            Ok(_) => (RequestOutcome::Failed, None),
-            Err(error) => match error.usage_limit() {
-                Some(limit) => (RequestOutcome::Paused, Some(limit)),
-                None if error.is_limit() => {
+        let auto_pause = auto_pause_on_limit(app);
+        let (this, limit, paused_mid_flow) = match exchange {
+            Ok(TaskOutcome::Finished) => (RequestOutcome::Finished, None, false),
+            Ok(TaskOutcome::Paused) => (RequestOutcome::Paused, None, true),
+            Ok(_) => (RequestOutcome::Failed, None, false),
+            Err(error) if error.is_limit() => {
+                if auto_pause {
+                    let limit = error.usage_limit().unwrap_or(UsageLimit {
+                        window: LimitName::FiveHour,
+                        resets_at: 0,
+                    });
+                    (RequestOutcome::Paused, Some(limit), false)
+                } else {
                     outcome = outcome.and(set_agents_idle(app, key.project_id));
-                    (RequestOutcome::Failed, None)
+                    let limit_info = error.usage_limit();
+                    let _ = emit(
+                        app,
+                        VokiaEvent::UsageLimitFailed {
+                            agent: key.agent.clone(),
+                            project_id: key.project_id,
+                            window: limit_info.map(|l| l.window),
+                            resets_at: limit_info.map(|l| l.resets_at).filter(|&r| r > 0),
+                            message: error.to_string(),
+                            channel_id,
+                            item_id: item_id.clone(),
+                        },
+                    );
+                    (RequestOutcome::Failed, None, false)
                 }
-                None => {
-                    outcome = outcome.and(report_failure(app, key.project_id, &error));
-                    (RequestOutcome::Failed, None)
-                }
-            },
+            }
+            Err(error) => {
+                outcome = outcome.and(report_failure(app, key.project_id, &error));
+                (RequestOutcome::Failed, None, false)
+            }
         };
-        match limit {
-            Some(limit) => pause_run(app, &key, journal, limit)?,
-            None => end_run(app, journal)?,
+        if let Some(limit) = limit {
+            pause_run(app, &key, journal, limit)?;
+        } else if paused_mid_flow {
+            interrupt_paused_run(app, &key, journal)?;
+        } else {
+            end_run(app, journal)?;
         }
         if let Some(run_id) = current_run {
             emit(
@@ -1494,7 +1536,117 @@ pub(crate) fn spawn_delegation_watchdog(app: AppHandle) {
         loop {
             ticker.tick().await;
             sweep_silent_delegations(&app);
+            sweep_stalled_stages(&app);
         }
+    });
+}
+
+// Task parada: a etapa ficou sem movimento além do intervalo de ping, sem delegação pendente nem fluxo rodando no projeto.
+// Reenvia ao nó da etapa enquanto houver tentativas; esgotadas, sobe ao líder do time desse nó.
+const STALL_AFTER_MS: i64 = DEFAULT_DELEGATION_PING_SECS as i64 * 1000;
+const MAX_STAGE_RESENDS: i64 = MAX_WATCHDOG_RETRIES as i64;
+const STALL_RESEND_TEXT: &str = "A task {item} parou na sua etapa, sem movimento. Retome o trabalho desta etapa de onde ele parou.";
+const STALL_ESCALATE_TEXT: &str = "A task {item} está parada na etapa de {agent}, sem movimento depois de {retries} reenvios. Decida como seguir: retome com quem tem o contexto, reenvie ao nó certo ou conclua a task.";
+const STALL_NO_LEADER_TEXT: &str = "A task {item} parou na etapa de {agent} e não há líder para retomá-la.";
+
+fn sweep_stalled_stages(app: &AppHandle) {
+    let db_state = app.state::<DbState>();
+    let Some(db) = db_state.db() else {
+        return;
+    };
+    let Ok(stalled) = db.stalled_task_stages(STALL_AFTER_MS) else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    for stage in stalled {
+        let Some(agent) = Agent::from_stored(&stage.agent) else {
+            continue;
+        };
+        if has_pending_delegation(&state, stage.project_id, &stage.item_id)
+            || has_flow(&state, Some(stage.project_id)).unwrap_or(true)
+        {
+            continue;
+        }
+        let item = stage.item_id.as_str();
+        match stages::stall_action(stage.retries, MAX_STAGE_RESENDS) {
+            StallAction::Resend => {
+                if db.bump_task_stage_retry(stage.project_id, item).is_err() {
+                    continue;
+                }
+                let text = STALL_RESEND_TEXT.replace("{item}", item);
+                spawn_stage_request(app, stage.project_id, item, agent, &text);
+                let _ = emit_stage(app, stage.project_id, item);
+            }
+            StallAction::Escalate => {
+                if db
+                    .set_task_stage_state(stage.project_id, item, stages::STAGE_ESCALATED)
+                    .is_err()
+                {
+                    continue;
+                }
+                let _ = emit_stage(app, stage.project_id, item);
+                let leader = load_orchestration(app)
+                    .ok()
+                    .flatten()
+                    .and_then(|snapshot| stage_leader(&snapshot, &agent));
+                match leader {
+                    Some(leader) if leader != agent => {
+                        let text = STALL_ESCALATE_TEXT
+                            .replace("{item}", item)
+                            .replace("{agent}", agent.as_str())
+                            .replace("{retries}", &stage.retries.to_string());
+                        spawn_stage_request(app, stage.project_id, item, leader, &text);
+                    }
+                    _ => {
+                        let message = STALL_NO_LEADER_TEXT
+                            .replace("{item}", item)
+                            .replace("{agent}", agent.as_str());
+                        let _ = emit(app, VokiaEvent::Error { message });
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Líder do time em que o agente está posicionado.
+fn stage_leader(snapshot: &OrchestrationSnapshot, agent: &Agent) -> Option<Agent> {
+    let placement = snapshot
+        .placements
+        .iter()
+        .find(|placement| placement.agent_id == agent.as_str())?;
+    let team = snapshot
+        .teams
+        .iter()
+        .find(|team| team.id == placement.team_id)?;
+    Agent::from_stored(team.leader_agent.as_deref()?)
+}
+
+fn has_pending_delegation(state: &AppState, project_id: i64, item_id: &str) -> bool {
+    let Ok(flow) = state.flow.lock() else {
+        return true;
+    };
+    let active = flow
+        .active_delegations
+        .keys()
+        .any(|(project, _, item)| *project == project_id && item.as_deref() == Some(item_id));
+    let waiting = flow.waiting.get(&project_id).is_some_and(|queue| {
+        queue
+            .iter()
+            .any(|entry| entry.context.item_id.as_deref() == Some(item_id))
+    });
+    active || waiting
+}
+
+// Pedido de retomada ao agente (ou ao líder): entra pelo mesmo caminho de um pedido novo, preso ao card.
+fn spawn_stage_request(app: &AppHandle, project_id: i64, item_id: &str, recipient: Agent, text: &str) {
+    let app = app.clone();
+    let text = text.to_string();
+    let item_id = item_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let context = RequestContext::new(None, Some(item_id), None);
+        let _ = handle_request(&app, &state, &text, recipient, project_id, context).await;
     });
 }
 
@@ -1538,6 +1690,18 @@ async fn done_cleanup(
     worktree::cleanup_done(Path::new(&project.path), &root, item_id)
         .await
         .map_err(FlowError::Worktree)
+}
+
+// Leva a etapa atual da task à tela e aos eventos; sem banco, a etapa simplesmente não sai.
+pub(crate) fn emit_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(());
+    };
+    match db.task_stage(project_id, item_id) {
+        Ok(Some(stage)) => emit(app, VokiaEvent::TaskStage { stage }),
+        _ => Ok(()),
+    }
 }
 
 // Delegação ativada já cumpriu o papel do registro e sai; a silenciosa recebe novas tentativas de drenar a fila
@@ -1584,6 +1748,10 @@ fn sweep_silent_delegations(app: &AppHandle) {
     }
 }
 
+pub(crate) fn drain_waiting_for_project(app: &AppHandle, state: &AppState, project_id: i64) {
+    drain_waiting(app, state, project_id);
+}
+
 // Ao fim de um fluxo, as delegações que esperavam o teto (ou worktree livre) entram enquanto houver vaga.
 // Cada espera é tentada uma vez por chamada: a que continua bloqueada volta ao fim da fila.
 fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
@@ -1610,6 +1778,12 @@ fn drain_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
         let Some(waiting) = take_waiting(state, project_id) else {
             return;
         };
+        if is_agent_paused(app, project_id, &waiting.base) {
+            if let Ok(mut flow) = state.flow.lock() {
+                flow.waiting.entry(project_id).or_default().push_back(waiting);
+            }
+            continue;
+        }
         let max_instances = snapshot
             .as_ref()
             .and_then(|snapshot| placement_of(snapshot, &waiting.base))
@@ -1791,7 +1965,7 @@ async fn exchange_turns(
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {
         Ok(outcome) => *outcome,
-        Err(error) if error.usage_limit().is_some() => TaskOutcome::Paused,
+        Err(error) if error.is_limit() && auto_pause_on_limit(app) => TaskOutcome::Paused,
         Err(_) => TaskOutcome::Failed,
     };
     let closed = close_task(state, key.project_id, outcome, transcript);

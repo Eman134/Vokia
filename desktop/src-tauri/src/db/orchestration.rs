@@ -178,6 +178,8 @@ pub struct Team {
     pub start_y: Option<f64>,
     pub end_x: Option<f64>,
     pub end_y: Option<f64>,
+    // Opção do líder: quando ligada, ele julga pela complexidade se a task usa o fluxo completo ou reduzido.
+    pub judge_full_flow: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -243,6 +245,21 @@ pub struct Handoff {
     pub edge_id: Option<i64>,
 }
 
+// Etapa atual de uma task com card: o agente (nó) e a camada que o segura agora.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStage {
+    pub project_id: i64,
+    pub item_id: String,
+    pub agent: String,
+    pub layer_id: Option<String>,
+    pub edge_id: Option<i64>,
+    pub flow_mode: Option<String>,
+    pub state: String,
+    pub retries: i64,
+    pub updated_at: i64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrchestrationSnapshot {
@@ -252,6 +269,8 @@ pub struct OrchestrationSnapshot {
     pub placements: Vec<Placement>,
     pub edges: Vec<FlowEdge>,
     pub gateways: Vec<FlowGateway>,
+    // Etapas de todas as tasks com card; quem usa filtra pelo projeto.
+    pub task_stages: Vec<TaskStage>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -376,7 +395,20 @@ const SETTINGS_COLUMNS: &str = "enforcement, leader_agent, step_mode, human_gate
     pair_turn_limit, task_turn_limit, worktree_policy";
 const LAYER_COLUMNS: &str = "id, name, description, position, kind, instructions";
 const TEAM_COLUMNS: &str = "id, name, position, leader_agent, instructions, final_validation, \
-    start_x, start_y, end_x, end_y";
+    start_x, start_y, end_x, end_y, judge_full_flow";
+const STAGE_COLUMNS: &str =
+    "project_id, item_id, agent, layer_id, edge_id, flow_mode, state, retries, updated_at";
+const STAGE_STATE_VALUES: &[&str] = &["em_andamento", "aguardando", "escalada", "concluida"];
+const FLOW_MODE_VALUES: &[&str] = &["completo", "reduzido"];
+const NOW_MS_SQL: &str = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
+// Um movimento novo (passagem) põe a etapa em andamento e zera as tentativas de reenvio. `flow_mode` sobrevive,
+// exceto quando a task anterior já tinha concluído: aí é um ciclo novo e o julgamento recomeça.
+const STAGE_UPSERT_SQL: &str = "INSERT INTO orch_task_stages (project_id, item_id, agent, layer_id, edge_id, state, retries, updated_at) \
+    VALUES (?1, ?2, ?3, ?4, ?5, 'em_andamento', 0, CAST(unixepoch('subsec') * 1000 AS INTEGER)) \
+    ON CONFLICT (project_id, item_id) DO UPDATE SET agent = excluded.agent, layer_id = excluded.layer_id, \
+        edge_id = excluded.edge_id, \
+        flow_mode = CASE WHEN orch_task_stages.state = 'concluida' THEN NULL ELSE orch_task_stages.flow_mode END, \
+        state = 'em_andamento', retries = 0, updated_at = excluded.updated_at";
 const GATEWAY_COLUMNS: &str = "id, team_id, kind, pos_x, pos_y";
 const PLACEMENT_COLUMNS: &str = "agent_id, team_id, layer_id, instructions, max_instances, \
     pos_x, pos_y, criteria, max_worktrees";
@@ -422,6 +454,21 @@ fn team_from_row(row: &Row<'_>) -> rusqlite::Result<Team> {
         start_y: row.get(7)?,
         end_x: row.get(8)?,
         end_y: row.get(9)?,
+        judge_full_flow: row.get::<_, i64>(10)? == 1,
+    })
+}
+
+fn stage_from_row(row: &Row<'_>) -> rusqlite::Result<TaskStage> {
+    Ok(TaskStage {
+        project_id: row.get(0)?,
+        item_id: row.get(1)?,
+        agent: row.get(2)?,
+        layer_id: row.get(3)?,
+        edge_id: row.get(4)?,
+        flow_mode: row.get(5)?,
+        state: row.get(6)?,
+        retries: row.get(7)?,
+        updated_at: row.get(8)?,
     })
 }
 
@@ -656,7 +703,16 @@ fn read_snapshot(conn: &Connection) -> Result<OrchestrationSnapshot, DbError> {
         placements: list_placements(conn)?,
         edges: list_edges(conn)?,
         gateways: list_gateways(conn)?,
+        task_stages: list_task_stages(conn)?,
     })
+}
+
+fn list_task_stages(conn: &Connection) -> Result<Vec<TaskStage>, DbError> {
+    let mut statement = conn.prepare(&format!(
+        "SELECT {STAGE_COLUMNS} FROM orch_task_stages ORDER BY project_id, item_id"
+    ))?;
+    let rows = statement.query_map([], stage_from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 fn flow_field_error(field: &'static str, value: &str) -> DbError {
@@ -1359,9 +1415,10 @@ impl Db {
         check_one_of("action", &draft.action, EDGE_ACTION_VALUES)?;
         check_one_of("kind", &draft.kind, REQUEST_KIND_VALUES)?;
         check_bounds(&RETURN_COUNT, draft.return_count)?;
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        tx.execute(
             "INSERT INTO orch_handoffs (project_id, run_id, from_agent, to_agent, from_layer, to_layer, \
                 action, kind, item_id, return_count, message_id, event, edge_id) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -1381,7 +1438,105 @@ impl Db {
                 draft.edge_id
             ],
         )?;
+        // A passagem é o movimento da task: quem recebe passa a segurar a etapa.
+        if let Some(item_id) = draft.item_id.as_deref() {
+            tx.execute(
+                STAGE_UPSERT_SQL,
+                params![project_id, item_id, draft.to_agent, draft.to_layer, draft.edge_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
+    }
+
+    pub fn set_judge_full_flow(&self, team_id: &str, enabled: bool) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        let changed = conn.execute(
+            "UPDATE orch_teams SET judge_full_flow = ?2 WHERE id = ?1",
+            params![team_id, i64::from(enabled)],
+        )?;
+        if changed == 0 {
+            return Err(DbError::TeamNotFound(team_id.to_string()));
+        }
+        Ok(())
+    }
+
+    // Grava o julgamento do líder na task. Pode chegar antes da primeira passagem: a linha nasce sem camada.
+    pub fn set_task_flow_mode(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        leader: &str,
+        mode: &str,
+    ) -> Result<(), DbError> {
+        check_one_of("flow_mode", mode, FLOW_MODE_VALUES)?;
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        conn.execute(
+            &format!(
+                "INSERT INTO orch_task_stages (project_id, item_id, agent, state, retries, updated_at, flow_mode) \
+                 VALUES (?1, ?2, ?3, 'em_andamento', 0, {NOW_MS_SQL}, ?4) \
+                 ON CONFLICT (project_id, item_id) DO UPDATE SET flow_mode = excluded.flow_mode"
+            ),
+            params![project_id, item_id, leader, mode],
+        )?;
+        Ok(())
+    }
+
+    pub fn task_stage(&self, project_id: i64, item_id: &str) -> Result<Option<TaskStage>, DbError> {
+        let conn = self.conn()?;
+        Ok(conn
+            .query_row(
+                &format!(
+                    "SELECT {STAGE_COLUMNS} FROM orch_task_stages WHERE project_id = ?1 AND item_id = ?2"
+                ),
+                params![project_id, item_id],
+                stage_from_row,
+            )
+            .optional()?)
+    }
+
+    pub fn set_task_stage_state(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        state: &str,
+    ) -> Result<(), DbError> {
+        check_one_of("state", state, STAGE_STATE_VALUES)?;
+        let conn = self.conn()?;
+        conn.execute(
+            &format!(
+                "UPDATE orch_task_stages SET state = ?3, updated_at = {NOW_MS_SQL} \
+                 WHERE project_id = ?1 AND item_id = ?2"
+            ),
+            params![project_id, item_id, state],
+        )?;
+        Ok(())
+    }
+
+    // Reenvio ao nó da etapa: conta a tentativa e reinicia o relógio de parada.
+    pub fn bump_task_stage_retry(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            &format!(
+                "UPDATE orch_task_stages SET retries = retries + 1, updated_at = {NOW_MS_SQL} \
+                 WHERE project_id = ?1 AND item_id = ?2"
+            ),
+            params![project_id, item_id],
+        )?;
+        Ok(())
+    }
+
+    // Tasks com movimento, em andamento e paradas há mais que `older_than_ms`.
+    pub fn stalled_task_stages(&self, older_than_ms: i64) -> Result<Vec<TaskStage>, DbError> {
+        let conn = self.conn()?;
+        let mut statement = conn.prepare(&format!(
+            "SELECT {STAGE_COLUMNS} FROM orch_task_stages \
+             WHERE state = 'em_andamento' AND edge_id IS NOT NULL AND updated_at <= {NOW_MS_SQL} - ?1 \
+             ORDER BY updated_at"
+        ))?;
+        let rows = statement.query_map([older_than_ms], stage_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     // Checagem da semente e inserções na mesma transação, com o lock da conexão do início ao fim.
