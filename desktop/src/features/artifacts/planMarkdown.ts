@@ -1,6 +1,6 @@
 import { STATE_CHIP } from '../backlog/backlogLabels'
 import type { BacklogItem, BacklogState, ScriptBlock } from '../backlog/backlogTypes'
-import { breakdownOf, modelTierLabel, type BreakdownStep } from '../backlog/planBreakdown'
+import { breakdownOf, type BreakdownStep } from '../backlog/planBreakdown'
 import type { ParsedProposal } from '../backlog/planProposal'
 import type { ArtifactCriterion } from './artifactApi'
 import { matchStages, stageChip } from './planProgress'
@@ -51,8 +51,6 @@ function stepLines(step: BreakdownStep, stage: BacklogItem | undefined): string[
   const lines = ['', `### ${step.n}. ${step.title}`, '']
   const who = step.who ?? stage?.who.trim()
   if (who) lines.push(`- Quem: ${who}`)
-  const model = modelTierLabel(step.model)
-  if (model) lines.push(`- Modelo: ${model}`)
   lines.push(`- Status: ${stage ? stageChip(stage).label : PROPOSED_STATUS}`)
   if (step.goal) lines.push(`- Meta: ${step.goal}`)
   if (step.tasks.length) lines.push('- Tarefas:', ...bullets(step.tasks, '  '))
@@ -68,7 +66,7 @@ function fenceFor(content: string): string {
 
 export function planToMarkdown({ item, proposal, rawText, stages, criteria, state }: PlanMarkdownInput): string {
   // Sem cards no breakdownOf: ele casa etapa e card só pela posição; o casamento certo vem de matchStages.
-  const breakdown = breakdownOf(item, proposal, [], () => undefined)
+  const breakdown = breakdownOf(item, proposal, [])
   const cards = matchStages(item.id, stages, proposal.lots.map((lot) => lot.title))
   const header = [`Card: ${item.id}`, `Estado: ${STATE_CHIP[state]}`]
   if (breakdown.estimate) header.push(`Estimativa: ${breakdown.estimate}`)

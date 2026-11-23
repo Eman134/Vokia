@@ -139,7 +139,7 @@ const itemStages = computed(() => (item.value ? stagesOf(backlog.items, `plano-$
 const proposal = computed(() => (item.value ? itemPlan.proposalFor(item.value) : undefined))
 const breakdown = computed(() =>
   item.value
-    ? breakdownOf(item.value, proposal.value, itemStages.value, (agentId) => roster.profileOf(agentId)?.model)
+    ? breakdownOf(item.value, proposal.value, itemStages.value)
     : undefined,
 )
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))

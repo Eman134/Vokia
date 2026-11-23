@@ -35,7 +35,6 @@ import {
   PLAN_EDITOR_ESTIMATE_PLACEHOLDER,
   PLAN_EDITOR_FILES_LABEL,
   PLAN_EDITOR_LIMITS_LABEL,
-  PLAN_EDITOR_MODEL_LABEL,
   PLAN_EDITOR_MOVE_DOWN_LABEL,
   PLAN_EDITOR_MOVE_UP_LABEL,
   PLAN_EDITOR_NO_STAGES_ERROR,
@@ -71,7 +70,6 @@ interface StageDraft {
   tasks: string
   scriptOpen: boolean
   who: string
-  model: string
   context: string
   files: string
   steps: string
@@ -132,7 +130,6 @@ function draftOf(lot: ProposalLot, card: BacklogItem | undefined): StageDraft {
     tasks: splitTasks(lot.tasks).join(LINE_SEPARATOR),
     scriptOpen: false,
     who: lot.script?.who ?? '',
-    model: lot.script?.model ?? '',
     context: block?.context ?? '',
     files: block?.files.join(LIST_JOINER) ?? '',
     steps: block?.steps.join(LINE_SEPARATOR) ?? '',
@@ -149,7 +146,6 @@ function emptyDraft(): StageDraft {
     tasks: '',
     scriptOpen: false,
     who: '',
-    model: '',
     context: '',
     files: '',
     steps: '',
@@ -167,15 +163,14 @@ function lotOf(stage: StageDraft, index: number): ProposalLot {
     limits: lines(stage.limits),
   }
   const who = stage.who.trim()
-  const model = stage.model.trim()
   const hasScript =
-    who !== '' || model !== '' || block.context !== '' || [block.files, block.steps, block.done, block.limits].some((list) => list.length > 0)
+    who !== '' || block.context !== '' || [block.files, block.steps, block.done, block.limits].some((list) => list.length > 0)
   return {
     n: index + 1,
     title: stage.title.trim(),
     meta: stage.goal.trim(),
     tasks: joinTasks(lines(stage.tasks)),
-    ...(hasScript ? { script: { ...(who ? { who } : {}), ...(model ? { model } : {}), block } } : {}),
+    ...(hasScript ? { script: { ...(who ? { who } : {}), block } } : {}),
   }
 }
 
@@ -422,15 +417,9 @@ async function reload(): Promise<void> {
               <span aria-hidden="true">{{ stage.scriptOpen ? '▾' : '▸' }}</span>{{ PLAN_EDITOR_SCRIPT_LABEL }}
             </button>
             <div v-if="stage.scriptOpen" class="flex flex-col gap-2.5 rounded-md bg-surface-2 p-3">
-              <div class="grid gap-3 sm:grid-cols-2">
-                <div class="flex flex-col gap-1.5">
-                  <span :class="LABEL_CLASSES">{{ PLAN_EDITOR_WHO_LABEL }}</span>
-                  <UiSelect v-model="stage.who" :options="whoOptions(stage)" :label="PLAN_EDITOR_WHO_LABEL" />
-                </div>
-                <label class="flex flex-col gap-1.5">
-                  <span :class="LABEL_CLASSES">{{ PLAN_EDITOR_MODEL_LABEL }}</span>
-                  <input v-model="stage.model" :class="INPUT_CLASSES" />
-                </label>
+              <div class="flex flex-col gap-1.5">
+                <span :class="LABEL_CLASSES">{{ PLAN_EDITOR_WHO_LABEL }}</span>
+                <UiSelect v-model="stage.who" :options="whoOptions(stage)" :label="PLAN_EDITOR_WHO_LABEL" />
               </div>
               <label class="flex flex-col gap-1.5">
                 <span :class="LABEL_CLASSES">{{ PLAN_EDITOR_CONTEXT_LABEL }}</span>

@@ -5,7 +5,7 @@ import AgentPortrait from '../team/AgentPortrait.vue'
 import { MICRO_STATUS_BADGE } from './backlogLabels'
 import { MICRO_EXPLANATION, MICRO_SUMMARY } from './backlogTypes'
 import MicroTaskScript, { isScriptValid } from './MicroTaskScript.vue'
-import { modelTierLabel, type PlanBreakdown } from './planBreakdown'
+import type { PlanBreakdown } from './planBreakdown'
 
 const props = defineProps<{
   breakdown: PlanBreakdown
@@ -102,7 +102,6 @@ function onRowKeydown(event: KeyboardEvent): void {
           <span class="min-w-0 flex-1 wrap-break-word font-medium">{{ step.title }}</span>
           <span :class="BADGES_WRAP_CLASSES">
             <AgentPortrait v-if="step.who" :who="step.who" :size="MICRO_PORTRAIT_SIZE" />
-            <UiBadge v-if="modelTierLabel(step.model)" status="backlog" :label="modelTierLabel(step.model)!" />
             <UiBadge :status="MICRO_STATUS_BADGE[step.status]" :label="step.status" />
           </span>
         </button>
@@ -112,7 +111,7 @@ function onRowKeydown(event: KeyboardEvent): void {
         <MicroTaskScript
           v-if="step.script && isScriptValid(step.script)"
           :script="step.script"
-          :model="modelTierLabel(step.model) ?? step.model ?? ''"
+          :who="step.who"
           :leader="leader"
         />
         <div v-else :class="FALLBACK_PANEL_CLASSES">
