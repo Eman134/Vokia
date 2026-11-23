@@ -5,6 +5,7 @@ import { createJiti } from 'jiti'
 
 const jiti = createJiti(import.meta.url)
 const { screenEntries } = jiti('../src/features/team/timeline.ts')
+const { buildRunPrompt, runTitleOf } = jiti('../src/features/backlog/useRunItem.ts')
 
 console.log('=== Iniciando Validação de Thread Scoping (item-16) ===\n')
 
@@ -52,6 +53,12 @@ test('screenEntries na thread inclui permission-result de agente ativo via threa
     entries.map((e) => e.time),
     [10],
   )
+})
+
+test('buildRunPrompt cita o id do card e preserva o título lido por runTitleOf', () => {
+  const prompt = buildRunPrompt({ id: 'item-29', title: 'Minha task' }, '')
+  assert.ok(prompt.includes('item-29'))
+  assert.equal(runTitleOf(prompt), 'Minha task')
 })
 
 const failed = results.filter((r) => !r.passed)
