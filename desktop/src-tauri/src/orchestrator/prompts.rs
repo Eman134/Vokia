@@ -6,6 +6,7 @@ use crate::task::{
 };
 
 use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, TeamOutline};
+use crate::plan_proposal::PLAN_PROTOCOL_HINT;
 use serde_json::Value;
 
 const MAESTRO_INSTRUCTIONS_AUTO_TRIAGE: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time ou agente certo; não execute trabalho técnico. Card novo nasce em triagem: passe ao líder para ler o código, usar request_decision se faltar definição e gravar o plano via save_item_plan antes da implementação. Respeite camadas e limites de turno e relate o resultado.";
@@ -416,8 +417,10 @@ pub(super) fn role(
 ) -> String {
     // Sem o servidor MCP/Vokia CLI a sessão volta a ensinar os marcadores de texto.
     let tools_rules = match tool_mode {
-        ToolPromptMode::Mcp => format!("{DELEGATION_TOOL_RULE} {TOOLS_RULE}"),
-        ToolPromptMode::VokiaCli => format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {TOOLS_RULE_VOKIA_CLI}"),
+        ToolPromptMode::Mcp => format!("{DELEGATION_TOOL_RULE} {PLAN_PROTOCOL_HINT} {TOOLS_RULE}"),
+        ToolPromptMode::VokiaCli => {
+            format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {PLAN_PROTOCOL_HINT} {TOOLS_RULE_VOKIA_CLI}")
+        }
         ToolPromptMode::None => format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}"),
     };
     let layer_sections = layer_sections(layer);

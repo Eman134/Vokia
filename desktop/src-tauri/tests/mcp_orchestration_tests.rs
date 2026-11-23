@@ -31,7 +31,8 @@ fn json_of(text: &str) -> Value {
 fn as_quatro_ferramentas_de_orquestracao_tem_descricao_em_portugues() {
     assert_eq!(description_of("get_orchestration"), GET_ORCHESTRATION_DESCRIPTION);
     assert_eq!(description_of("list_agents"), LIST_AGENTS_DESCRIPTION);
-    assert_eq!(description_of("save_item_plan"), SAVE_ITEM_PLAN_DESCRIPTION);
+    assert!(description_of("save_item_plan").starts_with(SAVE_ITEM_PLAN_DESCRIPTION));
+    assert!(description_of("save_item_plan").contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
     assert_eq!(description_of("list_movements"), LIST_MOVEMENTS_DESCRIPTION);
 }
 
@@ -89,10 +90,11 @@ fn save_item_plan_proposto_grava_o_plano_do_card_e_responde_com_o_id() {
     let axiom = world.leader(project);
     let card = world.create(&axiom, "Login");
 
+    let proposal = "#plano-pronto\n#lote 1|Base|preparar|Dividir em 2 lotes";
     let outcome = world.call(
         &axiom,
         "save_item_plan",
-        json!({ "item_id": card, "state": "proposto", "proposal": "Dividir em 2 lotes", "agent": "axiom" }),
+        json!({ "item_id": card, "state": "proposto", "proposal": proposal, "agent": "axiom" }),
     );
 
     assert!(!outcome.is_error, "{}", outcome.text);
@@ -101,7 +103,7 @@ fn save_item_plan_proposto_grava_o_plano_do_card_e_responde_com_o_id() {
     assert_eq!(plans.len(), 1);
     assert_eq!(plans[0].item_id, card);
     assert_eq!(plans[0].state, "proposto");
-    assert_eq!(plans[0].proposal.as_deref(), Some("Dividir em 2 lotes"));
+    assert_eq!(plans[0].proposal.as_deref(), Some(proposal));
     assert_eq!(plans[0].agent.as_deref(), Some("axiom"));
 }
 
@@ -115,7 +117,7 @@ fn save_item_plan_aceita_agente_do_elenco_alem_de_axiom_e_vexa() {
     let outcome = world.call(
         &axiom,
         "save_item_plan",
-        json!({ "item_id": card, "state": "proposto", "proposal": "Dividir em 2 lotes", "agent": "sentry" }),
+        json!({ "item_id": card, "state": "proposto", "proposal": "#plano-pronto\n#lote 1|Base|preparar|Dividir em 2 lotes", "agent": "sentry" }),
     );
 
     assert!(!outcome.is_error, "{}", outcome.text);

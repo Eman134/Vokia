@@ -940,3 +940,28 @@ fn salvar_plano_promove_card_em_backlog_para_ready_sem_alterar_outras_colunas() 
         assert_eq!(item(&db, project_id, &id).column.as_deref(), Some(column));
     }
 }
+
+#[test]
+fn save_item_plan_exige_ao_menos_um_lote_em_proposto_e_vinculado_com_proposta() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+
+    let proposed_err = db
+        .save_item_plan(project_id, &item_id, &proposed(NO_LOTS_PROPOSAL))
+        .unwrap_err();
+    assert!(matches!(proposed_err, DbError::PlanWithoutStages), "{proposed_err:?}");
+
+    let linked_err = db
+        .save_item_plan(
+            project_id,
+            &item_id,
+            &linked(&item_id, &item_id, Some(NO_LOTS_PROPOSAL)),
+        )
+        .unwrap_err();
+    assert!(matches!(linked_err, DbError::PlanWithoutStages), "{linked_err:?}");
+
+    db.save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, None))
+        .unwrap();
+}

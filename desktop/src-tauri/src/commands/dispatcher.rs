@@ -5,6 +5,7 @@ use tauri::AppHandle;
 
 use crate::db::ARTIFACT_KINDS;
 use crate::events::Agent;
+use crate::plan_proposal::PLAN_PROTOCOL_HINT;
 use crate::projects::ProjectError;
 
 use super::{
@@ -338,6 +339,33 @@ fn schema_set_artifact_criterion() -> Value {
     )
 }
 
+fn schema_save_item_plan() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "itemId": { "type": "string" },
+            "plan": {
+                "type": "object",
+                "properties": {
+                    "state": { "type": "string", "description": "vazio | proposto | vinculado" },
+                    "proposal": { "type": "string", "description": PLAN_PROTOCOL_HINT },
+                    "plan": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string" },
+                            "name": { "type": "string" },
+                            "meta": { "type": "string" },
+                        },
+                    },
+                    "agent": { "type": "string" },
+                },
+                "required": ["state"],
+            },
+        }),
+        &["projectId", "itemId", "plan"],
+    )
+}
+
 fn schema_update_item_plan() -> Value {
     obj_schema(
         json!({
@@ -411,7 +439,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "reorder_backlog_column", "Reordena os cards de uma coluna do backlog.", "Para definir a ordem dos cards dentro de uma coluna (projectId, column, itemIds).", empty_object_schema),
     exposed("backlog", "set_item_priority", "Define ou limpa a prioridade de um item do backlog.", "Para definir a prioridade de um card (projectId, itemId, priority: Baixa|Média|Alta|Urgente ou vazio para limpar).", empty_object_schema),
     exposed("backlog", "return_task", "Devolve uma task concluída ao líder com um motivo.", "Para devolver ao líder uma task concluída com um motivo obrigatório; o card volta a In progress.", empty_object_schema),
-    exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog.", "Para gravar o plano de execução de um card.", empty_object_schema),
+    exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog (proposal no protocolo #plano-pronto, com ao menos um #lote).", "Para gravar o plano de execução de um card.", schema_save_item_plan),
     exposed("backlog", "add_backlog_label", "Adiciona um rótulo a um item do backlog.", "Para marcar um card com um rótulo.", empty_object_schema),
     exposed("backlog", "remove_backlog_label", "Remove um rótulo de um item do backlog.", "Para tirar um rótulo de um card.", empty_object_schema),
     exposed("backlog", "link_git_ref", "Vincula um commit, branch ou PR a um card do backlog. Parâmetros: projectId, itemId, kind (commit|branch|pr), refId, label (opcional), url (opcional). Devolve o Link criado.", "Para associar um commit, branch ou PR a um card sem duplicar vínculos.", schema_link_git_ref),
