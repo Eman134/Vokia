@@ -42,6 +42,7 @@ const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex max-w-3xl flex-col gap-3'
 const STATUS_GROUP_CLASSES = 'flex items-start gap-2.5'
 const STATUS_PORTRAITS_CLASSES = 'flex shrink-0 items-center gap-1.5'
 const STATUS_DOT_CLASSES = 'absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse'
+const LIVE_AUTHOR_CLASSES = 'text-control font-semibold text-ink'
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 // Altura fixa: conversa de agente (retrato, nome e papel) e canal ocupam o mesmo cabeçalho.
@@ -336,8 +337,16 @@ watch(
         class="mt-3 flex max-w-3xl items-start gap-2.5"
         data-testid="activity-live-block"
       >
-        <span class="size-7 shrink-0" aria-hidden="true" />
-        <ActivityRun :activity="run.activity" live class="min-w-0 flex-1" />
+        <span class="mt-0.5 flex shrink-0" aria-hidden="true">
+          <AgentPortrait :who="run.agent.id" :size="PORTRAIT_SIZES.chat" />
+        </span>
+        <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <span :class="LIVE_AUTHOR_CLASSES">{{ run.agent.name }}</span>
+            <span v-if="run.agent.role" class="text-small text-muted">{{ run.agent.role }}</span>
+          </div>
+          <ActivityRun :activity="run.activity" live />
+        </div>
       </div>
       <div
         role="status"
