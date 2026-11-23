@@ -15,7 +15,13 @@ import { agentName } from './agents'
 import { ALL_SCREEN_LABEL } from './timeline'
 import { useFeed } from './useFeed'
 import type { AgentProfile } from './teamApi'
-import { filterPendingAgentsForScreen, formatPendingStatusLabel, groupPendingAgentsByState, isPendingState } from './pendingAgents'
+import {
+  filterPendingAgentsForScreen,
+  formatPendingStatusLabel,
+  groupPendingAgentsByState,
+  isPendingState,
+  type PendingAgentEntry,
+} from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import AgentPortrait from './AgentPortrait.vue'
@@ -33,16 +39,15 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import { useFollowEnd } from '../../ui/useFollowEnd'
-import ActivityRun from './ActivityRun.vue'
 import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 
 const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex max-w-3xl flex-col gap-3'
+const LIVE_BLOCK_CLASSES = 'flex min-w-0 items-start gap-2'
 const STATUS_GROUP_CLASSES = 'flex items-start gap-2.5'
 const STATUS_PORTRAITS_CLASSES = 'flex shrink-0 items-center gap-1.5'
 const STATUS_DOT_CLASSES = 'absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse'
-const LIVE_AUTHOR_CLASSES = 'text-control font-semibold text-ink'
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 // Altura fixa: conversa de agente (retrato, nome e papel) e canal ocupam o mesmo cabeçalho.
@@ -142,10 +147,17 @@ const pendingGroups = computed(() =>
 )
 const activeThreadItemId = computed(() => (feed.screen.kind === 'thread' ? feed.screen.itemId : undefined))
 const scopedLiveRuns = computed(() =>
-  scopedPendingAgents.value
-    .map((agent) => ({ agent, activity: feed.liveActivityOf(agent.id, activeThreadItemId.value) }))
-    .filter((item): item is { agent: AgentProfile; activity: TurnActivity } => item.activity !== undefined),
+  pendingGroups.value
+    .flatMap((group) => group.entries)
+    .map((entry) => ({ entry, activity: feed.liveActivityOf(entry.agent.id, activeThreadItemId.value) }))
+    .filter((item): item is { entry: PendingAgentEntry; activity: TurnActivity } => item.activity !== undefined),
 )
+const quietGroups = computed(() => {
+  const liveIds = new Set(scopedLiveRuns.value.map((run) => run.entry.agent.id))
+  return pendingGroups.value
+    .map((group) => ({ ...group, entries: group.entries.filter((entry) => !liveIds.has(entry.agent.id)) }))
+    .filter((group) => group.entries.length > 0)
+})
 const pendingLabel = computed(() => formatPendingStatusLabel(pendingGroups.value))
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
@@ -332,29 +344,29 @@ watch(
         </li>
       </ol>
       <div
-        v-for="run in scopedLiveRuns"
-        :key="run.agent.id"
-        class="mt-3 flex max-w-3xl items-start gap-2.5"
-        data-testid="activity-live-block"
-      >
-        <span class="mt-0.5 flex shrink-0" aria-hidden="true">
-          <AgentPortrait :who="run.agent.id" :size="PORTRAIT_SIZES.chat" />
-        </span>
-        <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-          <div class="flex flex-wrap items-center gap-2">
-            <span :class="LIVE_AUTHOR_CLASSES">{{ run.agent.name }}</span>
-            <span v-if="run.agent.role" class="text-small text-muted">{{ run.agent.role }}</span>
-          </div>
-          <ActivityRun :activity="run.activity" live />
-        </div>
-      </div>
-      <div
         role="status"
         :aria-label="pendingLabel"
         :class="STATUS_GROUP_LIST_CLASSES"
       >
         <div
-          v-for="group in pendingGroups"
+          v-for="run in scopedLiveRuns"
+          :key="run.entry.agent.id"
+          :class="LIVE_BLOCK_CLASSES"
+          data-testid="activity-live-block"
+        >
+          <span class="relative mt-0.5 flex shrink-0" aria-hidden="true">
+            <AgentPortrait :who="run.entry.agent.id" :size="PORTRAIT_SIZES.chat" />
+            <span :class="STATUS_DOT_CLASSES" />
+          </span>
+          <AgentThinking
+            :agent="run.entry.agent"
+            :state="run.entry.state"
+            :since="run.entry.since"
+            :activity="run.activity"
+          />
+        </div>
+        <div
+          v-for="group in quietGroups"
           :key="group.state"
           :class="STATUS_GROUP_CLASSES"
         >
@@ -371,7 +383,6 @@ watch(
               :agent="entry.agent"
               :state="entry.state"
               :since="entry.since"
-              :activity="feed.liveActivityOf(entry.agent.id, activeThreadItemId)"
             />
           </div>
         </div>

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
 import type { AgentState, TurnActivity } from '../team/events'
 import { formatClock } from '../team/activitySummary'
+import ActivityRun from '../team/ActivityRun.vue'
 import MarkdownText from '../team/MarkdownText.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import { currentTurn } from './consoleTurn'
@@ -60,6 +61,7 @@ const label = computed(() => {
         <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
       </span>
     </span>
+    <ActivityRun v-if="activity" :activity="activity" live />
     <div v-if="preview" class="line-clamp-4 min-w-0">
       <MarkdownText :text="preview" />
     </div>
