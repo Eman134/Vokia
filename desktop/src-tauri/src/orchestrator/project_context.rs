@@ -13,7 +13,7 @@ use super::error::FlowError;
 const NO_FOLDER_MESSAGE: &str =
     "O projeto do pedido não tem uma pasta. Escolha a pasta do projeto para enviar pedidos.";
 pub(super) const PROJECT_RULE: &str =
-    "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora.";
+    "Você trabalha na pasta do projeto: use as ferramentas só dentro dela e nunca fora. Testes isolados (dados, arquivos ou estado que não podem tocar o projeto real): use um worktree ou, para arquivos e pastas temporários, a pasta `temp` que fica no mesmo nível da pasta `worktrees` (nos dados do app); nunca crie pastas temporárias dentro do projeto nem em outro diretório.";
 const PROJECT_IDENTITY_PREFIX: &str = "Projeto em contexto: \"";
 const PROJECT_IDENTITY_PATH_PREFIX: &str = "\", na pasta ";
 const PROJECT_DESCRIPTION_PREFIX: &str = "Descrição do projeto: ";

@@ -226,7 +226,11 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <ActivityRow :row="protocolRow" />
     </ul>
     <span v-else :class="[EXCHANGE_TEXT_CLASSES, 'truncate']">{{ entry.text }}</span>
-    <div v-if="entry.activity" class="w-full">
+    <div v-if="entry.activity" class="flex w-full flex-col gap-1">
+      <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
+        <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
+        {{ speakerName(entry.from) }}
+      </span>
       <ActivityRun :activity="entry.activity" />
     </div>
   </UiTooltip>
