@@ -8,7 +8,6 @@ import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { DEFAULT_RECIPIENT } from '../team/agents'
 import { useConnection } from '../team/useConnection'
-import { useFeed } from '../team/useFeed'
 import { useDecisions } from '../decisions/useDecisions'
 import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type TaskCardAction, type BacklogItem } from './backlogTypes'
 import BacklogPlanActions from './BacklogPlanActions.vue'
@@ -56,7 +55,6 @@ const backlog = useBacklog()
 const itemPlan = useItemPlan()
 const connection = useConnection()
 
-const feed = useFeed()
 const roster = useRoster()
 const decisions = useDecisions()
 const agent = ref<Agent>(DEFAULT_RECIPIENT)
@@ -68,14 +66,7 @@ const current = computed(() => itemPlan.planOf(props.item.id))
 const canUnlink = computed(() => UNLINKABLE_COLUMNS.includes(props.item.column ?? DEFAULT_COLUMN))
 const agentName = computed(() => roster.profileOf(current.value.agent ?? agent.value)?.name ?? '')
 const chosenAgentName = computed(() => roster.profileOf(agent.value)?.name ?? agent.value)
-const blockedReason = computed(() => {
-  if (connection.checking) return CHECKING_REASON
-  if (itemPlan.isAgentAwaiting(agent.value)) {
-    return `${chosenAgentName.value} já está escrevendo outro plano. Escolha outro agente ou espere terminar.`
-  }
-  if (feed.thinkingAgent !== undefined) return `${feed.thinkingAgent.name} está respondendo agora. Espere terminar para pedir.`
-  return null
-})
+const blockedReason = computed(() => (connection.checking ? CHECKING_REASON : null))
 const requestBlocked = computed(() => blockedReason.value !== null)
 const parsed = computed(() => parseProposal(current.value.proposal ?? ''))
 const pendingQuestion = computed(() => itemPlan.hasPendingQuestion(props.item.id))
