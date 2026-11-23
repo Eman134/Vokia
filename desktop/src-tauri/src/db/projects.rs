@@ -24,6 +24,8 @@ const PROJECT_CHILD_TABLES: &[&str] = &[
     "permission_rules",
     "agent_sessions",
     "channels",
+    "queued_requests",
+    "flow_queue",
 ];
 
 pub const ORIGIN_FOLDER: &str = "folder";

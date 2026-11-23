@@ -340,6 +340,11 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("team", "resume_interrupted_run", "Retoma uma execução interrompida de onde parou, sem reenviar o pedido: entrega ao agente original (ou ao Ember, se já houve delegações) o estado parcial com delegações, mensagens e ferramentas já registradas. Parâmetro: id (de list_interrupted_runs). Devolve o RequestOutcome.", "Para continuar uma execução interrompida; liste antes com list_interrupted_runs e use o id dela.", empty_object_schema),
     exposed("team", "discard_interrupted_run", "Descarta uma execução interrompida.", "Para abandonar uma execução interrompida que não deve mais continuar.", empty_object_schema),
     exposed("team", "set_agent_paused", "Pausa ou retoma um agente em um projeto.", "Para pausar ou retomar um agente em um projeto sem excluí-lo.", empty_object_schema),
+    exposed("team", "list_queued_requests", "Lista os pedidos persistidos na fila de entrada.", "Para consultar os pedidos aguardando envio na fila.", empty_object_schema),
+    exposed("team", "enqueue_queued_request", "Adiciona um pedido na fila persistida. Parâmetros: projectId, to, text, channelId (opcional), itemId (opcional), attachments (opcional).", "Para enfileirar um pedido persistido no banco.", empty_object_schema),
+    exposed("team", "update_queued_request", "Atualiza o texto de um pedido na fila. Parâmetros: id, text.", "Para editar um pedido ainda na fila.", empty_object_schema),
+    exposed("team", "move_queued_request", "Move um pedido na fila para cima ou para baixo. Parâmetros: id, direction ('up' ou 'down').", "Para reordenar a fila de pedidos.", empty_object_schema),
+    exposed("team", "remove_queued_request", "Remove um pedido da fila persistida. Parâmetro: id.", "Para cancelar ou remover um pedido da fila.", empty_object_schema),
     exposed("team", "check_connection", "Verifica se o provedor padrão está acessível.", "Para verificar se o provedor padrão responde antes de culpar o agente por uma falha.", empty_object_schema),
     exposed("team", "agent_console", "Devolve o console recente de um agente em um projeto.", "Para inspecionar as últimas linhas do console de um agente em um projeto ao investigar um erro.", empty_object_schema),
     exposed("projects", "list_projects", "Lista os projetos.", "Para descobrir os projetos e seus ids; use antes de qualquer comando que peça projectId.", empty_object_schema),
@@ -522,6 +527,23 @@ async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, Str
             parse_args(arguments)?,
         )),
         "set_agent_paused" => json_result(team::set_agent_paused_exec(app, parse_args(arguments)?)),
+        "list_queued_requests" => json_result(team::list_queued_requests_exec(app)),
+        "enqueue_queued_request" => json_result(team::enqueue_queued_request_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "update_queued_request" => json_result(team::update_queued_request_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "move_queued_request" => json_result(team::move_queued_request_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "remove_queued_request" => json_result(team::remove_queued_request_exec(
+            app,
+            parse_args(arguments)?,
+        )),
         "check_connection" => json_ok(team::check_connection_exec().await),
         "agent_console" => json_ok(team::agent_console_exec(app, parse_args(arguments)?)),
 

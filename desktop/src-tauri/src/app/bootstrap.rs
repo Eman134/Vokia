@@ -29,5 +29,8 @@ pub(crate) fn setup(app: &mut App) -> Result<(), Box<dyn Error>> {
     }
     mcp::clear_stale_configs(&data_dir);
     app.manage(mcp::McpState::start(app.handle().clone()));
+    tauri::async_runtime::spawn(crate::orchestrator::restore_flow_queue(
+        app.handle().clone(),
+    ));
     shell::setup_tray(app)
 }

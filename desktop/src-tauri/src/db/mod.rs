@@ -14,6 +14,7 @@ mod migrations;
 mod orchestration;
 mod permission_rules;
 mod projects;
+mod queued_requests;
 mod runs;
 mod settings;
 
@@ -44,5 +45,6 @@ pub(crate) use orchestration::{
     REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
+pub use queued_requests::{PersistedFlowJob, QueuedRequestRecord};
 pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
 pub use settings::{GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT};

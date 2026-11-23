@@ -43,6 +43,8 @@ fn rename_agent_sql(old: &str, new: &str) -> String {
     UPDATE orch_placements SET agent_id = '{new}' WHERE agent_id = '{old}';
     UPDATE orch_flow_edges SET from_node = '{new}' WHERE from_node = '{old}';
     UPDATE orch_flow_edges SET to_node = '{new}' WHERE to_node = '{old}';
+    UPDATE queued_requests SET to_agent = '{new}' WHERE to_agent = '{old}';
+    UPDATE flow_queue SET agent = '{new}' WHERE agent = '{old}';
     UPDATE orch_handoffs SET from_agent = '{new}' WHERE from_agent = '{old}';
     UPDATE orch_handoffs SET to_agent = '{new}' WHERE to_agent = '{old}';
     UPDATE backlog_items SET who = '{new}' WHERE who = '{old}';
@@ -158,6 +160,30 @@ const ATTACHMENTS_SCHEMA: &str = "
         PRIMARY KEY (project_id, id),
         FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
+";
+
+const QUEUED_REQUESTS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS queued_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        to_agent TEXT NOT NULL,
+        text TEXT NOT NULL,
+        channel_id INTEGER,
+        item_id TEXT,
+        attachments TEXT NOT NULL DEFAULT '[]',
+        position INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+    );
+    CREATE INDEX IF NOT EXISTS queued_requests_by_position ON queued_requests(position, id);
+    CREATE TABLE IF NOT EXISTS flow_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent TEXT NOT NULL,
+        text TEXT NOT NULL,
+        context_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+    );
+    CREATE INDEX IF NOT EXISTS flow_queue_by_session ON flow_queue(project_id, agent, id);
 ";
 
 // Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
@@ -673,6 +699,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(ARTIFACTS_SCHEMA)?;
     tx.execute_batch(ARTIFACT_DOCUMENTS_SCHEMA)?;
     tx.execute_batch(ATTACHMENTS_SCHEMA)?;
+    tx.execute_batch(QUEUED_REQUESTS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

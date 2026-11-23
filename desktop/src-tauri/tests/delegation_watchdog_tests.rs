@@ -363,6 +363,7 @@ fn fluxo_com_job_na_fila_continua_e_mantem_as_delegacoes_registradas() {
     register_with_item(&world, PROJECT, &vexa, Some(ITEM));
     let key = reserve_session(&world, &vexa);
     world.state().flow.lock().unwrap().pending.get_mut(&key).unwrap().push_back(QueuedJob {
+        db_id: None,
         text: "próximo".to_string(),
         context: RequestContext::new(None, Some(ITEM.to_string()), None),
     });

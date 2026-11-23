@@ -5,7 +5,7 @@ use crate::agents::{Agent, AgentError, AgentRegistry};
 use crate::attachments;
 use crate::claude::{self, CliProblem};
 use crate::console_log::ConsoleEntry;
-use crate::db::{AgentPause, DbState, InterruptedRun};
+use crate::db::{AgentPause, DbState, InterruptedRun, QueuedRequestRecord};
 use crate::orchestrator::{self, RequestOutcome};
 use crate::permissions::{Answer, PermissionError};
 use crate::session_key::SessionKey;
@@ -62,6 +62,37 @@ pub(crate) struct SetAgentPausedArgs {
     pub project_id: i64,
     pub agent: Agent,
     pub paused: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EnqueueQueuedRequestArgs {
+    pub project_id: i64,
+    pub to: Agent,
+    pub text: String,
+    pub channel_id: Option<i64>,
+    pub item_id: Option<String>,
+    pub attachments: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UpdateQueuedRequestArgs {
+    pub id: i64,
+    pub text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MoveQueuedRequestArgs {
+    pub id: i64,
+    pub direction: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoveQueuedRequestArgs {
+    pub id: i64,
 }
 
 pub(crate) fn cli_problem_exec(app: &AppHandle) -> Option<CliProblem> {
@@ -190,6 +221,61 @@ pub(crate) fn set_agent_paused_exec(
         .map_err(|error| error.to_string())
 }
 
+pub(crate) fn list_queued_requests_exec(app: &AppHandle) -> Result<Vec<QueuedRequestRecord>, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.list_queued_requests().map_err(|error| error.to_string())
+}
+
+pub(crate) fn enqueue_queued_request_exec(
+    app: &AppHandle,
+    args: EnqueueQueuedRequestArgs,
+) -> Result<QueuedRequestRecord, String> {
+    ensure_agent_exists(&app.state::<AgentRegistry>(), &args.to)?;
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    let attachments = args.attachments.unwrap_or_default();
+    db.enqueue_queued_request(
+        args.project_id,
+        &args.to,
+        &args.text,
+        args.channel_id,
+        args.item_id.as_deref(),
+        &attachments,
+    )
+    .map_err(|error| error.to_string())
+}
+
+pub(crate) fn update_queued_request_exec(
+    app: &AppHandle,
+    args: UpdateQueuedRequestArgs,
+) -> Result<bool, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.update_queued_request(args.id, &args.text)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn move_queued_request_exec(
+    app: &AppHandle,
+    args: MoveQueuedRequestArgs,
+) -> Result<bool, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.move_queued_request(args.id, &args.direction)
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn remove_queued_request_exec(
+    app: &AppHandle,
+    args: RemoveQueuedRequestArgs,
+) -> Result<bool, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.remove_queued_request(args.id)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn cli_problem(app: AppHandle) -> Option<CliProblem> {
     cli_problem_exec(&app)
@@ -293,6 +379,49 @@ pub fn set_agent_paused(
             paused,
         },
     )
+}
+
+#[tauri::command]
+pub fn list_queued_requests(app: AppHandle) -> Result<Vec<QueuedRequestRecord>, String> {
+    list_queued_requests_exec(&app)
+}
+
+#[tauri::command]
+pub fn enqueue_queued_request(
+    app: AppHandle,
+    project_id: i64,
+    to: Agent,
+    text: String,
+    channel_id: Option<i64>,
+    item_id: Option<String>,
+    attachments: Option<Vec<String>>,
+) -> Result<QueuedRequestRecord, String> {
+    enqueue_queued_request_exec(
+        &app,
+        EnqueueQueuedRequestArgs {
+            project_id,
+            to,
+            text,
+            channel_id,
+            item_id,
+            attachments,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn update_queued_request(app: AppHandle, id: i64, text: String) -> Result<bool, String> {
+    update_queued_request_exec(&app, UpdateQueuedRequestArgs { id, text })
+}
+
+#[tauri::command]
+pub fn move_queued_request(app: AppHandle, id: i64, direction: String) -> Result<bool, String> {
+    move_queued_request_exec(&app, MoveQueuedRequestArgs { id, direction })
+}
+
+#[tauri::command]
+pub fn remove_queued_request(app: AppHandle, id: i64) -> Result<bool, String> {
+    remove_queued_request_exec(&app, RemoveQueuedRequestArgs { id })
 }
 
 fn ensure_agent_exists(registry: &AgentRegistry, agent: &Agent) -> Result<(), String> {

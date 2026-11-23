@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 use std::time::{Duration, Instant};
@@ -143,7 +143,7 @@ pub(super) async fn handle_request_from(
         project_id,
         agent: recipient,
     };
-    if !start_or_enqueue(state, key.clone(), request, context.clone())? {
+    if !start_or_enqueue(app, state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
     let item_id = context.item_id.clone();
@@ -354,13 +354,9 @@ fn start_dispatch(
     let Some(agent) = instances::pick(base, max_instances, |agent| {
         flow.pending.contains_key(&key_of(agent))
     }) else {
-        flow.pending
-            .entry(key_of(base))
-            .or_default()
-            .push_back(QueuedJob {
-                text: request.to_string(),
-                context: parallel,
-            });
+        let key = key_of(base);
+        let pending = flow.pending.entry(key.clone()).or_default();
+        push_pending_job(app, pending, &key, request.to_string(), parallel);
         return Ok(());
     };
     let running = flow
@@ -697,13 +693,35 @@ fn abandon_flow(app: &AppHandle, state: &AppState, key: &SessionKey, item_id: Op
         flow.active_delegations
             .remove(&(key.project_id, key.agent.clone(), item_id.map(str::to_string)));
     }
+    if let Some(db) = app.state::<DbState>().db() {
+        let _ = db.clear_flow_queue_for_session(key.project_id, &key.agent);
+    }
     if let Some(item) = item_id {
         close_branch(state, key.project_id, item, true);
     }
     drain_waiting(app, state, key.project_id);
 }
 
+fn push_pending_job(
+    app: &AppHandle,
+    pending: &mut VecDeque<QueuedJob>,
+    key: &SessionKey,
+    text: String,
+    context: RequestContext,
+) {
+    let db_id = app
+        .state::<DbState>()
+        .db()
+        .and_then(|db| db.enqueue_flow_job(key.project_id, &key.agent, &text, &context).ok());
+    pending.push_back(QueuedJob {
+        db_id,
+        text,
+        context,
+    });
+}
+
 fn start_or_enqueue(
+    app: &AppHandle,
     state: &AppState,
     key: SessionKey,
     request: &str,
@@ -711,26 +729,38 @@ fn start_or_enqueue(
 ) -> Result<bool, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     if let Some(pending) = flow.pending.get_mut(&key) {
-        pending.push_back(QueuedJob {
-            text: request.to_string(),
-            context,
-        });
+        push_pending_job(app, pending, &key, request.to_string(), context);
         return Ok(false);
     }
     flow.pending.insert(key, VecDeque::new());
     Ok(true)
 }
 
-fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, FlowError> {
+fn next_job_with_db(
+    db: Option<&crate::db::Db>,
+    state: &AppState,
+    key: SessionKey,
+) -> Result<Option<QueuedJob>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let next = flow.pending.get_mut(&key).and_then(VecDeque::pop_front);
-    if next.is_none() {
+    if let Some(ref job) = next {
+        if let Some(db_id) = job.db_id {
+            if let Some(db) = db {
+                let _ = db.remove_flow_job(db_id);
+            }
+        }
+    } else {
         flow.pending.remove(&key);
         flow.running.remove(&key);
         flow.active_delegations
             .retain(|(project_id, agent, _), _| !(*project_id == key.project_id && agent == &key.agent));
     }
     Ok(next)
+}
+
+#[cfg(test)]
+fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, FlowError> {
+    next_job_with_db(None, state, key)
 }
 
 // O card chegou ao fim do fluxo por este agente; a validação final espera o último ramo terminar.
@@ -992,7 +1022,7 @@ async fn run_flow(
         }
         first.get_or_insert(this);
         release_branch(app, state, team, &key, item_id.as_deref(), stopped).await;
-        match next_job(state, key.clone())? {
+        match next_job_with_db(app.state::<DbState>().db(), state, key.clone())? {
             Some(job) => {
                 request = job.text;
                 current_run = job.context.run_id;
@@ -1909,6 +1939,100 @@ fn set_agents_idle(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
         emit_state(app, project_id, agent, AgentState::Idle)?;
     }
     Ok(())
+}
+
+pub(crate) async fn restore_flow_queue(app: AppHandle) {
+    let db_state = app.state::<DbState>();
+    let Some(db) = db_state.db() else {
+        return;
+    };
+    let Ok(jobs) = db.list_flow_queue() else {
+        return;
+    };
+    if jobs.is_empty() {
+        return;
+    }
+    let mut grouped: HashMap<SessionKey, Vec<crate::db::PersistedFlowJob>> = HashMap::new();
+    for job in jobs {
+        let key = SessionKey {
+            project_id: job.project_id,
+            agent: job.agent.clone(),
+        };
+        grouped.entry(key).or_default().push(job);
+    }
+    for (key, mut session_jobs) in grouped {
+        let head = session_jobs.remove(0);
+        let head_id = head.id;
+        let head_text = head.text;
+        let mut head_context = head.context;
+        head_context.batch = None;
+        let state = app.state::<AppState>();
+        let mut head_to_run: Option<(String, RequestContext)> = None;
+        {
+            let Ok(mut flow) = state.flow.lock() else {
+                continue;
+            };
+            if let Some(pending) = flow.pending.get_mut(&key) {
+                pending.push_back(QueuedJob {
+                    db_id: Some(head_id),
+                    text: head_text,
+                    context: head_context,
+                });
+                for mut job in session_jobs {
+                    job.context.batch = None;
+                    pending.push_back(QueuedJob {
+                        db_id: Some(job.id),
+                        text: job.text,
+                        context: job.context,
+                    });
+                }
+            } else {
+                let mut deque = VecDeque::new();
+                for mut job in session_jobs {
+                    job.context.batch = None;
+                    deque.push_back(QueuedJob {
+                        db_id: Some(job.id),
+                        text: job.text,
+                        context: job.context,
+                    });
+                }
+                flow.pending.insert(key.clone(), deque);
+                head_to_run = Some((head_text, head_context));
+            }
+        }
+        let Some((head_text, head_context)) = head_to_run else {
+            continue;
+        };
+        let _ = db.remove_flow_job(head_id);
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            let project_id = key.project_id;
+            let item_id = head_context.item_id.clone();
+            let cli = match state.cli.as_ref() {
+                Ok(cli) => cli.clone(),
+                Err(problem) => {
+                    let _ = stop_with_error(&app, project_id, problem.reason.clone());
+                    abandon_flow(&app, &state, &key, item_id.as_deref());
+                    return;
+                }
+            };
+            let team = match app.state::<AgentRegistry>().team() {
+                Ok(team) => team,
+                Err(error) => {
+                    let _ = report_failure(&app, project_id, &FlowError::Team(error));
+                    abandon_flow(&app, &state, &key, item_id.as_deref());
+                    return;
+                }
+            };
+            if let Err(error) =
+                run_flow(&app, &state, &cli, key.clone(), &head_text, head_context, &team).await
+            {
+                let _ = report_failure(&app, project_id, &error);
+                abandon_flow(&app, &state, &key, item_id.as_deref());
+            }
+        });
+    }
 }
 
 #[cfg(test)]

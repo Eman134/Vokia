@@ -2,7 +2,15 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent, VokiaRequestSettled } from './events'
 import { DEFAULT_RECIPIENT, findNamedAgent } from './agents'
-import { sendRequest, type RequestOutcome } from './teamApi'
+import {
+  enqueueQueuedRequest,
+  listQueuedRequests,
+  moveQueuedRequest,
+  removeQueuedRequest,
+  sendRequest,
+  updateQueuedRequest,
+  type RequestOutcome,
+} from './teamApi'
 import { useAgentControl } from '../panel/useAgentControl'
 import { fetchDbProblem } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
@@ -41,7 +49,7 @@ export const useRequests = defineStore('requests', () => {
   const projects = useProjects()
   const feed = useFeed()
   const connection = useConnection()
-  let nextQueueId = 0
+  const loaded = ref(false)
   let draining = false
   let inFlight: QueuedRequest | null = null
   // Callbacks de pedidos com onSettled, por id, até o término (resposta do comando ou evento request-settled).
@@ -116,7 +124,7 @@ export const useRequests = defineStore('requests', () => {
 
   // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
   async function drain(): Promise<void> {
-    if (draining || !feed.pausesLoaded) {
+    if (draining || !feed.pausesLoaded || !loaded.value) {
       return
     }
     draining = true
@@ -128,6 +136,9 @@ export const useRequests = defineStore('requests', () => {
           break
         }
         queue.value.splice(index, 1)
+        void removeQueuedRequest(head.id).catch((error) => {
+          feed.feed.push({ type: 'error', message: `Não foi possível remover o pedido da fila: ${String(error)}` })
+        })
         inFlight = head
         try {
           await dispatch(head)
@@ -140,8 +151,31 @@ export const useRequests = defineStore('requests', () => {
     }
   }
 
+  async function load(): Promise<void> {
+    if (loaded.value) {
+      return
+    }
+    const persisted = await listQueuedRequests()
+    const existingIds = new Set(queue.value.map((item) => item.id))
+    const restored: QueuedRequest[] = persisted
+      .filter((item) => !existingIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        text: item.text,
+        to: item.to,
+        projectId: item.projectId,
+        channelId: item.channelId ?? undefined,
+        itemId: item.itemId ?? undefined,
+        attachments: item.attachments,
+        editing: false,
+      }))
+    queue.value = [...restored, ...queue.value]
+    loaded.value = true
+    void drain()
+  }
+
   watch(
-    [() => control.paused, () => feed.pausesLoaded],
+    [() => control.paused, () => feed.pausesLoaded, loaded],
     () => void drain(),
   )
 
@@ -164,6 +198,9 @@ export const useRequests = defineStore('requests', () => {
     }
     target.text = text
     target.editing = false
+    void updateQueuedRequest(id, text).catch((error) => {
+      feed.feed.push({ type: 'error', message: `Não foi possível salvar a edição da fila: ${String(error)}` })
+    })
     void drain()
     return true
   }
@@ -183,6 +220,9 @@ export const useRequests = defineStore('requests', () => {
       const moved = queue.value[index]!
       queue.value[index] = queue.value[neighbor]!
       queue.value[neighbor] = moved
+      void moveQueuedRequest(id, move).catch((error) => {
+        feed.feed.push({ type: 'error', message: `Não foi possível reordenar a fila: ${String(error)}` })
+      })
     }
     void drain()
   }
@@ -196,6 +236,9 @@ export const useRequests = defineStore('requests', () => {
         runCallback(() => settle('cancelled'))
       }
       queue.value.splice(index, 1)
+      void removeQueuedRequest(id).catch((error) => {
+        feed.feed.push({ type: 'error', message: `Não foi possível remover o pedido da fila: ${String(error)}` })
+      })
     }
     void drain()
   }
@@ -292,13 +335,21 @@ export const useRequests = defineStore('requests', () => {
     const channelId = projectId === screenProjectId ? options?.channelId : undefined
     const itemId = projectId === screenProjectId ? options?.itemId : undefined
     const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
-    const id = ++nextQueueId
     const paused = control.isPaused(recipient, projectId)
     const waitingBefore = queue.value.filter(isDispatchable).length
     const busyState = feed.activity[projectAgentKey(projectId, recipient)]
     const runningHere = inFlight !== null && inFlight.to === recipient && inFlight.projectId === projectId
     const externalBusy = (busyState === 'sending' || busyState === 'thinking') && !runningHere
     const ahead = paused ? null : (inFlight === null ? 0 : 1) + waitingBefore + (externalBusy ? 1 : 0)
+    const record = await enqueueQueuedRequest({
+      projectId,
+      to: recipient,
+      text,
+      channelId,
+      itemId,
+      attachments,
+    })
+    const id = record.id
     queue.value.push({
       id,
       text,
@@ -329,6 +380,7 @@ export const useRequests = defineStore('requests', () => {
     queuedFor,
     requestMention,
     takePendingMention,
+    load,
     send,
     startEdit,
     saveEdit,

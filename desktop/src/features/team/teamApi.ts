@@ -32,6 +32,22 @@ const UPDATE_EMBER_LLM_COMMAND = 'update_ember_llm'
 const LIST_INTERRUPTED_RUNS_COMMAND = 'list_interrupted_runs'
 const RESUME_INTERRUPTED_RUN_COMMAND = 'resume_interrupted_run'
 const DISCARD_INTERRUPTED_RUN_COMMAND = 'discard_interrupted_run'
+const LIST_QUEUED_REQUESTS_COMMAND = 'list_queued_requests'
+const ENQUEUE_QUEUED_REQUEST_COMMAND = 'enqueue_queued_request'
+const UPDATE_QUEUED_REQUEST_COMMAND = 'update_queued_request'
+const MOVE_QUEUED_REQUEST_COMMAND = 'move_queued_request'
+const REMOVE_QUEUED_REQUEST_COMMAND = 'remove_queued_request'
+
+export interface QueuedRequestRecord {
+  id: number
+  projectId: number
+  to: Agent
+  text: string
+  channelId: number | null
+  itemId: string | null
+  attachments: string[]
+  position: number
+}
 
 export interface AgentPause {
   projectId: number
@@ -147,6 +163,33 @@ export function listAgentPauses(): Promise<AgentPause[]> {
 
 export function setAgentPaused(projectId: number, agent: Agent, paused: boolean): Promise<void> {
   return invoke<void>(SET_AGENT_PAUSED_COMMAND, { projectId, agent, paused })
+}
+
+export function listQueuedRequests(): Promise<QueuedRequestRecord[]> {
+  return invoke<QueuedRequestRecord[]>(LIST_QUEUED_REQUESTS_COMMAND)
+}
+
+export function enqueueQueuedRequest(params: {
+  projectId: number
+  to: Agent
+  text: string
+  channelId?: number
+  itemId?: string
+  attachments?: string[]
+}): Promise<QueuedRequestRecord> {
+  return invoke<QueuedRequestRecord>(ENQUEUE_QUEUED_REQUEST_COMMAND, params)
+}
+
+export function updateQueuedRequest(id: number, text: string): Promise<boolean> {
+  return invoke<boolean>(UPDATE_QUEUED_REQUEST_COMMAND, { id, text })
+}
+
+export function moveQueuedRequest(id: number, direction: 'up' | 'down'): Promise<boolean> {
+  return invoke<boolean>(MOVE_QUEUED_REQUEST_COMMAND, { id, direction })
+}
+
+export function removeQueuedRequest(id: number): Promise<boolean> {
+  return invoke<boolean>(REMOVE_QUEUED_REQUEST_COMMAND, { id })
 }
 
 export function listInterruptedRuns(): Promise<InterruptedRun[]> {

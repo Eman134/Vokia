@@ -28,6 +28,7 @@ import { goalNotice } from './goalCopy'
 import { useConsole } from '../console/useConsole'
 import { useBacklog } from '../backlog/useBacklog'
 import { useArtifacts } from '../artifacts/useArtifacts'
+import { useRequests } from './useRequests'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { useAgentActivity } from '../teammap/useAgentActivity'
 import { useUsageLimit } from '../usage/useUsageLimit'
@@ -107,6 +108,7 @@ export const useFeed = defineStore('feed', () => {
   async function restorePauses(): Promise<void> {
     try {
       await control.load()
+      await useRequests().load()
       pausesLoaded.value = true
     } catch (error) {
       feed.value.push({

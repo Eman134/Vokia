@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
@@ -56,7 +57,7 @@ pub struct PendingDecision {
     pub options: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RequestContext {
     pub run_id: Option<u64>,
     pub item_id: Option<String>,
@@ -92,6 +93,7 @@ impl RequestContext {
 }
 
 pub struct QueuedJob {
+    pub db_id: Option<i64>,
     pub text: String,
     pub context: RequestContext,
 }
