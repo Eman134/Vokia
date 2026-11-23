@@ -21,6 +21,8 @@ mod settings;
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
 pub use artifacts::Artifact;
+pub(crate) use artifacts::artifact_id;
+pub(crate) use backlog::plan_stage_number;
 pub use artifact_documents::{
     ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactSummary, NewArtifactDocument,
 };
@@ -28,8 +30,9 @@ pub use artifact_kinds::{ArtifactKind, ARTIFACT_KINDS};
 pub use messages::StoredTaskResult;
 pub use permission_rules::{root_command, PermissionRule};
 pub use backlog::{
-    board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible, CardResult,
-    GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
+    board_column, is_unstarted, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible,
+    CardResult, GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
+    BOARD_COLUMNS,
 };
 pub use channels::Channel;
 pub use connection::{Db, DbState};
@@ -42,7 +45,7 @@ pub use orchestration::{
 };
 pub(crate) use orchestration::{
     FLOW_END, FLOW_START, GATEWAY_EXCLUSIVE, GATEWAY_PARALLEL, LINK_COMMUNICATION, LINK_FLOW,
-    REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
+    REQUEST_KIND_VALUES, START_EDGE_EVENT, WHEN_EVENT_VALUES,
 };
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use queued_requests::{PersistedFlowJob, QueuedRequestRecord};

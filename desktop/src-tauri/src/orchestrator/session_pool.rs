@@ -368,18 +368,33 @@ pub(super) struct Held {
 pub(super) struct ExchangeSessions<'a> {
     pool: &'a SessionPool,
     project_id: i64,
+    per_step: bool,
     pub(super) opened: HashSet<Agent>,
     touched: Vec<Arc<SessionSlot>>,
 }
 
 impl<'a> ExchangeSessions<'a> {
     pub(super) fn new(pool: &'a SessionPool, project_id: i64) -> Self {
+        Self::with_mode(pool, project_id, false)
+    }
+
+    // Etapa executada uma vez: a CLI abre, responde e fecha, sem retomar nem gravar session_id.
+    pub(super) fn per_step(pool: &'a SessionPool, project_id: i64) -> Self {
+        Self::with_mode(pool, project_id, true)
+    }
+
+    fn with_mode(pool: &'a SessionPool, project_id: i64, per_step: bool) -> Self {
         Self {
             pool,
             project_id,
+            per_step,
             opened: HashSet::new(),
             touched: Vec::new(),
         }
+    }
+
+    pub(super) fn is_per_step(&self) -> bool {
+        self.per_step
     }
 
     pub(super) async fn hold(&mut self, agent: &Agent) -> Held {

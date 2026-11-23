@@ -1,11 +1,14 @@
 use crate::agents::Agent;
-use crate::db::{Layer, OrchestrationSnapshot, Team as OrchTeam};
+use crate::db::{Layer, OrchestrationSnapshot, Team as OrchTeam, FLOW_START, START_EDGE_EVENT};
 
 // Estados da etapa gravada: em andamento, aguardando o usuário (decisão aberta), escalada ao líder, concluída.
 pub(crate) const STAGE_RUNNING: &str = "em_andamento";
 pub(crate) const STAGE_WAITING: &str = "aguardando";
 pub(crate) const STAGE_ESCALATED: &str = "escalada";
 pub(crate) const STAGE_DONE: &str = "concluida";
+
+// Evento da aresta que leva a etapa concluída à próxima do plano.
+pub(crate) const TASK_DONE_EVENT: &str = "tarefa_concluida";
 
 pub(crate) const FLOW_FULL: &str = "completo";
 pub(crate) const FLOW_REDUCED: &str = "reduzido";
@@ -94,6 +97,55 @@ pub(crate) fn skip_motive(
         "A task não pode pular a camada {} no fluxo {mode}.",
         blocked.name
     ))
+}
+
+// Roteiro de um plano com time: a primeira etapa é de quem começa o fluxo, cada responsável está no time e nenhuma
+// camada obrigatória fica para trás. Revisão pode ser pulada, como no fluxo reduzido. Lote sem quem não é checado.
+pub(crate) fn plan_script_refusal(
+    snapshot: &OrchestrationSnapshot,
+    team: &OrchTeam,
+    lots: &[(u32, Option<&str>)],
+) -> Option<String> {
+    let start = snapshot.edges.iter().find(|edge| {
+        edge.team_id == team.id && edge.from_node == FLOW_START && edge.when_event == START_EDGE_EVENT
+    });
+    if let (Some(start), Some((n, Some(first)))) = (start, lots.first()) {
+        if *first != start.to_node {
+            return Some(format!(
+                "A etapa {n} é de {first}, mas o fluxo do time {} começa em {}.",
+                team.name, start.to_node
+            ));
+        }
+    }
+    let mut previous: Option<(&str, &str)> = None;
+    for (n, who) in lots {
+        let Some(who) = who else {
+            continue;
+        };
+        let Some(placement) = snapshot
+            .placements
+            .iter()
+            .find(|placement| placement.agent_id == *who && placement.team_id == team.id)
+        else {
+            return Some(format!(
+                "A etapa {n} é de {who}, que não está no time {}.",
+                team.name
+            ));
+        };
+        if let Some((from_agent, from_layer)) = previous {
+            let blocked = skipped_layers(&snapshot.layers, from_layer, &placement.layer_id)
+                .into_iter()
+                .find(|layer| layer.kind != SKIPPABLE_LAYER_KIND);
+            if let Some(layer) = blocked {
+                return Some(format!(
+                    "A etapa {n} pula a camada obrigatória {} ao passar de {from_agent} para {who}.",
+                    layer.name
+                ));
+            }
+        }
+        previous = Some((who, placement.layer_id.as_str()));
+    }
+    None
 }
 
 // O líder com a opção de julgar o fluxo ligada, quando o agente é líder desse time.

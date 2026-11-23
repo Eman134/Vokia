@@ -9,6 +9,7 @@ mod flow;
 mod goal;
 mod loop_guard;
 mod markers;
+mod plan_stages;
 mod project_context;
 mod prompts;
 mod runs;
@@ -36,5 +37,6 @@ pub(crate) use flow::{
     active_instances, all_active_instances, drain_waiting_for_project, forget_project, has_flow,
     restore_flow_queue,
 };
+pub(crate) use plan_stages::start_approved_plan;
 pub(crate) use session_pool::{schedule_preload, SessionPool};
 pub(crate) use validation::return_task;

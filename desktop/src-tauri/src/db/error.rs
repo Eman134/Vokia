@@ -103,6 +103,7 @@ pub enum DbError {
     PlanNotFound,
     PlanWithoutStages,
     PlanStageStarted(String),
+    PlanRoteiroRefused(String),
     PlanFileTooLarge { max: usize },
     PlanFileNotText,
 }
@@ -152,6 +153,7 @@ impl DbError {
                 | DbError::PlanNotFound
                 | DbError::PlanWithoutStages
                 | DbError::PlanStageStarted(_)
+                | DbError::PlanRoteiroRefused(_)
                 | DbError::PlanFileTooLarge { .. }
                 | DbError::PlanFileNotText
         )
@@ -419,6 +421,7 @@ impl fmt::Display for DbError {
             DbError::PlanWithoutStages => {
                 write!(f, "O plano precisa de ao menos uma etapa (linha #lote).")
             }
+            DbError::PlanRoteiroRefused(motive) => write!(f, "O plano não pode ser gravado: {motive}"),
             DbError::PlanStageStarted(id) => {
                 write!(f, "A etapa {id} já foi iniciada e não pode ser removida do plano.")
             }

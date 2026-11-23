@@ -124,7 +124,7 @@ pub(super) fn read_plan_artifact(
     Ok(read_plan_artifacts(conn, project_id, Some(id))?.into_iter().next())
 }
 
-pub(super) fn artifact_id(item_id: &str) -> String {
+pub(crate) fn artifact_id(item_id: &str) -> String {
     format!("{ARTIFACT_ID_PREFIX}{item_id}")
 }
 
@@ -202,6 +202,27 @@ pub(super) fn upsert_plan_criteria(
             params![project_id, id, criterion_id, lot.n, lot.meta, done],
         )?;
     }
+    Ok(())
+}
+
+// Critério do lote n do plano: o estado da etapa marca ou desmarca. Bump do updated_at para a tela e a edição verem a troca.
+pub(super) fn set_plan_criterion_done(
+    conn: &Connection,
+    project_id: i64,
+    item_id: &str,
+    lot_number: u32,
+    done: bool,
+) -> rusqlite::Result<()> {
+    let plan_id = artifact_id(item_id);
+    conn.execute(
+        "UPDATE artifact_criteria SET done = ?4 WHERE project_id = ?1 AND artifact_id = ?2 AND id = ?3",
+        params![project_id, plan_id, format!("{CRITERION_ID_PREFIX}{lot_number}"), done],
+    )?;
+    conn.execute(
+        "UPDATE artifacts SET updated_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) \
+         WHERE project_id = ?1 AND id = ?2",
+        params![project_id, plan_id],
+    )?;
     Ok(())
 }
 
