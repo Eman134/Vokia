@@ -165,6 +165,7 @@ fn create_card_grava_no_projeto_do_binding_com_o_agente_dono_e_confirma_na_frase
     let card = &world.cards(project)[0];
     assert_eq!(card.who, "axiom");
     assert_eq!(card.origin, "agente");
+    assert_eq!(card.state, "triagem");
     assert_eq!(card.description.as_deref(), Some("Checar o token"));
     assert_eq!(card.activity[0].text, "Axiom criou o card na conversa.");
 }

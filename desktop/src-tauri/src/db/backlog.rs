@@ -47,6 +47,7 @@ const USER_OWNER: &str = "voce";
 const USER_CARD_TYPE: &str = "feature";
 const AGENT_CARD_TYPE: &str = "task";
 const NEW_CARD_STATE: &str = "vazio";
+const TRIAGE_CARD_STATE: &str = "triagem";
 const CARD_ID_PREFIX: &str = "item-";
 const USER_CREATED_TEXT: &str = "Pedido criado por você.";
 const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
@@ -1490,7 +1491,9 @@ fn create_agent_card(
         activity: vec![activity_entry(&id, 1, created)],
         links: Vec::new(),
     };
-    insert_card(conn, project_id, &fresh_card(&id, draft), position)?;
+    let mut item = fresh_card(&id, draft);
+    item.state = TRIAGE_CARD_STATE.to_string();
+    insert_card(conn, project_id, &item, position)?;
     Ok(CardResult {
         id,
         title,
