@@ -306,3 +306,167 @@ fn contador_do_pedido_de_arquivo_nao_soma_arquivos_diferentes_da_mesma_pasta() {
     assert_eq!(sibling.unwrap()["approvedBefore"], 0);
     assert_eq!(same.unwrap()["approvedBefore"], 1);
 }
+
+fn set_bypass(world: &World, enabled: bool) {
+    world
+        .app
+        .state::<AppState>()
+        .permissions
+        .set_bypass(world.app.handle(), world.project_id, enabled)
+        .expect("o modo bypass deveria mudar");
+}
+
+fn bypass_prompts(world: &World) -> Vec<Value> {
+    world
+        .of_type("permission-by-rule")
+        .into_iter()
+        .filter(|event| event["bypass"] == true)
+        .collect()
+}
+
+#[test]
+fn bypass_ligado_aprova_comum_sem_balao_e_avisa_que_veio_do_bypass() {
+    let world = world();
+    set_bypass(&world, true);
+
+    let (verdict, _) = world.bash(false, "npm test", Reply::NoPromptExpected);
+
+    assert_eq!(verdict, PermissionVerdict::Allow);
+    assert_eq!(bypass_prompts(&world).len(), 1);
+    assert_eq!(world.of_type("bypass-changed")[0]["enabled"], true);
+}
+
+#[test]
+fn bypass_desligado_continua_perguntando() {
+    let world = world();
+
+    let (verdict, prompt) = world.bash(false, "npm test", ALLOW_ONCE);
+
+    assert_eq!(verdict, PermissionVerdict::Allow);
+    assert!(prompt.is_some());
+    assert!(bypass_prompts(&world).is_empty());
+}
+
+#[test]
+fn bypass_ligado_mantem_perguntando_as_acoes_destrutivas_e_os_caminhos_fora_do_projeto() {
+    let world = world();
+    set_bypass(&world, true);
+
+    let cases = [
+        (BASH, json!({ "command": "git push --force origin main" })),
+        (BASH, json!({ "command": "git reset --hard" })),
+        (BASH, json!({ "command": "rm -rf C:/outra/pasta" })),
+        (BASH, json!({ "command": "cat ../segredo.txt" })),
+        (EDIT, json!({ "file_path": "C:/Meus Documentos/a.txt" })),
+    ];
+    for (tool, input) in cases {
+        let (verdict, prompt) = world.ask(false, tool, input.clone(), ALLOW_ONCE);
+        assert!(prompt.is_some(), "deveria perguntar: {input}");
+        assert_eq!(verdict, PermissionVerdict::Allow);
+    }
+}
+
+#[test]
+fn bypass_ligado_aprova_escrita_dentro_da_pasta_do_projeto() {
+    let world = world();
+    set_bypass(&world, true);
+
+    let (verdict, _) = world.ask(
+        false,
+        EDIT,
+        json!({ "file_path": "C:/projetos/a/src/lib.rs" }),
+        Reply::NoPromptExpected,
+    );
+
+    assert_eq!(verdict, PermissionVerdict::Allow);
+}
+
+#[test]
+fn ligar_bypass_resolve_pendentes_nao_destrutivos_e_deixa_destrutivo_para_o_usuario() {
+    let world = world();
+    let common = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
+    let destructive = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
+    let spawn = |id: String, command: &str| {
+        let app = world.app.handle().clone();
+        let granted = world.granted.clone();
+        let project_id = world.project_id;
+        let request = PermissionRequest {
+            id,
+            tool: BASH.to_string(),
+            input: json!({ "command": command }),
+        };
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            PermissionGate {
+                app: &app,
+                broker: &state.permissions,
+                agent: Agent::ember(),
+                project_id,
+                granted: &granted,
+                grant_per_session: false,
+            }
+            .decide(request)
+            .await
+        })
+    };
+    let common_decision = spawn(common.clone(), "npm test");
+    let destructive_decision = spawn(destructive.clone(), "git push --force");
+    let waited = std::time::Instant::now();
+    while world.pending_prompt(&common).is_none() || world.pending_prompt(&destructive).is_none() {
+        assert!(waited.elapsed() < EVENT_WAIT, "os pedidos pendentes deveriam chegar ao usuário");
+        std::thread::sleep(POLL);
+    }
+
+    set_bypass(&world, true);
+
+    let common_verdict = tauri::async_runtime::block_on(async {
+        tokio::time::timeout(EVENT_WAIT, common_decision)
+            .await
+            .expect("o pendente comum deveria ser resolvido ao ligar")
+            .expect("a decisão deveria terminar")
+    });
+    assert_eq!(common_verdict, PermissionVerdict::Allow);
+
+    tauri::async_runtime::block_on(dispatch(
+        world.app.handle(),
+        None,
+        "answer_permission",
+        json!({ "id": destructive, "allow": false, "always": false }),
+    ))
+    .expect("answer_permission reconhecido")
+    .expect("a resposta deveria ser aceita");
+    let destructive_verdict = tauri::async_runtime::block_on(destructive_decision).expect("a decisão deveria terminar");
+    assert_eq!(destructive_verdict, PermissionVerdict::Deny(None));
+}
+
+#[test]
+fn bypass_nao_persiste_entre_execucoes_e_comeca_desligado() {
+    let world = world();
+    set_bypass(&world, true);
+    let project_id = world.project_id;
+
+    assert!(world.app.state::<AppState>().permissions.bypass_enabled(project_id));
+    let fresh = PermissionBroker::default();
+    assert!(!fresh.bypass_enabled(project_id), "uma execução nova não pode herdar o bypass");
+}
+
+#[test]
+fn deteccao_de_acao_destrutiva_separa_o_que_pede_aprovacao() {
+    use crate::permissions::is_destructive;
+    let root = Some("C:/projetos/a");
+    let command = |text: &str| json!({ "command": text });
+
+    assert!(!is_destructive(&command("npm test"), root));
+    assert!(!is_destructive(&command("git push origin main"), root));
+    assert!(!is_destructive(&command("rm -rf build"), root));
+    assert!(!is_destructive(&command("rm -rf C:/projetos/a/dist"), root));
+    assert!(is_destructive(&command("git push --force origin main"), root));
+    assert!(is_destructive(&command("git push -fu origin main"), root));
+    assert!(is_destructive(&command("git reset --hard HEAD~1"), root));
+    assert!(is_destructive(&command("git clean -fd"), root));
+    assert!(is_destructive(&command("rm -rf C:/outra/pasta"), root));
+    assert!(is_destructive(&command("cat ../segredo.txt"), root));
+    assert!(is_destructive(&json!({ "file_path": "C:/Meus Documentos/a.txt" }), root));
+    assert!(!is_destructive(&json!({ "file_path": "C:/projetos/a/src/lib.rs" }), root));
+    assert!(is_destructive(&command("npm test"), None), "sem pasta do projeto nada é seguro");
+}

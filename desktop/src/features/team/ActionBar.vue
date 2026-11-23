@@ -23,6 +23,7 @@ import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
 import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
+import BypassToggle from './bar/BypassToggle.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
 import OfflineNotice from './bar/OfflineNotice.vue'
 import PageActionsButton from './bar/PageActionsButton.vue'
@@ -231,6 +232,7 @@ function onPointerLeave(): void {
       <FlowSteps v-if="flow.active" />
       <div class="flex shrink-0 items-center gap-0.5 empty:hidden">
         <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
+        <BypassToggle v-if="canAsk && !flow.active && !inlinePermission" :expanded="expanded" />
         <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
         <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
       </div>

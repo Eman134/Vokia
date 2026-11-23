@@ -11,6 +11,7 @@ use crate::claude::{PermissionRequest, PermissionVerdict};
 use crate::db::{root_command, ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
+use super::bypass::is_destructive;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const COMMAND_FIELD: &str = "command";
@@ -48,10 +49,14 @@ pub enum Answer {
 #[derive(Default)]
 pub struct PermissionBroker {
     pending: Mutex<HashMap<String, PendingPermission>>,
+    // Modo bypass por projeto: só em memória, então volta a desligado a cada abertura do app.
+    bypass: Mutex<HashSet<i64>>,
 }
 
 struct PendingPermission {
     project_id: i64,
+    // Ação destrutiva continua pedindo aprovação mesmo quando o bypass é ligado com pedidos pendentes.
+    destructive: bool,
     sender: oneshot::Sender<Answer>,
 }
 
@@ -68,7 +73,13 @@ pub struct PermissionGate<'a> {
 impl PermissionGate<'_> {
     pub async fn decide(self, request: PermissionRequest) -> PermissionVerdict {
         if rule_allows(self.app, self.project_id, &request.tool, &target_of(&request)) {
-            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request));
+            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), false);
+            return PermissionVerdict::Allow;
+        }
+        let destructive = is_destructive(&request.input, project_root(self.app, self.project_id).as_deref());
+        // Bypass ligado no projeto: aprova sem balão nem pergunta, mas ação destrutiva segue para o usuário.
+        if !destructive && self.broker.bypass_enabled(self.project_id) {
+            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), true);
             return PermissionVerdict::Allow;
         }
         let approval = approval_key(&request);
@@ -80,7 +91,7 @@ impl PermissionGate<'_> {
         }
         let (verdict, root) = self
             .broker
-            .request(self.app, self.agent.clone(), self.project_id, request)
+            .request(self.app, self.agent.clone(), self.project_id, request, destructive)
             .await;
         if verdict == PermissionVerdict::Allow && self.grant_per_session {
             match root_grant.filter(|_| root) {
@@ -113,9 +124,10 @@ impl PermissionBroker {
         agent: Agent,
         project_id: i64,
         request: PermissionRequest,
+        destructive: bool,
     ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
-        if self.register(&request.id, project_id, sender).is_err() {
+        if self.register(&request.id, project_id, destructive, sender).is_err() {
             return (PermissionVerdict::Deny(None), false);
         }
         let Ok(now) = now_millis() else {
@@ -204,12 +216,60 @@ impl PermissionBroker {
         &self,
         id: &str,
         project_id: i64,
+        destructive: bool,
         sender: oneshot::Sender<Answer>,
     ) -> Result<(), PermissionError> {
         self.pending
             .lock()
             .map_err(|_: PoisonError<_>| PermissionError::Poisoned)?
-            .insert(id.to_string(), PendingPermission { project_id, sender });
+            .insert(
+                id.to_string(),
+                PendingPermission {
+                    project_id,
+                    destructive,
+                    sender,
+                },
+            );
+        Ok(())
+    }
+
+    // Lock envenenado vale como desligado: o pedido volta a ser perguntado.
+    pub fn bypass_enabled(&self, project_id: i64) -> bool {
+        self.bypass
+            .lock()
+            .is_ok_and(|projects| projects.contains(&project_id))
+    }
+
+    // Ligar resolve como permitidos os pedidos pendentes do projeto que não são destrutivos; desligar não mexe neles.
+    pub fn set_bypass(&self, app: &AppHandle, project_id: i64, enabled: bool) -> Result<(), PermissionError> {
+        {
+            let mut projects = self.bypass.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
+            if enabled {
+                projects.insert(project_id);
+            } else {
+                projects.remove(&project_id);
+            }
+        }
+        if enabled {
+            self.allow_pending(project_id)?;
+        }
+        let _ = app.emit(EVENT_NAME, VokiaEvent::BypassChanged { project_id, enabled });
+        Ok(())
+    }
+
+    fn allow_pending(&self, project_id: i64) -> Result<(), PermissionError> {
+        let mut pending = self.pending.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
+        let ids: Vec<String> = pending
+            .iter()
+            .filter(|(_, entry)| entry.project_id == project_id && !entry.destructive)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            if let Some(entry) = pending.remove(&id) {
+                // Receptor que já sumiu (tempo esgotado): nada a aprovar.
+                let _ = entry.sender.send(Answer::Allow { always: false, root: false });
+            }
+        }
         Ok(())
     }
 
@@ -290,15 +350,26 @@ fn rule_allows(app: &AppHandle, project_id: i64, tool: &str, target: &str) -> bo
         .is_some_and(|db| db.has_permission_rule(project_id, tool, target).unwrap_or(false))
 }
 
-fn announce_by_rule(app: &AppHandle, agent: Agent, project_id: i64, detail: String) {
+// Aprovação automática: por regra salva ou pelo modo bypass do projeto (`bypass` marca o segundo caso).
+fn announce_by_rule(app: &AppHandle, agent: Agent, project_id: i64, detail: String, bypass: bool) {
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::PermissionByRule {
             agent,
             detail,
             project_id: Some(project_id),
+            bypass,
         },
     );
+}
+
+// Pasta do projeto, usada para saber se o pedido fica dentro dela. Falha de leitura vira None (pergunta).
+fn project_root(app: &AppHandle, project_id: i64) -> Option<String> {
+    let db_state = app.state::<DbState>();
+    db_state
+        .db()
+        .and_then(|db| db.project(project_id).ok())
+        .map(|project| project.path)
 }
 
 // Só o que o usuário costuma aceitar e não recusou na janela recente recebe a sugestão.

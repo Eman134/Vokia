@@ -2,6 +2,7 @@ pub(crate) mod agents;
 pub(crate) mod artifacts;
 pub(crate) mod attachments;
 pub(crate) mod backlog;
+pub(crate) mod bypass;
 pub(crate) mod channels;
 pub(crate) mod orchestration;
 pub(crate) mod projects;
