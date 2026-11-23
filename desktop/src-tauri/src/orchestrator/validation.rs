@@ -181,7 +181,13 @@ fn open_manual_validation(
             ],
         },
     )?;
-    emit_state(app, project_id, leader.clone(), AgentState::Waiting)
+    emit_state(
+        app,
+        project_id,
+        leader.clone(),
+        AgentState::Waiting,
+        Some(&item.id),
+    )
 }
 
 fn has_open_decision(state: &AppState, project_id: i64, item_id: &str) -> Result<bool, FlowError> {

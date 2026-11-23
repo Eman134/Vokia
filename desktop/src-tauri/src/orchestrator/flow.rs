@@ -579,7 +579,13 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
     if let (Some(JoinExit::End), Some(item)) = (&join, batch.item_id.as_deref()) {
         let last = batch.returned.last().unwrap_or(&batch.leader);
         mark_flow_end(state, batch.project_id, item, last)?;
-        return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
+        return emit_state(
+            app,
+            batch.project_id,
+            batch.leader,
+            AgentState::Idle,
+            batch.item_id.as_deref(),
+        );
     }
     if let Some(JoinExit::Agent(target)) = join {
         let max_instances = snapshot
@@ -601,13 +607,25 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
             max_instances,
             max_parallel,
         )?;
-        return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
+        return emit_state(
+            app,
+            batch.project_id,
+            batch.leader,
+            AgentState::Idle,
+            batch.item_id.as_deref(),
+        );
     }
     let gate = snapshot.as_ref().map_or(HUMAN_GATE_LOTE, |snapshot| {
         snapshot.settings.human_gate.as_str()
     });
     if gate == HUMAN_GATE_NEVER {
-        return emit_state(app, batch.project_id, batch.leader, AgentState::Idle);
+        return emit_state(
+            app,
+            batch.project_id,
+            batch.leader,
+            AgentState::Idle,
+            batch.item_id.as_deref(),
+        );
     }
     let title = if gate == HUMAN_GATE_END {
         REVIEW_TASK_TITLE
@@ -628,7 +646,13 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
             options: Vec::new(),
         },
     )?;
-    emit_state(app, batch.project_id, batch.leader, AgentState::Waiting)
+    emit_state(
+        app,
+        batch.project_id,
+        batch.leader,
+        AgentState::Waiting,
+        batch.item_id.as_deref(),
+    )
 }
 
 enum JoinExit {
@@ -1046,9 +1070,9 @@ async fn run_flow(
             }
         };
         if let Some(limit) = limit {
-            pause_run(app, &key, journal, limit)?;
+            pause_run(app, &key, journal, limit, item_id.as_deref())?;
         } else if paused_mid_flow {
-            interrupt_paused_run(app, &key, journal)?;
+            interrupt_paused_run(app, &key, journal, item_id.as_deref())?;
         } else {
             end_run(app, journal)?;
         }
@@ -1172,7 +1196,7 @@ async fn run_parallel_item(
             name: instances::display_name(team, &key.agent),
         },
     )?;
-    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending, item_id)?;
     if let Some(id) = batch {
         with_batch(state, id, |open| open.started.push(key.agent.clone()));
         announce_batch(app, state, id);
@@ -1498,7 +1522,13 @@ async fn answer_once(
             let _ = mark_flow_end(exchange.state, project_id, item_id, &agent);
         }
     }
-    emit_state(exchange.app, project_id, agent, AgentState::Idle)?;
+    emit_state(
+        exchange.app,
+        project_id,
+        agent,
+        AgentState::Idle,
+        exchange.item_id,
+    )?;
     Ok(text)
 }
 
@@ -1874,7 +1904,7 @@ async fn exchange_turns(
     team: &Team,
     run_id: Option<u64>,
 ) -> Result<TaskOutcome, FlowError> {
-    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending)?;
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending, item_id)?;
     let channel = find_channel(app, key.project_id, channel_id, team);
     let request = with_channel_note(request, channel.as_ref());
     let request = request.as_str();
@@ -1938,7 +1968,7 @@ async fn exchange_turns(
         project_context(&project, tree.as_ref())
     };
     if first_speaker(&definition, &key.agent) != key.agent {
-        emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)?;
+        emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle, item_id)?;
     }
     begin_task(app, state, key.project_id, &definition, request)?;
     let mut transcript = vec![format!("{USER_LABEL}: {request}")];
@@ -2152,7 +2182,7 @@ fn set_agents_idle(app: &AppHandle, project_id: i64) -> Result<(), FlowError> {
         Err(_) => vec![Agent::ember(), Agent::axiom(), Agent::vexa()],
     };
     for agent in agents {
-        emit_state(app, project_id, agent, AgentState::Idle)?;
+        emit_state(app, project_id, agent, AgentState::Idle, None)?;
     }
     Ok(())
 }

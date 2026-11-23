@@ -145,9 +145,10 @@ pub(super) fn interrupt_paused_run(
     app: &AppHandle,
     key: &SessionKey,
     id: Option<i64>,
+    item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     interrupt_in_db(app, id)?;
-    emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle, item_id)
 }
 
 fn schedule_auto_resume(app: AppHandle, project_id: i64, run_id: i64, resets_at: u64) {
@@ -189,6 +190,7 @@ pub(super) fn pause_run(
     key: &SessionKey,
     id: Option<i64>,
     limit: UsageLimit,
+    item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     interrupt_in_db(app, id)?;
     let agents = project_team_agents(app);
@@ -204,15 +206,21 @@ pub(super) fn pause_run(
     }
     emit_agent_pauses_changed(app)?;
     for agent in agents {
-        let state = if agent == key.agent {
-            AgentState::Waiting
+        let (state, agent_item) = if agent == key.agent {
+            (AgentState::Waiting, item_id)
         } else {
-            AgentState::Idle
+            (AgentState::Idle, None)
         };
-        emit_state(app, key.project_id, agent, state)?;
+        emit_state(app, key.project_id, agent, state, agent_item)?;
     }
     if key.agent != base_agent_obj(&key.agent) {
-        emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting)?;
+        emit_state(
+            app,
+            key.project_id,
+            key.agent.clone(),
+            AgentState::Waiting,
+            item_id,
+        )?;
     }
     emit(
         app,

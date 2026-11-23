@@ -177,6 +177,7 @@ pub(super) fn emit_state(
     project_id: i64,
     agent: Agent,
     state: AgentState,
+    item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     if matches!(state, AgentState::Sending | AgentState::Thinking) {
         mark_delegations_activated(app, project_id, &agent)?;
@@ -187,6 +188,7 @@ pub(super) fn emit_state(
             agent,
             state,
             project_id: Some(project_id),
+            item_id: item_id.map(str::to_string),
         },
     )
 }
