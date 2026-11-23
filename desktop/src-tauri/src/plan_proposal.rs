@@ -9,6 +9,8 @@ const TASK_SEPARATOR: char = ';';
 const TAG_SEPARATOR: char = ',';
 const LINE_SEPARATOR: &str = "\n";
 
+pub const PLAN_PROTOCOL_HINT: &str = "Formato do proposal: primeira linha #plano-pronto, depois um marcador por linha: #estimativa ~<tempo>, #lote <n>|<título>|<meta>|<tarefa>; <tarefa> (ao menos um), opcional #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>~passo:<passo>~pronto:<critério>~nao:<limite>, #risco <frase>, #etiquetas <e1>, <e2> e resumo livre.";
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanLot {
     pub n: u32,

@@ -274,10 +274,12 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
         assert!(role_mcp.contains("triagem"));
         assert!(role_mcp.contains("request_decision"));
         assert!(role_mcp.contains("save_item_plan"));
+        assert!(role_mcp.contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
 
         let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli);
         assert!(role_cli.contains("triagem"));
         assert!(role_cli.contains("request-decision"));
         assert!(role_cli.contains("save_item_plan"));
+        assert!(role_cli.contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
     });
 }

@@ -36,8 +36,10 @@ const FULL_INSTRUCTION = 'Faça uma pesquisa completa antes de propor.'
 const QUESTION_INSTRUCTION =
   'Se faltar informação, pergunte antes de propor terminando a resposta com uma linha: #decisao pergunta|<título>|<detalhe>|<opção1>;<opção2>. Quando o usuário responder, continue a pesquisa.'
 const USER_NOTE_PREFIX = 'Instruções do usuário (têm prioridade sobre o resto):'
+export const PLAN_PROTOCOL_HINT =
+  'primeira linha #plano-pronto e depois, um marcador por linha: #estimativa ~<tempo>, uma linha #lote <n>|<título>|<meta>|<tarefa>; <tarefa> por lote (ao menos um), se quiser uma linha #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>, <arquivo>~passo:<passo>~pronto:<critério>~nao:<limite> por lote (passo, pronto e nao podem se repetir), #risco <frase curta>, #etiquetas <etiqueta>, <etiqueta> (livres, em minúsculas) e, se quiser, um resumo.'
 const FINAL_INSTRUCTION =
-  'Quando terminar, responda em português com a primeira linha #plano-pronto e depois, um marcador por linha: #estimativa ~<tempo>, uma linha #lote <n>|<título>|<meta>|<tarefa>; <tarefa> por lote, se quiser uma linha #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>, <arquivo>~passo:<passo>~pronto:<critério>~nao:<limite> por lote (passo, pronto e nao podem se repetir), #risco <frase curta>, #etiquetas <etiqueta>, <etiqueta> (livres, em minúsculas) e, se quiser, um resumo. Mesmo depois das respostas do usuário, termine sempre com #plano-pronto.'
+  `Quando terminar, responda em português com a ${PLAN_PROTOCOL_HINT} Mesmo depois das respostas do usuário, termine sempre com #plano-pronto.`
 const IMPORT_INSTRUCTION =
   'Converta o plano abaixo para o formato do Vokia sem pesquisa extensa: mantenha as etapas e os critérios do original, cada etapa vira um #lote e os critérios dela entram como pronto no #roteiro do lote. Escreva um #roteiro para o lote sempre que o original detalhar quem faz, arquivos, passos ou limites da etapa.'
 

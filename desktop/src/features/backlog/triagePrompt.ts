@@ -1,6 +1,7 @@
 import type { OrchestrationSnapshot } from '../orchestration/orchestrationTypes'
 import type { AgentProfile } from '../team/teamApi'
 import type { BacklogItem } from './backlogTypes'
+import { PLAN_PROTOCOL_HINT } from './planProposal'
 
 const NO_TEAM_LABEL = 'Sem time'
 const EMPTY_TEAM_TEXT = 'nenhum agente posicionado'
@@ -35,6 +36,7 @@ export function buildTriagePrompt(
     'O item está sem responsável. Decida quem executa:',
     `- Para atribuir direto, chame a ferramenta backlog_set_responsible com item_id "${item.id}" e agent com o id entre parênteses abaixo.`,
     '- Para delegar, use o fluxo de delegação do time. Você só delega: quem grava o responsável é a ferramenta.',
+    `- Ao gravar plano via save_item_plan, use ${PLAN_PROTOCOL_HINT}`,
     '',
     'Times e camadas deste projeto:',
     ...teamLines,

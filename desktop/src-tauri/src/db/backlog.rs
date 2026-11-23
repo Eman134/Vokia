@@ -1008,11 +1008,24 @@ fn validate_plan(plan: &ItemPlanInput) -> Result<(), DbError> {
         PROPOSED_PLAN if plan.proposal.as_deref().is_none_or(is_blank) => {
             Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED))
         }
-        PROPOSED_PLAN => Ok(()),
+        PROPOSED_PLAN => {
+            let proposal = plan.proposal.as_deref().unwrap_or_default();
+            if parse_proposal(proposal).lots.is_empty() {
+                return Err(DbError::PlanWithoutStages);
+            }
+            Ok(())
+        }
         LINKED_PLAN if !plan.plan.as_ref().is_some_and(is_complete_plan) => {
             Err(DbError::InvalidBacklogPlan(LINKED_PLAN_REQUIRED))
         }
-        LINKED_PLAN => Ok(()),
+        LINKED_PLAN => {
+            if let Some(proposal) = plan.proposal.as_deref().filter(|text| !is_blank(text)) {
+                if parse_proposal(proposal).lots.is_empty() {
+                    return Err(DbError::PlanWithoutStages);
+                }
+            }
+            Ok(())
+        }
         _ => Err(DbError::InvalidPlanState(plan.state.clone())),
     }
 }
