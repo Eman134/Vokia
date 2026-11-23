@@ -6,6 +6,7 @@ use crate::agents::Agent;
 use crate::claude::{LimitWindow, RateLimits, TurnActivity, TurnUsage};
 use crate::db::DbState;
 use crate::events::{AgentState, RequestProposal, Speaker, UsageWindow, VokiaEvent, EVENT_NAME};
+use crate::session_key::SessionKey;
 
 use super::error::FlowError;
 use super::flow::drain_all_waiting;
@@ -172,12 +173,71 @@ pub(crate) fn emit_artifacts_changed(app: &AppHandle, project_id: i64) -> Result
     emit(app, VokiaEvent::ArtifactsChanged { project_id })
 }
 
+pub(crate) fn record_agent_state(
+    app: &AppHandle,
+    project_id: i64,
+    agent: &Agent,
+    state: AgentState,
+) {
+    if let Some(app_state) = app.try_state::<AppState>() {
+        if let Ok(mut flow) = app_state.flow.lock() {
+            if state == AgentState::Idle {
+                flow.agent_states.remove(&(project_id, agent.clone()));
+            } else {
+                flow.agent_states
+                    .insert((project_id, agent.clone()), state);
+            }
+        }
+    }
+}
+
+// Qualquer agente em Waiting sem execução ativa, batch aberto, decisão pendente nem permissão pendente volta para Idle.
+pub(crate) fn reconcile_waiting(app: &AppHandle, state: &AppState, project_id: i64) {
+    let candidates: Vec<Agent> = {
+        let Ok(flow) = state.flow.lock() else {
+            return;
+        };
+        let decisions = state.decisions.lock().ok();
+        flow.agent_states
+            .iter()
+            .filter(|((pid, _), agent_state)| {
+                *pid == project_id && **agent_state == AgentState::Waiting
+            })
+            .filter(|((_, agent), _)| {
+                let has_execution = flow.pending.contains_key(&SessionKey {
+                    project_id,
+                    agent: agent.clone(),
+                }) || flow
+                    .turn_waiters
+                    .iter()
+                    .any(|(key, waiters)| key.project_id == project_id && waiters.contains(agent));
+                let has_batch = flow
+                    .batches
+                    .values()
+                    .any(|batch| batch.project_id == project_id && &batch.leader == agent);
+                let has_decision = decisions.as_ref().is_some_and(|map| {
+                    map.values().any(|decision| {
+                        decision.project_id == project_id && &decision.agent == agent
+                    })
+                });
+                let has_permission = state.permissions.has_pending(project_id, agent);
+                !has_execution && !has_batch && !has_decision && !has_permission
+            })
+            .map(|((_, agent), _)| agent.clone())
+            .collect()
+    };
+    for agent in candidates {
+        let _ = emit_state(app, project_id, agent, AgentState::Idle);
+    }
+}
+
 pub(super) fn emit_state(
     app: &AppHandle,
     project_id: i64,
     agent: Agent,
     state: AgentState,
 ) -> Result<(), FlowError> {
+    record_agent_state(app, project_id, &agent, state);
     if matches!(state, AgentState::Sending | AgentState::Thinking) {
         mark_delegations_activated(app, project_id, &agent)?;
     }

@@ -364,3 +364,234 @@ mod dispatch {
         }
     }
 }
+
+mod waiting_reconcile {
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::Value;
+    use tauri::{Listener, Manager};
+
+    use super::*;
+    use crate::events::{AgentState, DecisionKind, EVENT_NAME};
+    use crate::mcp::support::build_app;
+    use crate::orchestrator::emit::{emit_state, reconcile_waiting};
+    use crate::state::{AppState, Batch, PendingDecision};
+
+    static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
+    const PROJECT: i64 = 1;
+
+    struct World {
+        app: tauri::App,
+        dir: std::path::PathBuf,
+        events: Arc<Mutex<Vec<Value>>>,
+    }
+
+    impl Drop for World {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn world() -> World {
+        let dir = std::env::temp_dir().join(format!(
+            "vokia-waiting-reconcile-{}-{}",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        ));
+        let app = build_app(&dir);
+        let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+        let sink = events.clone();
+        app.handle().listen(EVENT_NAME, move |event| {
+            if let Ok(value) = serde_json::from_str::<Value>(event.payload()) {
+                sink.lock().unwrap().push(value);
+            }
+        });
+        World { app, dir, events }
+    }
+
+    fn agent(id: &str) -> Agent {
+        Agent::from_stored(id).expect("agente")
+    }
+
+    fn last_state_for(world: &World, target: &str) -> Option<String> {
+        world
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|event| event["type"] == "agent-state" && event["agent"] == target)
+            .and_then(|event| event["state"].as_str().map(str::to_string))
+    }
+
+    #[test]
+    fn agente_em_waiting_sem_motivo_ativo_volta_para_idle() {
+        let world = world();
+        let state = world.app.state::<AppState>();
+        let kairo = agent("kairo");
+
+        emit_state(world.app.handle(), PROJECT, kairo.clone(), AgentState::Waiting).unwrap();
+        assert_eq!(last_state_for(&world, "kairo").as_deref(), Some("waiting"));
+
+        reconcile_waiting(world.app.handle(), &state, PROJECT);
+
+        assert_eq!(last_state_for(&world, "kairo").as_deref(), Some("idle"));
+        assert!(!state
+            .flow
+            .lock()
+            .unwrap()
+            .agent_states
+            .contains_key(&(PROJECT, kairo)));
+    }
+
+    #[test]
+    fn agentes_com_execucao_batch_decisao_ou_turn_waiter_permanecem_waiting_ate_encerrar() {
+        let world = world();
+        let state = world.app.state::<AppState>();
+        let ember = agent("ember");
+        let axiom = agent("axiom");
+        let vexa = agent("vexa");
+        let kairo = agent("kairo");
+
+        for a in [&ember, &axiom, &vexa, &kairo] {
+            emit_state(world.app.handle(), PROJECT, a.clone(), AgentState::Waiting).unwrap();
+        }
+
+        let ember_key = SessionKey {
+            project_id: PROJECT,
+            agent: ember.clone(),
+        };
+        {
+            let mut flow = state.flow.lock().unwrap();
+            flow.pending.insert(ember_key.clone(), VecDeque::new());
+            flow.turn_waiters
+                .insert(ember_key.clone(), vec![kairo.clone()]);
+            flow.batches.insert(
+                1,
+                Batch {
+                    project_id: PROJECT,
+                    leader: axiom.clone(),
+                    objective: "obj".to_string(),
+                    variables: Vec::new(),
+                    channel_id: None,
+                    item_id: None,
+                    pending: 1,
+                    results: Vec::new(),
+                    dispatched: Vec::new(),
+                    started: Vec::new(),
+                    returned: Vec::new(),
+                    counters: Default::default(),
+                },
+            );
+        }
+        state.decisions.lock().unwrap().insert(
+            99,
+            PendingDecision {
+                agent: vexa.clone(),
+                project_id: PROJECT,
+                kind: DecisionKind::Pergunta,
+                title: "t".to_string(),
+                request: "r".to_string(),
+                item_id: None,
+                options: Vec::new(),
+            },
+        );
+
+        reconcile_waiting(world.app.handle(), &state, PROJECT);
+        for name in ["ember", "axiom", "vexa", "kairo"] {
+            assert_eq!(
+                last_state_for(&world, name).as_deref(),
+                Some("waiting"),
+                "{name} deveria continuar waiting"
+            );
+        }
+
+        {
+            let mut flow = state.flow.lock().unwrap();
+            flow.pending.remove(&ember_key);
+            flow.turn_waiters.remove(&ember_key);
+            flow.batches.remove(&1);
+        }
+        state.decisions.lock().unwrap().remove(&99);
+
+        reconcile_waiting(world.app.handle(), &state, PROJECT);
+        for name in ["ember", "axiom", "vexa", "kairo"] {
+            assert_eq!(
+                last_state_for(&world, name).as_deref(),
+                Some("idle"),
+                "{name} deveria voltar para idle"
+            );
+        }
+    }
+
+    #[test]
+    fn abandon_flow_reconcilia_agente_preso_em_waiting() {
+        let world = world();
+        let state = world.app.state::<AppState>();
+        let vexa = agent("vexa");
+        let key = SessionKey {
+            project_id: PROJECT,
+            agent: vexa.clone(),
+        };
+        state.flow.lock().unwrap().pending.insert(key.clone(), VecDeque::new());
+        emit_state(world.app.handle(), PROJECT, vexa, AgentState::Waiting).unwrap();
+
+        abandon_flow(world.app.handle(), &state, &key, None);
+
+        assert_eq!(last_state_for(&world, "vexa").as_deref(), Some("idle"));
+    }
+
+    #[tokio::test]
+    async fn concluir_validacao_final_tira_lider_de_waiting() {
+        let world = world();
+        let db_state = world.app.state::<DbState>();
+        let db = db_state.db().expect("banco aberto");
+        let project = db
+            .insert_project(&crate::db::NewProject {
+                name: "proj-validacao",
+                symbol: "folder",
+                description: "",
+                path: &world.dir.to_string_lossy(),
+                origin_kind: "folder",
+                origin_repo: None,
+            })
+            .expect("projeto");
+        let created = db
+            .create_card(
+                project.id,
+                &crate::db::NewCard {
+                    title: "Card teste".to_string(),
+                    description: None,
+                    origin: "usuario".to_string(),
+                    links: Vec::new(),
+                },
+            )
+            .expect("card");
+        db.advance_card(project.id, &created.id, "In review")
+            .expect("in review");
+
+        let state = world.app.state::<AppState>();
+        let axiom = agent("axiom");
+        state.decisions.lock().unwrap().insert(
+            7,
+            PendingDecision {
+                agent: axiom.clone(),
+                project_id: project.id,
+                kind: DecisionKind::Validacao,
+                title: "Validação final".to_string(),
+                request: "Card teste".to_string(),
+                item_id: Some(created.id),
+                options: vec!["Concluir".to_string(), "Devolver".to_string()],
+            },
+        );
+        emit_state(world.app.handle(), project.id, axiom, AgentState::Waiting).unwrap();
+
+        answer_decision(world.app.handle(), &state, 7, "Concluir")
+            .await
+            .expect("concluir validacao");
+
+        assert_eq!(last_state_for(&world, "axiom").as_deref(), Some("idle"));
+    }
+}

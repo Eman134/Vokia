@@ -36,8 +36,8 @@ use crate::task::{
 use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{
-    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis, report_limits,
-    MessageScope,
+    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
+    reconcile_waiting, report_limits, MessageScope,
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
@@ -180,20 +180,31 @@ pub async fn answer_decision(
         decisions.remove(&id).ok_or(FlowError::UnknownDecision)?
     };
     if decision.kind == DecisionKind::Validacao {
-        return answer_validation(app, state, &decision, answer).await;
+        let result = answer_validation(app, state, &decision, answer).await;
+        reconcile_waiting(app, state, decision.project_id);
+        return result;
     }
     let text = format!(
         "Decisão \"{}\" (sobre o pedido: {}): {answer}",
         decision.title, decision.request
     );
-    let (project_id, item_id) = match chosen_project(app, &decision, answer)? {
-        Some(chosen) if chosen != decision.project_id => (chosen, None),
-        _ => (decision.project_id, decision.item_id),
+    let (project_id, item_id) = match chosen_project(app, &decision, answer) {
+        Ok(Some(chosen)) if chosen != decision.project_id => (chosen, None),
+        Ok(_) => (decision.project_id, decision.item_id),
+        Err(error) => {
+            reconcile_waiting(app, state, decision.project_id);
+            return Err(error);
+        }
     };
+    if project_id != decision.project_id {
+        reconcile_waiting(app, state, decision.project_id);
+    }
     let context = RequestContext::new(None, item_id, None);
-    handle_request(app, state, &text, decision.agent, project_id, context)
-        .await
-        .map(|_| ())
+    let result = handle_request(app, state, &text, decision.agent, project_id, context).await;
+    if !matches!(result, Ok(RequestOutcome::Finished)) {
+        reconcile_waiting(app, state, project_id);
+    }
+    result.map(|_| ())
 }
 
 fn returns_without_motive(answer: &str) -> bool {
@@ -431,6 +442,13 @@ pub(super) fn open_batch(state: &AppState, batch: Batch) -> Result<u64, FlowErro
     Ok(id)
 }
 
+pub(super) fn is_batch_open(state: &AppState, id: u64) -> bool {
+    state
+        .flow
+        .lock()
+        .is_ok_and(|flow| flow.batches.contains_key(&id))
+}
+
 // Objetivo e variáveis da tarefa do líder: a réplica usa o mesmo registro que o líder.
 fn batch_task(state: &AppState, batch: Option<u64>) -> Option<(String, Vec<Variable>)> {
     let id = batch?;
@@ -494,6 +512,7 @@ fn settle_batch(
         if let Err(error) = join_batch(app, state, done) {
             let _ = report_failure(app, project_id, &error);
         }
+        reconcile_waiting(app, state, project_id);
     }
 }
 
@@ -718,6 +737,7 @@ fn abandon_flow(app: &AppHandle, state: &AppState, key: &SessionKey, item_id: Op
     if let Some(item) = item_id {
         close_branch(state, key.project_id, item, true);
     }
+    reconcile_waiting(app, state, key.project_id);
     drain_waiting(app, state, key.project_id);
 }
 
@@ -1045,6 +1065,7 @@ async fn run_flow(
                 (RequestOutcome::Failed, None, false)
             }
         };
+        let is_limit_pause = limit.is_some();
         if let Some(limit) = limit {
             pause_run(app, &key, journal, limit)?;
         } else if paused_mid_flow {
@@ -1075,6 +1096,9 @@ async fn run_flow(
                 resumed_run = job.context.resumed_run;
             }
             None => {
+                if !is_limit_pause {
+                    reconcile_waiting(app, state, key.project_id);
+                }
                 drain_waiting(app, state, key.project_id);
                 return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed));
             }
@@ -2126,6 +2150,14 @@ pub(crate) fn forget_project(state: &AppState, project_id: i64) {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .retain(|_, decision| decision.project_id != project_id);
+    let mut flow = state
+        .flow
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    flow.agent_states
+        .retain(|(pid, _), _| *pid != project_id);
+    flow.turn_waiters
+        .retain(|key, _| key.project_id != project_id);
     state.console.forget_project(project_id);
 }
 

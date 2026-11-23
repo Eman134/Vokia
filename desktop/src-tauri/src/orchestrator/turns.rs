@@ -19,12 +19,13 @@ use crate::task::{Cache, Change, TaskDefinition, TaskKind, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{
-    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis, MessageScope,
+    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
+    reconcile_waiting, MessageScope,
 };
 use super::error::FlowError;
 use super::flow::{
-    announce_batch, count_branch, dispatch_request, emit_stage, mark_flow_end, open_batch,
-    seal_batch, stop_with_error,
+    announce_batch, count_branch, dispatch_request, emit_stage, is_batch_open, mark_flow_end,
+    open_batch, seal_batch, stop_with_error,
 };
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
@@ -72,6 +73,32 @@ impl<'a> Exchange<'a> {
     }
 }
 
+struct TurnWaitersGuard<'a> {
+    state: &'a AppState,
+    key: &'a SessionKey,
+}
+
+impl<'a> TurnWaitersGuard<'a> {
+    fn set(&self, requesters: &[Agent]) {
+        if let Ok(mut flow) = self.state.flow.lock() {
+            if requesters.is_empty() {
+                flow.turn_waiters.remove(self.key);
+            } else {
+                flow.turn_waiters
+                    .insert(self.key.clone(), requesters.to_vec());
+            }
+        }
+    }
+}
+
+impl Drop for TurnWaitersGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut flow) = self.state.flow.lock() {
+            flow.turn_waiters.remove(self.key);
+        }
+    }
+}
+
 pub(super) async fn run_turns(
     exchange: &Exchange<'_>,
     sessions: &mut ExchangeSessions<'_>,
@@ -88,6 +115,7 @@ pub(super) async fn run_turns(
         team,
         ..
     } = exchange;
+    let waiters_guard = TurnWaitersGuard { state, key };
     let scope = exchange.scope();
     let project_id = key.project_id;
     let origin = key.agent.clone();
@@ -538,7 +566,11 @@ pub(super) async fn run_turns(
                         usage.take(),
                     )?;
                 }
-                emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
+                if is_batch_open(state, batch) {
+                    emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
+                } else {
+                    reconcile_waiting(app, state, project_id);
+                }
                 return Ok(TaskOutcome::Finished);
             }
         }
@@ -612,6 +644,7 @@ pub(super) async fn run_turns(
                     None,
                 );
             }
+            waiters_guard.set(&[]);
             for requester in &turn.requesters {
                 emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
             }
@@ -749,6 +782,7 @@ pub(super) async fn run_turns(
                 .await;
         }
         sessions.review(&next.speaker, 0, loop_repeats).await;
+        waiters_guard.set(&next.requesters);
         turn = next;
     }
 }
@@ -1035,6 +1069,9 @@ fn raise_decision(
             db.set_task_stage_state(project_id, item, STAGE_WAITING)?;
         }
         emit_stage(app, project_id, item)?;
+    }
+    if let Ok(mut flow) = state.flow.lock() {
+        flow.turn_waiters.remove(key);
     }
     for requester in &turn.requesters {
         emit_state(app, project_id, requester.clone(), AgentState::Idle)?;

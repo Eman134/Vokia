@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
-use crate::events::Agent;
+use crate::events::{Agent, AgentState};
 use crate::orchestrator::fallback::{CooldownTracker, TemporaryOverride};
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
@@ -138,6 +138,10 @@ pub struct FlowQueue {
     pub stopped: HashSet<(i64, String)>,
     // Delegações despachadas por (projeto, agente destino, card); a nova entrada da mesma chave substitui a anterior.
     pub active_delegations: HashMap<(i64, Agent, Option<String>), ActiveDelegation>,
+    // Último estado emitido por (projeto, agente), para reconciliar agentes presos em Waiting.
+    pub agent_states: HashMap<(i64, Agent), AgentState>,
+    // Agentes em turn.requesters aguardando resposta em um run_turns ativo, indexados pela chave do fluxo.
+    pub turn_waiters: HashMap<SessionKey, Vec<Agent>>,
 }
 
 // Um lote: as trocas paralelas de um turno do líder. A junção sai quando a última volta.
