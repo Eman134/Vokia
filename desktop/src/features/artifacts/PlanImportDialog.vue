@@ -18,7 +18,6 @@ import { useProjects } from '../projects/useProjects'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import type { Agent } from '../team/events'
 import { useConnection } from '../team/useConnection'
-import { useFeed } from '../team/useFeed'
 import { useRoster } from '../team/useRoster'
 import { pickPlanFile } from './artifactApi'
 import {
@@ -83,7 +82,6 @@ const itemPlan = useItemPlan()
 const projects = useProjects()
 const roster = useRoster()
 const connection = useConnection()
-const feed = useFeed()
 const navigation = useNavigation()
 const titleId = useId()
 const dialog = ref<HTMLElement>()
@@ -115,9 +113,7 @@ const plan = computed(() => (createdId.value === null ? null : itemPlan.planOf(c
 const createdItem = computed(() => backlog.items.find((item) => item.id === createdId.value))
 const triaging = computed(() => plan.value?.state === 'gerando')
 const proposed = computed(() => plan.value?.state === 'proposto')
-const triageBlocked = computed(
-  () => busy.value || connection.checking || feed.thinkingAgent !== undefined || itemPlan.isAgentAwaiting(agent.value),
-)
+const triageBlocked = computed(() => busy.value || connection.checking)
 const pendingQuestion = computed(() => createdId.value !== null && itemPlan.hasPendingQuestion(createdId.value))
 const chosenAgentName = computed(() => roster.profileOf(agent.value)?.name ?? agentName(agent.value))
 

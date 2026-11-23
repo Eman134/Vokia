@@ -1,7 +1,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
-import { sendRequest, type RequestOutcome } from '../team/teamApi'
+import { useRequests, type RunResult } from '../team/useRequests'
 import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
 import { agentName } from '../team/agents'
@@ -96,6 +96,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
   const projects = useProjects()
   const decisions = useDecisions()
   const balloons = useBalloons()
+  const requests = useRequests()
 
   function planOf(itemId: string): ItemPlan {
     return states.value[itemId] ?? EMPTY_PLAN
@@ -161,10 +162,6 @@ export const useItemPlan = defineStore('itemPlan', () => {
     )
   }
 
-  function isAgentAwaiting(agent: Agent): boolean {
-    return Object.values(states.value).some((current) => isAwaiting(current, agent))
-  }
-
   // Em ordem de pedido: com dois itens esperando o mesmo agente, a resposta é do mais antigo.
   function oldestAwaiting(agent?: Agent): string | undefined {
     return Object.keys(states.value).find((id) => isAwaiting(states.value[id], agent))
@@ -191,33 +188,37 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return projectId
   }
 
-  async function dispatch(item: BacklogItem, agent: Agent, prompt: string): Promise<void> {
+  async function dispatch(item: BacklogItem, agent: Agent, prompt: string): Promise<boolean> {
+    const projectId = selectedProjectId()
     const itemId = item.id
     states.value[itemId] = { state: 'gerando', agent }
     const tracked = states.value[itemId]
-    let outcome: RequestOutcome | undefined
-    try {
-      outcome = await sendRequest(prompt, agent, selectedProjectId(), undefined, itemId)
-    } catch (error) {
-      if (states.value[itemId] === tracked) {
-        states.value[itemId] = tracked.cancelled ? { state: 'vazio' } : { state: 'vazio', error: String(error) }
-      }
-    }
-    // Deixa o watcher do feed processar a resposta antes de decidir pelo atalho.
-    await nextTick()
-    if (states.value[itemId] !== tracked) return
-    // O backend entrega a resposta dentro de send_request: um cancelado ainda sem resposta não a receberá mais.
-    if (tracked.cancelled) reset(itemId)
-    else if (outcome === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
+    const accepted = await requests.send(prompt, agent, {
+      projectId,
+      itemId,
+      onSettled: async (result: RunResult) => {
+        // Deixa o watcher do feed processar a resposta antes de decidir pelo atalho.
+        await nextTick()
+        if (states.value[itemId] !== tracked) return
+        if (tracked.cancelled || result === 'cancelled' || result === 'paused' || result === 'failed') {
+          reset(itemId)
+          return
+        }
+        if (result === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
+      },
+    })
+    if (!accepted && states.value[itemId] === tracked) reset(itemId)
+    return accepted
   }
 
   async function request(itemId: string, agent: Agent, depth: PlanDepth, note = ''): Promise<void> {
     const item = backlog.items.find((current) => current.id === itemId)
-    if (!item || isAgentAwaiting(agent)) return
+    if (!item) return
     backlog.setPlanNote(itemId, note)
     void triage.requestTriage(item)
-    balloons.alert(PLAN_STARTED_TITLE, `${agentName(agent)} está escrevendo o plano de ${item.title}.`)
-    await dispatch(item, agent, buildPlanPrompt(item, depth))
+    if (await dispatch(item, agent, buildPlanPrompt(item, depth))) {
+      balloons.alert(PLAN_STARTED_TITLE, `${agentName(agent)} está escrevendo o plano de ${item.title}.`)
+    }
   }
 
   async function adjust(itemId: string, instruction: string): Promise<void> {
@@ -225,13 +226,11 @@ export const useItemPlan = defineStore('itemPlan', () => {
     const current = states.value[itemId]
     const text = instruction.trim()
     if (!item || current?.state !== 'proposto' || !current.agent || !current.proposal || text === '') return
-    if (isAgentAwaiting(current.agent)) return
     await dispatch(item, current.agent, buildAdjustPrompt(item, current.proposal, text))
   }
 
   // O card nasce antes da resposta para o fluxo de geração acompanhar o estado; retryItemId reaproveita o card de uma triagem que falhou.
   async function importFree(title: string, text: string, agent: Agent, retryItemId?: string): Promise<string | undefined> {
-    if (isAgentAwaiting(agent)) return undefined
     const projectId = selectedProjectId()
     let item = retryItemId === undefined ? undefined : backlog.items.find((current) => current.id === retryItemId)
     if (!item) {
@@ -372,7 +371,6 @@ export const useItemPlan = defineStore('itemPlan', () => {
     proposalFor,
     openDialog,
     closeDialog,
-    isAgentAwaiting,
     isReviewed,
     request,
     hasPendingQuestion,
