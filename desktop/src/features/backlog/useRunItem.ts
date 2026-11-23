@@ -4,9 +4,10 @@ import type { Agent } from '../team/events'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useRequests, type RunResult } from '../team/useRequests'
 import { useProjects } from '../projects/useProjects'
-import { DEFAULT_COLUMN, type BacklogColumn, type BacklogItem } from './backlogTypes'
+import type { BacklogItem } from './backlogTypes'
 import { useBacklog, type RunColumn } from './useBacklog'
 import { useItemPlan } from './useItemPlan'
+import { isRunnableColumn } from './runnableColumn'
 
 const RUN_TITLE_PREFIX = 'Execute o item'
 const DESCRIPTION_HEADING = 'Descrição'
@@ -31,7 +32,6 @@ const RESULT_LABEL: Record<RunResult, string> = {
   cancelled: 'cancelada',
 }
 // Com o card nessas colunas há execução (ou resto dela): Rodar não envia outro pedido.
-const BUSY_COLUMNS: readonly BacklogColumn[] = ['In progress', 'In review']
 
 interface Settlement {
   result: RunResult
@@ -116,7 +116,7 @@ export const useRunItem = defineStore('runItem', () => {
       !item.error &&
       projectId !== null &&
       projectId === projects.selected?.id &&
-      !BUSY_COLUMNS.includes(item.column ?? DEFAULT_COLUMN) &&
+      isRunnableColumn(item.column) &&
       !isRunning(itemId)
     )
   }

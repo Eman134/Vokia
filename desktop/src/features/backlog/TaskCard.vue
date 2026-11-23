@@ -5,6 +5,8 @@ import UiSketchBox from '../../ui/UiSketchBox.vue'
 import UiMarker from '../../ui/UiMarker.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
+import { formatItemUsage } from '../team/itemUsage'
+import { useItemUsage } from '../team/useItemUsage'
 import UserAvatar from '../profile/UserAvatar.vue'
 import {
   BADGE_DOT,
@@ -47,7 +49,11 @@ const CARD_CLASSES =
 // Proposta é um post-it dentro da ficha: o texto escuro vale nos dois temas porque o amarelo é pastel nos dois.
 const PROPOSAL_CLASSES = 'flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink shadow-seg'
 
+const ID_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-meta font-semibold text-muted'
+
 const roster = useRoster()
+const itemUsage = useItemUsage(() => props.item.id)
+const usageText = computed(() => formatItemUsage(itemUsage.value))
 const descriptionContent = computed(() => extractAttachments(props.item.description ?? ''))
 
 const chip = computed(
@@ -94,8 +100,10 @@ const percent = computed(() => {
     <h3 class="flex items-start gap-2 text-body leading-[1.3] font-bold text-ink">
       <span class="mt-1.25 size-2 shrink-0 rounded-full" :class="BADGE_DOT[chip.status]" :title="chip.label" aria-hidden="true" />
       <span class="sr-only">{{ chip.label }}:</span>
+      <span :class="ID_CLASSES" data-testid="card-id">{{ item.id }}</span>
       <span class="min-w-0 wrap-break-word">{{ item.title }}</span>
     </h3>
+    <p v-if="usageText" class="text-meta text-muted" data-testid="card-usage">{{ usageText }}</p>
     <p v-if="descriptionContent.text" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-muted">{{ descriptionContent.text }}</p>
     <AttachmentPreviewList
       v-if="descriptionContent.attachments.length > 0"

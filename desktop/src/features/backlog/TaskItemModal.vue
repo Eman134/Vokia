@@ -54,9 +54,12 @@ import { useBacklog } from './useBacklog'
 import { useItemQuestions } from './useItemQuestions'
 import { useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
+import { showsStartButton } from './runnableColumn'
 import { useTriage } from './useTriage'
 import { trapFocus } from './dialogFocus'
 import { useRoster } from '../team/useRoster'
+import { useItemUsage } from '../team/useItemUsage'
+import { formatCostUsd, formatThinkingDuration } from '../team/messageUsageFormat'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useNavigation } from '../../shell/useNavigation'
 import { extractAttachments } from '../attachments/attachmentBlock'
@@ -99,6 +102,7 @@ const answerDrafts = ref<Record<string, string>>({})
 let previousFocus: HTMLElement | null = null
 
 const item = computed(() => backlog.openItem)
+const usage = useItemUsage(() => item.value?.id)
 const descriptionContent = computed(() => extractAttachments(item.value?.description ?? ''))
 
 // O motivo é obrigatório; o líder recebe a task de volta e o card sai de Done.
@@ -119,6 +123,8 @@ const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
 // Só o card concluído pela validação automática pode ser reaberto por aqui; o manual o usuário mesmo moveu.
 const autoClosed = computed(() => column.value === DONE_COLUMN_NAME && item.value?.closedBy === CLOSED_BY_AUTOMATIC)
 const moveTargets = computed(() => MOVABLE_COLUMNS.filter((target) => target !== column.value))
+// Task concluída não se inicia de novo; para retomar, o caminho é reabrir ou mover de coluna.
+const canStart = computed(() => showsStartButton(column.value))
 const readyBlocked = computed(() => !item.value || !itemPlan.isReviewed(item.value.id))
 const delegateTargets = computed(() =>
   roster.agents.filter((profile) => profile.id !== (itemPlan.planOf(item.value?.id ?? '').agent ?? DEFAULT_RECIPIENT)),
@@ -156,6 +162,8 @@ const details = computed(() => {
     ['Feature', current.feature],
     ['Prioridade', current.priority],
     ['Estimativa', current.estimate],
+    ['Custo', usage.value.turns > 0 ? (formatCostUsd(usage.value.costUsd) ?? undefined) : undefined],
+    ['Tempo', usage.value.turns > 0 ? (formatThinkingDuration(usage.value.workMs) ?? undefined) : undefined],
   ]
   return rows.filter((row): row is [string, string] => Boolean(row[1]))
 })
@@ -490,6 +498,7 @@ watch(
           <UiButton variant="quiet" size="lg" @press="openThread">{{ OPEN_THREAD_LABEL }}</UiButton>
           <UiButton variant="quiet" size="lg" @press="openConversations">{{ CONVERSATIONS_LABEL }}</UiButton>
           <UiButton
+            v-if="canStart"
             variant="primary"
             size="lg"
             data-testid="run-item"
