@@ -1498,6 +1498,48 @@ pub(crate) fn spawn_delegation_watchdog(app: AppHandle) {
     });
 }
 
+// Card que foi para Done: limpa o worktree e a branch dele em segundo plano. Falha ou motivo de manter viram
+// registro na atividade do card; a conclusão do card não espera nem depende disso.
+pub(crate) fn schedule_done_cleanup(app: &AppHandle, project_id: i64, item_id: &str) {
+    let app = app.clone();
+    let item = item_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        let outcome = done_cleanup(&app, project_id, &item).await;
+        let text = match outcome {
+            Ok(worktree::CleanupOutcome::Absent) => return,
+            Ok(worktree::CleanupOutcome::Removed) => format!(
+                "Limpei o worktree e a branch de {item}: estavam integrados à main e sem alterações."
+            ),
+            Ok(worktree::CleanupOutcome::Kept(reason)) => {
+                format!("Mantive o worktree de {item}: {reason}.")
+            }
+            Err(error) => format!("Não consegui limpar o worktree de {item}: {error}."),
+        };
+        let state = app.state::<DbState>();
+        if let Some(db) = state.db() {
+            let _ = db.add_card_activity(project_id, &item, &text);
+        }
+        let _ = emit_backlog_changed(&app, project_id);
+    });
+}
+
+async fn done_cleanup(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: &str,
+) -> Result<worktree::CleanupOutcome, FlowError> {
+    let project = load_project(app, project_id)?;
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(FlowError::ArchivePath)?
+        .join(WORKTREES_DIR)
+        .join(project_id.to_string());
+    worktree::cleanup_done(Path::new(&project.path), &root, item_id)
+        .await
+        .map_err(FlowError::Worktree)
+}
+
 // Delegação ativada já cumpriu o papel do registro e sai; a silenciosa recebe novas tentativas de drenar a fila
 // e, esgotadas, vira erro para o usuário.
 fn sweep_silent_delegations(app: &AppHandle) {

@@ -44,6 +44,7 @@ const CLOSED_BY_USER: &str = "usuario";
 const CLOSED_BY_AUTOMATIC: &str = "automatico";
 const CLOSERS: &[&str] = &[CLOSED_BY_USER, CLOSED_BY_AUTOMATIC];
 const USER_OWNER: &str = "voce";
+const USER_ACTOR_NAME: &str = "Você";
 const USER_CARD_TYPE: &str = "feature";
 const AGENT_CARD_TYPE: &str = "task";
 const NEW_CARD_STATE: &str = "vazio";
@@ -540,29 +541,44 @@ impl Db {
         write_tags(&conn, project_id, item_id, &tags)
     }
 
+    // Requester None é a interface do usuário, que tem permissão global como o Ember.
     pub fn set_backlog_responsible(
         &self,
         project_id: i64,
         item_id: &str,
         agent: &Agent,
         team: &Team,
-    ) -> Result<(), DbError> {
+        requester: Option<&Agent>,
+    ) -> Result<CardOutcome, DbError> {
         if team.profile(agent).is_none() {
             return Err(DbError::ResponsibleOutsideTeam(agent.to_string()));
         }
-        let conn = self.conn()?;
-        ensure_project(&conn, project_id)?;
-        let item = find_card(&conn, project_id, item_id)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let mut item = find_card(&tx, project_id, item_id)?;
         validate_item(&item)?;
-        let unassigned = item.who == USER_OWNER || item.who == Agent::ember().as_str();
-        if !unassigned && item.who != agent.as_str() {
-            return Err(DbError::ResponsibleAlreadySet(item.who));
+        if item.who == agent.as_str() {
+            return Ok(CardOutcome::Unchanged);
         }
-        conn.execute(
-            "UPDATE backlog_items SET who = ?3 WHERE project_id = ?1 AND id = ?2",
-            params![project_id, item_id, agent.as_str()],
+        let unassigned = item.who == USER_OWNER || item.who == Agent::ember().as_str();
+        if !unassigned && !may_reassign(requester, &item.who) {
+            return Err(DbError::ResponsibleNotAllowed(item.id));
+        }
+        let text = responsible_change_text(team, requester, &item.who, agent, unassigned);
+        item.activity
+            .push(activity_entry(&item.id, item.activity.len() + 1, text));
+        tx.execute(
+            "UPDATE backlog_items SET who = ?3, activity = ?4 WHERE project_id = ?1 AND id = ?2",
+            params![
+                project_id,
+                item_id,
+                agent.as_str(),
+                to_json(item_id, "activity", &item.activity)?,
+            ],
         )?;
-        Ok(())
+        tx.commit()?;
+        Ok(CardOutcome::Updated)
     }
 
     pub fn archive_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
@@ -1561,12 +1577,46 @@ fn ensure_agent_can_change(
     if current_column == DONE_COLUMN {
         return Err(DbError::CardClosed(card.id.clone()));
     }
+    // O Ember orquestra o projeto: move e edita cards de qualquer agente. Continua nas colunas que a ferramenta
+    // já libera e fora de Done; a atividade do card guarda quem fez a ação.
     let owned =
-        card.who == actor.id.as_str() || actor.current_card.as_deref() == Some(card.id.as_str());
+        actor.id == Agent::ember()
+            || card.who == actor.id.as_str()
+            || actor.current_card.as_deref() == Some(card.id.as_str());
     if !owned {
         return Err(DbError::CardNotOwned(card.id.clone()));
     }
     Ok(())
+}
+
+// Trocar um responsável já definido cabe ao Ember ou ao próprio responsável atual.
+fn may_reassign(requester: Option<&Agent>, current: &str) -> bool {
+    match requester {
+        None => true,
+        Some(requester) => *requester == Agent::ember() || requester.as_str() == current,
+    }
+}
+
+fn responsible_change_text(
+    team: &Team,
+    requester: Option<&Agent>,
+    previous: &str,
+    next: &Agent,
+    unassigned: bool,
+) -> String {
+    let actor = match requester {
+        Some(requester) => team.name_of(requester),
+        None => USER_ACTOR_NAME,
+    };
+    let next = team.name_of(next);
+    if unassigned {
+        return format!("{actor} definiu o responsável como {next}.");
+    }
+    let previous = match Agent::from_stored(previous) {
+        Some(agent) => team.name_of(&agent).to_string(),
+        None => previous.to_string(),
+    };
+    format!("{actor} trocou o responsável de {previous} para {next}.")
 }
 
 // Descrição vazia não apaga a atual; título só muda para um que nenhum card aberto use.

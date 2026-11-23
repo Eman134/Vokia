@@ -155,7 +155,7 @@ impl World {
             Reply::Allow { always, root } => json!({ "id": request_id, "allow": true, "always": always, "root": root }),
             _ => json!({ "id": request_id, "allow": false, "always": false }),
         };
-        tauri::async_runtime::block_on(dispatch(self.app.handle(), "answer_permission", answer))
+        tauri::async_runtime::block_on(dispatch(self.app.handle(), None, "answer_permission", answer))
             .expect("answer_permission reconhecido")
             .expect("a resposta deveria ser aceita");
         let verdict = tauri::async_runtime::block_on(decision).expect("a decisão deveria terminar");

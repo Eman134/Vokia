@@ -298,7 +298,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             BACKLOG_SET_RESPONSIBLE,
-            "Define o agente responsável por um card do backlog; o card só aceita um novo responsável se ainda não tiver um, ou se o responsável atual for o próprio agente indicado.",
+            "Define ou troca o agente responsável por um card do backlog; trocar um responsável já definido cabe ao Ember ou ao responsável atual, e indicar o próprio responsável não faz nada.",
             json!({
                 "item_id": { "type": "string" },
                 "agent": { "type": "string" },
@@ -772,7 +772,8 @@ fn ember_delegation_to_leader(
     };
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
-    db.set_backlog_responsible(binding.project_id, item, helper, &context.team)
+    db.set_backlog_responsible(binding.project_id, item, helper, &context.team, Some(&binding.agent))
+        .map(|_| ())
         .map_err(|error| refusal_or_system(&error))
 }
 
@@ -1279,7 +1280,7 @@ fn set_backlog_responsible(app: &AppHandle, binding: &Binding, args: Responsible
         .ok_or_else(|| DbError::ResponsibleOutsideTeam(name.to_string()).to_string())?;
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
-    db.set_backlog_responsible(binding.project_id, &args.item_id, &agent, &team)
+    db.set_backlog_responsible(binding.project_id, &args.item_id, &agent, &team, Some(&binding.agent))
         .map_err(|error| refusal_or_system(&error))?;
     let message = format!(
         "Responsável do card {} definido: {}.",

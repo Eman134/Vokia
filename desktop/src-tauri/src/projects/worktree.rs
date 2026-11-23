@@ -31,7 +31,6 @@ pub enum WorktreeError {
     Io(String),
     SetupFailed { path: PathBuf, output: String },
     SetupTimedOut(PathBuf),
-    #[cfg_attr(not(test), allow(dead_code))] // construído só por remove, usado só nos testes
     UncommittedChanges(PathBuf),
 }
 
@@ -79,7 +78,7 @@ pub struct Worktree {
     pub path: PathBuf,
 }
 
-#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
+
 pub enum RemoveOutcome {
     Removed,
     BranchKept { branch: String, commits: u32 },
@@ -217,8 +216,8 @@ pub async fn ensure(
     create(project_dir, worktrees_root, item_id, setup_command).await
 }
 
-// Trabalho não commitado nunca é removido aqui: o erro devolve a decisão a quem pediu.
-#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
+// Só sai o que está integrado à base e sem alterações: trabalho não commitado ou commit fora da base devolve a
+// decisão a quem pediu, e pasta e branch ficam como estavam.
 pub async fn remove(
     project_dir: &Path,
     worktree_path: &Path,
@@ -226,30 +225,81 @@ pub async fn remove(
     base: &str,
 ) -> Result<RemoveOutcome, WorktreeError> {
     let git_path = find_git()?;
-    let pending = git(&git_path, worktree_path, &["status", "--porcelain"]).await?;
-    if !pending.is_empty() {
-        return Err(WorktreeError::UncommittedChanges(worktree_path.to_path_buf()));
+    let worktree_exists = worktree_path.is_dir();
+    if worktree_exists {
+        let pending = git(&git_path, worktree_path, &["status", "--porcelain"]).await?;
+        if !pending.is_empty() {
+            return Err(WorktreeError::UncommittedChanges(worktree_path.to_path_buf()));
+        }
     }
-    let path_arg = worktree_path.to_string_lossy();
-    git(
-        &git_path,
-        project_dir,
-        &["worktree", "remove", "--force", &path_arg],
-    )
-    .await?;
-    let range = format!("{base}..{branch}");
-    let count = git(&git_path, project_dir, &["rev-list", "--count", &range]).await?;
-    let commits: u32 = count
-        .parse()
-        .map_err(|_| WorktreeError::Git(format!("contagem de commits inválida: {count}")))?;
+    let commits = if branch_exists(&git_path, project_dir, branch).await? {
+        let range = format!("{base}..{branch}");
+        let count = git(&git_path, project_dir, &["rev-list", "--count", &range]).await?;
+        count
+            .parse::<u32>()
+            .map_err(|_| WorktreeError::Git(format!("contagem de commits inválida: {count}")))?
+    } else {
+        0
+    };
     if commits > 0 {
         return Ok(RemoveOutcome::BranchKept {
             branch: branch.to_string(),
             commits,
         });
     }
-    git(&git_path, project_dir, &["branch", "-D", branch]).await?;
+    if worktree_exists {
+        let path_arg = worktree_path.to_string_lossy();
+        git(
+            &git_path,
+            project_dir,
+            &["worktree", "remove", "--force", &path_arg],
+        )
+        .await?;
+    }
+    if branch_exists(&git_path, project_dir, branch).await? {
+        git(&git_path, project_dir, &["branch", "-D", branch]).await?;
+    }
     Ok(RemoveOutcome::Removed)
+}
+
+// Resultado da limpeza feita ao concluir um card: nada havia, saiu, ou ficou com o motivo.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CleanupOutcome {
+    Absent,
+    Removed,
+    Kept(String),
+}
+
+// Limpa o worktree e a branch vokia/<item> de um card concluído, contra a branch atual do projeto (a base).
+// Nunca apaga trabalho: pendência e commit fora da base mantêm tudo e voltam como motivo.
+pub async fn cleanup_done(
+    project_dir: &Path,
+    worktrees_root: &Path,
+    item_id: &str,
+) -> Result<CleanupOutcome, WorktreeError> {
+    let name = safe_name(item_id);
+    let path = worktrees_root.join(&name);
+    let branch = format!("{BRANCH_PREFIX}{name}");
+    let git_path = find_git()?;
+    if !path.exists() && !branch_exists(&git_path, project_dir, &branch).await? {
+        return Ok(CleanupOutcome::Absent);
+    }
+    let base = git(&git_path, project_dir, &["branch", "--show-current"]).await?;
+    if base.is_empty() {
+        return Ok(CleanupOutcome::Kept(
+            "o projeto não está numa branch base".to_string(),
+        ));
+    }
+    match remove(project_dir, &path, &branch, &base).await {
+        Ok(RemoveOutcome::Removed) => Ok(CleanupOutcome::Removed),
+        Ok(RemoveOutcome::BranchKept { commits, .. }) => Ok(CleanupOutcome::Kept(format!(
+            "a branch {branch} tem {commits} commit(s) que não estão em {base}"
+        ))),
+        Err(WorktreeError::UncommittedChanges(_)) => Ok(CleanupOutcome::Kept(
+            "o worktree tem alterações não commitadas".to_string(),
+        )),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(test)]

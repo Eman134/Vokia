@@ -242,8 +242,69 @@ fn remover_worktree_com_commit_guarda_a_branch_e_conta_os_commits() {
     assert!(
         matches!(&outcome, RemoveOutcome::BranchKept { branch, commits: 1 } if branch == "vokia/card-1")
     );
-    assert!(!worktree.path.exists());
+    // Commit fora da base: pasta e branch ficam como estão, para o trabalho não se perder.
+    assert!(worktree.path.exists());
     assert!(branches(&sandbox).contains(&"vokia/card-1".to_string()));
+}
+
+fn cleanup_done(sandbox: &Sandbox, item: &str) -> Result<CleanupOutcome, WorktreeError> {
+    tauri::async_runtime::block_on(super::cleanup_done(&sandbox.project, &sandbox.worktrees, item))
+}
+
+#[test]
+fn concluir_card_integrado_e_limpo_remove_pasta_e_branch() {
+    let sandbox = Sandbox::with_repo();
+    let worktree = create_item(&sandbox, "card-1").expect("worktree");
+
+    let outcome = cleanup_done(&sandbox, "card-1").expect("limpeza");
+
+    assert_eq!(outcome, CleanupOutcome::Removed);
+    assert!(!worktree.path.exists());
+    assert_eq!(branches(&sandbox), vec![MAIN_BRANCH.to_string()]);
+}
+
+#[test]
+fn concluir_card_com_commit_fora_da_main_mantem_pasta_e_branch_com_o_motivo() {
+    let sandbox = Sandbox::with_repo();
+    let worktree = create_item(&sandbox, "card-2").expect("worktree");
+    fs::write(worktree.path.join("novo.txt"), "feito").unwrap();
+    git_in(&worktree.path, &["add", "."]);
+    commit(&worktree.path, "trabalho do item");
+
+    let outcome = cleanup_done(&sandbox, "card-2").expect("limpeza");
+
+    assert!(
+        matches!(&outcome, CleanupOutcome::Kept(reason) if reason.contains("1 commit")),
+        "{outcome:?}"
+    );
+    assert!(worktree.path.exists());
+    assert!(branches(&sandbox).contains(&"vokia/card-2".to_string()));
+}
+
+#[test]
+fn concluir_card_com_alteracao_nao_commitada_mantem_tudo() {
+    let sandbox = Sandbox::with_repo();
+    let worktree = create_item(&sandbox, "card-3").expect("worktree");
+    fs::write(worktree.path.join(SHARED_FILE), "editado\n").unwrap();
+
+    let outcome = cleanup_done(&sandbox, "card-3").expect("limpeza");
+
+    assert_eq!(
+        outcome,
+        CleanupOutcome::Kept("o worktree tem alterações não commitadas".to_string())
+    );
+    assert_eq!(read(&worktree.path.join(SHARED_FILE)), "editado\n");
+    assert!(branches(&sandbox).contains(&"vokia/card-3".to_string()));
+}
+
+#[test]
+fn concluir_card_sem_worktree_nem_branch_nao_faz_nada() {
+    let sandbox = Sandbox::with_repo();
+
+    let outcome = cleanup_done(&sandbox, "sem-worktree").expect("limpeza");
+
+    assert_eq!(outcome, CleanupOutcome::Absent);
+    assert_eq!(branches(&sandbox), vec![MAIN_BRANCH.to_string()]);
 }
 
 #[test]

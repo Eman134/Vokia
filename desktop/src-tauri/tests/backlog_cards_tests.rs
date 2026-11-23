@@ -370,3 +370,217 @@ fn coluna_inexistente_e_card_de_outro_projeto_sao_recusados() {
     );
     assert!(titles(&db, second).is_empty());
 }
+
+fn ember() -> AgentActor {
+    actor("ember", "Ember", None)
+}
+
+#[test]
+fn ember_move_card_de_outro_agente_e_aceito_e_a_atividade_registra_quem_moveu() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "ember-move");
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    let results = db
+        .apply_card_operations(project_id, &ember(), &[move_to(&id, "In progress")])
+        .unwrap();
+
+    assert_eq!(results[0].outcome, CardOutcome::Moved);
+    assert_eq!(column_of(&db, project_id, &id), "In progress");
+    let item = &db.list_backlog(project_id).unwrap().items[0];
+    assert_eq!(item.activity.last().unwrap().text, "Ember moveu de Backlog para In progress.");
+}
+
+#[test]
+fn ember_continua_limitado_as_colunas_e_nao_mexe_em_card_done() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "ember-colunas");
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    let error = refused(db.apply_card_operations(project_id, &ember(), &[move_to(&id, "Ready")]));
+    assert!(matches!(error, DbError::AgentForbiddenColumn(_)), "{error:?}");
+
+    db.move_backlog_item(project_id, &id, "Done").unwrap();
+    let error = refused(db.apply_card_operations(project_id, &ember(), &[move_to(&id, "In progress")]));
+    assert!(matches!(error, DbError::CardClosed(_)), "{error:?}");
+}
+
+#[test]
+fn ember_edita_card_alheio_e_outro_agente_nao() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "ember-edita");
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+    let update = |title: &str| CardOperation::Update {
+        id: id.clone(),
+        title: Some(title.to_string()),
+        description: None,
+    };
+
+    let results = db.apply_card_operations(project_id, &ember(), &[update("Ajustado pelo Ember")]).unwrap();
+    assert_eq!(results[0].outcome, CardOutcome::Updated);
+
+    let error = refused(db.apply_card_operations(project_id, &vexa(), &[update("Vexa tenta")]));
+    assert!(matches!(&error, DbError::CardNotOwned(found) if *found == id), "{error:?}");
+}
+
+fn default_team() -> crate::agents::Team {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-responsible-test-{}-{}",
+        std::process::id(),
+        NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+    ));
+    fs::create_dir_all(&dir).expect("pasta temporária do elenco");
+    let team = crate::agents::AgentRegistry::load(&dir)
+        .team()
+        .expect("elenco padrão");
+    let _ = fs::remove_dir_all(&dir);
+    team
+}
+
+fn responsible_of(db: &Db, project_id: i64, id: &str) -> String {
+    db.list_backlog(project_id)
+        .unwrap()
+        .items
+        .into_iter()
+        .find(|item| item.id == id)
+        .map(|item| item.who)
+        .expect("o card deveria existir")
+}
+
+fn last_activity(db: &Db, project_id: i64, id: &str) -> String {
+    db.list_backlog(project_id)
+        .unwrap()
+        .items
+        .into_iter()
+        .find(|item| item.id == id)
+        .and_then(|item| item.activity.last().map(|entry| entry.text.clone()))
+        .expect("o card deveria ter atividade")
+}
+
+#[test]
+fn agente_que_nao_e_o_responsavel_nao_troca_o_responsavel_de_card_alheio() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "responsavel-recusa");
+    let team = default_team();
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    let error = db
+        .set_backlog_responsible(project_id, &id, &agent("vexa"), &team, Some(&agent("vexa")))
+        .expect_err("vexa não pode trocar o responsável de card da axiom");
+
+    assert!(matches!(&error, DbError::ResponsibleNotAllowed(found) if *found == id), "{error:?}");
+    assert_eq!(responsible_of(&db, project_id, &id), "axiom");
+    assert_eq!(activity_count(&db, project_id, &id), 1);
+}
+
+#[test]
+fn ember_troca_o_responsavel_de_card_alheio_e_a_atividade_registra_quem_trocou() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "responsavel-ember");
+    let team = default_team();
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    let outcome = db
+        .set_backlog_responsible(project_id, &id, &agent("vexa"), &team, Some(&agent("ember")))
+        .expect("o ember pode trocar o responsável");
+
+    assert_eq!(outcome, CardOutcome::Updated);
+    assert_eq!(responsible_of(&db, project_id, &id), "vexa");
+    assert!(
+        last_activity(&db, project_id, &id).contains("Ember trocou o responsável"),
+        "{}",
+        last_activity(&db, project_id, &id)
+    );
+}
+
+#[test]
+fn responsavel_atual_troca_o_proprio_card_e_outro_agente_nao_troca_depois() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "responsavel-dono");
+    let team = default_team();
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+    db.set_backlog_responsible(project_id, &id, &agent("vexa"), &team, Some(&agent("axiom")))
+        .expect("a axiom, dona do card, passa para a vexa");
+
+    let error = db
+        .set_backlog_responsible(project_id, &id, &agent("axiom"), &team, Some(&agent("axiom")))
+        .expect_err("a axiom já não é a responsável");
+
+    assert!(matches!(error, DbError::ResponsibleNotAllowed(_)), "{error:?}");
+    assert_eq!(responsible_of(&db, project_id, &id), "vexa");
+}
+
+#[test]
+fn interface_do_usuario_sem_solicitante_troca_e_a_atividade_diz_voce() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "responsavel-usuario");
+    let team = default_team();
+    let id = db
+        .apply_card_operations(project_id, &axiom(), &[create("Da Axiom")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    db.set_backlog_responsible(project_id, &id, &agent("vexa"), &team, None)
+        .expect("a interface do usuário pode trocar");
+
+    assert_eq!(responsible_of(&db, project_id, &id), "vexa");
+    assert!(last_activity(&db, project_id, &id).starts_with("Você trocou"));
+}
+
+#[test]
+fn card_sem_responsavel_aceita_qualquer_agente_e_o_mesmo_responsavel_nao_registra_nada() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "responsavel-livre");
+    let team = default_team();
+    // Card criado pelo Ember fica sem responsável definido.
+    let id = db
+        .apply_card_operations(project_id, &ember(), &[create("Sem dono")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    let outcome = db
+        .set_backlog_responsible(project_id, &id, &agent("vexa"), &team, Some(&agent("vexa")))
+        .expect("card sem dono aceita qualquer agente");
+    assert_eq!(outcome, CardOutcome::Updated);
+    assert_eq!(activity_count(&db, project_id, &id), 2);
+
+    let outcome = db
+        .set_backlog_responsible(project_id, &id, &agent("vexa"), &team, Some(&agent("axiom")))
+        .expect("trocar para quem já é o responsável não faz nada");
+    assert_eq!(outcome, CardOutcome::Unchanged);
+    assert_eq!(activity_count(&db, project_id, &id), 2);
+}

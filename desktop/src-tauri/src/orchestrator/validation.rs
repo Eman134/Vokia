@@ -113,6 +113,7 @@ pub(super) async fn on_flow_end(
             db.close_card(project_id, item_id, CLOSED_BY_AUTOMATIC)?;
             let text = format!("Concluí {item_id} automaticamente: critérios {met}/{total}.");
             db.add_card_activity(project_id, item_id, &text)?;
+            super::flow::schedule_done_cleanup(app, project_id, item_id);
             emit_feed_note(app, project_id, Speaker::from(leader), &text, now_millis()?)?;
             emit_backlog_changed(app, project_id)
         }
@@ -257,6 +258,7 @@ pub(super) fn conclude_card(
         .map_err(|error| FlowError::DatabaseUnavailable(error.to_string()))?;
     db.close_card(project_id, item_id, CLOSED_BY_USER)?;
     db.add_card_activity(project_id, item_id, &format!("Usuário concluiu {item_id}."))?;
+    super::flow::schedule_done_cleanup(app, project_id, item_id);
     emit_backlog_changed(app, project_id)
 }
 

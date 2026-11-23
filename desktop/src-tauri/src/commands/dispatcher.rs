@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::db::ARTIFACT_KINDS;
+use crate::events::Agent;
 use crate::projects::ProjectError;
 
 use super::{
@@ -374,7 +375,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog.", "Para gravar o plano de execução de um card.", empty_object_schema),
     exposed("backlog", "add_backlog_label", "Adiciona um rótulo a um item do backlog.", "Para marcar um card com um rótulo.", empty_object_schema),
     exposed("backlog", "remove_backlog_label", "Remove um rótulo de um item do backlog.", "Para tirar um rótulo de um card.", empty_object_schema),
-    exposed("backlog", "set_backlog_responsible", "Define o agente responsável por um item do backlog.", "Para definir qual agente é responsável por um card; o agente precisa existir no elenco.", empty_object_schema),
+    exposed("backlog", "set_backlog_responsible", "Define ou troca o agente responsável por um item do backlog.", "Para definir ou trocar o responsável de um card (projectId, itemId, agent); o agente precisa existir no elenco. Trocar um responsável já definido cabe ao Ember ou ao responsável atual; indicar o próprio responsável não faz nada.", empty_object_schema),
     exposed("backlog", "archive_backlog_item", "Arquiva um item do backlog.", "Para arquivar um card que saiu de uso sem apagá-lo.", empty_object_schema),
     exposed("backlog", "restore_backlog_item", "Restaura um item arquivado do backlog.", "Para trazer de volta um card arquivado.", empty_object_schema),
     exposed("backlog", "delete_backlog_item", "Exclui um item do backlog.", "Para excluir um card definitivamente; ação destrutiva.", empty_object_schema),
@@ -473,8 +474,10 @@ pub fn list_commands_filtered(domain: Option<&str>) -> Vec<Value> {
         .collect()
 }
 
+// `caller` None é a interface do usuário, com permissão global; agentes passam o próprio id.
 pub async fn dispatch(
     app: &AppHandle,
+    caller: Option<&Agent>,
     name: &str,
     arguments: Value,
 ) -> Option<Result<Value, String>> {
@@ -483,7 +486,7 @@ pub async fn dispatch(
     if command.exposure == Exposure::UiOnly {
         return Some(Err(UI_ONLY_ERROR.to_string()));
     }
-    Some(run(app, canonical, arguments).await)
+    Some(run(app, caller, canonical, arguments).await)
 }
 
 fn parse_args<T: DeserializeOwned>(arguments: Value) -> Result<T, String> {
@@ -507,7 +510,12 @@ fn json_project_result<T: Serialize>(result: Result<T, ProjectError>) -> Result<
     json_result(result.map_err(|error| error.message().to_string()))
 }
 
-async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, String> {
+async fn run(
+    app: &AppHandle,
+    caller: Option<&Agent>,
+    name: &str,
+    arguments: Value,
+) -> Result<Value, String> {
     match name {
         "cli_problem" => json_ok(team::cli_problem_exec(app)),
         "send_request" => json_result(team::send_request_exec(app, parse_args(arguments)?).await),
@@ -615,6 +623,7 @@ async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, Str
         "set_backlog_responsible" => json_result(backlog::set_backlog_responsible_exec(
             app,
             parse_args(arguments)?,
+            caller,
         )),
         "archive_backlog_item" => json_result(backlog::archive_backlog_item_exec(
             app,

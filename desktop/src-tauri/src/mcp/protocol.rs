@@ -62,7 +62,7 @@ pub async fn handle(
                 json!({ "commands": dispatcher::list_commands_filtered(domain) }),
             )
         }
-        "commands/call" => call_app_command(id, request.params.as_ref(), app).await,
+        "commands/call" => call_app_command(id, request.params.as_ref(), binding, app).await,
         other => failure(
             id,
             METHOD_NOT_FOUND,
@@ -106,12 +106,12 @@ async fn call_tool(
         return failure(id, INVALID_PARAMS, &format!("ferramenta desconhecida: {name}"));
     };
     if name == tools::APP_COMMAND_CALL {
-        return call_meta_app_command(id, arguments, app).await;
+        return call_meta_app_command(id, arguments, binding, app).await;
     }
     if let Some(result) = tools::call(app, binding, name, arguments) {
         return success(id, result);
     }
-    match dispatcher::dispatch(app, name, arguments.clone()).await {
+    match dispatcher::dispatch(app, Some(&binding.agent), name, arguments.clone()).await {
         Some(outcome) => success(id, command_reply(outcome)),
         None => failure(
             id,
@@ -121,7 +121,12 @@ async fn call_tool(
     }
 }
 
-async fn call_meta_app_command(id: Value, arguments: &Value, app: &AppHandle) -> Reply {
+async fn call_meta_app_command(
+    id: Value,
+    arguments: &Value,
+    binding: &Binding,
+    app: &AppHandle,
+) -> Reply {
     let Some(target_name) = arguments.get("name").and_then(Value::as_str) else {
         return failure(
             id,
@@ -134,7 +139,7 @@ async fn call_meta_app_command(id: Value, arguments: &Value, app: &AppHandle) ->
         .filter(|value| !value.is_null())
         .cloned()
         .unwrap_or_else(|| json!({}));
-    match dispatcher::dispatch(app, target_name, target_args).await {
+    match dispatcher::dispatch(app, Some(&binding.agent), target_name, target_args).await {
         Some(outcome) => success(id, command_reply(outcome)),
         None => success(
             id,
@@ -143,14 +148,19 @@ async fn call_meta_app_command(id: Value, arguments: &Value, app: &AppHandle) ->
     }
 }
 
-async fn call_app_command(id: Value, params: Option<&Value>, app: Option<&AppHandle>) -> Reply {
+async fn call_app_command(
+    id: Value,
+    params: Option<&Value>,
+    binding: &Binding,
+    app: Option<&AppHandle>,
+) -> Reply {
     let Some((name, arguments)) = call_target(params) else {
         return failure(id, INVALID_PARAMS, "falta o nome do comando");
     };
     let Some(app) = app else {
         return failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}"));
     };
-    match dispatcher::dispatch(app, name, arguments.clone()).await {
+    match dispatcher::dispatch(app, Some(&binding.agent), name, arguments.clone()).await {
         Some(outcome) => success(id, command_reply(outcome)),
         None => failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}")),
     }

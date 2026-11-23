@@ -100,6 +100,7 @@ fn queued(world: &World, project_id: i64, agent: &str) -> Vec<QueuedResume> {
 fn resume(world: &World, id: i64) -> Result<Value, String> {
     tauri::async_runtime::block_on(crate::commands::dispatcher::dispatch(
         world.app.handle(),
+        None,
         "resume_interrupted_run",
         json!({ "id": id }),
     ))

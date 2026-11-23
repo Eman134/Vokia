@@ -162,6 +162,9 @@ pub(crate) fn move_backlog_item_exec(
     let db = state.require().map_err(|error| error.to_string())?;
     db.move_backlog_item(args.project_id, &args.id, &args.column)
         .map_err(|error| error.to_string())?;
+    if args.column.eq_ignore_ascii_case("done") {
+        orchestrator::schedule_done_cleanup(app, args.project_id, &args.id);
+    }
     notify_backlog_changed(app, args.project_id);
     Ok(())
 }
@@ -193,6 +196,7 @@ pub(crate) fn remove_backlog_label_exec(
 pub(crate) fn set_backlog_responsible_exec(
     app: &AppHandle,
     args: SetBacklogResponsibleArgs,
+    requester: Option<&Agent>,
 ) -> Result<(), String> {
     let team = app
         .state::<AgentRegistry>()
@@ -200,7 +204,7 @@ pub(crate) fn set_backlog_responsible_exec(
         .map_err(|error| error.to_string())?;
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
-    db.set_backlog_responsible(args.project_id, &args.item_id, &args.agent, &team)
+    db.set_backlog_responsible(args.project_id, &args.item_id, &args.agent, &team, requester)
         .map_err(|error| error.to_string())?;
     notify_backlog_changed(app, args.project_id);
     Ok(())
@@ -388,6 +392,7 @@ pub fn set_backlog_responsible(
             item_id,
             agent,
         },
+        None,
     )
 }
 

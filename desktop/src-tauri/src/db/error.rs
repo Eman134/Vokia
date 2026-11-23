@@ -40,7 +40,7 @@ pub enum DbError {
     BacklogLabelLength,
     DuplicateBacklogLabel(String),
     BacklogLabelNotFound(String),
-    ResponsibleAlreadySet(String),
+    ResponsibleNotAllowed(String),
     ResponsibleOutsideTeam(String),
     AgentHasPosition(String),
     BacklogItemArchived,
@@ -119,7 +119,7 @@ impl DbError {
                 | DbError::BacklogLabelLength
                 | DbError::DuplicateBacklogLabel(_)
                 | DbError::BacklogLabelNotFound(_)
-                | DbError::ResponsibleAlreadySet(_)
+                | DbError::ResponsibleNotAllowed(_)
                 | DbError::ResponsibleOutsideTeam(_)
                 | DbError::BacklogItemArchived
                 | DbError::BacklogItemNotArchived
@@ -242,9 +242,10 @@ impl fmt::Display for DbError {
             DbError::BacklogLabelNotFound(label) => {
                 write!(f, "O item não tem a etiqueta {label}.")
             }
-            DbError::ResponsibleAlreadySet(who) => {
-                write!(f, "O item já tem o responsável {who}.")
-            }
+            DbError::ResponsibleNotAllowed(item_id) => write!(
+                f,
+                "Só o Ember ou o responsável atual pode trocar o responsável do card {item_id}."
+            ),
             DbError::ResponsibleOutsideTeam(agent) => {
                 write!(f, "O agente {agent} não faz parte do elenco.")
             }

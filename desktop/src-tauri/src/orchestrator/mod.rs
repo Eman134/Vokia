@@ -26,7 +26,7 @@ pub(crate) use turns::with_cache;
 pub use emit::now_millis;
 pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};
-pub(crate) use flow::spawn_delegation_watchdog;
+pub(crate) use flow::{schedule_done_cleanup, spawn_delegation_watchdog};
 pub use runs::resume_run;
 pub(crate) use flow::{
     active_instances, all_active_instances, forget_project, has_flow, restore_flow_queue,

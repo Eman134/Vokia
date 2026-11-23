@@ -34,7 +34,7 @@ fn todo_comando_do_dominio_artifacts_responde_a_dispatch_e_recusa_argumentos_vaz
     for cmd in &artifact_cmds {
         let name = cmd["name"].as_str().expect("nome do comando");
         let result =
-            tauri::async_runtime::block_on(dispatch(world.app.handle(), name, json!({})));
+            tauri::async_runtime::block_on(dispatch(world.app.handle(), None, name, json!({})));
 
         if name == "list_artifact_kinds" {
             let inner = result.expect("list_artifact_kinds deve ser reconhecido pelo dispatcher");
@@ -70,6 +70,7 @@ fn camel_case_project_id_e_campos_sao_aceitos_e_snake_case_falha() {
 
     let res_list_ok = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "list_artifacts",
         json!({ "projectId": project }),
     ))
@@ -78,6 +79,7 @@ fn camel_case_project_id_e_campos_sao_aceitos_e_snake_case_falha() {
 
     let res_list_err = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "list_artifacts",
         json!({ "project_id": project }),
     ))
@@ -94,6 +96,7 @@ fn camel_case_project_id_e_campos_sao_aceitos_e_snake_case_falha() {
 
     let res_create_ok = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "create_artifact",
         json!({
             "projectId": project,
@@ -109,6 +112,7 @@ fn camel_case_project_id_e_campos_sao_aceitos_e_snake_case_falha() {
 
     let res_create_err = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "create_artifact",
         json!({
             "project_id": project,
@@ -147,6 +151,7 @@ fn escrita_via_comando_emite_evento_artifacts_changed() {
 
     let res_create = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "create_artifact",
         json!({
             "projectId": project,
@@ -160,6 +165,7 @@ fn escrita_via_comando_emite_evento_artifacts_changed() {
 
     let res_update = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "update_artifact",
         json!({
             "projectId": project,
@@ -173,6 +179,7 @@ fn escrita_via_comando_emite_evento_artifacts_changed() {
 
     let res_check = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "set_artifact_check",
         json!({
             "projectId": project,
@@ -187,6 +194,7 @@ fn escrita_via_comando_emite_evento_artifacts_changed() {
 
     let res_del = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "delete_artifact",
         json!({
             "projectId": project,
@@ -574,6 +582,7 @@ fn delete_artifact_de_plano_pelo_dispatcher_apaga_em_cascata_emite_evento_e_nao_
 
     let deleted = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "delete_artifact",
         json!({ "projectId": project, "id": plan_id }),
     ))
@@ -591,6 +600,7 @@ fn delete_artifact_de_plano_pelo_dispatcher_apaga_em_cascata_emite_evento_e_nao_
 
     let again = tauri::async_runtime::block_on(dispatch(
         world.app.handle(),
+        None,
         "delete_artifact",
         json!({ "projectId": project, "id": plan_id }),
     ))
