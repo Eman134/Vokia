@@ -9,11 +9,13 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import type { VokiaMessage } from './events'
+import type { TurnActivity, VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
+import type { AgentProfile } from './teamApi'
+import { filterPendingAgentsForScreen, formatPendingStatusLabel, groupPendingAgentsByState } from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import AgentPortrait from './AgentPortrait.vue'
@@ -34,9 +36,12 @@ import ActivityRun from './ActivityRun.vue'
 import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
-import { STATE_LABELS } from './agentStateStyle'
 
 const GROUP_SEPARATOR = ' ↔ '
+const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex max-w-3xl flex-col gap-3'
+const STATUS_GROUP_CLASSES = 'flex items-start gap-2.5'
+const STATUS_PORTRAITS_CLASSES = 'flex shrink-0 items-center gap-1.5'
+const STATUS_DOT_CLASSES = 'absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse'
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
 // Altura fixa: conversa de agente (retrato, nome e papel) e canal ocupam o mesmo cabeçalho.
@@ -109,32 +114,21 @@ const screenRole = computed(() => {
 })
 
 const projectsStore = useProjects()
-const scopedPendingAgent = computed(() => {
-  const agent = feed.pendingAgent
-  if (!agent) return undefined
-  if (feed.screen.kind === 'all') return agent
-  if (feed.screen.kind === 'agent') return feed.screen.agent === agent.id ? agent : undefined
-  if (feed.screen.kind === 'channel') {
-    const targetChannel = feed.screen.channel
-    if (targetChannel === GENERAL_CHANNEL_NAME) return agent
-    const channel = channels.channels.find((c) => c.id === targetChannel)
-    return channel?.members.includes(agent.id) ? agent : undefined
-  }
-  if (feed.screen.kind === 'thread') {
-    const thread = activeThread.value
-    if (!thread) return undefined
-    return thread.assignee === agent.id || thread.participants.includes(agent.id) ? agent : undefined
-  }
-  return undefined
-})
-const liveRun = computed(() =>
-  scopedPendingAgent.value ? feed.liveActivityOf(scopedPendingAgent.value.id) : undefined,
+const scopedPendingAgents = computed(() =>
+  filterPendingAgentsForScreen(feed.pendingAgents, feed.screen, {
+    channels: channels.channels,
+    thread: activeThread.value,
+  }),
 )
-const pendingLabel = computed(() =>
-  scopedPendingAgent.value
-    ? `${scopedPendingAgent.value.name} está ${STATE_LABELS[feed.stateOf(scopedPendingAgent.value.id)]}`
-    : undefined,
+const pendingGroups = computed(() =>
+  groupPendingAgentsByState(scopedPendingAgents.value, feed.states, feed.stateSince),
 )
+const scopedLiveRuns = computed(() =>
+  scopedPendingAgents.value
+    .map((agent) => ({ agent, activity: feed.liveActivityOf(agent.id) }))
+    .filter((item): item is { agent: AgentProfile; activity: TurnActivity } => item.activity !== undefined),
+)
+const pendingLabel = computed(() => formatPendingStatusLabel(pendingGroups.value))
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
@@ -173,10 +167,14 @@ watch(
   [
     () => feed.feed.length,
     () => feed.permissions.length,
-    () => feed.pendingAgent,
-    () => liveRun.value?.tools.length,
+    () => scopedPendingAgents.value.map((agent) => agent.id).join(','),
+    () => scopedLiveRuns.value.reduce((total, run) => total + run.activity.tools.length, 0),
     () => feed.screen,
-    () => (feed.thinkingAgent ? consoleStore.entriesOf(feed.thinkingAgent.id).length : 0),
+    () =>
+      scopedPendingAgents.value.reduce(
+        (total, agent) => total + (feed.stateOf(agent.id) === 'thinking' ? consoleStore.entriesOf(agent.id).length : 0),
+        0,
+      ),
   ],
   followEnd,
 )
@@ -329,27 +327,42 @@ watch(
           <PermissionPrompt :permission="permission" @decide="(allow, reason) => feed.decidePermission(permission.id, allow, false, reason)" />
         </li>
       </ol>
-      <div v-if="liveRun" class="mt-3 flex max-w-3xl items-start gap-2.5" data-testid="activity-live-block">
+      <div
+        v-for="run in scopedLiveRuns"
+        :key="run.agent.id"
+        class="mt-3 flex max-w-3xl items-start gap-2.5"
+        data-testid="activity-live-block"
+      >
         <span class="size-7 shrink-0" aria-hidden="true" />
-        <ActivityRun :activity="liveRun" live class="min-w-0 flex-1" />
+        <ActivityRun :activity="run.activity" live class="min-w-0 flex-1" />
       </div>
       <div
         role="status"
         :aria-label="pendingLabel"
-        class="mt-3 flex max-w-3xl items-start gap-2.5"
+        :class="STATUS_GROUP_LIST_CLASSES"
       >
-        <template v-if="scopedPendingAgent">
-          <span class="relative flex shrink-0" aria-hidden="true">
-            <AgentPortrait :who="scopedPendingAgent.id" :size="PORTRAIT_SIZES.chat" />
-            <span class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse" />
-          </span>
-          <AgentThinking
-            :agent="scopedPendingAgent"
-            :state="feed.stateOf(scopedPendingAgent.id)"
-            :since="feed.pendingSince"
-            :activity="feed.liveActivityOf(scopedPendingAgent.id)"
-          />
-        </template>
+        <div
+          v-for="group in pendingGroups"
+          :key="group.state"
+          :class="STATUS_GROUP_CLASSES"
+        >
+          <div :class="STATUS_PORTRAITS_CLASSES" aria-hidden="true">
+            <span v-for="entry in group.entries" :key="entry.agent.id" class="relative flex shrink-0">
+              <AgentPortrait :who="entry.agent.id" :size="PORTRAIT_SIZES.chat" />
+              <span :class="STATUS_DOT_CLASSES" />
+            </span>
+          </div>
+          <div class="flex min-w-0 flex-1 flex-col gap-2">
+            <AgentThinking
+              v-for="entry in group.entries"
+              :key="entry.agent.id"
+              :agent="entry.agent"
+              :state="entry.state"
+              :since="entry.since"
+              :activity="feed.liveActivityOf(entry.agent.id)"
+            />
+          </div>
+        </div>
       </div>
     </template>
     <slot v-else name="fila" />

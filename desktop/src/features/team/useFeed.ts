@@ -12,6 +12,7 @@ import {
   type VokiaTaskResult,
 } from './events'
 import { agentName, selectActiveAgents } from './agents'
+import { selectPendingAgents } from './pendingAgents'
 import { buildTimeline, screenEntries, type ConversationScreen, type FeedEntry, type TimelineItem } from './timeline'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
@@ -63,6 +64,10 @@ export const useFeed = defineStore('feed', () => {
   const pendingSince = computed<number | undefined>(() =>
     pendingAgent.value ? stateSince.value[pendingAgent.value.id] : undefined,
   )
+  const pendingAgents = computed<AgentProfile[]>(() => selectPendingAgents(roster.agents, states.value))
+  function sinceOf(agent: Agent): number | undefined {
+    return stateSince.value[agent]
+  }
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
   const channels = useChannels()
   const timeline = computed<TimelineItem[]>(() =>
@@ -303,10 +308,13 @@ export const useFeed = defineStore('feed', () => {
   return {
     feed,
     states,
+    stateSince,
     stateOf,
+    sinceOf,
     thinkingAgent,
     pendingAgent,
     pendingSince,
+    pendingAgents,
     liveActivityOf,
     activeAgents,
     timeline,
