@@ -50,6 +50,22 @@ pub(crate) struct MoveBacklogItemArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ReorderBacklogColumnArgs {
+    pub project_id: i64,
+    pub column: String,
+    pub item_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetItemPriorityArgs {
+    pub project_id: i64,
+    pub item_id: String,
+    pub priority: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct BacklogLabelArgs {
     pub project_id: i64,
     pub item_id: String,
@@ -165,6 +181,30 @@ pub(crate) fn move_backlog_item_exec(
     if args.column.eq_ignore_ascii_case("done") {
         orchestrator::schedule_done_cleanup(app, args.project_id, &args.id);
     }
+    notify_backlog_changed(app, args.project_id);
+    Ok(())
+}
+
+pub(crate) fn reorder_backlog_column_exec(
+    app: &AppHandle,
+    args: ReorderBacklogColumnArgs,
+) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.reorder_column_items(args.project_id, &args.column, &args.item_ids)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(app, args.project_id);
+    Ok(())
+}
+
+pub(crate) fn set_item_priority_exec(
+    app: &AppHandle,
+    args: SetItemPriorityArgs,
+) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.set_item_priority(args.project_id, &args.item_id, &args.priority)
+        .map_err(|error| error.to_string())?;
     notify_backlog_changed(app, args.project_id);
     Ok(())
 }
@@ -340,6 +380,40 @@ pub fn move_backlog_item(
             project_id,
             id,
             column,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn reorder_backlog_column(
+    app: AppHandle,
+    project_id: i64,
+    column: String,
+    item_ids: Vec<String>,
+) -> Result<(), String> {
+    reorder_backlog_column_exec(
+        &app,
+        ReorderBacklogColumnArgs {
+            project_id,
+            column,
+            item_ids,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn set_item_priority(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+    priority: String,
+) -> Result<(), String> {
+    set_item_priority_exec(
+        &app,
+        SetItemPriorityArgs {
+            project_id,
+            item_id,
+            priority,
         },
     )
 }

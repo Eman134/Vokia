@@ -584,3 +584,121 @@ fn card_sem_responsavel_aceita_qualquer_agente_e_o_mesmo_responsavel_nao_registr
     assert_eq!(outcome, CardOutcome::Unchanged);
     assert_eq!(activity_count(&db, project_id, &id), 2);
 }
+
+#[test]
+fn reordenar_coluna_atualiza_posicoes_em_transacao_sem_colidir_novos_cards() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "reordenar");
+    let created = db
+        .apply_card_operations(
+            project_id,
+            &vexa(),
+            &[
+                create("Primeiro"),
+                create("Segundo"),
+                create("Terceiro"),
+                create("Quarto"),
+            ],
+        )
+        .unwrap();
+    let ids: Vec<String> = created.into_iter().map(|result| result.id).collect();
+    db.move_backlog_item(project_id, &ids[1], "Ready").unwrap();
+
+    db.reorder_column_items(
+        project_id,
+        "Backlog",
+        &[ids[3].clone(), ids[0].clone(), ids[2].clone()],
+    )
+    .expect("reordenar coluna deveria funcionar");
+
+    let backlog_titles: Vec<String> = db
+        .list_backlog(project_id)
+        .unwrap()
+        .items
+        .into_iter()
+        .filter(|item| item.column.as_deref() == Some("Backlog"))
+        .map(|item| item.title)
+        .collect();
+    assert_eq!(backlog_titles, vec!["Quarto", "Primeiro", "Terceiro"]);
+
+    let fifth = db
+        .apply_card_operations(project_id, &vexa(), &[create("Quinto")])
+        .expect("novo card após reordenação não deve colidir")
+        .pop()
+        .unwrap();
+    assert_eq!(fifth.id, "item-5");
+}
+
+#[test]
+fn reordenar_coluna_recusa_duplicata_coluna_invalida_ou_card_de_outra_coluna() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "reordenar-erros");
+    let created = db
+        .apply_card_operations(
+            project_id,
+            &vexa(),
+            &[create("Um"), create("Dois"), create("Três")],
+        )
+        .unwrap();
+    let ids: Vec<String> = created.into_iter().map(|result| result.id).collect();
+    db.move_backlog_item(project_id, &ids[2], "Ready").unwrap();
+
+    assert!(matches!(
+        db.reorder_column_items(project_id, "Inexistente", &[ids[0].clone()]),
+        Err(DbError::InvalidBacklogColumn(_))
+    ));
+    assert!(matches!(
+        db.reorder_column_items(project_id, "Backlog", &[ids[0].clone(), ids[0].clone()]),
+        Err(DbError::InvalidBacklogReorder(_))
+    ));
+    assert!(matches!(
+        db.reorder_column_items(project_id, "Backlog", &[ids[1].clone(), "item-99".to_string()]),
+        Err(DbError::BacklogItemNotFound(_))
+    ));
+    assert!(matches!(
+        db.reorder_column_items(project_id, "Backlog", &[ids[1].clone(), ids[2].clone()]),
+        Err(DbError::InvalidBacklogReorder(_))
+    ));
+
+    // Rollback garante que a ordem original foi mantida.
+    assert_eq!(titles(&db, project_id), vec!["Um", "Dois", "Três"]);
+}
+
+#[test]
+fn definir_prioridade_valida_valores_normaliza_e_limpa_com_vazio() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "prioridade");
+    let id = db
+        .apply_card_operations(project_id, &vexa(), &[create("Com prioridade")])
+        .unwrap()[0]
+        .id
+        .clone();
+
+    for (input, expected) in [
+        ("Baixa", "Baixa"),
+        ("média", "Média"),
+        ("Alta", "Alta"),
+        ("Urgente", "Urgente"),
+    ] {
+        db.set_item_priority(project_id, &id, input)
+            .expect("prioridade válida deveria ser aceita");
+        let card = db.read_card(project_id, &id).unwrap();
+        assert_eq!(card.priority.as_deref(), Some(expected));
+    }
+
+    db.set_item_priority(project_id, &id, "   ")
+        .expect("vazio deveria limpar a prioridade");
+    assert_eq!(db.read_card(project_id, &id).unwrap().priority, None);
+
+    assert!(matches!(
+        db.set_item_priority(project_id, &id, "Crítica"),
+        Err(DbError::InvalidBacklogPriority(_))
+    ));
+    assert!(matches!(
+        db.set_item_priority(project_id, "item-99", "Alta"),
+        Err(DbError::BacklogItemNotFound(_))
+    ));
+}
