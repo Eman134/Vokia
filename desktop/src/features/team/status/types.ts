@@ -10,6 +10,7 @@ export interface StatusCopy {
 
 export interface TeamStatusInput {
   fiveHour: number | null
+  allPaused?: boolean
   lastIsError: boolean
   pendingDecisions: number
   activeAgents: AgentProfile[]

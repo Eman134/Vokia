@@ -37,15 +37,19 @@ export const useAgentControl = defineStore('agentControl', () => {
     paused.value = next
   }
 
-  async function load(): Promise<void> {
-    const pauses = await listAgentPauses()
+  function applyPauses(pauses: readonly AgentPause[]): void {
     paused.value = new Set(pauses.map((pause) => projectAgentKey(pause.projectId, pause.agent)))
+  }
+
+  async function load(): Promise<void> {
+    applyPauses(await listAgentPauses())
   }
 
   return {
     paused,
     pausedList,
     isPaused,
+    applyPauses,
     pause: (agent: Agent) => setPaused(agent, true),
     resume: (agent: Agent) => setPaused(agent, false),
     load,

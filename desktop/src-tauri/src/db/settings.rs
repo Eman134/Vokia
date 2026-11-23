@@ -11,6 +11,8 @@ const THEME_VALUES: &[&str] = &["light", "dark", "system"];
 pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
 pub const SETTING_ACTIVE_LLM: &str = "active_llm";
 pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
+pub const SETTING_AUTO_PAUSE_ON_LIMIT: &str = "auto_pause_on_limit";
+const BOOL_VALUES: &[&str] = &["true", "false"];
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
@@ -46,10 +48,14 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
     (SETTING_USER_AVATAR, SettingRule::Json),
     (SETTING_ACTIVE_LLM, SettingRule::Json),
     (SETTING_LLM_FALLBACK, SettingRule::Json),
+    (SETTING_AUTO_PAUSE_ON_LIMIT, SettingRule::OneOf(BOOL_VALUES)),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
-const SETTING_DEFAULTS: &[(&str, &str)] = &[(SETTING_PERMISSION_GRANT, GRANT_SESSION)];
+const SETTING_DEFAULTS: &[(&str, &str)] = &[
+    (SETTING_PERMISSION_GRANT, GRANT_SESSION),
+    (SETTING_AUTO_PAUSE_ON_LIMIT, "false"),
+];
 
 impl Db {
     pub fn load_settings(&self) -> Result<HashMap<String, String>, DbError> {
@@ -84,6 +90,13 @@ impl Db {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    pub fn auto_pause_on_limit(&self) -> Result<bool, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_AUTO_PAUSE_ON_LIMIT)
+            .is_some_and(|value| value == "true"))
     }
 }
 

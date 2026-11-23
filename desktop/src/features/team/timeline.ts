@@ -1,8 +1,8 @@
-import type { Agent, FeedNotice, FeedPermissionResult, VokiaError, VokiaMessage, VokiaTaskResult } from './events'
+import type { Agent, FeedNotice, FeedPermissionResult, FeedUsageLimitFailed, VokiaError, VokiaMessage, VokiaTaskResult } from './events'
 import type { Channel } from '../channels/channelsApi'
 import { channelOf, GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 
-export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult | VokiaTaskResult
+export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult | VokiaTaskResult | FeedUsageLimitFailed
 
 export type TimelineItem =
   | { type: 'entry'; start: number; entry: FeedEntry }
@@ -27,6 +27,7 @@ export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
     case 'message':
       return entry.from === agent || entry.to === agent
     case 'permission-result':
+    case 'usage-limit-failed':
       return entry.agent === agent
     case 'task-result':
       return entry.agents.includes(agent)
@@ -40,7 +41,7 @@ function entryHasChannel(entry: FeedEntry, channels: readonly Channel[]): boolea
   if (entry.type === 'message') {
     return channelOf(entry, channels) !== null
   }
-  if (entry.type === 'task-result') {
+  if (entry.type === 'task-result' || entry.type === 'usage-limit-failed') {
     return (entry.channelId ?? null) !== null
   }
   return false
@@ -60,7 +61,7 @@ function threadParticipants(feed: readonly FeedEntry[], itemId: string): Set<Age
 }
 
 function entryInThread(entry: FeedEntry, itemId: string, participants: ReadonlySet<Agent>): boolean {
-  if (entry.type === 'message' || entry.type === 'task-result') {
+  if (entry.type === 'message' || entry.type === 'task-result' || entry.type === 'usage-limit-failed') {
     return entry.itemId === itemId
   }
   if (entry.type === 'permission-result') {
@@ -94,7 +95,7 @@ export function screenEntries(
 // #geral recebe o que não tem canal específico, os pedidos de permissão (E7) e os avisos e erros, que não pertencem a canal nenhum;
 // canal específico recebe só as suas mensagens. A conclusão de tarefa segue o canal de origem; sem canal (registro antigo), vai para #geral.
 function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNEL_NAME, channels: readonly Channel[]): boolean {
-  if (entry.type === 'task-result') {
+  if (entry.type === 'task-result' || entry.type === 'usage-limit-failed') {
     const channel = entry.channelId ?? null
     return target === GENERAL_CHANNEL_NAME ? channel === null : channel === target
   }

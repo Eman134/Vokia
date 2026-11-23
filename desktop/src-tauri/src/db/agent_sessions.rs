@@ -111,6 +111,44 @@ impl Db {
         }
         Ok(())
     }
+
+    pub fn is_agent_paused(&self, project_id: i64, agent: &Agent) -> Result<bool, DbError> {
+        let conn = self.conn()?;
+        let base = crate::agents::replica_of(agent.as_str()).map(|(base, _)| base);
+        let found: Option<i64> = match base {
+            Some(base_id) => conn
+                .query_row(
+                    "SELECT 1 FROM agent_pauses WHERE project_id = ?1 AND (agent = ?2 OR agent = ?3) LIMIT 1",
+                    params![project_id, agent.as_str(), base_id],
+                    |row| row.get(0),
+                )
+                .optional()?,
+            None => conn
+                .query_row(
+                    "SELECT 1 FROM agent_pauses WHERE project_id = ?1 AND agent = ?2 LIMIT 1",
+                    params![project_id, agent.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?,
+        };
+        Ok(found.is_some())
+    }
+
+    pub fn pause_project_agents(&self, project_id: i64, agents: &[Agent]) -> Result<(), DbError> {
+        for agent in agents {
+            self.set_agent_paused(project_id, agent.clone(), true)?;
+        }
+        Ok(())
+    }
+
+    pub fn resume_project_agents(&self, project_id: i64) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "DELETE FROM agent_pauses WHERE project_id = ?1",
+            params![project_id],
+        )?;
+        Ok(())
+    }
 }
 
 fn agent_key(agent: &Agent) -> String {

@@ -1,10 +1,12 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useDecisions } from '../decisions/useDecisions'
+import { useAgentControl } from '../panel/useAgentControl'
 import { useUsage } from '../usage/useUsage'
 import { useUsageLimit } from '../usage/useUsageLimit'
 import { usageLimitText } from '../usage/usageLimitCopy'
 import { useFeed } from './useFeed'
+import { useRoster } from './useRoster'
 import {
   DONE_HOLD_MS,
   errorCopy,
@@ -20,6 +22,8 @@ const DONE_TICK_MS = 1000
 
 export const useTeamStatus = defineStore('teamStatus', () => {
   const feed = useFeed()
+  const roster = useRoster()
+  const control = useAgentControl()
   const usage = useUsage()
   const usageLimit = useUsageLimit()
   const decisions = useDecisions()
@@ -33,10 +37,14 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   )
   const lastOutcome = computed(() => outcomes.value.at(-1))
   const lastIsError = computed(() => lastOutcome.value?.type === 'error')
+  const allAgentsPaused = computed(
+    () => roster.agents.length > 0 && roster.agents.every((agent) => control.isPaused(agent.id)),
+  )
 
   const status = computed<TeamStatus>(() =>
     resolveTeamStatus({
       fiveHour: usage.fiveHour,
+      allPaused: allAgentsPaused.value,
       lastIsError: lastIsError.value,
       pendingDecisions: decisions.pendingCount,
       activeAgents: feed.activeAgents,

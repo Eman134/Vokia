@@ -1,6 +1,8 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use tauri::{AppHandle, Manager};
 
-use crate::agents::{replica_of, Agent, AgentError};
+use crate::agents::{replica_of, Agent, AgentError, AgentRegistry};
 use crate::claude::UsageLimit;
 use crate::db::{DbState, InterruptedRun, RunHandoff, RunMessage, RunProgress};
 use crate::events::{AgentState, VokiaEvent};
@@ -88,16 +90,110 @@ pub(super) fn end_run(app: &AppHandle, id: Option<i64>) -> Result<(), FlowError>
     }
 }
 
-// Pausa por limite de uso: o pedido fica interrompido (retomável) e o agente aguarda, sem erro no feed.
+const AUTO_RESUME_BUFFER_SECS: u64 = 2;
+
+pub(super) fn auto_pause_on_limit(app: &AppHandle) -> bool {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return false;
+    };
+    db.auto_pause_on_limit().unwrap_or(false)
+}
+
+pub(super) fn is_agent_paused(app: &AppHandle, project_id: i64, agent: &Agent) -> bool {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return false;
+    };
+    db.is_agent_paused(project_id, agent).unwrap_or(false)
+}
+
+pub(crate) fn emit_agent_pauses_changed(app: &AppHandle) -> Result<(), FlowError> {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return Ok(());
+    };
+    let pauses = db.agent_pauses().map_err(FlowError::Runs)?;
+    emit(app, VokiaEvent::AgentPausesChanged { pauses })
+}
+
+fn project_team_agents(app: &AppHandle) -> Vec<Agent> {
+    match app.state::<AgentRegistry>().team() {
+        Ok(team) => team.ids().cloned().collect(),
+        Err(_) => vec![Agent::ember(), Agent::axiom(), Agent::vexa()],
+    }
+}
+
+fn interrupt_in_db(app: &AppHandle, id: Option<i64>) -> Result<(), FlowError> {
+    let Some(id) = id else {
+        return Ok(());
+    };
+    let state = app.state::<DbState>();
+    if let Err(error) = state.require().and_then(|db| db.interrupt_run(id)) {
+        emit(
+            app,
+            VokiaEvent::Error {
+                message: format!("{JOURNAL_PAUSE_ERROR_PREFIX}{error}."),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+// Pausa um pedido segurado por pausa manual ou do projeto: interrompido (retomável) e agente ocioso.
+pub(super) fn interrupt_paused_run(
+    app: &AppHandle,
+    key: &SessionKey,
+    id: Option<i64>,
+) -> Result<(), FlowError> {
+    interrupt_in_db(app, id)?;
+    emit_state(app, key.project_id, key.agent.clone(), AgentState::Idle)
+}
+
+fn schedule_auto_resume(app: AppHandle, project_id: i64, run_id: i64, resets_at: u64) {
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let wait_secs = resets_at
+        .saturating_sub(now_secs)
+        .saturating_add(AUTO_RESUME_BUFFER_SECS);
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+        if !auto_pause_on_limit(&app) {
+            return;
+        }
+        let still_interrupted = app
+            .state::<DbState>()
+            .db()
+            .and_then(|db| db.interrupted_runs().ok())
+            .is_some_and(|runs| {
+                runs.iter()
+                    .any(|run| run.id == run_id && run.project_id == project_id)
+            });
+        if !still_interrupted {
+            return;
+        }
+        let _ = resume_run(&app, &app.state::<AppState>(), run_id).await;
+    });
+}
+
+fn base_agent_obj(agent: &Agent) -> Agent {
+    replica_of(agent.as_str())
+        .and_then(|(base, _)| Agent::from_stored(base))
+        .unwrap_or_else(|| agent.clone())
+}
+
+// Pausa por limite de uso: o pedido fica interrompido (retomável) e todo o time do projeto entra em pausa real.
 pub(super) fn pause_run(
     app: &AppHandle,
     key: &SessionKey,
     id: Option<i64>,
     limit: UsageLimit,
 ) -> Result<(), FlowError> {
-    if let Some(id) = id {
-        let state = app.state::<DbState>();
-        if let Err(error) = state.require().and_then(|db| db.interrupt_run(id)) {
+    interrupt_in_db(app, id)?;
+    let agents = project_team_agents(app);
+    if let Some(db) = app.state::<DbState>().db() {
+        if let Err(error) = db.pause_project_agents(key.project_id, &agents) {
             emit(
                 app,
                 VokiaEvent::Error {
@@ -106,7 +202,18 @@ pub(super) fn pause_run(
             )?;
         }
     }
-    emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting)?;
+    emit_agent_pauses_changed(app)?;
+    for agent in agents {
+        let state = if agent == key.agent {
+            AgentState::Waiting
+        } else {
+            AgentState::Idle
+        };
+        emit_state(app, key.project_id, agent, state)?;
+    }
+    if key.agent != base_agent_obj(&key.agent) {
+        emit_state(app, key.project_id, key.agent.clone(), AgentState::Waiting)?;
+    }
     emit(
         app,
         VokiaEvent::UsageLimit {
@@ -116,7 +223,13 @@ pub(super) fn pause_run(
             resets_at: limit.resets_at,
             run_id: id,
         },
-    )
+    )?;
+    if limit.resets_at > 0 {
+        if let Some(run_id) = id {
+            schedule_auto_resume(app.clone(), key.project_id, run_id, limit.resets_at);
+        }
+    }
+    Ok(())
 }
 
 pub async fn resume_run(
@@ -125,6 +238,10 @@ pub async fn resume_run(
     id: i64,
 ) -> Result<RequestOutcome, FlowError> {
     let run = claim(app, id)?;
+    if let Some(db) = app.state::<DbState>().db() {
+        let _ = db.resume_project_agents(run.project_id);
+        let _ = emit_agent_pauses_changed(app);
+    }
     match continue_run(app, state, &run).await {
         Ok(outcome) => Ok(outcome),
         Err(error) => {
@@ -235,3 +352,7 @@ fn message_lines(message: &RunMessage) -> Vec<String> {
 #[cfg(test)]
 #[path = "../../tests/resume_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/auto_pause_limit_tests.rs"]
+mod auto_pause_limit_tests;

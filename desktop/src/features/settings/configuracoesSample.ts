@@ -5,6 +5,8 @@ type SettingsAction = { label: string; variant: 'quiet' | 'danger'; id?: Setting
 type SettingsControl =
   | { kind: 'theme' }
   | { kind: 'permission-grant' }
+  | { kind: 'bypass' }
+  | { kind: 'auto-pause-on-limit' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
   | { kind: 'select'; options: readonly string[] }
@@ -180,6 +182,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         control: { kind: 'input', value: '30', unit: 'min' },
       },
       {
+        kind: 'row',
+        label: 'Pausar automaticamente ao atingir limite',
+        hint: 'pausa o time e agenda retomada automática; desligado, avisa na conversa',
+        control: { kind: 'auto-pause-on-limit' },
+      },
+      {
         kind: 'group',
         label: 'Precisa do meu ok',
         hint: 'um lugar só para o que espera você; o resto anda sozinho',
@@ -255,6 +263,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       },
       { kind: 'row', label: 'Mexer fora do worktree', control: { kind: 'switch', on: true } },
       { kind: 'row', label: 'Apagar arquivos', control: { kind: 'switch', on: true } },
+      { kind: 'group', label: 'Modo bypass' },
+      {
+        kind: 'row',
+        label: 'Aprovar permissões automaticamente',
+        hint: 'vale para o projeto selecionado e desliga ao fechar o app; comandos destrutivos continuam pedindo a sua decisão',
+        control: { kind: 'bypass' },
+      },
       { kind: 'group', label: 'Comandos' },
       {
         kind: 'row',

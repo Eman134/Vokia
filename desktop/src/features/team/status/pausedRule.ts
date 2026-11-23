@@ -3,5 +3,6 @@ import type { StatusRule } from './types'
 
 export const pausedRule: StatusRule = {
   status: 'paused',
-  applies: (input) => input.fiveHour !== null && input.fiveHour >= PAUSE_THRESHOLD,
+  applies: (input) =>
+    Boolean(input.allPaused) || (input.fiveHour !== null && input.fiveHour >= PAUSE_THRESHOLD),
 }

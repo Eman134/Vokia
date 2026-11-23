@@ -47,7 +47,9 @@ impl<'a> ConsoleSink<'a> {
     pub(super) fn finished<T>(&self, result: &Result<T, FlowError>) {
         let line = match result {
             Ok(_) => ConsoleLine::new(ConsoleKind::Done, TURN_DONE_TEXT),
-            Err(error) if error.usage_limit().is_some() => {
+            Err(error)
+                if error.is_limit() && super::runs::auto_pause_on_limit(self.app) =>
+            {
                 ConsoleLine::new(ConsoleKind::Text, TURN_PAUSED_TEXT)
             }
             Err(error) => {

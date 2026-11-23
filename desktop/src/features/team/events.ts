@@ -103,7 +103,7 @@ export interface FeedNotice {
 
 export type PermissionOutcome = 'allowed' | 'denied' | 'expired'
 
-export type PermissionResultOutcome = PermissionOutcome | 'project-rule'
+export type PermissionResultOutcome = PermissionOutcome | 'project-rule' | 'bypass'
 
 export interface FeedPermissionResult {
   type: 'permission-result'
@@ -143,6 +143,14 @@ export interface VokiaPermissionByRule {
   agent: Agent
   detail: string
   projectId: number | null
+  /** true quando a aprovação veio do modo bypass do projeto, e não de uma regra salva. */
+  bypass?: boolean
+}
+
+export interface VokiaBypassChanged {
+  type: 'bypass-changed'
+  projectId: number
+  enabled: boolean
 }
 
 export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao' | 'validacao'
@@ -186,6 +194,31 @@ export interface VokiaUsageLimit {
   window: UsageLimitWindow
   resetsAt: number
   runId: number | null
+}
+
+export interface VokiaUsageLimitFailed {
+  type: 'usage-limit-failed'
+  agent: Agent
+  projectId: number
+  window?: UsageLimitWindow
+  resetsAt?: number
+  message: string
+  channelId?: number
+  itemId?: string
+}
+
+export interface FeedUsageLimitFailed extends VokiaUsageLimitFailed {
+  time: number
+}
+
+export interface AgentPause {
+  projectId: number
+  agent: Agent
+}
+
+export interface VokiaAgentPausesChanged {
+  type: 'agent-pauses-changed'
+  pauses: AgentPause[]
 }
 
 export type ConsoleKind = 'start' | 'text' | 'tool' | 'output' | 'error' | 'permission' | 'done' | 'failed'
@@ -301,9 +334,12 @@ export type VokiaEvent =
   | VokiaPermission
   | VokiaPermissionClosed
   | VokiaPermissionByRule
+  | VokiaBypassChanged
   | VokiaDecision
   | VokiaPlanUsage
   | VokiaUsageLimit
+  | VokiaUsageLimitFailed
+  | VokiaAgentPausesChanged
   | VokiaRequestSettled
   | VokiaConsoleLine
   | VokiaTaskResult

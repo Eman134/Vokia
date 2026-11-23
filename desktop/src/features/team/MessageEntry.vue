@@ -16,6 +16,7 @@ import TokenUsageChart from './TokenUsageChart.vue'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
 import AgentPortrait from './AgentPortrait.vue'
+import UsageLimitFailedNotice from './UsageLimitFailedNotice.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UserAvatar from '../profile/UserAvatar.vue'
 import { useUserProfile } from '../profile/useUserProfile'
@@ -85,6 +86,7 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
   denied: '✕ Negado:',
   expired: '⏱ Expirou sem resposta:',
   'project-rule': '✓ Regra do projeto:',
+  bypass: '✓ Modo bypass:',
 }
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
@@ -342,6 +344,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       </UiButton>
     </div>
   </div>
+  <UsageLimitFailedNotice v-else-if="entry.type === 'usage-limit-failed'" :entry="entry" />
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
   <ul
     v-else-if="entry.type === 'task-result'"

@@ -218,7 +218,12 @@ pub(crate) fn set_agent_paused_exec(
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
     db.set_agent_paused(args.project_id, args.agent, args.paused)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    orchestrator::emit_agent_pauses_changed(app).map_err(|error| error.to_string())?;
+    if !args.paused {
+        orchestrator::drain_waiting_for_project(app, &app.state::<AppState>(), args.project_id);
+    }
+    Ok(())
 }
 
 pub(crate) fn list_queued_requests_exec(app: &AppHandle) -> Result<Vec<QueuedRequestRecord>, String> {

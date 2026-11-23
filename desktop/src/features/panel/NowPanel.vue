@@ -44,7 +44,11 @@ function activityOf(agent: Agent): AgentActivity {
 }
 
 const rows = computed(() => roster.agents.map((agent) => ({ agent, activity: activityOf(agent.id) })))
-const workingRows = computed(() => rows.value.filter((row) => feed.activeAgents.some((active) => active.id === row.agent.id)))
+const workingRows = computed(() =>
+  rows.value.filter(
+    (row) => feed.activeAgents.some((active) => active.id === row.agent.id) || control.isPaused(row.agent.id),
+  ),
+)
 
 // O chip do agente que ficou ocioso some; sem voltar para "Todos" a aba abriria um agente que não está na lista.
 watch(workingRows, (active) => {
@@ -58,7 +62,7 @@ watch(workingRows, (active) => {
     <BatchProgressList />
     <div class="flex flex-wrap gap-1.5">
       <UiChip
-        :label="`${ALL_TAB_LABEL} ${feed.activeAgents.length}`"
+        :label="`${ALL_TAB_LABEL} ${workingRows.length}`"
         :selected="tab === 'todos'"
         data-testid="now-subtab-todos"
         @press="tab = 'todos'"

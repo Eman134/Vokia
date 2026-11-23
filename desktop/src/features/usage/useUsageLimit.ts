@@ -46,6 +46,34 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     return undefined
   }
 
+  async function migrateToProvider(
+    profile: AgentProfile,
+    target: CliPreset,
+    resetsAt = 0,
+  ): Promise<void> {
+    const resolvedModel =
+      (profile.modelTier ? target.tiers[profile.modelTier] : '') || target.defaultModel
+    const expiresInMs =
+      resetsAt > 0 ? Math.max(60_000, resetsAt * MS_PER_SECOND - Date.now()) : null
+    await useActiveLlm().applyOverride({
+      agent: profile.id,
+      cli: target.id,
+      modelTier: profile.modelTier ?? null,
+      model: resolvedModel,
+      reason: 'usage-limit',
+      expiresInMs,
+    })
+  }
+
+  async function alternativeProviderFor(agent: string): Promise<CliPreset | undefined> {
+    const profile = roster.profileOf(agent)
+    if (profile === undefined || profile.builtin) {
+      return undefined
+    }
+    const installed = await availableProviders().catch(() => [] as string[])
+    return pickAlternativeProvider(profile.cli, installed)
+  }
+
   async function migrateAndContinue(
     profile: AgentProfile,
     target: CliPreset,
@@ -53,18 +81,7 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     resetsAt: number,
   ): Promise<string | void> {
     try {
-      const resolvedModel =
-        (profile.modelTier ? target.tiers[profile.modelTier] : '') || target.defaultModel
-      const expiresInMs =
-        resetsAt > 0 ? Math.max(60_000, resetsAt * MS_PER_SECOND - Date.now()) : null
-      await useActiveLlm().applyOverride({
-        agent: profile.id,
-        cli: target.id,
-        modelTier: profile.modelTier ?? null,
-        model: resolvedModel,
-        reason: 'usage-limit',
-        expiresInMs,
-      })
+      await migrateToProvider(profile, target, resetsAt)
       if (runId !== null) {
         await resume(runId)
       }
@@ -212,5 +229,15 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     }
   }
 
-  return { notice, visible, resumable, apply, suggestFromLimitMessage, suggestModelUnavailable, resume }
+  return {
+    notice,
+    visible,
+    resumable,
+    apply,
+    suggestFromLimitMessage,
+    suggestModelUnavailable,
+    alternativeProviderFor,
+    migrateToProvider,
+    resume,
+  }
 })

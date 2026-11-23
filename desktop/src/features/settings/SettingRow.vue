@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ThemeSwitch from '../theme/ThemeSwitch.vue'
 import { useFeed } from '../team/useFeed'
 import { useTheme } from '../theme/useTheme'
 import { useAvatarProfiles } from '../identities/useAvatarProfiles'
 import { useProjects } from '../projects/useProjects'
+import { useBypass } from '../permissions/useBypass'
 import { useConsole } from '../console/useConsole'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
@@ -15,12 +16,20 @@ import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
 import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
 import type { SettingsActionId, SettingsItem } from './configuracoesSample'
-import { eraseAllData, fetchSettings, saveSetting } from './settingsApi'
+import { AUTO_PAUSE_ON_LIMIT_SETTING_KEY, eraseAllData, fetchSettings, saveSetting } from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
 const consoleStore = useConsole()
 const feed = useFeed()
+const bypass = useBypass()
+const bypassProjectId = computed(() => projects.selected?.id ?? null)
+const bypassOn = computed({
+  get: () => bypass.isOn(bypassProjectId.value),
+  set: (next: boolean) => {
+    if (bypassProjectId.value !== null) void bypass.set(bypassProjectId.value, next)
+  },
+})
 const theme = useTheme()
 const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
@@ -43,6 +52,8 @@ const ERASE_CLASSES = `${STACK_CLASSES} max-w-md`
 
 const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
+const autoPauseOnLimit = ref(false)
+const autoPauseError = ref<string | null>(null)
 const erasing = ref(false)
 const eraseError = ref<string | null>(null)
 
@@ -95,9 +106,35 @@ async function chooseGrant(next: GrantChoice): Promise<void> {
   }
 }
 
+async function loadAutoPauseOnLimit(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[AUTO_PAUSE_ON_LIMIT_SETTING_KEY]
+    autoPauseOnLimit.value = stored === 'true'
+  } catch (error) {
+    autoPauseError.value = `Não foi possível ler a pausa automática: ${String(error)}`
+  }
+}
+
+async function toggleAutoPauseOnLimit(next: boolean): Promise<void> {
+  autoPauseOnLimit.value = next
+  try {
+    await saveSetting(AUTO_PAUSE_ON_LIMIT_SETTING_KEY, next ? 'true' : 'false')
+    autoPauseError.value = null
+  } catch (error) {
+    autoPauseOnLimit.value = !next
+    autoPauseError.value = `Não foi possível salvar a pausa automática: ${String(error)}`
+  }
+}
+
 onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
     void loadGrant()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'auto-pause-on-limit') {
+    void loadAutoPauseOnLimit()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'bypass' && bypassProjectId.value !== null) {
+    void bypass.load(bypassProjectId.value)
   }
 })
 
@@ -185,6 +222,22 @@ function toOptions(labels: readonly string[]) {
           @update:model-value="chooseGrant"
         />
         <p v-if="grantError" role="alert" :class="ERROR_CLASSES">{{ grantError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'bypass'" :class="STACK_CLASSES">
+        <span class="flex items-center gap-2 text-small" :class="bypassOn ? 'text-warn-text' : 'text-muted'" data-testid="bypass-setting-state">
+          {{ bypassProjectId === null ? 'Selecione um projeto' : bypassOn ? 'Ligado neste projeto' : 'Desligado' }}
+          <UiSwitch v-model="bypassOn" label="Modo bypass" :disabled="bypassProjectId === null" />
+        </span>
+        <p v-if="bypass.error" role="alert" :class="ERROR_CLASSES">{{ bypass.error }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'auto-pause-on-limit'" :class="STACK_CLASSES">
+        <UiSwitch
+          :model-value="autoPauseOnLimit"
+          label="Pausar automaticamente ao atingir limite"
+          data-testid="auto-pause-on-limit-switch"
+          @update:model-value="toggleAutoPauseOnLimit"
+        />
+        <p v-if="autoPauseError" role="alert" :class="ERROR_CLASSES">{{ autoPauseError }}</p>
       </div>
       <div v-else-if="item.control.kind === 'erase-data'" :class="ERASE_CLASSES">
         <UiConfirm

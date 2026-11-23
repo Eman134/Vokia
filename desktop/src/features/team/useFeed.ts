@@ -1,3 +1,4 @@
+import { useBypass } from '../permissions/useBypass'
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
@@ -162,9 +163,12 @@ export const useFeed = defineStore('feed', () => {
           type: 'permission-result',
           agent: event.agent,
           detail: event.detail,
-          outcome: 'project-rule',
+          outcome: event.bypass ? 'bypass' : 'project-rule',
           time: Date.now(),
         })
+        break
+      case 'bypass-changed':
+        useBypass().apply(event)
         break
       case 'decision':
         useDecisions().apply(event)
@@ -201,6 +205,14 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'usage-limit':
         useUsageLimit().apply(event)
+        break
+      case 'usage-limit-failed':
+        if (event.projectId === projects.selected?.id) {
+          feed.value.push({ ...event, time: Date.now() })
+        }
+        break
+      case 'agent-pauses-changed':
+        control.applyPauses(event.pauses)
         break
       case 'model-unavailable':
         useUsageLimit().suggestModelUnavailable(event)

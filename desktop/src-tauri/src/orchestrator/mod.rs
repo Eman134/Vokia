@@ -28,8 +28,10 @@ pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};
 pub(crate) use flow::{schedule_done_cleanup, spawn_delegation_watchdog};
 pub use runs::resume_run;
+pub(crate) use runs::emit_agent_pauses_changed;
 pub(crate) use flow::{
-    active_instances, all_active_instances, forget_project, has_flow, restore_flow_queue,
+    active_instances, all_active_instances, drain_waiting_for_project, forget_project, has_flow,
+    restore_flow_queue,
 };
 pub(crate) use session_pool::{schedule_preload, SessionPool};
 pub(crate) use validation::return_task;

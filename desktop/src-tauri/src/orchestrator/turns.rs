@@ -11,7 +11,8 @@ use crate::mcp::{DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::policy::{self, Passage, Verdict};
 use crate::orchestration::snapshot::placement_of;
-use crate::orchestration::snapshot::{ACTION_CONSULT, ACTION_RETURN};
+use crate::orchestration::snapshot::{enforced, ACTION_CONSULT, ACTION_RETURN};
+use crate::orchestration::stages::{self, STAGE_DONE, STAGE_WAITING};
 use crate::session_key::SessionKey;
 use crate::state::{AppState, Batch, PendingDecision, RequestContext};
 use crate::task::{Cache, Change, TaskDefinition, TaskKind, TaskOutcome};
@@ -22,8 +23,8 @@ use super::emit::{
 };
 use super::error::FlowError;
 use super::flow::{
-    announce_batch, count_branch, dispatch_request, mark_flow_end, open_batch, seal_batch,
-    stop_with_error,
+    announce_batch, count_branch, dispatch_request, emit_stage, mark_flow_end, open_batch,
+    seal_batch, stop_with_error,
 };
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
@@ -99,6 +100,10 @@ pub(super) async fn run_turns(
     let mut rejections = 0;
     let has_mcp_server = app.state::<McpState>().server().is_some();
     loop {
+        if super::runs::is_agent_paused(app, project_id, &turn.speaker) {
+            emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+            return Ok(TaskOutcome::Paused);
+        }
         if let Some(motive) = policy::task_limit_reached(exchange.orchestration, &counters.task) {
             let speaker = counters
                 .task
@@ -181,6 +186,19 @@ pub(super) async fn run_turns(
             delegation_intent,
             variables,
         } = outcome;
+        // Líder com julgamento de fluxo ligado: a linha #fluxo grava o modo da task e não vai para a tela.
+        let judging = exchange
+            .orchestration
+            .is_some_and(|snapshot| stages::judging_team(snapshot, &turn.speaker).is_some());
+        let judgment = judging.then(|| stages::parse_judgment(&reply)).flatten();
+        let reply = if judging {
+            stages::without_judgment_lines(&reply)
+        } else {
+            reply
+        };
+        if let (Some(judgment), Some(item)) = (judgment, *item_id) {
+            record_flow_judgment(app, project_id, item, &turn.speaker, judgment.mode)?;
+        }
         let TextReply {
             visible,
             decision: text_decision,
@@ -258,34 +276,48 @@ pub(super) async fn run_turns(
                     event,
                 ) {
                     Verdict::Deliver(found) => {
-                        // Gateway exclusivo: o evento escolhe o destino, e o que o agente citou não vale.
-                        if let Some(routed) =
-                            found.routed.as_ref().filter(|routed| routed.to != helper)
+                        if let Some(motive) =
+                            skip_refusal(exchange, &turn.speaker, line_item, &found)
                         {
-                            let text = format!(
-                                "Gateway enviou a {} pelo evento {}.",
-                                team.name_of(&routed.to),
-                                routed.event
-                            );
-                            emit_feed_note(
-                                app,
-                                project_id,
-                                Speaker::from(turn.speaker.clone()),
-                                &text,
-                                now_millis()?,
-                            )?;
-                            delegation = Some((routed.to.clone(), helper_request));
+                            rejected.push(motive);
+                        } else {
+                            // Gateway exclusivo: o evento escolhe o destino, e o que o agente citou não vale.
+                            if let Some(routed) =
+                                found.routed.as_ref().filter(|routed| routed.to != helper)
+                            {
+                                let text = format!(
+                                    "Gateway enviou a {} pelo evento {}.",
+                                    team.name_of(&routed.to),
+                                    routed.event
+                                );
+                                emit_feed_note(
+                                    app,
+                                    project_id,
+                                    Speaker::from(turn.speaker.clone()),
+                                    &text,
+                                    now_millis()?,
+                                )?;
+                                delegation = Some((routed.to.clone(), helper_request));
+                            }
+                            passage = Some(found);
                         }
-                        passage = Some(found);
                     }
                     Verdict::Fork(found) => {
-                        parallel_checked = found
-                            .into_iter()
-                            .filter_map(|branch| {
-                                let to = branch.routed.as_ref()?.to.clone();
-                                Some((to, helper_request.clone(), branch))
-                            })
-                            .collect();
+                        let refused = found
+                            .iter()
+                            .find_map(|branch| skip_refusal(exchange, &turn.speaker, line_item, branch));
+                        match refused {
+                            Some(motive) => rejected.push(motive),
+                            None => {
+                                parallel_checked = found
+                                    .into_iter()
+                                    .filter_map(|branch| {
+                                        let to = branch.routed.as_ref()?.to.clone();
+                                        Some((to, helper_request.clone(), branch))
+                                    })
+                                    .collect();
+                            }
+                        }
                         delegation = None;
                     }
                     Verdict::Refuse(motive) => rejected.push(motive),
@@ -430,6 +462,11 @@ pub(super) async fn run_turns(
                     counters: counters.task.clone(),
                 },
             )?;
+            if super::runs::is_agent_paused(app, project_id, &turn.speaker) {
+                seal_batch(app, state, batch);
+                emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+                return Ok(TaskOutcome::Paused);
+            }
             let fork_result: Result<(), FlowError> = (|| {
                 for (helper, request, found) in parallel_checked {
                     record_passage(
@@ -845,6 +882,10 @@ fn report_task_result(
             exchange.item_id,
             &result,
         )?;
+        if let (true, Some(item)) = (result.concluded, exchange.item_id) {
+            db.set_task_stage_state(project_id, item, STAGE_DONE)?;
+            emit_stage(exchange.app, project_id, item)?;
+        }
     }
     emit(
         exchange.app,
@@ -988,6 +1029,13 @@ fn raise_decision(
             options,
         },
     )?;
+    // Decisão aberta: a task espera o usuário, então não conta como parada.
+    if let Some(item) = *item_id {
+        if let Some(db) = app.state::<DbState>().db() {
+            db.set_task_stage_state(project_id, item, STAGE_WAITING)?;
+        }
+        emit_stage(app, project_id, item)?;
+    }
     for requester in &turn.requesters {
         emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
     }
@@ -1128,8 +1176,67 @@ pub(super) fn record_passage(
         .require()
         .and_then(|db| db.record_handoff(project_id, &draft))
     {
-        // Nada na tela depende das passagens: só o erro precisa chegar ao usuário.
-        Ok(()) => Ok(()),
+        // Nada na tela depende das passagens, exceto a etapa da task com card, que sai a cada movimento.
+        Ok(()) => match item_id {
+            Some(item) => emit_stage(app, project_id, item),
+            None => Ok(()),
+        },
+        Err(error) => emit(
+            app,
+            VokiaEvent::Error {
+                message: format!("{MOVEMENT_ERROR_PREFIX}{error}."),
+            },
+        ),
+    }
+}
+
+// Pulo de camada recusado pelo julgamento do líder. Só vale com o julgamento ligado no time de quem envia.
+fn skip_refusal(
+    exchange: &Exchange<'_>,
+    from: &Agent,
+    item_id: Option<&str>,
+    passage: &Passage,
+) -> Option<String> {
+    let snapshot = exchange.orchestration?;
+    if !enforced(Some(snapshot)) {
+        return None;
+    }
+    let judged = placement_of(snapshot, from)
+        .and_then(|placement| snapshot.teams.iter().find(|team| team.id == placement.team_id))
+        .is_some_and(|team| team.judge_full_flow);
+    if !judged {
+        return None;
+    }
+    let flow_mode = item_id.and_then(|item| {
+        exchange
+            .app
+            .state::<DbState>()
+            .db()
+            .and_then(|db| db.task_stage(exchange.key.project_id, item).ok().flatten())
+            .and_then(|stage| stage.flow_mode)
+    });
+    stages::skip_motive(
+        &snapshot.layers,
+        passage.from_layer.as_deref(),
+        passage.to_layer.as_deref(),
+        flow_mode.as_deref(),
+    )
+}
+
+// Grava o julgamento do líder na task e leva a etapa à tela. Falha de gravação vira aviso e a troca segue.
+fn record_flow_judgment(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: &str,
+    leader: &Agent,
+    mode: &str,
+) -> Result<(), FlowError> {
+    let state = app.state::<DbState>();
+    match state
+        .require()
+        .and_then(|db| db.set_task_flow_mode(project_id, item_id, leader.as_str(), mode))
+    {
+        Ok(()) => emit_stage(app, project_id, item_id),
         Err(error) => emit(
             app,
             VokiaEvent::Error {
