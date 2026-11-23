@@ -26,6 +26,8 @@ pub struct TurnUsage {
     pub cached_input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+    #[serde(default, rename = "isFallback", skip_serializing_if = "Option::is_none")]
+    pub is_fallback: Option<bool>,
 }
 
 impl TurnUsage {
@@ -211,6 +213,7 @@ impl CliResponse {
             output_tokens,
             cached_input_tokens,
             cost_usd,
+            is_fallback: None,
         })
     }
 }

@@ -176,6 +176,7 @@ pub(crate) fn parse_jsonl_output_with_provider(
                         output_tokens,
                         cached_input_tokens,
                         cost_usd,
+            is_fallback: None,
                     });
                 }
             }

@@ -134,6 +134,8 @@ pub enum VokiaEvent {
         project_id: Option<i64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         channel_id: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         activity: Option<TurnActivity>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -240,6 +242,8 @@ pub enum VokiaEvent {
         time: u64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         channel_id: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     BacklogChanged {

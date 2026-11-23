@@ -250,7 +250,10 @@ mod dispatch {
             setup.app.handle(),
             project_id,
             Speaker::from(agent("vexa")),
-            Some(9),
+            crate::orchestrator::emit::MessageScope {
+                channel_id: Some(9),
+                item_id: None,
+            },
             &err.to_string(),
         )
         .expect("deve emitir e gravar mensagem de erro");
@@ -276,6 +279,88 @@ mod dispatch {
                 assert!(*is_error, "erro de CLI deve carregar com is_error = true");
             }
             other => panic!("esperava VokiaEvent::Message, veio {other:?}"),
+        }
+    }
+
+    fn history_project(setup: &Setup, name: &str) -> i64 {
+        let db_state = setup.app.state::<crate::db::DbState>();
+        let db = db_state.db().expect("banco aberto");
+        let project_id = db
+            .insert_project(&crate::db::NewProject {
+                name,
+                symbol: "folder",
+                description: "",
+                path: &format!("C:/projetos/{name}"),
+                origin_kind: "folder",
+                origin_repo: None,
+            })
+            .expect("projeto")
+            .id;
+        project_id
+    }
+
+    fn history_of(setup: &Setup, project_id: i64) -> Vec<crate::events::VokiaEvent> {
+        let db_state = setup.app.state::<crate::db::DbState>();
+        let db = db_state.db().expect("banco aberto");
+        db.load_history(project_id).expect("historico")
+    }
+
+    #[test]
+    fn mensagem_entre_agentes_de_um_fluxo_de_canal_leva_canal_e_task() {
+        use crate::orchestrator::emit::{emit_message, MessageScope};
+        let setup = setup();
+        let project_id = history_project(&setup, "proj-escopo-agentes");
+
+        emit_message(
+            setup.app.handle(),
+            project_id,
+            Speaker::from(agent("ember")),
+            Speaker::from(agent("vexa")),
+            "faça a tela",
+            MessageScope {
+                channel_id: Some(4),
+                item_id: Some("PP-1"),
+            },
+            None,
+            None,
+            None,
+        )
+        .expect("deve emitir e gravar");
+
+        let history = history_of(&setup, project_id);
+        match history.as_slice() {
+            [crate::events::VokiaEvent::Message { from, to, channel_id, item_id, .. }] => {
+                assert_eq!(*from, Speaker::from(agent("ember")));
+                assert_eq!(*to, Speaker::from(agent("vexa")));
+                assert_eq!(*channel_id, Some(4), "o canal do fluxo vale também entre agentes");
+                assert_eq!(item_id.as_deref(), Some("PP-1"));
+            }
+            other => panic!("esperava uma mensagem, veio {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mensagem_de_fluxo_sem_canal_nem_task_continua_sem_os_dois() {
+        use crate::orchestrator::emit::{emit_message, MessageScope};
+        let setup = setup();
+        let project_id = history_project(&setup, "proj-escopo-vazio");
+
+        emit_message(
+            setup.app.handle(),
+            project_id,
+            Speaker::from(agent("ember")),
+            Speaker::from(agent("vexa")),
+            "conversa solta",
+            MessageScope::default(),
+            None,
+            None,
+            None,
+        )
+        .expect("deve emitir e gravar");
+
+        match history_of(&setup, project_id).as_slice() {
+            [crate::events::VokiaEvent::Message { channel_id: None, item_id: None, .. }] => {}
+            other => panic!("esperava mensagem sem canal e sem task, veio {other:?}"),
         }
     }
 }

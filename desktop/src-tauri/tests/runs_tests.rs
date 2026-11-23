@@ -62,7 +62,7 @@ fn speaker(id: &str) -> Speaker {
 }
 
 fn message(db: &Db, project_id: i64, from: &str, to: &str, text: &str, at: i64) {
-    db.insert_message(project_id, speaker(from), speaker(to), text, at as u64, None, None, None, None)
+    db.insert_message(project_id, speaker(from), speaker(to), text, at as u64, None, None, None, None, None)
         .expect("a mensagem deveria ser gravada");
 }
 

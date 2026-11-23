@@ -215,13 +215,21 @@ pub(crate) fn parse_stream_output_with_provider(
                         || output_tokens.is_some()
                         || cached_input_tokens.is_some()
                     {
-                        usage = Some(TurnUsage {
-                            provider: provider.map(|p| p.id.clone()),
-                            model: (!model.trim().is_empty()).then(|| model.to_string()),
+                        let resolved_model = (!model.trim().is_empty()).then(|| model.to_string());
+                        let resolved_cost = estimate_antigravity_cost_usd(
+                            resolved_model.as_deref(),
                             input_tokens,
                             output_tokens,
                             cached_input_tokens,
-                            cost_usd: None,
+                        );
+                        usage = Some(TurnUsage {
+                            provider: provider.map(|p| p.id.clone()),
+                            model: resolved_model,
+                            input_tokens,
+                            output_tokens,
+                            cached_input_tokens,
+                            cost_usd: resolved_cost,
+                            is_fallback: None,
                         });
                     }
                 }
@@ -284,21 +292,31 @@ pub(crate) fn parse_stream_output_with_provider(
                     .get("total_cost_usd")
                     .or_else(|| value.get("cost_usd"))
                     .and_then(Json::as_f64);
-                if parsed_model.is_some()
-                    || input_tokens.is_some()
-                    || output_tokens.is_some()
-                    || cached_input_tokens.is_some()
-                    || cost_usd.is_some()
-                {
-                    usage = Some(TurnUsage {
-                        provider: provider.map(|p| p.id.clone()),
-                        model: parsed_model.or_else(|| {
-                            (!model.trim().is_empty()).then(|| model.to_string())
-                        }),
+                let resolved_model = parsed_model.or_else(|| {
+                    (!model.trim().is_empty()).then(|| model.to_string())
+                });
+                let resolved_cost = cost_usd.or_else(|| {
+                    estimate_antigravity_cost_usd(
+                        resolved_model.as_deref(),
                         input_tokens,
                         output_tokens,
                         cached_input_tokens,
-                        cost_usd,
+                    )
+                });
+                if resolved_model.is_some()
+                    || input_tokens.is_some()
+                    || output_tokens.is_some()
+                    || cached_input_tokens.is_some()
+                    || resolved_cost.is_some()
+                {
+                    usage = Some(TurnUsage {
+                        provider: provider.map(|p| p.id.clone()),
+                        is_fallback: None,
+                        model: resolved_model,
+                        input_tokens,
+                        output_tokens,
+                        cached_input_tokens,
+                        cost_usd: resolved_cost,
                     });
                 }
             }
@@ -395,4 +413,27 @@ fn extract_assistant_text(value: &Json) -> Option<String> {
         .filter_map(|block| block.get("text").and_then(Json::as_str))
         .collect();
     (!parts.is_empty()).then(|| parts.join(""))
+}
+
+fn estimate_antigravity_cost_usd(
+    model: Option<&str>,
+    input: Option<u64>,
+    output: Option<u64>,
+    cached: Option<u64>,
+) -> Option<f64> {
+    let inp = input.unwrap_or(0) as f64;
+    let out = output.unwrap_or(0) as f64;
+    let cac = cached.unwrap_or(0) as f64;
+    if inp <= 0.0 && out <= 0.0 && cac <= 0.0 {
+        return None;
+    }
+    let is_flash = model
+        .map(|m| m.to_ascii_lowercase().contains("flash"))
+        .unwrap_or(false);
+    let (in_rate, out_rate, cache_rate) = if is_flash {
+        (0.15 / 1_000_000.0, 0.60 / 1_000_000.0, 0.0375 / 1_000_000.0)
+    } else {
+        (1.25 / 1_000_000.0, 5.00 / 1_000_000.0, 0.3125 / 1_000_000.0)
+    };
+    Some(inp * in_rate + out * out_rate + cac * cache_rate)
 }

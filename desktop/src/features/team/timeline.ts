@@ -35,6 +35,7 @@ export type ConversationScreen =
   | { kind: 'all' }
   | { kind: 'agent'; agent: Agent }
   | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
+  | { kind: 'thread'; itemId: string }
 
 export const ALL_SCREEN: ConversationScreen = { kind: 'all' }
 export const ALL_SCREEN_LABEL = 'Todos'
@@ -53,6 +54,39 @@ export function entryInvolves(entry: FeedEntry, agent: Agent): boolean {
   }
 }
 
+function entryHasChannel(entry: FeedEntry, channels: readonly Channel[]): boolean {
+  if (entry.type === 'message') {
+    return channelOf(entry, channels) !== null
+  }
+  if (entry.type === 'task-result') {
+    return (entry.channelId ?? null) !== null
+  }
+  return false
+}
+
+function threadParticipants(feed: readonly FeedEntry[], itemId: string): Set<Agent> {
+  const participants = new Set<Agent>()
+  for (const entry of feed) {
+    if (entry.type === 'message' && entry.itemId === itemId) {
+      if (entry.from !== 'user') participants.add(entry.from)
+      if (entry.to !== 'user') participants.add(entry.to)
+    } else if (entry.type === 'task-result' && entry.itemId === itemId) {
+      for (const agent of entry.agents) participants.add(agent)
+    }
+  }
+  return participants
+}
+
+function entryInThread(entry: FeedEntry, itemId: string, participants: ReadonlySet<Agent>): boolean {
+  if (entry.type === 'message' || entry.type === 'task-result') {
+    return entry.itemId === itemId
+  }
+  if (entry.type === 'permission-result') {
+    return participants.has(entry.agent)
+  }
+  return false
+}
+
 // Filtra antes de agrupar: na tela de um agente, um grupo misto mostra só as mensagens dele (P4).
 export function screenEntries(
   feed: readonly FeedEntry[],
@@ -63,9 +97,13 @@ export function screenEntries(
     case 'all':
       return feed
     case 'agent':
-      return feed.filter((entry) => entryInvolves(entry, screen.agent))
+      return feed.filter((entry) => entryInvolves(entry, screen.agent) && !entryHasChannel(entry, channels))
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
+    case 'thread': {
+      const participants = threadParticipants(feed, screen.itemId)
+      return feed.filter((entry) => entryInThread(entry, screen.itemId, participants))
+    }
   }
 }
 

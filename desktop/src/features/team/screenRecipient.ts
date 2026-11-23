@@ -16,6 +16,7 @@ export function screenAgent(page: AppPage | null, screen: ConversationScreen): A
 export interface ScreenDestination {
   to: Agent | null
   channelId: number | null
+  itemId?: string | null
 }
 
 export function channelRecipient(channel: Channel, rosterOrder: readonly Agent[]): Agent | null {
@@ -38,7 +39,15 @@ export function screenDestination(
   channels: readonly Channel[],
   rosterOrder: readonly Agent[],
   mention: Agent | null,
+  threadAssignee: Agent | null = null,
 ): ScreenDestination {
+  if (page === CONVERSATIONS_PAGE && screen.kind === 'thread') {
+    return {
+      to: mention ?? threadAssignee ?? DEFAULT_RECIPIENT,
+      channelId: null,
+      itemId: screen.itemId,
+    }
+  }
   const channel = screenChannel(page, screen, channels)
   if (channel !== null) {
     if (mention !== null) {
@@ -56,8 +65,12 @@ export function screenPlaceholder(
   nameOf: (agent: Agent) => string,
   channels: readonly Channel[] = [],
   rosterOrder: readonly Agent[] = [],
+  threadTitle?: string,
 ): string | undefined {
   if (page !== CONVERSATIONS_PAGE) return undefined
+  if (screen.kind === 'thread') {
+    return threadTitle ? `Mensagem na thread de ${threadTitle}` : 'Mensagem na thread'
+  }
   if (screen.kind === 'agent') return `Mensagem para ${nameOf(screen.agent)}`
   const channel = screenChannel(page, screen, channels)
   if (channel !== null) {

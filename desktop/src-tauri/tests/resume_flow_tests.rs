@@ -186,6 +186,7 @@ fn retomar_sem_delegacao_continua_no_agente_original_com_o_card_original() {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
     occupy(&world, project_id, "vexa");

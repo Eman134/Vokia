@@ -13,6 +13,13 @@ use crate::state::AppState;
 
 const PERCENT_SCALE: f64 = 100.0;
 
+// Onde a mensagem pertence: o canal de onde o pedido veio e a task (card) que a gerou.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct MessageScope<'a> {
+    pub(crate) channel_id: Option<i64>,
+    pub(crate) item_id: Option<&'a str>,
+}
+
 pub(super) fn report_limits(app: &AppHandle, limits: Option<RateLimits>) -> Result<(), FlowError> {
     let Some(limits) = limits else {
         return Ok(());
@@ -52,6 +59,7 @@ pub(crate) fn emit_feed_note(
             time,
             project_id: Some(project_id),
             channel_id: None,
+            item_id: None,
             activity: None,
             request_proposal: None,
             usage: None,
@@ -67,12 +75,12 @@ pub(crate) fn emit_message(
     from: Speaker,
     to: Speaker,
     text: &str,
-    channel_id: Option<i64>,
+    scope: MessageScope<'_>,
     activity: Option<TurnActivity>,
     request_proposal: Option<RequestProposal>,
     usage: Option<TurnUsage>,
 ) -> Result<(), FlowError> {
-    let channel_id = channel_id.filter(|_| from == Speaker::User || to == Speaker::User);
+    let MessageScope { channel_id, item_id } = scope;
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
         db.insert_message(
@@ -82,6 +90,7 @@ pub(crate) fn emit_message(
             text,
             time,
             channel_id,
+            item_id,
             activity.as_ref(),
             request_proposal.as_ref(),
             usage.as_ref(),
@@ -96,6 +105,7 @@ pub(crate) fn emit_message(
             time,
             project_id: Some(project_id),
             channel_id,
+            item_id: item_id.map(str::to_string),
             activity,
             request_proposal,
             usage,
@@ -108,9 +118,10 @@ pub(crate) fn emit_error_message(
     app: &AppHandle,
     project_id: i64,
     from: Speaker,
-    channel_id: Option<i64>,
+    scope: MessageScope<'_>,
     text: &str,
 ) -> Result<(), FlowError> {
+    let MessageScope { channel_id, item_id } = scope;
     let time = now_millis()?;
     if let Some(db) = app.state::<DbState>().db() {
         db.insert_message(
@@ -120,6 +131,7 @@ pub(crate) fn emit_error_message(
             text,
             time,
             channel_id,
+            item_id,
             None,
             None,
             None,
@@ -134,6 +146,7 @@ pub(crate) fn emit_error_message(
             time,
             project_id: Some(project_id),
             channel_id,
+            item_id: item_id.map(str::to_string),
             activity: None,
             request_proposal: None,
             usage: None,

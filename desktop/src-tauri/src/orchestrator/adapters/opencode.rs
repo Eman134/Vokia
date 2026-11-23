@@ -254,6 +254,7 @@ pub(crate) fn parse_json_output_with_provider(
             output_tokens: acc_output,
             cached_input_tokens: acc_cached,
             cost_usd: acc_cost,
+            is_fallback: None,
         })
     } else {
         None

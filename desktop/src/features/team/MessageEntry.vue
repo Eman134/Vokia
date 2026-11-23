@@ -23,7 +23,9 @@ import { runTitleOf } from '../backlog/useRunItem'
 import UiButton from '../../ui/UiButton.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
+import UiTooltip from '../../ui/UiTooltip.vue'
 import { USER_BUBBLE_CLASSES } from '../../ui/handDrawn'
+import { DEFAULT_JITTER, sketchArrow } from '../../ui/sketch/sketchPath'
 
 const props = defineProps<{ entry: FeedEntry }>()
 
@@ -81,6 +83,20 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
 const ICON_SIZE = 16
+const EXCHANGE_ARROW_WIDTH = 40
+const EXCHANGE_ARROW_HEIGHT = 14
+const EXCHANGE_ARROW_MARGIN = 2
+const EXCHANGE_ARROW_SEED = 9
+const EXCHANGE_ARROW_STROKE = 1.4
+const EXCHANGE_ARROW_PATH = sketchArrow(
+  EXCHANGE_ARROW_MARGIN,
+  EXCHANGE_ARROW_HEIGHT / 2,
+  EXCHANGE_ARROW_WIDTH - EXCHANGE_ARROW_MARGIN,
+  EXCHANGE_ARROW_HEIGHT / 2,
+  EXCHANGE_ARROW_SEED,
+  DEFAULT_JITTER,
+)
+const EXCHANGE_TEXT_CLASSES = 'max-w-xs text-caption text-muted'
 const USER_TEXT_CLASSES = 'w-fit max-w-full wrap-break-word px-3 py-1.5'
 const ERROR_SCRIBBLE_CLASSES = 'pointer-events-none absolute inset-x-0 -bottom-1.5 h-2 w-full text-danger/70'
 const AUTHOR_CLASSES = 'text-control font-semibold text-ink'
@@ -120,8 +136,27 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
         <ActivityRow :row="runCard" />
       </ul>
-      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
-        <ActivityRow :row="protocolRow" />
+      <ul v-else-if="protocolRow" class="flex min-w-0 flex-row items-center gap-1.5 text-caption text-muted">
+        <ActivityRow
+          :row="protocolRow.id === 'protocol-plan-ready' && entry.type === 'message' && entry.itemId && protocolRow.chip
+            ? { ...protocolRow, chip: { ...protocolRow.chip, label: `${entry.itemId} · ${protocolRow.chip.label}` } }
+            : protocolRow"
+          class="min-w-0"
+        />
+        <button
+          v-if="protocolRow.id === 'protocol-plan-ready' && entry.type === 'message' && entry.itemId"
+          type="button"
+          class="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+          title="Ver artefato completo"
+          aria-label="Ver artefato completo"
+          @click="backlog.open(entry.itemId)"
+        >
+          <svg viewBox="0 0 20 20" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5.5 3.5h6.2l3.8 3.8v9.2a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" />
+            <path d="M11.5 3.5v3.8h4" />
+            <path d="m8 13.5 4.2-4.2 1.3 1.3-4.2 4.2-1.6.3.3-1.6Z" />
+          </svg>
+        </button>
       </ul>
       <div
         v-else-if="userContent.text !== '' || userContent.attachments.length === 0"
@@ -147,10 +182,10 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       </ul>
     </div>
   </div>
-  <div
+  <UiTooltip
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
-    class="flex min-w-0 flex-col gap-1"
-    :title="[TIME_FORMAT.format(entry.time), entry.text, usageTooltip].filter(Boolean).join(' — ')"
+    class="flex min-w-0 flex-col items-center gap-1 text-center"
+    :text="[TIME_FORMAT.format(entry.time), entry.text, usageTooltip].filter(Boolean).join('\n')"
     data-testid="agent-exchange"
   >
     <div class="flex min-w-0 items-center gap-x-2">
@@ -158,24 +193,42 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
         {{ speakerName(entry.from) }}
         <TemporaryOverrideBadge
-          v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
-          :override="overrides.byAgent(entry.from)!"
+          v-if="entry.from !== 'user' && agentUsage?.isFallback"
+          :override="overrides.byAgent(entry.from) ?? {
+            cli: agentUsage.provider ?? '',
+            model: agentUsage.model ?? '',
+            originalCli: '',
+            originalModel: '',
+            reason: 'usage-limit',
+          }"
           :restoring="Boolean(overrides.restoring[entry.from])"
           @restore="overrides.restore(entry.from)"
         />
       </span>
-      <span aria-hidden="true" class="shrink-0 text-caption text-muted">→</span>
+      <svg
+        class="shrink-0 text-muted"
+        :width="EXCHANGE_ARROW_WIDTH"
+        :height="EXCHANGE_ARROW_HEIGHT"
+        :viewBox="`0 0 ${EXCHANGE_ARROW_WIDTH} ${EXCHANGE_ARROW_HEIGHT}`"
+        fill="none"
+        stroke="currentColor"
+        aria-hidden="true"
+      >
+        <path :d="EXCHANGE_ARROW_PATH" :stroke-width="EXCHANGE_ARROW_STROKE" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
       <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
         <AgentPortrait :who="entry.to" :size="META_AVATAR_SIZE" />
         {{ speakerName(entry.to) }}
       </span>
-      <ul v-if="protocolRow" class="flex min-w-0 flex-1 flex-col text-caption text-muted">
-        <ActivityRow :row="protocolRow" />
-      </ul>
-      <span v-else class="min-w-0 flex-1 truncate text-caption text-muted">{{ entry.text }}</span>
     </div>
-    <ActivityRun v-if="entry.activity" :activity="entry.activity" />
-  </div>
+    <ul v-if="protocolRow" :class="[EXCHANGE_TEXT_CLASSES, 'flex min-w-0 flex-col']">
+      <ActivityRow :row="protocolRow" />
+    </ul>
+    <span v-else :class="[EXCHANGE_TEXT_CLASSES, 'truncate']">{{ entry.text }}</span>
+    <div v-if="entry.activity" class="w-full">
+      <ActivityRun :activity="entry.activity" />
+    </div>
+  </UiTooltip>
   <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-2">
     <span class="mt-0.5 flex shrink-0" aria-hidden="true">
       <AgentPortrait :who="entry.from" :size="AVATAR_SIZE" />
@@ -190,8 +243,14 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           {{ profile(entry.from)?.role }}
         </span>
         <TemporaryOverrideBadge
-          v-if="entry.from !== 'user' && overrides.byAgent(entry.from)"
-          :override="overrides.byAgent(entry.from)!"
+          v-if="entry.from !== 'user' && agentUsage?.isFallback"
+          :override="overrides.byAgent(entry.from) ?? {
+            cli: agentUsage.provider ?? '',
+            model: agentUsage.model ?? '',
+            originalCli: '',
+            originalModel: '',
+            reason: 'usage-limit',
+          }"
           :restoring="Boolean(overrides.restoring[entry.from])"
           @restore="overrides.restore(entry.from)"
         />
@@ -218,8 +277,27 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           <UiHandLine variant="scribble" :class="ERROR_SCRIBBLE_CLASSES" />
         </span>
       </div>
-      <ul v-else-if="protocolRow" class="flex min-w-0 flex-col gap-1 text-caption text-muted">
-        <ActivityRow :row="protocolRow" />
+      <ul v-else-if="protocolRow" class="flex min-w-0 flex-row items-center gap-1.5 text-caption text-muted">
+        <ActivityRow
+          :row="protocolRow.id === 'protocol-plan-ready' && entry.type === 'message' && entry.itemId && protocolRow.chip
+            ? { ...protocolRow, chip: { ...protocolRow.chip, label: `${entry.itemId} · ${protocolRow.chip.label}` } }
+            : protocolRow"
+          class="min-w-0"
+        />
+        <button
+          v-if="protocolRow.id === 'protocol-plan-ready' && entry.type === 'message' && entry.itemId"
+          type="button"
+          class="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-ink"
+          title="Ver artefato completo"
+          aria-label="Ver artefato completo"
+          @click="backlog.open(entry.itemId)"
+        >
+          <svg viewBox="0 0 20 20" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5.5 3.5h6.2l3.8 3.8v9.2a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" />
+            <path d="M11.5 3.5v3.8h4" />
+            <path d="m8 13.5 4.2-4.2 1.3 1.3-4.2 4.2-1.6.3.3-1.6Z" />
+          </svg>
+        </button>
       </ul>
       <template v-else>
         <ul v-if="confirmations.rows.length > 0" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="vokia-confirmations">

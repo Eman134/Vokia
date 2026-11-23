@@ -21,6 +21,7 @@ export interface QueuedRequest {
   to: Agent
   projectId: number
   channelId?: number
+  itemId?: string
   attachments: string[]
   editing: boolean
   onQueued?: (id: number) => void
@@ -89,7 +90,7 @@ export const useRequests = defineStore('requests', () => {
         request.to,
         request.projectId,
         request.onSettled !== undefined ? request.id : undefined,
-        undefined,
+        request.itemId,
         request.channelId,
         request.attachments,
       )
@@ -256,6 +257,7 @@ export const useRequests = defineStore('requests', () => {
     options?: {
       projectId?: number
       channelId?: number
+      itemId?: string
       attachments?: string[]
       attachmentsProjectId?: number | null
       onQueued?: (id: number) => void
@@ -288,6 +290,7 @@ export const useRequests = defineStore('requests', () => {
     }
     // Um id de canal só vale no projeto da tela; texto que aponta outro projeto vai sem canal.
     const channelId = projectId === screenProjectId ? options?.channelId : undefined
+    const itemId = projectId === screenProjectId ? options?.itemId : undefined
     const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
     const id = ++nextQueueId
     const paused = control.isPaused(recipient, projectId)
@@ -302,6 +305,7 @@ export const useRequests = defineStore('requests', () => {
       to: recipient,
       projectId,
       channelId,
+      itemId,
       attachments,
       editing: false,
       onQueued: options?.onQueued,

@@ -49,6 +49,7 @@ impl Db {
         text: &str,
         time: u64,
         channel_id: Option<i64>,
+        item_id: Option<&str>,
         activity: Option<&TurnActivity>,
         request_proposal: Option<&RequestProposal>,
         usage: Option<&TurnUsage>,
@@ -67,8 +68,8 @@ impl Db {
             .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
         let conn = self.conn()?;
         let inserted = conn.execute(
-            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage) \
-             SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9 FROM projects WHERE id = ?1",
+            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, item_id, activity, request_proposal, usage) \
+             SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 FROM projects WHERE id = ?1",
             params![
                 project_id,
                 from.as_str(),
@@ -76,6 +77,7 @@ impl Db {
                 text,
                 time as i64,
                 channel_id,
+                item_id,
                 activity,
                 request_proposal,
                 usage
@@ -93,15 +95,16 @@ impl Db {
         from: Speaker,
         time: u64,
         channel_id: Option<i64>,
+        item_id: Option<&str>,
         result: &StoredTaskResult,
     ) -> Result<(), DbError> {
         let json = serde_json::to_string(result)
             .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
         let conn = self.conn()?;
         let inserted = conn.execute(
-            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, task_result) \
-             SELECT id, ?2, ?3, '', ?4, ?5, ?6 FROM projects WHERE id = ?1",
-            params![project_id, from.as_str(), Speaker::User.as_str(), time as i64, channel_id, json],
+            "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, item_id, task_result) \
+             SELECT id, ?2, ?3, '', ?4, ?5, ?6, ?7 FROM projects WHERE id = ?1",
+            params![project_id, from.as_str(), Speaker::User.as_str(), time as i64, channel_id, item_id, json],
         )?;
         if inserted == 0 {
             return Err(DbError::ProjectNotFound(project_id));
@@ -112,8 +115,8 @@ impl Db {
     pub fn load_history(&self, project_id: i64) -> Result<Vec<VokiaEvent>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result FROM ( \
-                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result FROM messages \
+            "SELECT from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result, item_id FROM ( \
+                 SELECT id, from_agent, to_agent, text, created_at, channel_id, activity, request_proposal, usage, task_result, item_id FROM messages \
                  WHERE project_id = ?1 ORDER BY id DESC LIMIT ?2 \
              ) ORDER BY id",
         )?;
@@ -128,10 +131,11 @@ impl Db {
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<String>>(7)?,
                 row.get::<_, Option<String>>(8)?,
+                row.get::<_, Option<String>>(9)?,
             ))
         })?;
         rows.map(|row| -> Result<VokiaEvent, DbError> {
-            let (from, to, text, time, channel_id, activity, request_proposal, usage, task_result) = row?;
+            let (from, to, text, time, channel_id, activity, request_proposal, usage, task_result, item_id) = row?;
             let from = parse_speaker(&from)?;
             // JSON ilegível não derruba o histórico: a linha cai como mensagem vazia, como qualquer outra sem texto útil.
             if let Some(result) = task_result.and_then(|json| serde_json::from_str::<StoredTaskResult>(&json).ok()) {
@@ -143,6 +147,7 @@ impl Db {
                     agents: result.agents,
                     time: time as u64,
                     channel_id,
+                    item_id,
                 });
             }
             let is_error = from != Speaker::User
@@ -161,6 +166,7 @@ impl Db {
                 time: time as u64,
                 project_id: Some(project_id),
                 channel_id,
+                item_id,
                 // Atividade ilegível não pode esconder a mensagem: o histórico carrega sem ela.
                 activity: activity.and_then(|json| serde_json::from_str(&json).ok()),
                 request_proposal: request_proposal

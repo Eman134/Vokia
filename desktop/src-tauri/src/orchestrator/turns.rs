@@ -18,7 +18,7 @@ use crate::task::{Cache, Change, TaskDefinition, TaskKind, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
 use super::emit::{
-    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
+    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis, MessageScope,
 };
 use super::error::FlowError;
 use super::flow::{
@@ -62,6 +62,15 @@ pub(super) struct Exchange<'a> {
     pub(super) run_id: Option<u64>,
 }
 
+impl<'a> Exchange<'a> {
+    pub(super) fn scope(&self) -> MessageScope<'a> {
+        MessageScope {
+            channel_id: self.channel_id,
+            item_id: self.item_id,
+        }
+    }
+}
+
 pub(super) async fn run_turns(
     exchange: &Exchange<'_>,
     sessions: &mut ExchangeSessions<'_>,
@@ -78,6 +87,7 @@ pub(super) async fn run_turns(
         team,
         ..
     } = exchange;
+    let scope = exchange.scope();
     let project_id = key.project_id;
     let origin = key.agent.clone();
     let mut turn = Turn::first(definition, &origin, request);
@@ -152,7 +162,7 @@ pub(super) async fn run_turns(
                         app,
                         project_id,
                         Speaker::from(turn.speaker.clone()),
-                        exchange.channel_id,
+                        exchange.scope(),
                         &error.to_string(),
                     );
                 }
@@ -297,7 +307,7 @@ pub(super) async fn run_turns(
                     Speaker::from(turn.speaker.clone()),
                     to,
                     &shown,
-                    *channel_id,
+                    scope,
                     activity.take(),
                     None,
                     usage.take(),
@@ -363,7 +373,7 @@ pub(super) async fn run_turns(
                     Speaker::User,
                     text,
                     team,
-                    *channel_id,
+                    scope,
                     activity.take(),
                     proposal.take(),
                     usage.take(),
@@ -390,7 +400,7 @@ pub(super) async fn run_turns(
                 &origin,
                 &message,
                 team,
-                *channel_id,
+                scope,
             )?;
             return Ok(TaskOutcome::Finished);
         }
@@ -461,7 +471,7 @@ pub(super) async fn run_turns(
                         Speaker::from(helper.clone()),
                         &request,
                         team,
-                        *channel_id,
+                        scope,
                         None,
                         None,
                         None,
@@ -485,7 +495,7 @@ pub(super) async fn run_turns(
                         Speaker::User,
                         text,
                         team,
-                        *channel_id,
+                        scope,
                         activity.take(),
                         proposal.take(),
                         usage.take(),
@@ -524,7 +534,7 @@ pub(super) async fn run_turns(
                 to,
                 text,
                 team,
-                *channel_id,
+                scope,
                 activity.take(),
                 proposal.take(),
                 usage.take(),
@@ -656,7 +666,7 @@ pub(super) async fn run_turns(
                 Speaker::from(helper.clone()),
                 helper_request,
                 team,
-                *channel_id,
+                scope,
                 activity.take(),
                 proposal.take(),
                 usage.take(),
@@ -749,12 +759,12 @@ async fn resolve(
 ) -> Result<Step, FlowError> {
     let Exchange {
         app,
-        channel_id,
         key,
         definition,
         team,
         ..
     } = exchange;
+    let scope = exchange.scope();
     let project_id = key.project_id;
     let origin = &key.agent;
     let settlement = settle(
@@ -776,7 +786,7 @@ async fn resolve(
                 origin,
                 &message,
                 team,
-                *channel_id,
+                scope,
             )?;
             report_task_result(exchange, counters, TaskOutcome::Finished)?;
             Step::End(TaskOutcome::Finished)
@@ -832,6 +842,7 @@ fn report_task_result(
             Speaker::from(exchange.key.agent.clone()),
             time,
             exchange.channel_id,
+            exchange.item_id,
             &result,
         )?;
     }
@@ -845,6 +856,7 @@ fn report_task_result(
             agents: result.agents,
             time,
             channel_id: exchange.channel_id,
+            item_id: exchange.item_id.map(str::to_string),
         },
     )
 }
@@ -858,7 +870,7 @@ fn conclude(
     origin: &Agent,
     message: &str,
     team: &Team,
-    channel_id: Option<i64>,
+    scope: MessageScope<'_>,
 ) -> Result<(), FlowError> {
     emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
     say(
@@ -869,7 +881,7 @@ fn conclude(
         Speaker::User,
         message,
         team,
-        channel_id,
+        scope,
         None,
         None,
         None,
@@ -934,11 +946,11 @@ fn raise_decision(
         state,
         request,
         item_id,
-        channel_id,
         key,
         team,
         ..
     } = exchange;
+    let scope = exchange.scope();
     let project_id = key.project_id;
     let SlotDecision {
         kind,
@@ -956,7 +968,7 @@ fn raise_decision(
             Speaker::User,
             &visible,
             team,
-            *channel_id,
+            scope,
             activity,
             proposal,
             usage,
@@ -1249,7 +1261,7 @@ fn say(
     to: Speaker,
     text: &str,
     team: &Team,
-    channel_id: Option<i64>,
+    scope: MessageScope<'_>,
     activity: Option<TurnActivity>,
     request_proposal: Option<RequestProposal>,
     usage: Option<TurnUsage>,
@@ -1260,7 +1272,7 @@ fn say(
         Speaker::from(from.clone()),
         to,
         text,
-        channel_id,
+        scope,
         activity,
         request_proposal,
         usage,

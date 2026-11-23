@@ -8,8 +8,9 @@ export const HAND_MARK_CLASSES = 'pointer-events-none absolute h-1.5 text-ink'
 export const INK_FOCUS_CLASSES =
   'focus:outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-ink'
 // Post-it: o amarelo é pastel nos dois temas, então tinta e muted são refeitos com mark-ink para valer também nos botões internos.
+// bg e surface viram o próprio amarelo: o mascote pinta olhos e boca com `surface` sobre um corpo `ink`, que sem isso ficariam escuros sobre escuro.
 export const STICKY_INK_VARS =
-  '[--color-ink:var(--color-mark-ink)] [--color-muted:color-mix(in_srgb,var(--color-mark-ink)_70%,transparent)] [--color-ok:var(--color-mark-ink)] [--color-bg:var(--color-mark-yellow)]'
+  '[--color-ink:var(--color-mark-ink)] [--color-muted:color-mix(in_srgb,var(--color-mark-ink)_70%,transparent)] [--color-ok:var(--color-mark-ink)] [--color-bg:var(--color-mark-yellow)] [--color-surface:var(--color-mark-yellow)]'
 // Pedido do usuário: marca-texto azul suave e contorno irregular, sem a bolha arredondada de chat.
 export const USER_BUBBLE_CLASSES = 'rounded-md bg-surface-2'
 

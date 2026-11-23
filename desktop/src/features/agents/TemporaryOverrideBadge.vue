@@ -37,7 +37,9 @@ const REASON_LABELS: Record<string, string> = {
 }
 
 const rootRef = ref<HTMLElement | null>(null)
+const popoverRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
+const popoverPos = ref({ top: 0, left: 0 })
 
 const reasonLabel = computed(() => REASON_LABELS[props.override.reason] ?? props.override.reason)
 
@@ -61,6 +63,13 @@ const tooltipText = computed(() => {
 })
 
 function togglePopover() {
+  if (!isOpen.value && rootRef.value) {
+    const rect = rootRef.value.getBoundingClientRect()
+    popoverPos.value = {
+      top: rect.bottom + 6,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - 264)),
+    }
+  }
   isOpen.value = !isOpen.value
 }
 
@@ -78,7 +87,7 @@ function onKeydown(event: KeyboardEvent) {
 
 function onFocusOut(event: FocusEvent) {
   const nextTarget = event.relatedTarget as Node | null
-  if (nextTarget && rootRef.value?.contains(nextTarget)) return
+  if (nextTarget && (rootRef.value?.contains(nextTarget) || popoverRef.value?.contains(nextTarget))) return
   closePopover()
 }
 
@@ -102,7 +111,7 @@ function onRestore() {
       :aria-label="`Uso temporário: ${override.cli} ${override.model}. Original: ${override.originalCli} ${override.originalModel}`"
       :aria-expanded="isOpen"
       aria-haspopup="dialog"
-      class="inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded-sm bg-warn-soft px-1.5 text-small font-medium text-warn-text hover:opacity-90" :class="INK_FOCUS_CLASSES"
+      class="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm bg-warn-soft text-warn-text hover:opacity-90" :class="INK_FOCUS_CLASSES"
       @click.stop="togglePopover"
     >
       <svg
@@ -120,16 +129,20 @@ function onRestore() {
         <path d="M3 3v5h5" />
         <path d="M12 7v5l3 2" />
       </svg>
-      <span>Temporário</span>
     </button>
 
-    <div
-      v-if="isOpen"
-      role="dialog"
-      aria-label="Detalhes da troca temporária"
-      class="absolute top-full left-0 z-30 mt-1.5 w-64 rounded-md border border-line bg-surface p-3 text-caption text-ink shadow-seg"
-      @click.stop
-    >
+    <Teleport to="body">
+      <div
+        v-if="isOpen"
+        ref="popoverRef"
+        role="dialog"
+        aria-label="Detalhes da troca temporária"
+        class="fixed z-70 w-64 rounded-md border border-line bg-surface p-3 text-caption text-ink shadow-seg"
+        :style="{ top: `${popoverPos.top}px`, left: `${popoverPos.left}px` }"
+        @keydown="onKeydown"
+        @focusout="onFocusOut"
+        @click.stop
+      >
       <dl class="flex flex-col gap-1.5">
         <div class="flex flex-col gap-0.5">
           <dt class="text-label font-medium text-muted">Temporário</dt>
@@ -156,6 +169,7 @@ function onRestore() {
           {{ restoring ? 'Restaurando...' : 'Restaurar original' }}
         </button>
       </div>
-    </div>
+      </div>
+    </Teleport>
   </span>
 </template>

@@ -6,6 +6,7 @@ import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
+import { useThreads } from './useThreads'
 import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import { useChannels } from '../channels/useChannels'
@@ -21,10 +22,13 @@ import { useProjects } from '../projects/useProjects'
 import UiChip from '../../ui/UiChip.vue'
 import UiHandDivider from '../../ui/UiHandDivider.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
+import UiIcon from '../../ui/UiIcon.vue'
 import { HAND_DRAWN_RADIUS, HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
+const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
+const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
 const PANEL_CLASSES =
   'relative flex min-h-0 w-full shrink-0 flex-col overflow-y-auto p-2.5 max-md:max-h-72 md:w-52 md:pr-4'
 const QUEUE_BADGE_CLASSES =
@@ -82,8 +86,14 @@ function isShown(agent: Agent): boolean {
   return feed.screen.kind === 'agent' && feed.screen.agent === agent
 }
 
+const threads = useThreads()
+
 function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
   return feed.screen.kind === 'channel' && feed.screen.channel === target
+}
+
+function threadShown(itemId: string): boolean {
+  return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
@@ -159,6 +169,27 @@ function closeChannelDialog(): void {
           <ChannelMenu :name="channel.name" @edit="openChannelDialog(channel)" @remove="removeChannel(channel)" />
         </li>
       </ul>
+      <template v-if="threads.threads.length > 0">
+        <h2 class="mb-2 mt-1 text-small font-semibold text-muted">Threads</h2>
+        <ul class="mb-2 flex flex-col gap-1.5">
+          <li v-for="thread in threads.threads" :key="thread.itemId" class="group relative">
+            <button
+              type="button"
+              :class="[CHANNEL_CLASSES, 'flex items-center gap-1.5', threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+              :aria-label="`Abrir thread ${thread.title}`"
+              :aria-pressed="threadShown(thread.itemId)"
+              @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
+            >
+              <UiIcon
+                :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
+                :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
+              />
+              <span class="truncate">{{ thread.title }}</span>
+              <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
+            </button>
+          </li>
+        </ul>
+      </template>
       <UiNotice v-if="channelError" class="mb-3" :text="channelError" @close="channelError = null" />
       <UiHandLine class="mb-3 h-1.5 w-full text-line" />
       <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>

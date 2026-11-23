@@ -7,7 +7,7 @@ use crate::db::HandoffDraft;
 const GET_ORCHESTRATION_DESCRIPTION: &str =
     "Lê os times, as camadas e as regras de passagem do Vokia, com a posição de cada agente.";
 const LIST_AGENTS_DESCRIPTION: &str = "Lista os agentes do elenco, com nome, papel e instruções.";
-const SAVE_ITEM_PLAN_DESCRIPTION: &str = "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id, name e meta.";
+const SAVE_ITEM_PLAN_DESCRIPTION: &str = "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id (ID público curto), name (título bem resumido) e meta (estimativa para execução por LLM em minutos, ex: '~5min', '~15min').";
 const LIST_MOVEMENTS_DESCRIPTION: &str =
     "Lista as passagens de trabalho recentes entre agentes do projeto.";
 const SAVE_ITEM_PLAN_BAD_ARGUMENTS: &str =

@@ -1,11 +1,11 @@
 import { findTrigger, type TriggerMatch } from './composerMentions'
 
 export interface SlashCommand {
-  id: 'plano' | 'revisar' | 'pausar' | 'lembrar' | 'setup'
+  id: 'plano' | 'revisar' | 'pausar' | 'lembrar' | 'setup' | 'triar' | 'iniciar'
   description: string
   enabled: boolean
   prompt?: string
-  action?: 'setup'
+  action?: 'setup' | 'triar' | 'iniciar'
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
@@ -24,6 +24,8 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { id: 'pausar', description: 'pausar um agente ou o time', enabled: false },
   { id: 'lembrar', description: 'salvar um fato na memória', enabled: false },
   { id: 'setup', description: 'configurar ou adicionar um provedor de LLM', enabled: true, action: 'setup' },
+  { id: 'triar', description: 'iniciar triagem de um item do backlog', enabled: true, action: 'triar' },
+  { id: 'iniciar', description: 'iniciar um item pronto do backlog', enabled: true, action: 'iniciar' },
 ]
 
 export const COMMAND_TRIGGER = '/'
@@ -35,12 +37,14 @@ export function findCommandTrigger(text: string, caret: number): TriggerMatch | 
   return match?.start === 0 ? match : null
 }
 
-export function parseLocalCommand(text: string): { action: 'setup'; arg: string } | null {
+export function parseLocalCommand(text: string): { action: 'setup' | 'triar' | 'iniciar'; arg: string } | null {
   const match = COMMAND_PATTERN.exec(text.trim())
-  if (match === null || match[1] !== 'setup') {
+  if (match === null) return null
+  const cmd = match[1]
+  if (cmd !== 'setup' && cmd !== 'triar' && cmd !== 'iniciar') {
     return null
   }
-  return { action: 'setup', arg: (match[2] ?? '').trim() }
+  return { action: cmd, arg: (match[2] ?? '').trim() }
 }
 
 export function expandCommand(text: string): { text: string } | null {

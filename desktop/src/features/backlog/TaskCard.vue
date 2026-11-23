@@ -57,7 +57,6 @@ const chip = computed(
 const isFeature = computed(() => props.item.type === 'feature')
 const isAutoClosed = computed(() => props.column === DONE_COLUMN && props.item.closedBy === CLOSED_BY_AUTOMATIC)
 const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
-const createdOn = computed(() => props.item.activity?.[0]?.at.split(',')[0])
 
 const action = computed<{ label: ActionLabel; id: TaskCardAction } | undefined>(() => {
   if (props.item.error) return undefined
@@ -93,15 +92,9 @@ const percent = computed(() => {
     @click="emit('open')"
   >
     <UiSketchBox v-if="item.error" tone="danger" class="pointer-events-none absolute inset-0" />
-    <header class="flex items-center gap-2">
-      <span class="font-mono text-tiny text-muted">{{ item.id }}</span>
+    <header v-if="isFeature || isAutoClosed" class="flex items-center gap-2">
       <UiMarker v-if="isFeature" tone="blue" class="text-tiny font-semibold">feature</UiMarker>
-      <UiBadge v-if="item.isNew" status="lote" label="novo" />
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
-      <span class="ml-auto shrink-0" :title="ownerName">
-        <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
-        <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
-      </span>
     </header>
 
     <p v-if="item.parent" class="truncate text-meta text-muted">↳ {{ item.parent }}</p>
@@ -123,7 +116,13 @@ const percent = computed(() => {
       </ul>
     </div>
 
-    <BacklogPlanActions v-if="action" :action="action" @action="emit('action', $event)" />
+    <div class="mt-auto flex items-center gap-2 pt-0.5">
+      <BacklogPlanActions v-if="action" :action="action" @action="emit('action', $event)" />
+      <span class="ml-auto shrink-0" :title="ownerName">
+        <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
+        <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
+      </span>
+    </div>
 
     <div v-if="progress" class="flex flex-col gap-1.25">
       <p v-if="progress.showText" class="flex justify-between text-meta text-muted">
@@ -139,9 +138,5 @@ const percent = computed(() => {
         />
       </div>
     </div>
-
-    <footer class="flex items-center gap-2 pt-0.5">
-      <span class="text-meta text-muted">{{ ownerName }}<template v-if="createdOn"> · {{ createdOn }}</template></span>
-    </footer>
   </article>
 </template>

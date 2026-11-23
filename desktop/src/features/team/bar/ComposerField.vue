@@ -180,6 +180,15 @@ function onPaste(event: ClipboardEvent): void {
   void props.attachments.addFiles(files)
 }
 
+function onBackspace(event: KeyboardEvent): void {
+  const input = inputRef.value
+  if (!input || input.selectionStart !== 0 || input.selectionEnd !== 0) return
+  const last = props.attachments.attachments.value.at(-1)
+  if (!last) return
+  event.preventDefault()
+  props.attachments.remove(last.id)
+}
+
 function isFocused(): boolean {
   return document.activeElement === inputRef.value
 }
@@ -188,12 +197,6 @@ defineExpose({ isFocused })
 </script>
 
 <template>
-  <AttachmentChips
-    v-if="canAsk && !composerHidden"
-    :attachments="attachments.attachments.value"
-    :saving="attachments.saving.value"
-    @remove="attachments.remove($event)"
-  />
   <div
     v-if="canAsk && !composerHidden"
     class="flex h-8.5 min-w-28 flex-1 items-center rounded-full bg-surface-2 pl-1.5 focus-within:outline-2 focus-within:outline-solid focus-within:outline-accent"
@@ -211,6 +214,12 @@ defineExpose({ isFocused })
         <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
       </svg>
     </UiButton>
+    <AttachmentChips
+      :attachments="attachments.attachments.value"
+      :saving="attachments.saving.value"
+      class="max-w-[45%]"
+      @remove="attachments.remove($event)"
+    />
     <div
       ref="wrapperRef"
       class="relative h-full min-w-0 flex-1 overflow-hidden rounded-r-full"
@@ -254,6 +263,7 @@ defineExpose({ isFocused })
         :placeholder="placeholder"
         :disabled="locked"
         @keydown="onKeydown"
+        @keydown.backspace="onBackspace"
         @input="syncCaret"
         @click="syncCaret"
         @keyup="syncCaret"

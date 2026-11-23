@@ -15,7 +15,6 @@ import { useBacklog } from '../backlog/useBacklog'
 import { useItemPlan } from '../backlog/useItemPlan'
 import { useProjects } from '../projects/useProjects'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
-import { useRoster } from '../team/useRoster'
 import {
   fetchPlanArtifact,
   planArtifactId,
@@ -63,7 +62,6 @@ const backlog = useBacklog()
 const artifactsStore = useArtifacts()
 const itemPlan = useItemPlan()
 const projects = useProjects()
-const roster = useRoster()
 const leaderName = computed(() => agentName(DEFAULT_RECIPIENT))
 
 const artifact = ref<PlanArtifactDetail | null>(null)
@@ -74,9 +72,7 @@ const editing = ref(false)
 let loadSeq = 0
 
 const progress = computed(() => planProgress(props.stages))
-const breakdown = computed(() =>
-  breakdownOf(props.item, props.proposal, [], (agentId) => roster.profileOf(agentId)?.model),
-)
+const breakdown = computed(() => breakdownOf(props.item, props.proposal, [], () => undefined))
 const expandedSteps = ref(new Set<string>(breakdown.value.steps[0] ? [breakdown.value.steps[0].id] : []))
 const loading = computed(() => artifact.value === null && loadError.value === null && props.state !== GENERATING_STATE)
 

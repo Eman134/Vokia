@@ -36,6 +36,7 @@ use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{
     emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis, report_limits,
+    MessageScope,
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
@@ -108,7 +109,10 @@ pub(super) async fn handle_request_from(
             Speaker::from(recipient.clone()),
             Speaker::User,
             RESUME_NOTE,
-            None,
+            MessageScope {
+                channel_id: None,
+                item_id: context.item_id.as_deref(),
+            },
             None,
             None,
             None,
@@ -120,7 +124,10 @@ pub(super) async fn handle_request_from(
             from,
             Speaker::from(recipient.clone()),
             request,
-            context.channel_id,
+            MessageScope {
+                channel_id: context.channel_id,
+                item_id: context.item_id.as_deref(),
+            },
             None,
             None,
             None,
@@ -536,7 +543,10 @@ fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), Flo
         Speaker::from(batch.leader.clone()),
         Speaker::User,
         &text,
-        batch.channel_id,
+        MessageScope {
+            channel_id: batch.channel_id,
+            item_id: batch.item_id.as_deref(),
+        },
         None,
         None,
         None,
@@ -1186,7 +1196,7 @@ async fn answer_once(
                     exchange.app,
                     project_id,
                     Speaker::from(agent.clone()),
-                    exchange.channel_id,
+                    exchange.scope(),
                     &error.to_string(),
                 );
             }
@@ -1235,7 +1245,7 @@ async fn answer_once(
             Speaker::from(agent.clone()),
             Speaker::User,
             &read.visible,
-            exchange.channel_id,
+            exchange.scope(),
             None,
             Some(proposal),
             reply.usage.take(),
@@ -1379,7 +1389,7 @@ async fn answer_once(
                 Speaker::from(agent.clone()),
                 Speaker::from(target),
                 &request,
-                exchange.channel_id,
+                exchange.scope(),
                 None,
                 None,
                 reply.usage.take(),
@@ -1406,7 +1416,7 @@ async fn answer_once(
                 Speaker::from(agent.clone()),
                 Speaker::User,
                 &text,
-                exchange.channel_id,
+                exchange.scope(),
                 None,
                 None,
                 None,
@@ -1653,7 +1663,10 @@ async fn exchange_turns(
                     app,
                     key.project_id,
                     Speaker::from(key.agent.clone()),
-                    channel.as_ref().map(|found| found.id),
+                    MessageScope {
+                        channel_id: channel.as_ref().map(|found| found.id),
+                        item_id,
+                    },
                     &error.to_string(),
                 );
             }

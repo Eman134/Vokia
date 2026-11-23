@@ -42,7 +42,7 @@ const PROMPT_RULES_NO_VARS: &str = "Execute o pedido agora: não se apresente ne
 const PROMPT_RULES_NO_VARS_MCP: &str = "Execute o pedido agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request.";
 const PROMPT_RULES_NO_VARS_VOKIA_CLI: &str = "Execute o pedido agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, execute `vokia-cli delegate --agent <nome> --request \"<pedido>\"`.";
 const MAESTRO_VOKIA_CLI_COMMANDS: &str = "- list_backlog / read_card / create_card / move_card / update_card: consultar e gerir cards do backlog
-- save_item_plan / artifact_set_criterion: gravar plano e marcar critérios de um card
+- save_item_plan / artifact_set_criterion: gravar plano (título bem resumido, ID público curto e estimativa em minutos para LLM, ex: '~15min') e marcar critérios de um card
 - delegate: delegar pedido ao líder de um time (--agent <nome> --request \"<pedido>\" [--item-id <id>])
 - request_decision / propose_request: pedir decisão ou propor card ao usuário
 - get_orchestration / list_agents: ler mapa de times e elenco (rode `vokia-cli tools` para detalhes)";

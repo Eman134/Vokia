@@ -387,7 +387,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             SAVE_ITEM_PLAN,
-            "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id, name e meta.",
+            "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id (ID público curto), name (título bem resumido) e meta (estimativa para execução por LLM em minutos, ex: '~5min', '~15min').",
             json!({
                 "item_id": { "type": "string" },
                 "state": { "type": "string" },

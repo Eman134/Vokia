@@ -226,6 +226,7 @@ pub(crate) fn parse_output(
             output_tokens,
             cached_input_tokens: None,
             cost_usd,
+            is_fallback: None,
         })
     } else {
         None

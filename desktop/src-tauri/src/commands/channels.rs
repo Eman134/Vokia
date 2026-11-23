@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentRegistry};
 use crate::db::{Channel, DbState};
 use crate::events::Speaker;
-use crate::orchestrator::emit_message;
+use crate::orchestrator::{emit_message, MessageScope};
 
 const GENERAL_CHANNEL: &str = "geral";
 const NAME_MIN_CHARS: usize = 2;
@@ -206,7 +206,10 @@ pub(crate) fn post_agent_message(
         Speaker::from(agent.clone()),
         Speaker::User,
         text,
-        Some(found.id),
+        MessageScope {
+            channel_id: Some(found.id),
+            item_id: None,
+        },
         None,
         None,
         None,

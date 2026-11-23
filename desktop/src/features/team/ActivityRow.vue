@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, useId } from 'vue'
+import UiTooltip from '../../ui/UiTooltip.vue'
 import type { ActivityRowModel, RowIconKind } from './activitySummary'
 
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
@@ -88,13 +89,13 @@ async function showPreview(): Promise<void> {
         <path :d="ICON_PATHS[row.icon]" />
       </svg>
       <span class="shrink-0 font-semibold text-ink">{{ row.verb }}</span>
-      <span v-if="row.chip" :class="CHIP_CLASSES" :title="row.chip.title" data-testid="activity-chip">
+      <UiTooltip v-if="row.chip" :text="row.chip.title" :class="CHIP_CLASSES" data-testid="activity-chip">
         <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true" :data-icon="row.chip.icon">
           <path :d="ICON_PATHS[row.chip.icon]" />
         </svg>
         <span class="truncate">{{ row.chip.label }}</span>
-      </span>
-      <span v-else-if="row.text" class="min-w-0 truncate text-ink" :title="row.text">{{ row.text }}</span>
+      </UiTooltip>
+      <UiTooltip v-else-if="row.text" :text="row.text" class="min-w-0 truncate text-ink">{{ row.text }}</UiTooltip>
       <span v-if="row.meta" class="shrink-0 text-muted">{{ row.meta }}</span>
       <button
         v-if="row.items"
@@ -107,8 +108,10 @@ async function showPreview(): Promise<void> {
         <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
       </button>
     </div>
-    <ul v-if="row.items && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">
-      <li v-for="item in row.items" :key="item" class="truncate" :title="item">{{ item }}</li>
+    <ul v-if="row.items?.length && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">
+      <li v-for="item in row.items" :key="item" class="truncate">
+        <UiTooltip :text="item" class="block truncate">{{ item }}</UiTooltip>
+      </li>
     </ul>
     <div
       v-if="row.preview && hovering"

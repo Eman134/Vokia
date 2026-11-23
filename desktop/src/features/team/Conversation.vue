@@ -1,10 +1,7 @@
 <script lang="ts">
 export const EMPTY_FEED_TITLE = 'Nenhuma mensagem ainda.'
-export const EMPTY_FEED_TEXT = 'Peça a primeira na barra de ação.'
 export const EMPTY_SCREEN_TITLE_PREFIX = 'Nenhuma mensagem com '
 export const EMPTY_SCREEN_TITLE_SUFFIX = ' ainda.'
-export const EMPTY_ACTION_LABEL = 'Pedir na barra de ação'
-export const EMPTY_ACTION_HINT = 'a barra fica aqui embaixo'
 export const NO_PROJECT_TITLE = 'Nenhum projeto ainda.'
 export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o time.'
 </script>
@@ -14,7 +11,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { VokiaMessage } from './events'
 import { useConversationTab } from './conversationTabs'
-import { agentName, DEFAULT_RECIPIENT } from './agents'
+import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import MessageEntry from './MessageEntry.vue'
@@ -23,11 +20,11 @@ import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useChannels } from '../channels/useChannels'
+import { useThreads } from './useThreads'
 import { GENERAL_CHANNEL_NAME, namingChannel } from '../channels/channelRouting'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiButton from '../../ui/UiButton.vue'
-import { useRequests } from './useRequests'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import { HAND_MARK_CLASSES, INK_FOCUS_CLASSES, handReveal } from '../../ui/handDrawn'
 import UiEmpty from '../../ui/UiEmpty.vue'
@@ -42,7 +39,8 @@ import { STATE_LABELS } from './agentStateStyle'
 const GROUP_SEPARATOR = ' ↔ '
 const PANEL_CLASSES =
   'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-paper min-h-[20rem] md:min-h-0 lg:flex-[1_1_420px]'
-const HEADER_CLASSES = 'flex flex-wrap items-center justify-between gap-4 border-b border-line px-4.5 py-3.5'
+// Altura fixa: conversa de agente (retrato, nome e papel) e canal ocupam o mesmo cabeçalho.
+const HEADER_CLASSES = 'flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line px-4.5'
 const BODY_CLASSES = 'flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-3'
 const TABS_LABEL = 'Abas da conversa'
 const TABS_CLASSES = 'flex gap-5'
@@ -59,7 +57,6 @@ const CLEAR_POPUP_CLASSES =
   'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-paper'
 
 const feed = useFeed()
-const requests = useRequests()
 
 const roster = useRoster()
 const channels = useChannels()
@@ -89,6 +86,9 @@ function groupLabel(messages: readonly VokiaMessage[]): string {
   return name === null ? groupTitle(messages) : `#${name}`
 }
 
+const threads = useThreads()
+const activeThread = computed(() => (feed.screen.kind === 'thread' ? threads.find(feed.screen.itemId) : undefined))
+
 const screenLabel = computed(() => {
   if (feed.screen.kind === 'agent') {
     return agentName(feed.screen.agent)
@@ -97,16 +97,43 @@ const screenLabel = computed(() => {
     const name = channelName(feed.screen.channel)
     return name === null ? ALL_SCREEN_LABEL : `#${name}`
   }
+  if (feed.screen.kind === 'thread') {
+    return activeThread.value?.title ?? 'Thread'
+  }
   return ALL_SCREEN_LABEL
 })
-const screenRole = computed(() => (feed.screen.kind === 'agent' ? (roster.profileOf(feed.screen.agent)?.role ?? '') : ''))
+const screenRole = computed(() => {
+  if (feed.screen.kind === 'agent') return roster.profileOf(feed.screen.agent)?.role ?? ''
+  if (feed.screen.kind === 'thread') return activeThread.value?.column ?? ''
+  return ''
+})
 
 const projectsStore = useProjects()
+const scopedPendingAgent = computed(() => {
+  const agent = feed.pendingAgent
+  if (!agent) return undefined
+  if (feed.screen.kind === 'all') return agent
+  if (feed.screen.kind === 'agent') return feed.screen.agent === agent.id ? agent : undefined
+  if (feed.screen.kind === 'channel') {
+    const targetChannel = feed.screen.channel
+    if (targetChannel === GENERAL_CHANNEL_NAME) return agent
+    const channel = channels.channels.find((c) => c.id === targetChannel)
+    return channel?.members.includes(agent.id) ? agent : undefined
+  }
+  if (feed.screen.kind === 'thread') {
+    const thread = activeThread.value
+    if (!thread) return undefined
+    return thread.assignee === agent.id || thread.participants.includes(agent.id) ? agent : undefined
+  }
+  return undefined
+})
 const liveRun = computed(() =>
-  feed.pendingAgent ? feed.liveActivityOf(feed.pendingAgent.id) : undefined,
+  scopedPendingAgent.value ? feed.liveActivityOf(scopedPendingAgent.value.id) : undefined,
 )
 const pendingLabel = computed(() =>
-  feed.pendingAgent ? `${feed.pendingAgent.name} está ${STATE_LABELS[feed.stateOf(feed.pendingAgent.id)]}` : undefined,
+  scopedPendingAgent.value
+    ? `${scopedPendingAgent.value.name} está ${STATE_LABELS[feed.stateOf(scopedPendingAgent.value.id)]}`
+    : undefined,
 )
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
@@ -174,8 +201,8 @@ watch(
   <section :class="PANEL_CLASSES">
     <header :class="HEADER_CLASSES">
       <div class="flex min-w-0 items-center gap-3">
-        <AgentPortrait v-if="feed.screen.kind === 'agent'" :who="feed.screen.agent" :size="PORTRAIT_SIZES.list" />
-        <div class="flex min-w-0 flex-col">
+        <AgentPortrait v-if="feed.screen.kind === 'agent'" :who="feed.screen.agent" :size="PORTRAIT_SIZES.chat" />
+        <div class="flex min-w-0 items-baseline gap-2">
           <span class="truncate text-lead text-ink" data-testid="conversation-screen">{{ screenLabel }}</span>
           <span v-if="screenRole" class="truncate text-caption text-muted">{{ screenRole }}</span>
         </div>
@@ -261,36 +288,18 @@ watch(
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
-      <UiEmpty
-        v-else-if="feed.feed.length === 0"
-        class="m-auto"
-        :title="EMPTY_FEED_TITLE"
-        :text="EMPTY_FEED_TEXT"
-        :hint="EMPTY_ACTION_HINT"
-      >
+      <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE">
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
-        </template>
-        <template #action>
-          <UiButton variant="primary" size="lg" @press="requests.requestMention(DEFAULT_RECIPIENT)">
-            {{ EMPTY_ACTION_LABEL }}
-          </UiButton>
         </template>
       </UiEmpty>
       <UiEmpty
         v-else-if="feed.timeline.length === 0"
         class="m-auto"
         :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
-        :text="EMPTY_FEED_TEXT"
-        :hint="EMPTY_ACTION_HINT"
       >
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
-        </template>
-        <template #action>
-          <UiButton variant="primary" size="lg" @press="requests.requestMention(DEFAULT_RECIPIENT)">
-            {{ EMPTY_ACTION_LABEL }}
-          </UiButton>
         </template>
       </UiEmpty>
       <ol class="flex max-w-3xl flex-col gap-2">
@@ -329,16 +338,16 @@ watch(
         :aria-label="pendingLabel"
         class="mt-3 flex max-w-3xl items-start gap-2.5"
       >
-        <template v-if="feed.pendingAgent">
+        <template v-if="scopedPendingAgent">
           <span class="relative flex shrink-0" aria-hidden="true">
-            <AgentPortrait :who="feed.pendingAgent.id" :size="PORTRAIT_SIZES.chat" />
+            <AgentPortrait :who="scopedPendingAgent.id" :size="PORTRAIT_SIZES.chat" />
             <span class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-accent motion-reduce:animate-none animate-pulse" />
           </span>
           <AgentThinking
-            :agent="feed.pendingAgent"
-            :state="feed.stateOf(feed.pendingAgent.id)"
+            :agent="scopedPendingAgent"
+            :state="feed.stateOf(scopedPendingAgent.id)"
             :since="feed.pendingSince"
-            :activity="feed.liveActivityOf(feed.pendingAgent.id)"
+            :activity="feed.liveActivityOf(scopedPendingAgent.id)"
           />
         </template>
       </div>

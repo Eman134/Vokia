@@ -349,6 +349,58 @@ fn make_orchestration_global(tx: &Transaction) -> rusqlite::Result<()> {
     Ok(())
 }
 
+// Antes de o fluxo gravar o canal em toda mensagem, a tela deduzia o canal de uma mensagem entre agentes pelos membros
+// (o menor canal que tem os dois; empate, o de menor id). A dedução vira dado uma única vez, junto com a coluna item_id.
+fn backfill_agent_message_channels(tx: &Transaction) -> rusqlite::Result<()> {
+    let mut channels: Vec<(i64, i64, Vec<String>)> = Vec::new();
+    {
+        let mut statement = tx.prepare("SELECT id, project_id, members FROM channels ORDER BY id")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))
+        })?;
+        for row in rows {
+            let (id, project_id, members) = row?;
+            if let Ok(members) = serde_json::from_str::<Vec<String>>(&members) {
+                channels.push((id, project_id, members));
+            }
+        }
+    }
+    if channels.is_empty() {
+        return Ok(());
+    }
+    let mut updates: Vec<(i64, i64)> = Vec::new();
+    {
+        let mut statement = tx.prepare(
+            "SELECT id, project_id, from_agent, to_agent FROM messages \
+             WHERE channel_id IS NULL AND from_agent <> 'user' AND to_agent <> 'user'",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        for row in rows {
+            let (message_id, project_id, from, to) = row?;
+            let best = channels
+                .iter()
+                .filter(|(_, channel_project, members)| {
+                    *channel_project == project_id && members.contains(&from) && members.contains(&to)
+                })
+                .min_by_key(|(id, _, members)| (members.len(), *id));
+            if let Some((channel_id, _, _)) = best {
+                updates.push((message_id, *channel_id));
+            }
+        }
+    }
+    for (message_id, channel_id) in updates {
+        tx.execute("UPDATE messages SET channel_id = ?1 WHERE id = ?2", [channel_id, message_id])?;
+    }
+    Ok(())
+}
+
 // schema.sql só roda em banco novo; cada coluna nova passa por aqui em toda abertura e entra só se faltar.
 fn ensure_column(
     conn: &Connection,
@@ -626,6 +678,12 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;
     ensure_column(&tx, "backlog_items", "worktree_path", "TEXT")?;
     ensure_column(&tx, "backlog_items", "plan_note", "TEXT")?;
+    let had_message_item_id: i64 = tx.query_row(HAS_COLUMN, ["messages", "item_id"], |row| row.get(0))?;
+    ensure_column(&tx, "messages", "item_id", "TEXT")?;
+    tx.execute_batch("CREATE INDEX IF NOT EXISTS messages_by_item ON messages(project_id, item_id)")?;
+    if had_message_item_id == 0 {
+        backfill_agent_message_channels(&tx)?;
+    }
     ensure_column(&tx, "projects", "setup_command", "TEXT")?;
     ensure_column(&tx, "orch_teams", "leader_agent", "TEXT")?;
     ensure_column(&tx, "messages", "usage", "TEXT")?;

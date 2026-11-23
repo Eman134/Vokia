@@ -25,7 +25,7 @@ use crate::state::AppState;
 
 use super::adapters::ProviderAdapter;
 use super::console::ConsoleSink;
-use super::emit::{emit, emit_feed_note, emit_state, now_millis, report_limits};
+use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::fallback::{
     emit_overrides_changed, load_global_active_llm, load_global_fallback, mark_cooldown,
@@ -313,16 +313,6 @@ async fn run_step(
                         .unwrap_or_else(|e| e.into_inner())
                         .insert(agent.clone(), ov);
                     emit_overrides_changed(app, state);
-                    let _ = emit_feed_note(
-                        app,
-                        key.project_id,
-                        crate::events::Speaker::Agent(agent.clone()),
-                        &format!(
-                            "Fallback automático para {} ({})",
-                            candidate.cli, candidate.model
-                        ),
-                        now_millis().unwrap_or_else(|_| now_millis_u64()),
-                    );
                 }
                 if !call.adapter.supports_live_session() {
                     if let Some(session_id) = reply.session_id.as_deref() {
@@ -342,6 +332,9 @@ async fn run_step(
                     .unwrap_or_default();
                 let mut normalized_usage = reply.usage.unwrap_or_default();
                 normalized_usage.provider = Some(candidate.cli.clone());
+                if candidate.cli != profile.cli || candidate.model != profile.model {
+                    normalized_usage.is_fallback = Some(true);
+                }
                 if normalized_usage
                     .model
                     .as_deref()

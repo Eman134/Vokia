@@ -7,6 +7,8 @@ import { useConnection } from '../useConnection'
 import { useRequests } from '../useRequests'
 import { useRequestNotices } from '../../balloon/useRequestNotices'
 import { useNavigation } from '../../../shell/useNavigation'
+import { useBacklog } from '../../backlog/useBacklog'
+import { useThreads } from '../useThreads'
 import { screenDestination } from '../screenRecipient'
 import { useFeed } from '../useFeed'
 import { useRoster } from '../useRoster'
@@ -40,13 +42,27 @@ export function useComposerSubmit() {
       providers.openSetup(localCommand.arg)
       return
     }
+    if (localCommand?.action === 'triar' || localCommand?.action === 'iniciar') {
+      const backlog = useBacklog()
+      const targetColumn = localCommand.action === 'triar' ? 'Backlog' : 'Ready'
+      const item = localCommand.arg
+        ? backlog.items.find((i) => i.id === localCommand.arg || i.title.toLowerCase().includes(localCommand.arg.toLowerCase()))
+        : backlog.items.find((i) => i.column === targetColumn)
+      draft.value = ''
+      confirmed.value = new Set()
+      if (item) backlog.open(item.id)
+      return
+    }
     const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
-    const { to, channelId } = screenDestination(
+    const threads = useThreads()
+    const threadAssignee = feed.screen.kind === 'thread' ? (threads.find(feed.screen.itemId)?.assignee ?? null) : null
+    const { to, channelId, itemId } = screenDestination(
       navigation.page,
       feed.screen,
       channels.channels,
       roster.agents.map((profile) => profile.id),
       mention,
+      threadAssignee,
     )
     const expandedCommand = expandCommand(text)
     const pending = draft.value
@@ -67,6 +83,7 @@ export function useComposerSubmit() {
     if (
       !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
         channelId: channelId ?? undefined,
+        itemId: itemId ?? undefined,
         attachments: batch.ids,
         attachmentsProjectId: batch.projectId,
         onEnqueued: requestNotices.announceSent,

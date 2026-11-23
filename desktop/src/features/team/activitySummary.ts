@@ -398,21 +398,20 @@ function extractProtocolTitle(firstLine: string, prefix: string, quoted?: boolea
   return rest.replace(WRAPPING_QUOTES, '$2').trim()
 }
 
+function stripMarkdownLinks(text: string): string {
+  return text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+}
+
 export function protocolMessageRow(text: string): ActivityRowModel | null {
   if (isFinalReply(text)) {
     const parsed = parseProposal(text)
-    const lotCount = parsed.lots.length
-    const metaParts: string[] = []
-    if (lotCount > 0) metaParts.push(`${lotCount} ${lotCount === 1 ? 'lote' : 'lotes'}`)
-    if (parsed.estimate !== '') metaParts.push(parsed.estimate)
-    const items = parsed.lots.map((lot) => `${lot.n}. ${lot.title}${lot.meta ? ` · ${lot.meta}` : ''}`)
+    const rawTitle = (parsed.summary || text.split(LINE_BREAK, 1)[0] || 'Plano').trim()
+    const title = stripMarkdownLinks(rawTitle).split(LINE_BREAK, 1)[0]?.trim() || 'Plano'
     return {
       id: 'protocol-plan-ready',
       icon: 'artifact',
       verb: 'Plano pronto',
-      text: parsed.summary || undefined,
-      meta: metaParts.length > 0 ? metaParts.join(' · ') : undefined,
-      items: items.length > 0 ? items : text.split(LINE_BREAK).filter((line) => line.trim() !== ''),
+      chip: { label: title, title, icon: 'document' },
       failed: false,
     }
   }
@@ -423,10 +422,10 @@ export function protocolMessageRow(text: string): ActivityRowModel | null {
     const title = extractProtocolTitle(firstLine, prefix, quoted)
     return {
       id: 'protocol-prompt',
-      icon: 'backlog',
+      icon: 'artifact',
       verb,
-      chip: title !== '' ? { label: title, title, icon: 'generic' } : undefined,
-      items: text.split(LINE_BREAK).filter((line) => line.trim() !== ''),
+      chip: { label: title, title, icon: 'generic' },
+      items: verb === 'Triagem' ? undefined : text.split(LINE_BREAK).filter((line) => line.trim() !== ''),
       failed: false,
     }
   }

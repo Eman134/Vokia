@@ -68,6 +68,7 @@ export interface TurnUsage {
   outputTokens?: number
   cachedInputTokens?: number
   costUsd?: number
+  isFallback?: boolean
 }
 
 export interface VokiaMessage {
@@ -78,6 +79,7 @@ export interface VokiaMessage {
   time: number
   projectId: number | null
   channelId?: number
+  itemId?: string
   activity?: TurnActivity
   requestProposal?: RequestProposal
   usage?: TurnUsage
@@ -208,6 +210,7 @@ export interface VokiaTaskResult {
   agents: Agent[]
   time: number
   channelId?: number | null
+  itemId?: string | null
 }
 
 export type GoalState = 'atingido' | 'incompleto' | 'sem-avanco' | 'repetindo'
