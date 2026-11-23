@@ -51,7 +51,9 @@ const scroller = ref<HTMLElement | null>(null)
 const { followingEnd, onScroll, followEnd, jumpToEnd } = useFollowEnd(scroller)
 let clock: ReturnType<typeof setInterval> | undefined
 
-const agent = computed(() => (feed.screen.kind === 'agent' ? feed.screen.agent : null))
+const agent = computed(() =>
+  feed.screen.kind === 'agent' ? feed.screen.agent : feed.screen.kind === 'copy' ? feed.screen.copyId : null,
+)
 const entries = computed(() => (agent.value === null ? [] : consoleStore.entriesOf(agent.value)))
 const prompts = computed(() =>
   feed.feed.flatMap((entry) =>

@@ -34,6 +34,7 @@ export function groupParticipants(messages: readonly VokiaMessage[]): Agent[] {
 export type ConversationScreen =
   | { kind: 'all' }
   | { kind: 'agent'; agent: Agent }
+  | { kind: 'copy'; copyId: string; baseAgent: Agent; number: number; itemId?: string | null; itemTitle?: string | null }
   | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
   | { kind: 'thread'; itemId: string }
 
@@ -98,6 +99,8 @@ export function screenEntries(
       return feed
     case 'agent':
       return feed.filter((entry) => entryInvolves(entry, screen.agent) && !entryHasChannel(entry, channels))
+    case 'copy':
+      return feed.filter((entry) => entryInvolves(entry, screen.copyId) && !entryHasChannel(entry, channels))
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
     case 'thread': {

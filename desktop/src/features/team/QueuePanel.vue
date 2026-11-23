@@ -14,7 +14,11 @@ const AGENT_TITLE_PREFIX = 'Fila de '
 const feed = useFeed()
 const items = useQueueItems()
 
-const title = computed(() => (feed.screen.kind === 'agent' ? AGENT_TITLE_PREFIX + agentName(feed.screen.agent) : TEAM_TITLE))
+const title = computed(() => {
+  if (feed.screen.kind === 'agent') return AGENT_TITLE_PREFIX + agentName(feed.screen.agent)
+  if (feed.screen.kind === 'copy') return `${AGENT_TITLE_PREFIX}${agentName(feed.screen.baseAgent)} · Cópia ${feed.screen.number}`
+  return TEAM_TITLE
+})
 </script>
 
 <template>

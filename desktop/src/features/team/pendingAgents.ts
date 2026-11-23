@@ -49,6 +49,8 @@ export function isAgentInScreen(
       return true
     case 'agent':
       return screen.agent === agentId
+    case 'copy':
+      return screen.copyId === agentId
     case 'channel': {
       if (screen.channel === GENERAL_CHANNEL_NAME) {
         return true

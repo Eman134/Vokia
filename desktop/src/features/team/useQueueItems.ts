@@ -6,5 +6,9 @@ import { useRequests } from './useRequests'
 export function useQueueItems() {
   const feed = useFeed()
   const requests = useRequests()
-  return computed(() => (feed.screen.kind === 'agent' ? requests.queuedFor(feed.screen.agent) : requests.queue))
+  return computed(() => {
+    if (feed.screen.kind === 'agent') return requests.queuedFor(feed.screen.agent)
+    if (feed.screen.kind === 'copy') return requests.queuedFor(feed.screen.copyId)
+    return requests.queue
+  })
 }

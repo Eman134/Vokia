@@ -18,6 +18,13 @@ export interface AgentCopies {
 
 export const SAME_FOLDER_TEXT = 'mesma pasta do projeto'
 const PATH_SEPARATOR = /[\\/]/
+const REPLICA_ID_PATTERN = /^(.+)-(\d+)$/
+
+export function replicaOf(id: string): { base: string; number: number } | null {
+  const match = REPLICA_ID_PATTERN.exec(id)
+  if (!match) return null
+  return { base: match[1]!, number: Number(match[2]) }
+}
 
 export function fetchAgentCopies(projectId: number): Promise<AgentCopies[]> {
   return invoke<AgentCopies[]>(LIST_AGENT_COPIES_COMMAND, { projectId })

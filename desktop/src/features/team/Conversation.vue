@@ -15,7 +15,7 @@ import { agentName } from './agents'
 import { ALL_SCREEN_LABEL, collapsesGroup, groupParticipants } from './timeline'
 import { useFeed } from './useFeed'
 import type { AgentProfile } from './teamApi'
-import { filterPendingAgentsForScreen, formatPendingStatusLabel, groupPendingAgentsByState } from './pendingAgents'
+import { filterPendingAgentsForScreen, formatPendingStatusLabel, groupPendingAgentsByState, isPendingState } from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
 import PermissionPrompt from './PermissionPrompt.vue'
 import AgentPortrait from './AgentPortrait.vue'
@@ -98,6 +98,9 @@ const screenLabel = computed(() => {
   if (feed.screen.kind === 'agent') {
     return agentName(feed.screen.agent)
   }
+  if (feed.screen.kind === 'copy') {
+    return `${agentName(feed.screen.baseAgent)} · Cópia ${feed.screen.number}`
+  }
   if (feed.screen.kind === 'channel') {
     const name = channelName(feed.screen.channel)
     return name === null ? ALL_SCREEN_LABEL : `#${name}`
@@ -109,17 +112,42 @@ const screenLabel = computed(() => {
 })
 const screenRole = computed(() => {
   if (feed.screen.kind === 'agent') return roster.profileOf(feed.screen.agent)?.role ?? ''
+  if (feed.screen.kind === 'copy') {
+    if (feed.screen.itemId) {
+      return feed.screen.itemTitle ? `${feed.screen.itemId} · ${feed.screen.itemTitle}` : feed.screen.itemId
+    }
+    return roster.profileOf(feed.screen.baseAgent)?.role ?? ''
+  }
   if (feed.screen.kind === 'thread') return activeThread.value?.column ?? ''
   return ''
 })
 
 const projectsStore = useProjects()
-const scopedPendingAgents = computed(() =>
-  filterPendingAgentsForScreen(feed.pendingAgents, feed.screen, {
+const scopedPendingAgents = computed<AgentProfile[]>(() => {
+  if (feed.screen.kind === 'copy') {
+    const { copyId, baseAgent } = feed.screen
+    if (!isPendingState(feed.stateOf(copyId))) return []
+    const base = roster.profileOf(baseAgent)
+    const fallback: AgentProfile = {
+      id: copyId,
+      name: screenLabel.value,
+      role: screenRole.value,
+      avatar: base?.avatar ?? baseAgent,
+      cli: base?.cli ?? '',
+      model: base?.model ?? '',
+      command: base?.command ?? '',
+      builtin: base?.builtin ?? false,
+      extraInstructions: base?.extraInstructions ?? '',
+      followDefaultLlm: base?.followDefaultLlm ?? true,
+      fallback: base?.fallback ?? [],
+    }
+    return [base ? { ...base, id: copyId, name: screenLabel.value, role: screenRole.value } : fallback]
+  }
+  return filterPendingAgentsForScreen(feed.pendingAgents, feed.screen, {
     channels: channels.channels,
     thread: activeThread.value,
-  }),
-)
+  })
+})
 const pendingGroups = computed(() =>
   groupPendingAgentsByState(scopedPendingAgents.value, feed.states, feed.stateSince),
 )
@@ -199,7 +227,11 @@ watch(
   <section :class="PANEL_CLASSES">
     <header :class="HEADER_CLASSES">
       <div class="flex min-w-0 items-center gap-3">
-        <AgentPortrait v-if="feed.screen.kind === 'agent'" :who="feed.screen.agent" :size="PORTRAIT_SIZES.chat" />
+        <AgentPortrait
+          v-if="feed.screen.kind === 'agent' || feed.screen.kind === 'copy'"
+          :who="feed.screen.kind === 'copy' ? feed.screen.baseAgent : feed.screen.agent"
+          :size="PORTRAIT_SIZES.chat"
+        />
         <div class="flex min-w-0 items-baseline gap-2">
           <span class="truncate text-lead text-ink" data-testid="conversation-screen">{{ screenLabel }}</span>
           <span v-if="screenRole" class="truncate text-caption text-muted">{{ screenRole }}</span>

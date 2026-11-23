@@ -16,7 +16,7 @@ import ChannelDialog from '../channels/ChannelDialog.vue'
 import ChannelMenu from '../channels/ChannelMenu.vue'
 import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
-import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
+import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import type { AppPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
@@ -53,9 +53,11 @@ const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left
 const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1.5 pl-3 pr-8 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
 const THREAD_CARD_BUTTON_CLASSES =
   `absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
-const COPY_CLASSES = `flex w-full cursor-pointer flex-col gap-0.5 rounded-md border border-line px-2.5 py-1.5 text-left ${INK_FOCUS_CLASSES}`
+const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-2 rounded-md border border-line px-2.5 py-2 text-left transition-colors hover:bg-surface-2 ${INK_FOCUS_CLASSES}`
 // COPY_CLASSES já fixa border-line; o `!` faz a tinta vencer.
 const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
+const COPY_CONNECTOR_PATH = 'M5 3 C4.6 10 4.8 16 5.6 19.2 C8.5 20 13 19.7 17 19.4'
+const COPY_THINKING_DOT_CLASSES = 'size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none'
 const COPIES_LIST_LABEL = 'Cópias'
 const COPY_MARK_TEXT = 'Cópia'
 const COPY_NOUN_SINGULAR = 'cópia'
@@ -95,6 +97,27 @@ function copiesLabel(count: number): string {
 
 function isShown(agent: Agent): boolean {
   return feed.screen.kind === 'agent' && feed.screen.agent === agent
+}
+
+function isCopyShown(copyId: string): boolean {
+  return feed.screen.kind === 'copy' && feed.screen.copyId === copyId
+}
+
+function openCopy(baseAgent: Agent, copy: AgentCopy): void {
+  agentCopies.select(copy.id)
+  feed.showScreen({
+    kind: 'copy',
+    copyId: copy.id,
+    baseAgent,
+    number: copy.number,
+    itemId: copy.itemId,
+    itemTitle: copy.itemTitle,
+  })
+}
+
+function isCopyThinking(copyId: string): boolean {
+  const state = feed.stateOf(copyId)
+  return !control.isPaused(copyId) && (state === 'thinking' || state === 'sending')
 }
 
 const threads = useThreads()
@@ -219,69 +242,101 @@ function closeChannelDialog(): void {
       <UiHandLine class="mb-3 h-1.5 w-full text-line" />
       <h2 class="mb-2 text-small font-semibold text-muted">Agentes</h2>
       <ul class="flex flex-col gap-1.5">
-        <li v-for="agent in roster.agents" :key="agent.id" class="relative">
-          <button
-            type="button"
-            :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
-            :aria-label="OPEN_CONVERSATION_PREFIX + agent.name"
-            :aria-pressed="isShown(agent.id)"
-            @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
-          >
-            <span class="relative flex shrink-0" aria-hidden="true">
-              <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
-              <UiHandLine v-if="isShown(agent.id)" variant="circle" draw :class="PORTRAIT_CIRCLE_CLASSES" />
-            </span>
-            <span class="flex min-w-0 flex-col">
-              <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold">
-                <span class="truncate">{{ agent.name }}</span>
-                <AgentProjectIcons :agent="agent.id" />
+        <li v-for="agent in roster.agents" :key="agent.id">
+          <div class="relative">
+            <button
+              type="button"
+              :class="[CARD_CLASSES, isShown(agent.id) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+              :aria-label="OPEN_CONVERSATION_PREFIX + agent.name"
+              :aria-pressed="isShown(agent.id)"
+              @click="feed.showScreen({ kind: 'agent', agent: agent.id })"
+            >
+              <span class="relative flex shrink-0" aria-hidden="true">
+                <AgentPortrait :who="agent.id" :size="PORTRAIT_SIZES.stack" />
+                <UiHandLine v-if="isShown(agent.id)" variant="circle" draw :class="PORTRAIT_CIRCLE_CLASSES" />
               </span>
-              <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
-                <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
-                <span class="truncate">{{ presence(agent.id).label }}</span>
+              <span class="flex min-w-0 flex-col">
+                <span class="flex min-w-0 items-center gap-1.5 text-label font-semibold">
+                  <span class="truncate">{{ agent.name }}</span>
+                  <AgentProjectIcons :agent="agent.id" />
+                </span>
+                <span class="flex min-w-0 items-center gap-1.5 text-tiny text-ink">
+                  <span class="size-1.5 shrink-0 rounded-full" :class="presence(agent.id).dot" />
+                  <span class="truncate">{{ presence(agent.id).label }}</span>
+                </span>
+                <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
               </span>
-              <span class="block truncate text-tiny text-muted">{{ agent.role }}</span>
+              <span v-if="agentCopies.copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
+                {{ copiesLabel(agentCopies.copiesOf(agent.id).length) }}
+              </span>
+            </button>
+            <button
+              type="button"
+              :class="MENTION_CLASSES"
+              :aria-label="`${MENTION_LABEL} ${agent.name}`"
+              :disabled="connection.checking"
+              @click="requests.requestMention(agent.id)"
+            >
+              {{ MENTION_GLYPH }}
+            </button>
+            <span
+              v-if="requests.queuedFor(agent.id).length > 0"
+              :class="QUEUE_BADGE_CLASSES"
+              :title="`${requests.queuedFor(agent.id).length} na fila`"
+            >
+              {{ requests.queuedFor(agent.id).length }}
             </span>
-            <span v-if="agentCopies.copiesOf(agent.id).length" class="ml-auto shrink-0 self-start whitespace-nowrap text-tiny text-muted">
-              {{ copiesLabel(agentCopies.copiesOf(agent.id).length) }}
-            </span>
-          </button>
-          <button
-            type="button"
-            :class="MENTION_CLASSES"
-            :aria-label="`${MENTION_LABEL} ${agent.name}`"
-            :disabled="connection.checking"
-            @click="requests.requestMention(agent.id)"
-          >
-            {{ MENTION_GLYPH }}
-          </button>
-          <span
-            v-if="requests.queuedFor(agent.id).length > 0"
-            :class="QUEUE_BADGE_CLASSES"
-            :title="`${requests.queuedFor(agent.id).length} na fila`"
-          >
-            {{ requests.queuedFor(agent.id).length }}
-          </span>
+          </div>
           <ul
             v-if="agentCopies.copiesOf(agent.id).length"
             :aria-label="`${COPIES_LIST_LABEL} de ${agent.name}`"
-            class="mt-1 ml-5 flex flex-col gap-1"
+            class="mt-1 ml-2 flex flex-col gap-1"
           >
             <li v-for="copy in agentCopies.copiesOf(agent.id)" :key="copy.id">
               <button
                 type="button"
-                :class="[COPY_CLASSES, agentCopies.selectedId === copy.id && COPY_SELECTED_CLASSES]"
-                :aria-pressed="agentCopies.selectedId === copy.id"
-                @click="agentCopies.select(copy.id)"
+                :class="[COPY_CLASSES, isCopyShown(copy.id) && COPY_SELECTED_CLASSES]"
+                :aria-pressed="isCopyShown(copy.id)"
+                @click="openCopy(agent.id, copy)"
               >
-                <span class="text-label font-semibold text-ink">{{ COPY_MARK_TEXT }} {{ copy.number }}</span>
-                <span v-if="copy.itemId" class="truncate text-tiny text-muted">
-                  {{ copy.itemId }}<template v-if="copy.itemTitle"> · {{ copy.itemTitle }}</template>
+                <svg
+                  viewBox="0 0 20 24"
+                  class="mt-0.5 h-6 w-5 shrink-0 text-muted"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  aria-hidden="true"
+                >
+                  <path :d="COPY_CONNECTOR_PATH" />
+                </svg>
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span class="flex items-center justify-between gap-2">
+                    <span class="text-label font-semibold text-ink">{{ COPY_MARK_TEXT }} {{ copy.number }}</span>
+                    <span
+                      v-if="isCopyThinking(copy.id)"
+                      class="inline-flex shrink-0 items-center gap-0.5 text-ink-pen"
+                      :title="presence(copy.id).label"
+                      :aria-label="presence(copy.id).label"
+                    >
+                      <span :class="COPY_THINKING_DOT_CLASSES" />
+                      <span :class="[COPY_THINKING_DOT_CLASSES, '[animation-delay:150ms]']" />
+                      <span :class="[COPY_THINKING_DOT_CLASSES, '[animation-delay:300ms]']" />
+                    </span>
+                    <span
+                      v-else
+                      class="size-1.5 shrink-0 rounded-full"
+                      :class="presence(copy.id).dot"
+                      :title="presence(copy.id).label"
+                    />
+                  </span>
+                  <span v-if="copy.itemId" class="truncate text-tiny text-muted">
+                    {{ copy.itemId }}<template v-if="copy.itemTitle"> · {{ copy.itemTitle }}</template>
+                  </span>
+                  <span class="truncate font-mono text-tiny text-muted">
+                    {{ copy.worktreePath ? worktreeFolder(copy.worktreePath) : SAME_FOLDER_TEXT }}
+                  </span>
                 </span>
-                <span v-if="copy.worktreePath" class="truncate font-mono text-tiny text-muted">
-                  {{ worktreeFolder(copy.worktreePath) }}
-                </span>
-                <span v-else class="truncate text-tiny text-muted">{{ SAME_FOLDER_TEXT }}</span>
               </button>
             </li>
           </ul>

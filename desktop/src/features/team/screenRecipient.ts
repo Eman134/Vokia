@@ -10,7 +10,10 @@ export const GENERAL_SCREEN_PLACEHOLDER = 'Mensagem para o time · #geral'
 
 // A tela aberta fica velha fora de Conversas; por isso o destino e o texto só valem nela.
 export function screenAgent(page: AppPage | null, screen: ConversationScreen): Agent | null {
-  return page === CONVERSATIONS_PAGE && screen.kind === 'agent' ? screen.agent : null
+  if (page !== CONVERSATIONS_PAGE) return null
+  if (screen.kind === 'agent') return screen.agent
+  if (screen.kind === 'copy') return screen.copyId
+  return null
 }
 
 export interface ScreenDestination {
@@ -72,6 +75,7 @@ export function screenPlaceholder(
     return threadTitle ? `Mensagem na thread de ${threadTitle}` : 'Mensagem na thread'
   }
   if (screen.kind === 'agent') return `Mensagem para ${nameOf(screen.agent)}`
+  if (screen.kind === 'copy') return `Mensagem para ${nameOf(screen.baseAgent)} · Cópia ${screen.number}`
   const channel = screenChannel(page, screen, channels)
   if (channel !== null) {
     const to = channelRecipient(channel, rosterOrder)

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
+import { replicaOf } from './agentCopies'
 import type { Agent } from './events'
 import {
   createAgent,
@@ -78,11 +79,24 @@ export const useRoster = defineStore('roster', () => {
   }
 
   function nameOf(id: Agent): string {
-    return profileOf(id)?.name ?? instanceNames.value.get(id) ?? id
+    const profile = profileOf(id)
+    if (profile) return profile.name
+    const named = instanceNames.value.get(id)
+    if (named) return named
+    const replica = replicaOf(id)
+    if (replica) {
+      const base = profileOf(replica.base)
+      if (base) return `${base.name} ${replica.number}`
+    }
+    return id
   }
 
   function avatarOf(id: string): string {
-    return profileOf(id)?.avatar ?? id.trim().toLowerCase()
+    const profile = profileOf(id)
+    if (profile) return profile.avatar
+    const replica = replicaOf(id)
+    if (replica) return profileOf(replica.base)?.avatar ?? replica.base.trim().toLowerCase()
+    return id.trim().toLowerCase()
   }
 
   return {
