@@ -18,6 +18,9 @@ import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
+import type { AppPage } from '../../shell/railNav'
+import { useNavigation } from '../../shell/useNavigation'
+import { useBacklog } from '../backlog/useBacklog'
 import { useProjects } from '../projects/useProjects'
 import UiChip from '../../ui/UiChip.vue'
 import UiHandDivider from '../../ui/UiHandDivider.vue'
@@ -27,6 +30,10 @@ import { HAND_DRAWN_RADIUS, HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../u
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
+const BACKLOG_PAGE: AppPage = 'backlog'
+const OPEN_CARD_LABEL = 'Abrir card no backlog'
+const OPEN_CARD_ICON_PATH = 'M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3M9.5 2.5h4v4M13.5 2.5L7.5 8.5'
+const OPEN_CARD_ICON_SIZE = 14
 const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
 const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
 const PANEL_CLASSES =
@@ -44,6 +51,8 @@ const UNSELECTED_CLASSES = 'hover:bg-surface-2'
 const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
 const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-3 w-[calc(100%-3.75rem)]`
 const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1.5 pl-3 pr-8 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
+const THREAD_CARD_BUTTON_CLASSES =
+  `absolute right-1.5 top-1/2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const COPY_CLASSES = `flex w-full cursor-pointer flex-col gap-0.5 rounded-md border border-line px-2.5 py-1.5 text-left ${INK_FOCUS_CLASSES}`
 // COPY_CLASSES já fixa border-line; o `!` faz a tinta vencer.
 const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
@@ -60,6 +69,8 @@ const control = useAgentControl()
 const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
+const backlog = useBacklog()
+const navigation = useNavigation()
 const creating = ref(false)
 const editing = ref<Channel | null>(null)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
@@ -94,6 +105,11 @@ function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
 
 function threadShown(itemId: string): boolean {
   return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
+}
+
+function openThreadCard(itemId: string): void {
+  backlog.open(itemId)
+  navigation.goTo(BACKLOG_PAGE)
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
@@ -184,8 +200,17 @@ function closeChannelDialog(): void {
                 :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
                 :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
               />
-              <span class="truncate">{{ thread.title }}</span>
+              <span class="min-w-0 truncate">{{ thread.title }}</span>
               <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
+            </button>
+            <button
+              type="button"
+              :class="THREAD_CARD_BUTTON_CLASSES"
+              :title="`${OPEN_CARD_LABEL}: ${thread.title}`"
+              :aria-label="`${OPEN_CARD_LABEL}: ${thread.title}`"
+              @click="openThreadCard(thread.itemId)"
+            >
+              <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
             </button>
           </li>
         </ul>
