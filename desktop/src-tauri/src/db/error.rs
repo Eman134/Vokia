@@ -40,6 +40,10 @@ pub enum DbError {
     BacklogLabelLength,
     DuplicateBacklogLabel(String),
     BacklogLabelNotFound(String),
+    InvalidGitRefKind(String),
+    EmptyGitRef,
+    DuplicateGitRef(String),
+    GitRefNotFound(String),
     ResponsibleNotAllowed(String),
     ResponsibleOutsideTeam(String),
     AgentHasPosition(String),
@@ -119,6 +123,10 @@ impl DbError {
                 | DbError::BacklogLabelLength
                 | DbError::DuplicateBacklogLabel(_)
                 | DbError::BacklogLabelNotFound(_)
+                | DbError::InvalidGitRefKind(_)
+                | DbError::EmptyGitRef
+                | DbError::DuplicateGitRef(_)
+                | DbError::GitRefNotFound(_)
                 | DbError::ResponsibleNotAllowed(_)
                 | DbError::ResponsibleOutsideTeam(_)
                 | DbError::BacklogItemArchived
@@ -241,6 +249,18 @@ impl fmt::Display for DbError {
             }
             DbError::BacklogLabelNotFound(label) => {
                 write!(f, "O item não tem a etiqueta {label}.")
+            }
+            DbError::InvalidGitRefKind(kind) => {
+                write!(f, "Tipo de referência Git inválido: {kind} (use commit, branch ou pr).")
+            }
+            DbError::EmptyGitRef => {
+                write!(f, "A referência Git não pode ser vazia.")
+            }
+            DbError::DuplicateGitRef(id) => {
+                write!(f, "A referência {id} já está vinculada a este item.")
+            }
+            DbError::GitRefNotFound(id) => {
+                write!(f, "A referência {id} não está vinculada a este item.")
             }
             DbError::ResponsibleNotAllowed(item_id) => write!(
                 f,

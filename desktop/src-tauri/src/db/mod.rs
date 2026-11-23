@@ -29,7 +29,7 @@ pub use messages::StoredTaskResult;
 pub use permission_rules::{root_command, PermissionRule};
 pub use backlog::{
     board_column, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible, CardResult,
-    ItemPlanInput, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
+    GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS,
 };
 pub use channels::Channel;
 pub use connection::{Db, DbState};
