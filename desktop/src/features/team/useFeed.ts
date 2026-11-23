@@ -250,6 +250,9 @@ export const useFeed = defineStore('feed', () => {
       case 'batch-progress':
         useOrchestration().applyBatchProgress(event)
         break
+      case 'task-stage':
+        useOrchestration().applyTaskStage(event.stage)
+        break
       case 'plan-usage':
         break
       case 'usage-limit':

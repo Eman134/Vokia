@@ -116,6 +116,20 @@ export interface OrchFlowGateway {
   posY: number
 }
 
+export type TaskStageState = 'em_andamento' | 'aguardando' | 'escalada' | 'concluida'
+
+export interface OrchTaskStage {
+  projectId: number
+  itemId: string
+  agent: Agent
+  layerId: string | null
+  edgeId: number | null
+  flowMode: string | null
+  state: TaskStageState
+  retries: number
+  updatedAt: number
+}
+
 export interface OrchestrationSnapshot {
   settings: OrchestrationSettings
   layers: OrchLayer[]
@@ -123,6 +137,7 @@ export interface OrchestrationSnapshot {
   placements: OrchPlacement[]
   edges: OrchFlowEdge[]
   gateways: OrchFlowGateway[]
+  taskStages: OrchTaskStage[]
 }
 
 export interface OrchTeamDraft {

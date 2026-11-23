@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
-import { MICRO_STATUS_BADGE } from './backlogLabels'
+import { FLOW_STATE_LABEL, MICRO_STATUS_BADGE } from './backlogLabels'
 import { MICRO_EXPLANATION, MICRO_SUMMARY } from './backlogTypes'
 import MicroTaskScript, { isScriptValid } from './MicroTaskScript.vue'
 import type { PlanBreakdown } from './planBreakdown'
@@ -102,7 +102,12 @@ function onRowKeydown(event: KeyboardEvent): void {
           <span class="min-w-0 flex-1 wrap-break-word font-medium">{{ step.title }}</span>
           <span :class="BADGES_WRAP_CLASSES">
             <AgentPortrait v-if="step.who" :who="step.who" :size="MICRO_PORTRAIT_SIZE" />
-            <UiBadge :status="MICRO_STATUS_BADGE[step.status]" :label="step.status" />
+            <span v-if="step.layer" class="text-tiny text-muted" data-testid="breakdown-layer">{{ step.layer }}</span>
+            <span v-if="step.edge" class="text-tiny text-muted" data-testid="breakdown-edge">{{ step.edge }}</span>
+            <UiBadge
+              :status="MICRO_STATUS_BADGE[step.status]"
+              :label="step.flowState ? FLOW_STATE_LABEL[step.flowState] : step.status"
+            />
           </span>
         </button>
       </div>
