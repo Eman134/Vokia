@@ -7,28 +7,24 @@ import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import UserAvatar from '../profile/UserAvatar.vue'
 import {
-  ACTION_ID,
-  type ActionLabel,
   BADGE_DOT,
   AUTO_CLOSED_LABEL,
   CLOSED_BY_AUTOMATIC,
   COLUMN_CHIP,
-  STATE_ACTION,
   STATE_BADGE,
   STATE_CHIP,
   TRIAGE_STEP_COUNT,
 } from './backlogLabels'
 import type { ParsedProposal } from './planProposal'
 import {
-  DEFAULT_COLUMN,
   isUnassigned,
-  READY_COLUMN,
   UNASSIGNED_TEXT,
   type TaskCardAction,
   type BacklogColumn,
   type BacklogItem,
   type BacklogState,
 } from './backlogTypes'
+import { cardActionFor } from './cardAction'
 import BacklogPlanActions from './BacklogPlanActions.vue'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
@@ -61,13 +57,7 @@ const isFeature = computed(() => props.item.type === 'feature')
 const isAutoClosed = computed(() => props.column === DONE_COLUMN && props.item.closedBy === CLOSED_BY_AUTOMATIC)
 const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (roster.profileOf(props.item.who)?.name ?? props.item.who)))
 
-const action = computed<{ label: ActionLabel; id: TaskCardAction } | undefined>(() => {
-  if (props.item.error) return undefined
-  if (props.column === READY_COLUMN && props.state === 'vinculado') return { label: 'Iniciar', id: 'iniciar' }
-  if (props.column !== DEFAULT_COLUMN) return undefined
-  const label = STATE_ACTION[props.state]
-  return label && { label, id: ACTION_ID[label] }
-})
+const action = computed(() => cardActionFor(props.item, props.column, props.state))
 
 const progress = computed(() => {
   const { children, triageStep } = props.item
