@@ -1,3 +1,5 @@
+import type { OrchTaskStage } from '../orchestration/orchestrationTypes'
+
 export const VOKIA_EVENT = 'vokia://event'
 
 export type Agent = string
@@ -284,6 +286,11 @@ export interface VokiaBatchProgress {
   done: boolean
 }
 
+export interface VokiaTaskStage {
+  type: 'task-stage'
+  stage: OrchTaskStage
+}
+
 export interface VokiaAgentNamed {
   type: 'agent-named'
   projectId: number
@@ -351,6 +358,7 @@ export type VokiaEvent =
   | VokiaOrchestrationChanged
   | VokiaAgentNamed
   | VokiaBatchProgress
+  | VokiaTaskStage
   | VokiaTemporaryOverridesChanged
   | VokiaModelUnavailable
 

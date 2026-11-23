@@ -1,5 +1,6 @@
 import type UiBadge from '../../ui/UiBadge.vue'
 import type { TaskCardAction, BacklogColumn, BacklogOrigin, BacklogState } from './backlogTypes'
+import type { TaskStageState } from '../orchestration/orchestrationTypes'
 import type { BreakdownStatus } from './planBreakdown'
 
 type BadgeStatus = InstanceType<typeof UiBadge>['$props']['status']
@@ -32,6 +33,12 @@ export const MICRO_STATUS_BADGE: Record<BreakdownStatus, BadgeStatus> = {
   'em andamento': 'lote',
   'em revisão': 'precisa de você',
   feito: 'trabalhando',
+}
+export const FLOW_STATE_LABEL: Record<TaskStageState, string> = {
+  em_andamento: 'em andamento',
+  aguardando: 'aguardando',
+  escalada: 'escalada',
+  concluida: 'concluída',
 }
 export const BADGE_DOT: Record<BadgeStatus, string> = {
   trabalhando: 'bg-ok',

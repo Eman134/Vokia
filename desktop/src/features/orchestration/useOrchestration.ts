@@ -4,7 +4,7 @@ import { useFeed } from '../team/useFeed'
 import type { Agent, VokiaBatchProgress } from '../team/events'
 import { syncFlowDrafts } from './flowSync'
 import * as orchestrationApi from './orchestrationApi'
-import type { FlowProblem, OrchPlacementDraft, OrchTeamDraft, OrchestrationSnapshot, TeamFlowDraft } from './orchestrationTypes'
+import type { FlowProblem, OrchPlacementDraft, OrchTaskStage, OrchTeamDraft, OrchestrationSnapshot, TeamFlowDraft } from './orchestrationTypes'
 
 // A orquestração é global: um só snapshot para todos os projetos, recarregado a cada evento de mudança.
 function parseProblems(error: unknown): FlowProblem[] {
@@ -34,6 +34,14 @@ export const useOrchestration = defineStore('orchestration', () => {
       next.set(key, event)
     }
     batches.value = next
+  }
+
+  // O evento traz a etapa já gravada; o snapshot só é recarregado nas mudanças de configuração.
+  function applyTaskStage(stage: OrchTaskStage): void {
+    const current = snapshot.value
+    if (current === null) return
+    const others = current.taskStages.filter((known) => known.projectId !== stage.projectId || known.itemId !== stage.itemId)
+    current.taskStages = [...others, stage]
   }
   const feed = useFeed()
   let loadSeq = 0
@@ -99,6 +107,7 @@ export const useOrchestration = defineStore('orchestration', () => {
     snapshot,
     batches,
     applyBatchProgress,
+    applyTaskStage,
     load,
     reload: load,
     saveFlow,

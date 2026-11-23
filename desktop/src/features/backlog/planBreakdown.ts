@@ -1,6 +1,7 @@
 import { planProgress, type Progress } from '../artifacts/planProgress'
 import { COLUMN_CHIP } from './backlogLabels'
 import type { BacklogColumn, BacklogItem, ScriptBlock } from './backlogTypes'
+import type { OrchTaskStage, TaskStageState } from '../orchestration/orchestrationTypes'
 import type { ParsedProposal } from './planProposal'
 
 export type BreakdownStatus = 'proposta' | 'ready' | 'em andamento' | 'em revisão' | 'feito'
@@ -15,6 +16,21 @@ export interface BreakdownStep {
   tasks: string[]
   script?: ScriptBlock
   stageId?: string
+  layer?: string
+  edge?: string
+  flowState?: TaskStageState
+}
+
+// Camada e nome de cada etapa vêm do fluxo do time; o estado da etapa pesa mais que a coluna do card.
+export interface StageFlow {
+  stages: readonly OrchTaskStage[]
+  layerName: (layerId: string) => string | undefined
+  edgeLabel: (edgeId: number) => string | undefined
+}
+
+const FLOW_STATUS: Partial<Record<TaskStageState, BreakdownStatus>> = {
+  em_andamento: 'em andamento',
+  concluida: 'feito',
 }
 
 export interface PlanBreakdown {
@@ -46,6 +62,19 @@ function statusFromColumn(column: BacklogColumn | undefined): BreakdownStatus {
   return 'ready'
 }
 
+function flowDetails(stageId: string | undefined, column: BreakdownStatus, flow?: StageFlow): Pick<BreakdownStep, 'status' | 'layer' | 'edge' | 'flowState'> {
+  const state = stageId === undefined ? undefined : flow?.stages.find((candidate) => candidate.itemId === stageId)
+  if (state === undefined) return { status: column }
+  const layer = state.layerId === null ? undefined : flow?.layerName(state.layerId)
+  const edge = state.edgeId === null ? undefined : flow?.edgeLabel(state.edgeId)
+  return {
+    status: FLOW_STATUS[state.state] ?? column,
+    flowState: state.state,
+    ...(layer ? { layer } : {}),
+    ...(edge ? { edge } : {}),
+  }
+}
+
 function splitTasks(raw: string): string[] {
   return raw
     .split(TASK_SEPARATOR)
@@ -72,6 +101,7 @@ export function breakdownOf(
   item: BacklogItem,
   proposal: ParsedProposal | undefined,
   stages: readonly BacklogItem[],
+  flow?: StageFlow,
 ): PlanBreakdown {
   const steps: BreakdownStep[] = []
   const matchedStageIds = new Set<string>()
@@ -89,7 +119,7 @@ export function breakdownOf(
       n: lot.n,
       title: stage?.title || lot.title,
       ...(who ? { who } : {}),
-      status: stage ? statusFromColumn(stage.column) : 'proposta',
+      ...flowDetails(stage?.id, stage ? statusFromColumn(stage.column) : 'proposta', flow),
       goal: lot.meta,
       tasks: splitTasks(lot.tasks),
       ...(lot.script ? { script: lot.script.block } : {}),
@@ -108,7 +138,7 @@ export function breakdownOf(
       n,
       title: stage.title,
       ...(who ? { who } : {}),
-      status: statusFromColumn(stage.column),
+      ...flowDetails(stage.id, statusFromColumn(stage.column), flow),
       goal: stage.description ?? '',
       tasks: [],
       stageId: stage.id,

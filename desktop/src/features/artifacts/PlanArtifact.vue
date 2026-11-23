@@ -9,10 +9,11 @@ import UiProgress from '../../ui/UiProgress.vue'
 import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
 import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
 import PlanBreakdown from '../backlog/PlanBreakdown.vue'
-import { breakdownOf } from '../backlog/planBreakdown'
+import { breakdownOf, type StageFlow } from '../backlog/planBreakdown'
 import type { ParsedProposal } from '../backlog/planProposal'
 import { useBacklog } from '../backlog/useBacklog'
 import { useItemPlan } from '../backlog/useItemPlan'
+import { useOrchestration } from '../orchestration/useOrchestration'
 import { useProjects } from '../projects/useProjects'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import {
@@ -72,7 +73,16 @@ const editing = ref(false)
 let loadSeq = 0
 
 const progress = computed(() => planProgress(props.stages))
-const breakdown = computed(() => breakdownOf(props.item, props.proposal, []))
+const orchestration = useOrchestration()
+const stageFlow = computed<StageFlow>(() => ({
+  stages: (orchestration.snapshot?.taskStages ?? []).filter((stage) => stage.projectId === projects.selected?.id),
+  layerName: (layerId) => orchestration.snapshot?.layers.find((layer) => layer.id === layerId)?.name,
+  edgeLabel: (edgeId) => {
+    const edge = orchestration.snapshot?.edges.find((candidate) => candidate.id === edgeId)
+    return edge === undefined ? undefined : `${edge.fromNode} → ${edge.toNode}`
+  },
+}))
+const breakdown = computed(() => breakdownOf(props.item, props.proposal, props.stages, stageFlow.value))
 const expandedSteps = ref(new Set<string>(breakdown.value.steps[0] ? [breakdown.value.steps[0].id] : []))
 const loading = computed(() => artifact.value === null && loadError.value === null && props.state !== GENERATING_STATE)
 
