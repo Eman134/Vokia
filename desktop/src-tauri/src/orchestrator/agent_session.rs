@@ -114,6 +114,7 @@ async fn run_step(
         )));
     }
     let grant_per_session = grants_per_session(app)?;
+    let per_step = sessions.is_per_step();
     let store = SessionStore {
         app,
         key: SessionKey {
@@ -188,7 +189,7 @@ async fn run_step(
             has_variables: !exchange.definition.variables.is_empty(),
             collected: StdMutex::default(),
         };
-        if !call.adapter.supports_live_session() {
+        if !per_step && !call.adapter.supports_live_session() {
             call.resume_session = store.load()?.and_then(|stored| {
                 decode_provider_session(
                     &stored,
@@ -229,7 +230,12 @@ async fn run_step(
         };
         let attempt: Result<Reply, FlowError> = async {
             let live = if call.adapter.supports_live_session() {
-                match call_mode(held.guard.fresh_only) {
+                let mode = if per_step {
+                    CallMode::Fresh
+                } else {
+                    call_mode(held.guard.fresh_only)
+                };
+                match mode {
                     CallMode::Live => {
                         call.adapter
                             .run_live(
@@ -320,7 +326,7 @@ async fn run_step(
                         .insert(agent.clone(), ov);
                     emit_overrides_changed(app, state);
                 }
-                if !call.adapter.supports_live_session() {
+                if !per_step && !call.adapter.supports_live_session() {
                     if let Some(session_id) = reply.session_id.as_deref() {
                         store.save(&encode_provider_session(
                             &candidate.cli,

@@ -8,15 +8,15 @@ use crate::commands::channels::post_agent_message;
 use crate::commands::dispatcher::list_commands_filtered;
 use crate::commands::orchestration::{read_movements, read_orchestration};
 use crate::db::{
-    board_column, AgentActor, BacklogItem, CardOperation, CardOutcome, CardResponsible, DbError,
-    DbState, ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMNS, ARTIFACT_KINDS,
+    artifact_id, board_column, plan_stage_number, AgentActor, BacklogItem, CardOperation, CardOutcome,
+    CardResponsible, Db, DbError, DbState, ItemPlanInput, OrchestrationSnapshot, AGENT_FORBIDDEN_COLUMNS, ARTIFACT_KINDS,
     ArtifactDocumentPatch, BACKLOG_LABEL_MAX_CHARS, BOARD_COLUMNS, NewArtifactDocument,
     REQUEST_KIND_VALUES, WHEN_EVENT_VALUES,
 };
 use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestration::policy::check_intent;
 use crate::orchestration::snapshot::{find_team, team_leader, team_leaders, TeamLeader};
-use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
+use crate::orchestrator::{emit_backlog_changed, start_approved_plan, variables_listing, with_cache};
 use crate::state::{AppState, MAX_DELEGATION_PING_SECS, MIN_DELEGATION_PING_SECS};
 use crate::task::{Change, VarValue};
 
@@ -120,6 +120,8 @@ const PROPOSAL_REGISTERED: &str = "Proposta registrada. Escreva a resposta norma
 const PROPOSAL_ALREADY_REGISTERED: &str = "Já há um pedido proposto nesta resposta.";
 const PROPOSAL_EMPTY_TITLE: &str = "O título do pedido não pode ser vazio.";
 const DECISION_CHOICE_WITHOUT_OPTIONS: &str = "Uma decisão do tipo escolha precisa de opções.";
+const CHECKED_MARK: &str = "[x]";
+const UNCHECKED_MARK: &str = "[ ]";
 const CRITERION_DONE: &str = "marcado";
 const CRITERION_UNDONE: &str = "desmarcado";
 
@@ -620,12 +622,48 @@ fn read_card(app: &AppHandle, binding: &Binding, args: ReadArgs) -> ToolText {
             card.description.as_deref().unwrap_or(NO_DESCRIPTION)
         ),
     ];
+    lines.extend(progress_lines(db, binding.project_id, &card)?);
     lines.extend(
         card.activity[recent..]
             .iter()
             .map(|activity| format!("- {} {}", activity.at, activity.text)),
     );
     Ok(lines.join("\n"))
+}
+
+// Progresso por etapa: a etapa diz qual critério do plano marcar; o plano lista as etapas e os critérios marcados.
+fn progress_lines(db: &Db, project_id: i64, card: &BacklogItem) -> Result<Vec<String>, String> {
+    let mut lines = Vec::new();
+    if let Some(parent) = card.parent.as_deref() {
+        lines.push(format!("Plano: {parent}"));
+        if let Some(number) = plan_stage_number(parent, &card.id) {
+            lines.push(format!(
+                "Critério desta etapa: {} c{number}",
+                artifact_id(parent)
+            ));
+        }
+    }
+    let Some(children) = &card.children else {
+        return Ok(lines);
+    };
+    lines.push(format!(
+        "Etapas concluídas: {} de {}",
+        children.done, children.total
+    ));
+    for stage in db
+        .plan_stages(project_id, &card.id)
+        .map_err(|error| refusal_or_system(&error))?
+    {
+        lines.push(format!("- {}: {}", stage.id, column_of(&stage)));
+    }
+    for criterion in db
+        .plan_criteria(project_id, &card.id)
+        .map_err(|error| refusal_or_system(&error))?
+    {
+        let mark = if criterion.done { CHECKED_MARK } else { UNCHECKED_MARK };
+        lines.push(format!("- {mark} {}: {}", criterion.id, criterion.text));
+    }
+    Ok(lines)
 }
 
 fn ensure_title_length(title: &str) -> Result<(), String> {
@@ -1150,10 +1188,16 @@ fn list_agents(app: &AppHandle) -> ToolText {
 }
 
 fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> ToolText {
-    let state = app.state::<DbState>();
-    let db = state.require().map_err(|error| refusal_or_system(&error))?;
-    db.save_item_plan(binding.project_id, &args.item_id, &args.plan)
-        .map_err(|error| refusal_or_system(&error))?;
+    let approved = {
+        let state = app.state::<DbState>();
+        let db = state.require().map_err(|error| refusal_or_system(&error))?;
+        db.save_item_plan(binding.project_id, &args.item_id, &args.plan)
+            .map_err(|error| refusal_or_system(&error))?
+    };
+    if approved {
+        start_approved_plan(app, binding.project_id, &args.item_id)
+            .map_err(|error| error.to_string())?;
+    }
     let message = format!("Plano do card {} gravado.", args.item_id);
     record_backlog_change(app, binding, vec![message.clone()]);
     Ok(message)

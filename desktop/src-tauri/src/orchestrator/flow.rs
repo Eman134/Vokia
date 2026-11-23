@@ -36,8 +36,8 @@ use crate::task::{
 use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{
-    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
-    reconcile_waiting, report_limits, MessageScope,
+    emit, emit_artifacts_changed, emit_backlog_changed, emit_feed_note, emit_message, emit_state,
+    now_millis, reconcile_waiting, report_limits, MessageScope,
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
@@ -935,6 +935,23 @@ fn close_branch(
     Some((flow.ended.remove(&branch), finished))
 }
 
+// Começar a executar um card ou etapa o põe em In progress com as etiquetas de andamento; o quadro é avisado na hora.
+fn start_item_work(app: &AppHandle, project_id: i64, item_id: Option<&str>) -> Result<(), FlowError> {
+    let Some(item_id) = item_id else {
+        return Ok(());
+    };
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|source| FlowError::CardStart {
+        item_id: item_id.to_string(),
+        source,
+    })?;
+    db.start_card(project_id, item_id).map_err(|source| FlowError::CardStart {
+        item_id: item_id.to_string(),
+        source,
+    })?;
+    emit_backlog_changed(app, project_id)
+}
+
 fn set_running_item(
     state: &AppState,
     key: &SessionKey,
@@ -999,6 +1016,7 @@ async fn run_flow(
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = None;
     loop {
+        start_item_work(app, key.project_id, item_id.as_deref())?;
         set_running_item(state, &key, item_id.as_deref())?;
         register_main_branch(state, key.project_id, item_id.as_deref())?;
         let journal_run = if parallel {
@@ -1257,7 +1275,7 @@ async fn run_parallel_item(
         orchestration: orchestration.as_ref(),
         run_id,
     };
-    let mut sessions = ExchangeSessions::new(&state.sessions, key.project_id);
+    let mut sessions = ExchangeSessions::per_step(&state.sessions, key.project_id);
     let result = answer_once(&exchange, &mut sessions, batch).await;
     sessions.release().await;
     result.map(|text| (TaskOutcome::Finished, text))
@@ -1644,13 +1662,9 @@ fn sweep_stalled_stages(app: &AppHandle) {
                 let _ = emit_stage(app, stage.project_id, item);
             }
             StallAction::Escalate => {
-                if db
-                    .set_task_stage_state(stage.project_id, item, stages::STAGE_ESCALATED)
-                    .is_err()
-                {
+                if set_stage_state(app, stage.project_id, item, stages::STAGE_ESCALATED).is_err() {
                     continue;
                 }
-                let _ = emit_stage(app, stage.project_id, item);
                 let leader = load_orchestration(app)
                     .ok()
                     .flatten()
@@ -1705,7 +1719,7 @@ fn has_pending_delegation(state: &AppState, project_id: i64, item_id: &str) -> b
 }
 
 // Pedido de retomada ao agente (ou ao líder): entra pelo mesmo caminho de um pedido novo, preso ao card.
-fn spawn_stage_request(app: &AppHandle, project_id: i64, item_id: &str, recipient: Agent, text: &str) {
+pub(super) fn spawn_stage_request(app: &AppHandle, project_id: i64, item_id: &str, recipient: Agent, text: &str) {
     let app = app.clone();
     let text = text.to_string();
     let item_id = item_id.to_string();
@@ -1766,6 +1780,27 @@ pub(crate) fn emit_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Res
         Ok(Some(stage)) => emit(app, VokiaEvent::TaskStage { stage }),
         _ => Ok(()),
     }
+}
+
+// Único caminho para mudar a etapa de uma task: o banco grava etapa, card filho, pai e artefato numa transação;
+// aqui a tela recebe a etapa, o quadro e os artefatos já atualizados.
+pub(crate) fn set_stage_state(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: &str,
+    stage_state: &str,
+) -> Result<(), FlowError> {
+    app.state::<DbState>()
+        .require()?
+        .set_task_stage_state(project_id, item_id, stage_state)?;
+    publish_stage(app, project_id, item_id)
+}
+
+// Etapa gravada que mudou: a task, o quadro e os artefatos são avisados juntos.
+pub(crate) fn publish_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
+    emit_stage(app, project_id, item_id)?;
+    emit_backlog_changed(app, project_id)?;
+    emit_artifacts_changed(app, project_id)
 }
 
 // Delegação ativada já cumpriu o papel do registro e sai; a silenciosa recebe novas tentativas de drenar a fila

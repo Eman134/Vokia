@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::agents::Agent;
 use crate::orchestration::flow_validation::validate_flow;
+use crate::orchestration::stages::STAGE_RUNNING;
 
 use super::agent_removal::{hand_over_cards, FeedNote};
+use super::backlog::sync_plan_stage;
 use super::connection::Db;
 use super::error::DbError;
 
@@ -22,7 +24,7 @@ pub(crate) const GATEWAY_PARALLEL: &str = "paralelo";
 pub(crate) const GATEWAY_EXCLUSIVE: &str = "exclusivo";
 const GATEWAY_ID_PREFIX: &str = "gw-";
 const ACTION_CONSULT: &str = "consultar";
-const START_EDGE_EVENT: &str = "plano_aprovado";
+pub(crate) const START_EDGE_EVENT: &str = "plano_aprovado";
 const START_EDGE_KIND: &str = "planejar";
 // Mesmas medidas da grade da tela (CANVAS_AREA e posição inicial de cada camada); a migração repete os números em SQL.
 const FLOW_CANVAS_SIZE: f64 = 1600.0;
@@ -695,7 +697,7 @@ fn list_gateways(conn: &Connection) -> Result<Vec<FlowGateway>, DbError> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-fn read_snapshot(conn: &Connection) -> Result<OrchestrationSnapshot, DbError> {
+pub(super) fn read_snapshot(conn: &Connection) -> Result<OrchestrationSnapshot, DbError> {
     Ok(OrchestrationSnapshot {
         settings: fetch_settings(conn)?.unwrap_or_default(),
         layers: list_layers(conn)?,
@@ -1444,6 +1446,7 @@ impl Db {
                 STAGE_UPSERT_SQL,
                 params![project_id, item_id, draft.to_agent, draft.to_layer, draft.edge_id],
             )?;
+            sync_plan_stage(&tx, project_id, item_id, STAGE_RUNNING)?;
         }
         tx.commit()?;
         Ok(())
@@ -1496,6 +1499,7 @@ impl Db {
             .optional()?)
     }
 
+    // Único ponto de transição da etapa: a linha da task, o card filho, o pai e o critério do artefato andam juntos.
     pub fn set_task_stage_state(
         &self,
         project_id: i64,
@@ -1503,14 +1507,37 @@ impl Db {
         state: &str,
     ) -> Result<(), DbError> {
         check_one_of("state", state, STAGE_STATE_VALUES)?;
-        let conn = self.conn()?;
-        conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
             &format!(
                 "UPDATE orch_task_stages SET state = ?3, updated_at = {NOW_MS_SQL} \
                  WHERE project_id = ?1 AND item_id = ?2"
             ),
             params![project_id, item_id, state],
         )?;
+        sync_plan_stage(&tx, project_id, item_id, state)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    // Etapa de plano que começa sem passagem anterior: entra com a aresta e a camada de quem a recebe.
+    pub fn start_plan_stage(
+        &self,
+        project_id: i64,
+        stage_id: &str,
+        agent: &str,
+        layer_id: &str,
+        edge_id: Option<i64>,
+    ) -> Result<(), DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            STAGE_UPSERT_SQL,
+            params![project_id, stage_id, agent, layer_id, edge_id],
+        )?;
+        sync_plan_stage(&tx, project_id, stage_id, STAGE_RUNNING)?;
+        tx.commit()?;
         Ok(())
     }
 

@@ -18,12 +18,14 @@ fn proposta_completa_vira_resumo_estimativa_lotes_riscos_e_etiquetas() {
                 title: "Base".to_string(),
                 meta: "Base pronta".to_string(),
                 tasks: vec!["Criar tabela".to_string(), "Criar API".to_string()],
+                who: None,
             },
             PlanLot {
                 n: 2,
                 title: "Tela".to_string(),
                 meta: "Tela funcionando".to_string(),
                 tasks: Vec::new(),
+                who: None,
             },
         ]
     );

@@ -25,8 +25,9 @@ use super::emit::{
 use super::error::FlowError;
 use super::flow::{
     announce_batch, count_branch, dispatch_request, emit_stage, is_batch_open, mark_flow_end,
-    open_batch, seal_batch, stop_with_error,
+    open_batch, seal_batch, set_stage_state, stop_with_error,
 };
+use super::plan_stages::advance_plan;
 use super::goal::{achieved_message, emit_goal, settle, GoalTracker, Settlement, Trigger};
 use super::loop_guard::{
     idle_limit_message, pass_limit_message, rejection_message, LoopGuard, PassCounter,
@@ -975,8 +976,8 @@ fn report_task_result(
             &result,
         )?;
         if let (true, Some(item)) = (result.concluded, exchange.item_id) {
-            db.set_task_stage_state(project_id, item, STAGE_DONE)?;
-            emit_stage(exchange.app, project_id, item)?;
+            set_stage_state(exchange.app, project_id, item, STAGE_DONE)?;
+            advance_plan(exchange.app, project_id, item)?;
         }
     }
     emit(
@@ -1123,10 +1124,7 @@ fn raise_decision(
     )?;
     // Decisão aberta: a task espera o usuário, então não conta como parada.
     if let Some(item) = *item_id {
-        if let Some(db) = app.state::<DbState>().db() {
-            db.set_task_stage_state(project_id, item, STAGE_WAITING)?;
-        }
-        emit_stage(app, project_id, item)?;
+        set_stage_state(app, project_id, item, STAGE_WAITING)?;
     }
     if let Ok(mut flow) = state.flow.lock() {
         flow.turn_waiters.remove(key);

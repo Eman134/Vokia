@@ -6,14 +6,16 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::agents::Team;
 use crate::events::Agent;
-use crate::plan_proposal::{parse_proposal, PlanDraft};
+use crate::orchestration::stages::{plan_script_refusal, STAGE_DONE};
+use crate::plan_proposal::{parse_proposal, PlanDraft, PlanLot};
 
 use super::artifacts::{
     artifact_exists, artifact_id, artifact_updated_at, delete_artifact, read_plan_artifact, replace_artifact,
-    upsert_artifact_row, upsert_plan_criteria, Artifact,
+    set_plan_criterion_done, upsert_artifact_row, upsert_plan_criteria, Artifact, ArtifactCriterion,
 };
 use super::connection::Db;
 use super::error::DbError;
+use super::orchestration::read_snapshot;
 
 pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
 pub const GIT_REF_KINDS: &[&str] = &["commit", "branch", "pr"];
@@ -44,6 +46,9 @@ const DONE_COLUMN: &str = "Done";
 const READY_COLUMN: &str = "Ready";
 // Done é do usuário ou da validação final: o agente não move o card para lá nem para Ready.
 pub const AGENT_FORBIDDEN_COLUMNS: &[&str] = &[READY_COLUMN, DONE_COLUMN];
+// Etiqueta de andamento entra quando a execução começa; as de planejamento saem nesse momento.
+const IN_PROGRESS_LABEL: &str = "em andamento";
+const PLANNING_LABELS: &[&str] = &["triagem", "plano-pronto"];
 const CLOSED_BY_USER: &str = "usuario";
 const CLOSED_BY_AUTOMATIC: &str = "automatico";
 const CLOSERS: &[&str] = &[CLOSED_BY_USER, CLOSED_BY_AUTOMATIC];
@@ -365,6 +370,7 @@ struct CardDraft<'a> {
 struct PlanCard<'a> {
     id: String,
     parent: &'a str,
+    who: &'a str,
     title: &'a str,
     description: Option<&'a str>,
 }
@@ -536,6 +542,24 @@ impl Db {
         }
         refresh_parent_of(&tx, project_id, id)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    // Início da execução de um card ou etapa: vai para In progress e troca as etiquetas de planejamento pela de andamento.
+    // Repetir não grava nada; card concluído fica como está.
+    pub fn start_card(&self, project_id: i64, id: &str) -> Result<(), DbError> {
+        let item = self.read_card(project_id, id)?;
+        if item.column.as_deref() == Some(DONE_COLUMN) {
+            return Ok(());
+        }
+        let tags = running_tags(&item.tags);
+        if item.column.as_deref() != Some(IN_PROGRESS_COLUMN) {
+            self.advance_card(project_id, id, IN_PROGRESS_COLUMN)?;
+        }
+        if tags != item.tags {
+            let conn = self.conn()?;
+            write_tags(&conn, project_id, id, &tags)?;
+        }
         Ok(())
     }
 
@@ -920,19 +944,58 @@ impl Db {
         Ok(results)
     }
 
+    // Devolve true quando este pedido aprova o plano (passa a vinculado); regravar um plano já aceito não aprova de novo.
     pub fn save_item_plan(
         &self,
         project_id: i64,
         item_id: &str,
         plan: &ItemPlanInput,
-    ) -> Result<(), DbError> {
+    ) -> Result<bool, DbError> {
         validate_plan(plan)?;
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
+        let previous: Option<String> = tx
+            .query_row(
+                "SELECT state FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+                |row| row.get(0),
+            )
+            .optional()?;
         write_item_plan(&tx, project_id, item_id, plan)?;
         tx.commit()?;
-        Ok(())
+        Ok(plan.state == LINKED_PLAN && previous.as_deref() != Some(LINKED_PLAN))
+    }
+
+    // Etapas (#lote) do plano do card, na ordem do plano; etapas arquivadas ficam de fora.
+    pub fn plan_stages(&self, project_id: i64, item_id: &str) -> Result<Vec<BacklogItem>, DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let prefix = format!("{}.", artifact_id(item_id));
+        let mut statement = conn.prepare(&format!(
+            "SELECT {ITEM_COLUMNS} FROM backlog_items \
+             WHERE project_id = ?1 AND parent = ?2 AND archived_at IS NULL"
+        ))?;
+        let rows = statement.query_map(params![project_id, item_id], read_item)?;
+        let mut stages = rows
+            .collect::<rusqlite::Result<Vec<BacklogItem>>>()?
+            .into_iter()
+            .filter_map(|stage| {
+                let number: u32 = stage.id.strip_prefix(&prefix)?.parse().ok()?;
+                Some((number, stage))
+            })
+            .collect::<Vec<_>>();
+        stages.sort_by_key(|(number, _)| *number);
+        Ok(stages.into_iter().map(|(_, stage)| stage).collect())
+    }
+
+    // Um critério por etapa do plano: quem executa marca o da própria etapa ao concluí-la.
+    pub fn plan_criteria(&self, project_id: i64, item_id: &str) -> Result<Vec<ArtifactCriterion>, DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        Ok(read_plan_artifact(&conn, project_id, &artifact_id(item_id))?
+            .map(|plan| plan.criteria)
+            .unwrap_or_default())
     }
 
     // Edita o texto de um plano proposto ou aceito sem perder os critérios já marcados.
@@ -1067,6 +1130,12 @@ fn write_item_plan(
         return Ok(());
     }
     let linked = plan.plan.as_ref();
+    let own_plan = linked.is_none_or(|linked| linked.id == item_id);
+    let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
+    let draft = proposal.filter(|_| own_plan).map(parse_proposal);
+    if let Some(draft) = &draft {
+        validate_plan_roteiro(conn, &item, draft)?;
+    }
     conn.execute(
         UPSERT_PLAN_SQL,
         params![
@@ -1080,19 +1149,16 @@ fn write_item_plan(
             plan.agent,
         ],
     )?;
-    let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
-    let own_plan = linked.is_none_or(|linked| linked.id == item_id);
-    if let (Some(text), true) = (proposal, own_plan) {
-        let draft = parse_proposal(text);
+    if let (Some(text), Some(draft)) = (proposal, &draft) {
         let author = plan.agent.as_deref();
         if plan.state == PROPOSED_PLAN {
-            replace_artifact(conn, project_id, item_id, &item.title, text, author, &draft)?;
+            replace_artifact(conn, project_id, item_id, &item.title, text, author, draft)?;
         } else {
             validate_item(&item)?;
             if !artifact_exists(conn, project_id, item_id)? {
-                replace_artifact(conn, project_id, item_id, &item.title, text, author, &draft)?;
+                replace_artifact(conn, project_id, item_id, &item.title, text, author, draft)?;
             }
-            create_plan_cards(conn, project_id, &item, author, &draft)?;
+            create_plan_cards(conn, project_id, &item, author, draft)?;
         }
     }
     if item.column.as_deref().unwrap_or(DEFAULT_COLUMN) == DEFAULT_COLUMN {
@@ -1203,6 +1269,21 @@ fn label_key(raw: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+fn running_tags(tags: &[String]) -> Vec<String> {
+    let mut next: Vec<String> = tags
+        .iter()
+        .filter(|tag| {
+            let key = label_key(tag);
+            !PLANNING_LABELS.contains(&key.as_str())
+        })
+        .cloned()
+        .collect();
+    if !next.iter().any(|tag| label_key(tag) == IN_PROGRESS_LABEL) {
+        next.push(IN_PROGRESS_LABEL.to_string());
+    }
+    next
 }
 
 fn normalized_label(raw: &str) -> Result<String, DbError> {
@@ -1419,6 +1500,32 @@ fn insert_card(
 }
 
 // Ids derivados do plano tornam a criação idempotente: aceitar de novo não duplica nem altera etapas.
+// Plano de card com time: quem de cada etapa precisa ser do time e a ordem não pode pular camada obrigatória.
+fn validate_plan_roteiro(conn: &Connection, item: &BacklogItem, draft: &PlanDraft) -> Result<(), DbError> {
+    let snapshot = read_snapshot(conn)?;
+    let Some(team) = snapshot
+        .teams
+        .iter()
+        .find(|team| team.leader_agent.as_deref() == Some(item.who.as_str()))
+    else {
+        return Ok(());
+    };
+    let lots: Vec<(u32, Option<&str>)> = draft
+        .lots
+        .iter()
+        .map(|lot| (lot.n, lot.who.as_deref()))
+        .collect();
+    match plan_script_refusal(&snapshot, team, &lots) {
+        Some(motive) => Err(DbError::PlanRoteiroRefused(motive)),
+        None => Ok(()),
+    }
+}
+
+// Quem do lote vira o responsável da etapa; sem roteiro, segue o responsável do card.
+fn stage_owner<'a>(item: &'a BacklogItem, lot: &'a PlanLot) -> &'a str {
+    lot.who.as_deref().unwrap_or(item.who.as_str())
+}
+
 fn create_plan_cards(
     conn: &Connection,
     project_id: i64,
@@ -1432,6 +1539,7 @@ fn create_plan_cards(
         let stage = PlanCard {
             id: format!("{plan_id}.{}", lot.n),
             parent: &item.id,
+            who: stage_owner(item, lot),
             title: &lot.title,
             description: Some(lot.meta.as_str()).filter(|meta| !meta.is_empty()),
         };
@@ -1440,6 +1548,7 @@ fn create_plan_cards(
             let subtask = PlanCard {
                 id: format!("{}.{}", stage.id, index + 1),
                 parent: &stage.id,
+                who: stage.who,
                 title: task,
                 description: None,
             };
@@ -1474,8 +1583,87 @@ fn plan_children(conn: &Connection, project_id: i64, parent: &str) -> Result<Vec
 }
 
 // Só Backlog e Ready ainda não começaram; daí em diante a etapa tem trabalho feito e não sai do plano.
-fn is_unstarted(column: &str) -> bool {
+pub fn is_unstarted(column: &str) -> bool {
     column == DEFAULT_COLUMN || column == READY_COLUMN
+}
+
+pub(crate) fn plan_stage_number(parent: &str, stage_id: &str) -> Option<u32> {
+    let prefix = format!("{}.", artifact_id(parent));
+    stage_id.strip_prefix(&prefix)?.parse().ok()
+}
+
+// Estado da etapa de um plano: o card filho e o critério do artefato seguem, e o pai acompanha as etapas.
+// Chamado dentro da transação que grava a etapa, para que nenhuma das três partes fique para trás.
+pub(super) fn sync_plan_stage(
+    conn: &Connection,
+    project_id: i64,
+    stage_id: &str,
+    stage_state: &str,
+) -> Result<(), DbError> {
+    let Some((parent, column)) = conn
+        .query_row(
+            "SELECT parent, \"column\" FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+            params![project_id, stage_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?
+    else {
+        return Ok(());
+    };
+    let Some(parent) = parent else {
+        return Ok(());
+    };
+    let Some(number) = plan_stage_number(&parent, stage_id) else {
+        return Ok(());
+    };
+    // Done é do usuário e da validação final: a etapa concluída não volta por um evento da task.
+    if column == DONE_COLUMN {
+        return Ok(());
+    }
+    let done = stage_state == STAGE_DONE;
+    let stage_column = if done { IN_REVIEW_COLUMN } else { IN_PROGRESS_COLUMN };
+    conn.execute(
+        "UPDATE backlog_items SET \"column\" = ?3 WHERE project_id = ?1 AND id = ?2",
+        params![project_id, stage_id, stage_column],
+    )?;
+    set_plan_criterion_done(conn, project_id, &parent, number, done)?;
+    sync_parent_column(conn, project_id, &parent)
+}
+
+// Pai em In review quando todas as etapas ativas estão em revisão; em In progress quando alguma já começou.
+fn sync_parent_column(conn: &Connection, project_id: i64, parent: &str) -> Result<(), DbError> {
+    let mut statement = conn.prepare(
+        "SELECT \"column\" FROM backlog_items WHERE project_id = ?1 AND parent = ?2 AND archived_at IS NULL",
+    )?;
+    let columns = statement
+        .query_map(params![project_id, parent], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    let parent_column: String = conn.query_row(
+        "SELECT \"column\" FROM backlog_items WHERE project_id = ?1 AND id = ?2",
+        params![project_id, parent],
+        |row| row.get(0),
+    )?;
+    if columns.is_empty() || parent_column == DONE_COLUMN {
+        return Ok(());
+    }
+    let target = if columns
+        .iter()
+        .all(|column| column == IN_REVIEW_COLUMN || column == DONE_COLUMN)
+    {
+        IN_REVIEW_COLUMN
+    } else if columns
+        .iter()
+        .any(|column| column == IN_PROGRESS_COLUMN || column == IN_REVIEW_COLUMN)
+    {
+        IN_PROGRESS_COLUMN
+    } else {
+        return Ok(());
+    };
+    conn.execute(
+        "UPDATE backlog_items SET \"column\" = ?3 WHERE project_id = ?1 AND id = ?2",
+        params![project_id, parent, target],
+    )?;
+    Ok(())
 }
 
 fn is_numbered_child(id: &str, prefix: &str) -> bool {
@@ -1515,9 +1703,9 @@ fn sync_plan_level(
     for card in wanted {
         if stored.iter().any(|existing| existing.id == card.id) {
             conn.execute(
-                "UPDATE backlog_items SET title = ?3, description = ?4, archived_at = NULL \
+                "UPDATE backlog_items SET title = ?3, description = ?4, who = ?5, archived_at = NULL \
                  WHERE project_id = ?1 AND id = ?2",
-                params![project_id, card.id, card.title, card.description],
+                params![project_id, card.id, card.title, card.description, card.who],
             )?;
         } else {
             insert_plan_card(conn, project_id, item, author, card)?;
@@ -1597,6 +1785,7 @@ fn sync_plan_cards(
         .map(|(lot, id)| PlanCard {
             id,
             parent: &item.id,
+            who: stage_owner(item, lot),
             title: &lot.title,
             description: Some(lot.meta.as_str()).filter(|meta| !meta.is_empty()),
         })
@@ -1614,6 +1803,7 @@ fn sync_plan_cards(
             .map(|(task, id)| PlanCard {
                 id,
                 parent: &stage.id,
+                who: stage.who,
                 title: task,
                 description: None,
             })
@@ -1646,7 +1836,7 @@ fn insert_plan_card(
             card.parent,
             true,
             DEFAULT_COLUMN,
-            item.who,
+            card.who,
             author,
             card.description,
             ORIGIN_AGENT,

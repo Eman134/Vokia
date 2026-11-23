@@ -40,6 +40,8 @@ pub enum FlowError {
     SessionStore(DbError),
     Settings(DbError),
     Orchestration(DbError),
+    CardStart { item_id: String, source: DbError },
+    PlanStage(String),
     Runs(DbError),
     Team(AgentError),
     Worktree(WorktreeError),
@@ -102,6 +104,10 @@ impl fmt::Display for FlowError {
             FlowError::Orchestration(error) => {
                 write!(f, "Não foi possível ler a orquestração: {error}")
             }
+            FlowError::CardStart { item_id, source } => {
+                write!(f, "Não foi possível iniciar o card {item_id}: {source}")
+            }
+            FlowError::PlanStage(reason) => write!(f, "{reason}"),
             FlowError::Runs(error) => {
                 write!(f, "Não foi possível atualizar os pedidos interrompidos: {error}")
             }
