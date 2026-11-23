@@ -4,6 +4,8 @@ import UiButton from '../../ui/UiButton.vue'
 import UiField from '../../ui/UiField.vue'
 import type { VokiaPermission } from './events'
 import { agentName } from './agents'
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
 import { useFeed } from './useFeed'
 import { usePermissionCountdown } from './usePermissionCountdown'
 
@@ -39,11 +41,7 @@ const approvals =
     :aria-label="`${name} pede permissão`"
     class="flex items-start gap-2.5"
   >
-    <span
-      class="grid size-7 shrink-0 place-items-center rounded-full border border-line bg-surface-2 text-small font-semibold text-ink"
-    >
-      {{ name.charAt(0) }}
-    </span>
+    <AgentPortrait :who="permission.agent" :size="PORTRAIT_SIZES.chat" class="shrink-0" />
     <div class="min-w-0 flex-1">
       <header class="flex items-baseline gap-2">
         <span class="text-caption font-semibold text-ink">{{ name }}</span>

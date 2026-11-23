@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
 import { agentName } from './agents'
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
 import { useRequests } from './useRequests'
 import {
   QUEUE_DOWN,
@@ -42,7 +44,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       <p class="px-2 py-1.5 text-caption text-muted">{{ QUEUE_POPOVER_TITLE }}</p>
       <ol :aria-label="QUEUE_POPOVER_TITLE" class="flex flex-col gap-1">
         <li v-for="(request, index) in requests.queue" :key="request.id" class="rounded-md px-2 py-1.5">
-          <span class="text-caption font-semibold text-ink">{{ agentName(request.to) }}</span>
+          <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
+            <AgentPortrait :who="request.to" :size="PORTRAIT_SIZES.mention" />
+            {{ agentName(request.to) }}
+          </span>
           <QueueItemEditor v-if="request.editing" :request="request" />
           <template v-else>
             <p class="wrap-break-word line-clamp-2 whitespace-pre-wrap text-label text-muted">{{ request.text }}</p>

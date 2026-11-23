@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { agentName, DEFAULT_RECIPIENT } from './agents'
+import AgentPortrait from './AgentPortrait.vue'
+import { PORTRAIT_SIZES } from './portraitArt'
 import { useRequests, type QueuedRequest } from './useRequests'
 import { QUEUE_EDIT, QUEUE_REMOVE, QUEUED_TAG } from './queueCopy'
 import QueueItemEditor from './QueueItemEditor.vue'
@@ -21,7 +23,10 @@ const userProfile = useUserProfile()
     <div class="flex max-w-3/4 flex-col items-end gap-1">
       <span class="flex items-center gap-2 text-caption text-muted">
         <span class="rounded-md bg-surface-2 px-1.5 font-semibold">{{ QUEUED_TAG }}</span>
-        <span v-if="request.to !== DEFAULT_RECIPIENT">Para {{ agentName(request.to) }}</span>
+        <span v-if="request.to !== DEFAULT_RECIPIENT" class="inline-flex items-center gap-1.5">
+          <AgentPortrait :who="request.to" :size="PORTRAIT_SIZES.mention" />
+          Para {{ agentName(request.to) }}
+        </span>
       </span>
       <QueueItemEditor v-if="request.editing" :request="request" class="w-full" />
       <template v-else>
