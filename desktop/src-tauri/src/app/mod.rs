@@ -77,6 +77,7 @@ pub(crate) fn run() {
             commands::attachments::save_attachment_files,
             commands::attachments::save_attachment_bytes,
             commands::attachments::discard_attachment,
+            commands::attachments::read_attachment_preview,
             // agents
             commands::agents::list_agents,
             commands::agents::available_providers,

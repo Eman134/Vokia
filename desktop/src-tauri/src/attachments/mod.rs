@@ -298,3 +298,128 @@ fn format_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / BYTES_PER_MB as f64).replace('.', ",")
     }
 }
+
+pub fn read_image_data_url(data_dir: &Path, path: &Path) -> Result<String, AttachmentError> {
+    let attachments_dir = data_dir.join(ATTACHMENTS_DIR);
+    let attachments_root = fs::canonicalize(&attachments_dir)
+        .map_err(|_| AttachmentError::OutsideAttachmentsDir(path.display().to_string()))?;
+    let target = fs::canonicalize(path)
+        .map_err(|_| AttachmentError::NotAFile(path.display().to_string()))?;
+    if !target.starts_with(&attachments_root) {
+        return Err(AttachmentError::OutsideAttachmentsDir(
+            path.display().to_string(),
+        ));
+    }
+    let metadata = fs::metadata(&target)
+        .map_err(|error| io_error("ler metadados do anexo", &target, error))?;
+    if !metadata.is_file() {
+        return Err(AttachmentError::NotAFile(path.display().to_string()));
+    }
+    if metadata.len() > ATTACHMENT_MAX_BYTES {
+        let name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| FALLBACK_NAME.to_string());
+        return Err(AttachmentError::TooLarge {
+            name,
+            size: metadata.len(),
+        });
+    }
+    let mime = image_mime_type(&target)
+        .ok_or_else(|| AttachmentError::UnsupportedImage(path.display().to_string()))?;
+    let bytes =
+        fs::read(&target).map_err(|error| io_error("ler a imagem anexada", &target, error))?;
+    Ok(format!("data:{mime};base64,{}", encode_base64(&bytes)))
+}
+
+fn image_mime_type(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+fn encode_base64(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[(triple >> 18) & 0x3f] as char);
+        out.push(TABLE[(triple >> 12) & 0x3f] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[(triple >> 6) & 0x3f] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[triple & 0x3f] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("vokia_att_test_{label}_{nanos}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn read_image_data_url_accepts_valid_attachment_image() {
+        let root = temp_dir("valid");
+        let att_dir = root.join(ATTACHMENTS_DIR).join("1").join("abc123");
+        fs::create_dir_all(&att_dir).unwrap();
+        let img = att_dir.join("foto.png");
+        fs::write(&img, b"\x89PNG\r\n").unwrap();
+
+        let url = read_image_data_url(&root, &img).unwrap();
+        assert_eq!(url, "data:image/png;base64,iVBORw0K");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_image_data_url_rejects_outside_attachments_dir() {
+        let root = temp_dir("outside");
+        fs::create_dir_all(root.join(ATTACHMENTS_DIR)).unwrap();
+        let outside = root.join("secret.png");
+        fs::write(&outside, b"\x89PNG").unwrap();
+
+        let err = read_image_data_url(&root, &outside).unwrap_err();
+        assert!(matches!(err, AttachmentError::OutsideAttachmentsDir(_)));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_image_data_url_rejects_non_image_extension() {
+        let root = temp_dir("ext");
+        let att_dir = root.join(ATTACHMENTS_DIR).join("1").join("abc123");
+        fs::create_dir_all(&att_dir).unwrap();
+        let pdf = att_dir.join("doc.pdf");
+        fs::write(&pdf, b"%PDF-1.4").unwrap();
+
+        let err = read_image_data_url(&root, &pdf).unwrap_err();
+        assert!(matches!(err, AttachmentError::UnsupportedImage(_)));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+}

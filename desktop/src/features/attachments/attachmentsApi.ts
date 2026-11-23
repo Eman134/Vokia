@@ -7,6 +7,7 @@ const PICK_ATTACHMENT_FILES_COMMAND = 'pick_attachment_files'
 const SAVE_ATTACHMENT_FILES_COMMAND = 'save_attachment_files'
 const SAVE_ATTACHMENT_BYTES_COMMAND = 'save_attachment_bytes'
 const DISCARD_ATTACHMENT_COMMAND = 'discard_attachment'
+const READ_ATTACHMENT_PREVIEW_COMMAND = 'read_attachment_preview'
 const PROJECT_HEADER = 'x-vokia-project'
 const NAME_HEADER = 'x-vokia-name'
 const PASTED_IMAGE_NAME = 'imagem-colada.png'
@@ -46,6 +47,17 @@ export async function saveAttachmentBytes(projectId: number, file: File): Promis
 
 export function discardAttachment(projectId: number, id: string): Promise<void> {
   return invoke<void>(DISCARD_ATTACHMENT_COMMAND, { projectId, id })
+}
+
+const previewCache = new Map<string, Promise<string | null>>()
+
+/** Carrega data URL base64 de uma imagem na pasta de anexos com cache em memória. */
+export function loadAttachmentPreview(path: string): Promise<string | null> {
+  const cached = previewCache.get(path)
+  if (cached) return cached
+  const pending = invoke<string>(READ_ATTACHMENT_PREVIEW_COMMAND, { path }).catch(() => null)
+  previewCache.set(path, pending)
+  return pending
 }
 
 export function listenFileDrops(onPaths: (paths: string[]) => void): Promise<UnlistenFn> {

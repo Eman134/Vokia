@@ -38,6 +38,12 @@ pub(crate) struct DiscardAttachmentArgs {
     pub id: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReadAttachmentPreviewArgs {
+    pub path: String,
+}
+
 pub(crate) async fn save_attachment_files_exec(
     app: &AppHandle,
     args: SaveAttachmentFilesArgs,
@@ -105,6 +111,19 @@ pub async fn save_attachment_bytes(
 #[tauri::command]
 pub async fn discard_attachment(app: AppHandle, project_id: i64, id: String) -> Result<(), String> {
     discard_attachment_exec(&app, DiscardAttachmentArgs { project_id, id }).await
+}
+
+pub(crate) fn read_attachment_preview_exec(
+    app: &AppHandle,
+    args: ReadAttachmentPreviewArgs,
+) -> Result<String, String> {
+    attachments::read_image_data_url(&data_dir(app)?, Path::new(&args.path))
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn read_attachment_preview(app: AppHandle, path: String) -> Result<String, String> {
+    read_attachment_preview_exec(&app, ReadAttachmentPreviewArgs { path })
 }
 
 // A operação principal já deu certo; sobra de arquivo é varrida na próxima abertura do app.

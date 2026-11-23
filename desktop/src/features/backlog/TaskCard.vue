@@ -30,6 +30,8 @@ import {
   type BacklogState,
 } from './backlogTypes'
 import BacklogPlanActions from './BacklogPlanActions.vue'
+import { extractAttachments } from '../attachments/attachmentBlock'
+import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
 
 const props = defineProps<{
   item: BacklogItem
@@ -50,6 +52,7 @@ const CARD_CLASSES =
 const PROPOSAL_CLASSES = 'flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink shadow-seg'
 
 const roster = useRoster()
+const descriptionContent = computed(() => extractAttachments(props.item.description ?? ''))
 
 const chip = computed(
   () => COLUMN_CHIP[props.column] ?? { label: STATE_CHIP[props.state], status: STATE_BADGE[props.state] },
@@ -103,7 +106,13 @@ const percent = computed(() => {
       <span class="sr-only">{{ chip.label }}:</span>
       <span class="min-w-0 wrap-break-word">{{ item.title }}</span>
     </h3>
-    <p v-if="item.description" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-muted">{{ item.description }}</p>
+    <p v-if="descriptionContent.text" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-muted">{{ descriptionContent.text }}</p>
+    <AttachmentPreviewList
+      v-if="descriptionContent.attachments.length > 0"
+      :attachments="descriptionContent.attachments"
+      compact
+      data-testid="card-attachments"
+    />
     <p v-if="item.error" role="alert" class="text-caption font-semibold text-danger">
       Erro ao ler este item: {{ item.error.reason }}
     </p>

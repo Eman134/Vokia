@@ -88,6 +88,10 @@ fn schema_project_id() -> Value {
     )
 }
 
+fn schema_read_attachment_preview() -> Value {
+    obj_schema(json!({ "path": { "type": "string" } }), &["path"])
+}
+
 fn schema_role_create() -> Value {
     obj_schema(
         json!({ "draft": {
@@ -385,6 +389,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("attachments", "save_attachment_files", "Salva arquivos locais como anexos de um projeto.", "Para anexar arquivos locais a um projeto a partir de caminhos no disco.", empty_object_schema),
     ui_only("attachments", "save_attachment_bytes", "Salva anexo enviado como bytes pela interface."),
     exposed("attachments", "discard_attachment", "Descarta um anexo de um projeto.", "Para remover um anexo que não será enviado.", empty_object_schema),
+    exposed("attachments", "read_attachment_preview", "Lê uma imagem da pasta de anexos do Vokia e devolve como data URL (base64). Parâmetro: path.", "Para carregar a miniatura de uma imagem anexada validando que o caminho pertence à pasta de anexos.", schema_read_attachment_preview),
     exposed("agents", "list_agents", "Lista o elenco de agentes.", "Para ver o elenco completo de agentes com papel, provedor e modelo.", empty_object_schema),
     exposed("agents", "available_providers", "Lista os provedores instalados na máquina.", "Para saber quais provedores têm a CLI instalada na máquina antes de configurar um agente.", empty_object_schema),
     exposed("agents", "create_agent", "Cria um agente.", "Para criar um agente novo; o papel precisa existir (veja role_list) e o provedor, estar configurado.", schema_draft),
@@ -625,6 +630,10 @@ async fn run(app: &AppHandle, name: &str, arguments: Value) -> Result<Value, Str
         "discard_attachment" => {
             json_result(attachments::discard_attachment_exec(app, parse_args(arguments)?).await)
         }
+        "read_attachment_preview" => json_result(attachments::read_attachment_preview_exec(
+            app,
+            parse_args(arguments)?,
+        )),
 
         "list_agents" => json_result(agents::list_agents_exec(app)),
         "available_providers" => json_ok(agents::available_providers_exec(app)),

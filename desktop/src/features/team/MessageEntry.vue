@@ -13,7 +13,8 @@ import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStarted
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
-import { splitAttachments } from '../attachments/attachmentBlock'
+import { extractAttachments } from '../attachments/attachmentBlock'
+import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import UserAvatar from '../profile/UserAvatar.vue'
@@ -34,7 +35,7 @@ const overrides = useTemporaryOverrides()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
 
-const userContent = computed(() => splitAttachments(props.entry.type === 'message' ? props.entry.text : ''))
+const userContent = computed(() => extractAttachments(props.entry.type === 'message' ? props.entry.text : ''))
 const agentUsage = computed(() =>
   props.entry.type === 'message' && props.entry.from !== 'user' ? props.entry.usage : undefined,
 )
@@ -66,6 +67,7 @@ const confirmations = computed(() =>
     ? splitVokiaConfirmations(props.entry.text)
     : { rows: [], rest: '' },
 )
+const agentContent = computed(() => extractAttachments(confirmations.value.rest))
 
 const AVATAR_SIZE = PORTRAIT_SIZES.chat
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
@@ -164,22 +166,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       >
         <MarkdownText :text="userContent.text" />
       </div>
-      <ul
+      <AttachmentPreviewList
         v-if="userContent.attachments.length > 0"
-        class="flex flex-wrap justify-end gap-1.5"
+        :attachments="userContent.attachments"
+        align="end"
         data-testid="message-attachments"
-      >
-        <li
-          v-for="attachment in userContent.attachments"
-          :key="attachment.path"
-          :title="attachment.path"
-          :data-attachment-name="attachment.name"
-          class="flex min-w-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-caption"
-        >
-          <span class="truncate font-semibold text-ink">{{ attachment.name }}</span>
-          <span class="shrink-0 text-muted">{{ attachment.label }} · {{ attachment.size }}</span>
-        </li>
-      </ul>
+      />
     </div>
   </div>
   <UiTooltip
@@ -303,7 +295,12 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         <ul v-if="confirmations.rows.length > 0" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="vokia-confirmations">
           <ActivityRow v-for="row in confirmations.rows" :key="row.id" :row="row" />
         </ul>
-        <MarkdownText v-if="confirmations.rest !== ''" :text="confirmations.rest" />
+        <MarkdownText v-if="agentContent.text !== ''" :text="agentContent.text" />
+        <AttachmentPreviewList
+          v-if="agentContent.attachments.length > 0"
+          :attachments="agentContent.attachments"
+          class="mt-1"
+        />
       </template>
       <UiButton
         v-if="entry.requestProposal"
