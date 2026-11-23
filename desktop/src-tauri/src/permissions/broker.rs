@@ -11,8 +11,6 @@ use crate::claude::{PermissionRequest, PermissionVerdict};
 use crate::db::{root_command, ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
-use crate::projects::worktree::project_worktrees_dir;
-use super::bypass::is_destructive;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
 const COMMAND_FIELD: &str = "command";
@@ -57,8 +55,6 @@ pub struct PermissionBroker {
 struct PendingPermission {
     project_id: i64,
     agent: Agent,
-    // Ação destrutiva continua pedindo aprovação mesmo quando o bypass é ligado com pedidos pendentes.
-    destructive: bool,
     sender: oneshot::Sender<Answer>,
 }
 
@@ -79,13 +75,8 @@ impl PermissionGate<'_> {
             announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), false);
             return PermissionVerdict::Allow;
         }
-        let destructive = is_destructive(
-            &request.input,
-            project_root(self.app, self.project_id).as_deref(),
-            worktrees_root(self.app, self.project_id).as_deref(),
-        );
-        // Bypass ligado no projeto: aprova sem balão nem pergunta, mas ação destrutiva segue para o usuário.
-        if !destructive && self.broker.bypass_enabled(self.project_id) {
+        // Bypass ligado no projeto: aprova sem balão nem pergunta.
+        if self.broker.bypass_enabled(self.project_id) {
             announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), true);
             return PermissionVerdict::Allow;
         }
@@ -104,7 +95,6 @@ impl PermissionGate<'_> {
                 self.project_id,
                 self.item_id.as_deref(),
                 request,
-                destructive,
             )
             .await;
         if verdict == PermissionVerdict::Allow && self.grant_per_session {
@@ -139,11 +129,10 @@ impl PermissionBroker {
         project_id: i64,
         item_id: Option<&str>,
         request: PermissionRequest,
-        destructive: bool,
     ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
         if self
-            .register(&request.id, project_id, agent.clone(), destructive, sender)
+            .register(&request.id, project_id, agent.clone(), sender)
             .is_err()
         {
             return (PermissionVerdict::Deny(None), false);
@@ -248,7 +237,6 @@ impl PermissionBroker {
         id: &str,
         project_id: i64,
         agent: Agent,
-        destructive: bool,
         sender: oneshot::Sender<Answer>,
     ) -> Result<(), PermissionError> {
         self.pending
@@ -259,7 +247,6 @@ impl PermissionBroker {
                 PendingPermission {
                     project_id,
                     agent,
-                    destructive,
                     sender,
                 },
             );
@@ -273,7 +260,7 @@ impl PermissionBroker {
             .is_ok_and(|projects| projects.contains(&project_id))
     }
 
-    // Ligar resolve como permitidos os pedidos pendentes do projeto que não são destrutivos; desligar não mexe neles.
+    // Ligar resolve como permitidos todos os pedidos pendentes do projeto; desligar não mexe neles.
     pub fn set_bypass(&self, app: &AppHandle, project_id: i64, enabled: bool) -> Result<(), PermissionError> {
         {
             let mut projects = self.bypass.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
@@ -294,7 +281,7 @@ impl PermissionBroker {
         let mut pending = self.pending.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
         let ids: Vec<String> = pending
             .iter()
-            .filter(|(_, entry)| entry.project_id == project_id && !entry.destructive)
+            .filter(|(_, entry)| entry.project_id == project_id)
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
@@ -394,21 +381,6 @@ fn announce_by_rule(app: &AppHandle, agent: Agent, project_id: i64, detail: Stri
             bypass,
         },
     );
-}
-
-// Pasta do projeto, usada para saber se o pedido fica dentro dela. Falha de leitura vira None (pergunta).
-fn project_root(app: &AppHandle, project_id: i64) -> Option<String> {
-    let db_state = app.state::<DbState>();
-    db_state
-        .db()
-        .and_then(|db| db.project(project_id).ok())
-        .map(|project| project.path)
-}
-
-// Os agentes com card trabalham em worktrees dentro dos dados do app, fora da pasta do projeto. Sem a pasta, não há escopo.
-fn worktrees_root(app: &AppHandle, project_id: i64) -> Option<String> {
-    let data_dir = app.path().app_data_dir().ok()?;
-    Some(project_worktrees_dir(&data_dir, project_id).to_string_lossy().into_owned())
 }
 
 // Só o que o usuário costuma aceitar e não recusou na janela recente recebe a sugestão.

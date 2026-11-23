@@ -355,22 +355,20 @@ fn bypass_desligado_continua_perguntando() {
 }
 
 #[test]
-fn bypass_ligado_mantem_perguntando_as_acoes_destrutivas_e_os_caminhos_fora_do_projeto() {
+fn bypass_ligado_aprova_sem_balao_acoes_destrutivas_e_caminhos_fora_do_projeto() {
     let world = world();
     set_bypass(&world, true);
 
     let cases = [
         (BASH, json!({ "command": "git push --force origin main" })),
-        (BASH, json!({ "command": "git reset --hard" })),
-        (BASH, json!({ "command": "rm -rf C:/outra/pasta" })),
-        (BASH, json!({ "command": "cat ../segredo.txt" })),
+        (BASH, json!({ "command": "rm -rf ../x" })),
         (EDIT, json!({ "file_path": "C:/Meus Documentos/a.txt" })),
     ];
     for (tool, input) in cases {
-        let (verdict, prompt) = world.ask(false, tool, input.clone(), ALLOW_ONCE);
-        assert!(prompt.is_some(), "deveria perguntar: {input}");
-        assert_eq!(verdict, PermissionVerdict::Allow);
+        let (verdict, _) = world.ask(false, tool, input.clone(), Reply::NoPromptExpected);
+        assert_eq!(verdict, PermissionVerdict::Allow, "deveria aprovar sem perguntar: {input}");
     }
+    assert_eq!(bypass_prompts(&world).len(), 3);
 }
 
 #[test]
@@ -383,17 +381,6 @@ fn bypass_ligado_aprova_comando_composto_que_lista_a_pasta_de_worktrees_do_proje
 
     assert_eq!(verdict, PermissionVerdict::Allow);
     assert_eq!(bypass_prompts(&world).len(), 1);
-}
-
-#[test]
-fn bypass_ligado_continua_perguntando_a_pasta_de_worktrees_de_outro_projeto() {
-    let world = world();
-    set_bypass(&world, true);
-    let other = world.worktrees_dir(world.project_id + 1);
-
-    let (_, prompt) = world.bash(false, &format!("ls \"{other}/\""), ALLOW_ONCE);
-
-    assert!(prompt.is_some());
 }
 
 #[test]
@@ -412,7 +399,7 @@ fn bypass_ligado_aprova_escrita_dentro_da_pasta_do_projeto() {
 }
 
 #[test]
-fn ligar_bypass_resolve_pendentes_nao_destrutivos_e_deixa_destrutivo_para_o_usuario() {
+fn ligar_bypass_resolve_todos_os_pendentes_do_projeto() {
     let world = world();
     let common = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
     let destructive = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
@@ -450,24 +437,15 @@ fn ligar_bypass_resolve_pendentes_nao_destrutivos_e_deixa_destrutivo_para_o_usua
 
     set_bypass(&world, true);
 
-    let common_verdict = tauri::async_runtime::block_on(async {
-        tokio::time::timeout(EVENT_WAIT, common_decision)
-            .await
-            .expect("o pendente comum deveria ser resolvido ao ligar")
-            .expect("a decisão deveria terminar")
-    });
-    assert_eq!(common_verdict, PermissionVerdict::Allow);
-
-    tauri::async_runtime::block_on(dispatch(
-        world.app.handle(),
-        None,
-        "answer_permission",
-        json!({ "id": destructive, "allow": false, "always": false }),
-    ))
-    .expect("answer_permission reconhecido")
-    .expect("a resposta deveria ser aceita");
-    let destructive_verdict = tauri::async_runtime::block_on(destructive_decision).expect("a decisão deveria terminar");
-    assert_eq!(destructive_verdict, PermissionVerdict::Deny(None));
+    for decision in [common_decision, destructive_decision] {
+        let verdict = tauri::async_runtime::block_on(async {
+            tokio::time::timeout(EVENT_WAIT, decision)
+                .await
+                .expect("o pendente deveria ser resolvido ao ligar")
+                .expect("a decisão deveria terminar")
+        });
+        assert_eq!(verdict, PermissionVerdict::Allow);
+    }
 }
 
 #[test]
@@ -479,30 +457,4 @@ fn bypass_nao_persiste_entre_execucoes_e_comeca_desligado() {
     assert!(world.app.state::<AppState>().permissions.bypass_enabled(project_id));
     let fresh = PermissionBroker::default();
     assert!(!fresh.bypass_enabled(project_id), "uma execução nova não pode herdar o bypass");
-}
-
-#[test]
-fn deteccao_de_acao_destrutiva_separa_o_que_pede_aprovacao() {
-    use crate::permissions::is_destructive;
-    let root = Some("C:/projetos/a");
-    let worktrees = Some("C:/dados/worktrees/1");
-    let destructive = |input: &Value| is_destructive(input, root, worktrees);
-    let command = |text: &str| json!({ "command": text });
-
-    assert!(!destructive(&command("npm test")));
-    assert!(!destructive(&command("git push origin main")));
-    assert!(!destructive(&command("rm -rf build")));
-    assert!(!destructive(&command("rm -rf C:/projetos/a/dist")));
-    assert!(destructive(&command("git push --force origin main")));
-    assert!(destructive(&command("git push -fu origin main")));
-    assert!(destructive(&command("git reset --hard HEAD~1")));
-    assert!(destructive(&command("git clean -fd")));
-    assert!(destructive(&command("rm -rf C:/outra/pasta")));
-    assert!(destructive(&command("cat ../segredo.txt")));
-    assert!(destructive(&json!({ "file_path": "C:/Meus Documentos/a.txt" })));
-    assert!(!destructive(&json!({ "file_path": "C:/projetos/a/src/lib.rs" })));
-    assert!(!destructive(&command("ls \"C:/dados/worktrees/1/\"")));
-    assert!(!destructive(&json!({ "file_path": "C:/dados/worktrees/1/item-119/src/lib.rs" })));
-    assert!(destructive(&command("ls C:/dados/worktrees/2/")));
-    assert!(is_destructive(&command("npm test"), None, worktrees), "sem pasta do projeto nada é seguro");
 }
