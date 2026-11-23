@@ -121,10 +121,6 @@ const triageBlocked = computed(
 const pendingQuestion = computed(() => createdId.value !== null && itemPlan.hasPendingQuestion(createdId.value))
 const chosenAgentName = computed(() => roster.profileOf(agent.value)?.name ?? agentName(agent.value))
 
-function modelOf(agentId: string): string | undefined {
-  return roster.profileOf(agentId)?.model
-}
-
 function previewItem(): BacklogItem {
   return {
     id: PREVIEW_ITEM_ID,
@@ -141,12 +137,12 @@ function previewItem(): BacklogItem {
 }
 
 const exactBreakdown = computed(() =>
-  block.value === undefined ? undefined : breakdownOf(previewItem(), parseProposal(block.value), [], modelOf),
+  block.value === undefined ? undefined : breakdownOf(previewItem(), parseProposal(block.value), []),
 )
 const proposedBreakdown = computed(() => {
   const item = createdItem.value
   const proposal: ParsedProposal | undefined = item ? itemPlan.proposalFor(item) : undefined
-  return item && proposal ? breakdownOf(item, proposal, [], modelOf) : undefined
+  return item && proposal ? breakdownOf(item, proposal, []) : undefined
 })
 
 watch(text, (next) => {

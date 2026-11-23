@@ -72,7 +72,7 @@ const editing = ref(false)
 let loadSeq = 0
 
 const progress = computed(() => planProgress(props.stages))
-const breakdown = computed(() => breakdownOf(props.item, props.proposal, [], () => undefined))
+const breakdown = computed(() => breakdownOf(props.item, props.proposal, []))
 const expandedSteps = ref(new Set<string>(breakdown.value.steps[0] ? [breakdown.value.steps[0].id] : []))
 const loading = computed(() => artifact.value === null && loadError.value === null && props.state !== GENERATING_STATE)
 

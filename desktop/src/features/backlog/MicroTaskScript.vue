@@ -15,16 +15,21 @@ export function isScriptValid(script: ScriptBlock): boolean {
 </script>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
+import { useRoster } from '../team/useRoster'
 
-defineProps<{ script: ScriptBlock; model: string; leader: string; returned?: string[]; learned?: string[] }>()
+const props = defineProps<{ script: ScriptBlock; who?: string; leader: string; returned?: string[]; learned?: string[] }>()
+
+const roster = useRoster()
+const whoName = computed(() => (props.who ? roster.nameOf(props.who) : ''))
 
 const DETAILED_TAG = 'v2 · mais detalhado'
-const RETURNED_NOTE = 'Mesmo modelo, roteiro mais detalhado. Só sobe de modelo se voltar de novo.'
+const RETURNED_NOTE = 'Mesmo responsável, roteiro mais detalhado.'
 const LEARNED_TITLE = 'Já nasce com · aprendido da memória'
 const DONE_JOINER = ' && '
 const LIMITS_JOINER = ' · '
-const authorNote = (leader: string): string => `escrito pela ${leader} · o modelo só executa`
+const authorNote = (leader: string): string => `escrito pela ${leader}`
 const returnedTitle = (leader: string): string => `Voltou da revisão · a ${leader} acrescentou`
 const closingNote = (leader: string): string => `Se algo fugir do roteiro, ele para e devolve para a ${leader} em vez de improvisar.`
 </script>
@@ -32,7 +37,7 @@ const closingNote = (leader: string): string => `Se algo fugir do roteiro, ele p
 <template>
   <div class="flex flex-col gap-2 rounded-md bg-surface-2 p-3 text-caption">
     <p class="flex flex-wrap items-center gap-2">
-      <b class="text-ink">Roteiro para o {{ model }}</b>
+      <b class="text-ink">{{ whoName ? `Roteiro para ${whoName}` : 'Roteiro' }}</b>
       <UiBadge v-if="returned?.length" status="precisa de você" :label="DETAILED_TAG" />
       <span class="text-muted">{{ authorNote(leader) }}</span>
     </p>

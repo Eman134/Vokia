@@ -68,14 +68,14 @@ function exported(rawText, extra = {}) {
 // -------------------------------------------------------------
 // Ida e volta
 // -------------------------------------------------------------
-test('planToMarkdown — documento legível traz título, etapas com quem/modelo/status, roteiro, critérios e riscos', () => {
+test('planToMarkdown — documento legível traz título, etapas com quem/status, roteiro, critérios e riscos', () => {
   const lines = exported(PROPOSAL).split('\n')
   assert.equal(lines[0], '# Login com OAuth')
   assert.equal(lines[2], 'Card: item-7 · Estado: pronto · Estimativa: ~3 dias')
+  assert.ok(!lines.some((line) => line.startsWith('- Modelo:')), 'não deve incluir linha de modelo')
   for (const expected of [
     '### 1. Base',
     '- Quem: hefesto',
-    '- Modelo: Sonnet',
     '- Status: em andamento',
     '- Meta: Base pronta',
     '  - Criar API',

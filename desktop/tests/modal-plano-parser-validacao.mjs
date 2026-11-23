@@ -21,7 +21,6 @@ const {
 
 const {
   breakdownOf,
-  modelTierLabel,
   planSummaryLabel,
   linkKind,
 } = jiti('../src/features/backlog/planBreakdown.ts')
@@ -258,9 +257,7 @@ test('breakdownOf gera steps de proposta com IDs <id>.<n>, tarefas divididas e r
     ],
   }
 
-  const modelOf = (agent) => (agent === 'ember' ? 'claude-sonnet-4-6' : 'haiku')
-
-  const breakdown = breakdownOf(item, proposal, [], modelOf)
+  const breakdown = breakdownOf(item, proposal, [])
   assert.equal(breakdown.estimate, '~4 h')
   assert.equal(breakdown.steps.length, 2)
   assert.equal(breakdown.progress, undefined, 'proposta sem stages não tem progress')
@@ -272,7 +269,7 @@ test('breakdownOf gera steps de proposta com IDs <id>.<n>, tarefas divididas e r
   assert.equal(step1.title, 'Criar chave Pix')
   assert.equal(step1.status, 'proposta')
   assert.equal(step1.who, 'ember')
-  assert.equal(step1.model, 'sonnet')
+  assert.equal(step1.model, undefined)
   assert.equal(step1.goal, 'Chave cadastrada')
   assert.deepEqual(step1.tasks, ['Gerar QR Code', 'Validar formato'])
   assert.ok(step1.script)
@@ -315,9 +312,7 @@ test('breakdownOf mapeia stages vinculadas plano-<item>.<n> com status da coluna
     },
   ]
 
-  const modelOf = (agent) => (agent === 'axiom' ? 'opus' : 'haiku')
-
-  const breakdown = breakdownOf(item, proposal, stages, modelOf)
+  const breakdown = breakdownOf(item, proposal, stages)
   assert.equal(breakdown.steps.length, 2)
 
   const s1 = breakdown.steps[0]
@@ -325,7 +320,7 @@ test('breakdownOf mapeia stages vinculadas plano-<item>.<n> com status da coluna
   assert.equal(s1.title, 'Etapa 1 Feita')
   assert.equal(s1.status, 'feito')
   assert.equal(s1.who, 'axiom')
-  assert.equal(s1.model, 'opus')
+  assert.equal(s1.model, undefined)
   assert.equal(s1.stageId, 'plano-PAY-14.1')
 
   const s2 = breakdown.steps[1]
@@ -333,7 +328,7 @@ test('breakdownOf mapeia stages vinculadas plano-<item>.<n> com status da coluna
   assert.equal(s2.title, 'Etapa 2 Andando')
   assert.equal(s2.status, 'em andamento')
   assert.equal(s2.who, 'kairo')
-  assert.equal(s2.model, 'haiku')
+  assert.equal(s2.model, undefined)
 
   // Progresso calculado via planProgress (1 de 2 feito = 50%)
   assert.ok(breakdown.progress)
@@ -343,17 +338,9 @@ test('breakdownOf mapeia stages vinculadas plano-<item>.<n> com status da coluna
 })
 
 // -------------------------------------------------------------
-// 8. Funções utilitárias: modelTierLabel, planSummaryLabel, linkKind
+// 8. Funções utilitárias: planSummaryLabel, linkKind
 // -------------------------------------------------------------
-test('funções utilitárias modelTierLabel, planSummaryLabel e linkKind funcionam conforme o contrato', () => {
-  // modelTierLabel
-  assert.equal(modelTierLabel('claude-haiku-4'), 'Haiku')
-  assert.equal(modelTierLabel('sonnet-3.5'), 'Sonnet')
-  assert.equal(modelTierLabel('OPUS-4'), 'Opus')
-  assert.equal(modelTierLabel('gemini-pro'), 'gemini-pro')
-  assert.equal(modelTierLabel(undefined), undefined)
-  assert.equal(modelTierLabel('   '), undefined)
-
+test('funções utilitárias planSummaryLabel e linkKind funcionam conforme o contrato', () => {
   // planSummaryLabel
   assert.equal(planSummaryLabel(1), '1 micro-tarefa')
   assert.equal(planSummaryLabel(4), '4 micro-tarefas')

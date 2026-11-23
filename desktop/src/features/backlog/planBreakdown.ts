@@ -10,7 +10,6 @@ export interface BreakdownStep {
   n: number
   title: string
   who?: string
-  model?: string
   status: BreakdownStatus
   goal: string
   tasks: string[]
@@ -39,12 +38,6 @@ export function linkKind(id: string): string {
   return LINK_PREFIX_KIND.find(([prefix]) => lower.startsWith(prefix))?.[1] ?? 'link'
 }
 
-const MODEL_TIERS: readonly { pattern: RegExp; label: string }[] = [
-  { pattern: /haiku/i, label: 'Haiku' },
-  { pattern: /sonnet/i, label: 'Sonnet' },
-  { pattern: /opus/i, label: 'Opus' },
-]
-
 function statusFromColumn(column: BacklogColumn | undefined): BreakdownStatus {
   const label = column ? COLUMN_CHIP[column]?.label : undefined
   if (label === 'ready' || label === 'em andamento' || label === 'em revisão' || label === 'feito') {
@@ -68,13 +61,6 @@ function directStageNumber(stageId: string, itemId: string): number | undefined 
   return Number(suffix)
 }
 
-export function modelTierLabel(model: string | undefined): string | undefined {
-  const trimmed = model?.trim()
-  if (!trimmed) return undefined
-  const matched = MODEL_TIERS.find((entry) => entry.pattern.test(trimmed))
-  return matched ? matched.label : trimmed
-}
-
 export function planSummaryLabel(count: number, estimate?: string): string {
   const noun = count === 1 ? 'micro-tarefa' : 'micro-tarefas'
   const base = `${count} ${noun}`
@@ -86,7 +72,6 @@ export function breakdownOf(
   item: BacklogItem,
   proposal: ParsedProposal | undefined,
   stages: readonly BacklogItem[],
-  modelOf: (agent: string) => string | undefined,
 ): PlanBreakdown {
   const steps: BreakdownStep[] = []
   const matchedStageIds = new Set<string>()
@@ -98,14 +83,12 @@ export function breakdownOf(
     if (stage) matchedStageIds.add(stage.id)
 
     const who = (stage?.who?.trim() || lot.script?.who?.trim()) || undefined
-    const model = lot.script?.model?.trim() || (who ? modelOf(who)?.trim() : undefined) || undefined
 
     steps.push({
       id: `${item.id}.${lot.n}`,
       n: lot.n,
       title: stage?.title || lot.title,
       ...(who ? { who } : {}),
-      ...(model ? { model } : {}),
       status: stage ? statusFromColumn(stage.column) : 'proposta',
       goal: lot.meta,
       tasks: splitTasks(lot.tasks),
@@ -119,14 +102,12 @@ export function breakdownOf(
     const n = directStageNumber(stage.id, item.id)
     if (n === undefined) continue
     const who = stage.who.trim() || undefined
-    const model = who ? modelOf(who)?.trim() || undefined : undefined
 
     steps.push({
       id: `${item.id}.${n}`,
       n,
       title: stage.title,
       ...(who ? { who } : {}),
-      ...(model ? { model } : {}),
       status: statusFromColumn(stage.column),
       goal: stage.description ?? '',
       tasks: [],
