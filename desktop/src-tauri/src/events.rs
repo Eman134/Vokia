@@ -156,6 +156,8 @@ pub enum VokiaEvent {
         agent: Agent,
         state: AgentState,
         project_id: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
     },
     // Etapa atual de uma task com card: sai a cada movimento, julgamento do líder, conclusão e reenvio ou escalada.
     TaskStage {

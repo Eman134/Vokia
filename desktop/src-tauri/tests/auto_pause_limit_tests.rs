@@ -95,23 +95,37 @@ fn pausa_do_projeto_cobre_agentes_base_e_replicas_e_isola_projetos() {
 
 #[test]
 fn pause_run_pausa_todos_os_agentes_do_projeto_e_interrompe_o_run() {
+    use std::sync::{Arc, Mutex};
+    use serde_json::Value;
+    use tauri::Listener;
+    use crate::events::EVENT_NAME;
+
     let setup = setup("pause-run");
+    let events: Arc<Mutex<Vec<Value>>> = Arc::default();
+    let sink = events.clone();
+    setup.app.handle().listen(EVENT_NAME, move |event| {
+        if let Ok(value) = serde_json::from_str::<Value>(event.payload()) {
+            sink.lock().unwrap().push(value);
+        }
+    });
     let db_state = setup.app.state::<DbState>();
     let db = db_state.require().unwrap();
     let project_id = create_project(&db, "p1", &setup.dir);
     let run_id = db
         .start_run(project_id, "kairo", "Implementar API", None, Some("item-51"), 1_000)
         .unwrap();
+    let kairo = Agent::from_stored("kairo").unwrap();
+    let replica = replica_id(&kairo, 2);
     let key = SessionKey {
         project_id,
-        agent: Agent::from_stored("kairo").unwrap(),
+        agent: replica.clone(),
     };
     let limit = UsageLimit {
         window: LimitName::FiveHour,
         resets_at: 0,
     };
 
-    pause_run(setup.app.handle(), &key, Some(run_id), limit).unwrap();
+    pause_run(setup.app.handle(), &key, Some(run_id), limit, Some("item-51")).unwrap();
 
     let interrupted = db.interrupted_runs().unwrap();
     assert!(interrupted.iter().any(|run| run.id == run_id));
@@ -121,4 +135,23 @@ fn pause_run_pausa_todos_os_agentes_do_projeto_e_interrompe_o_run() {
             "agente {agent} deveria estar pausado"
         );
     }
+    let states: Vec<Value> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| event["type"] == "agent-state")
+        .cloned()
+        .collect();
+    let replica_state = states
+        .iter()
+        .find(|event| event["agent"] == replica.as_str())
+        .expect("estado da réplica emitido");
+    assert_eq!(replica_state["state"], "waiting");
+    assert_eq!(replica_state["itemId"], "item-51");
+    let other_idle = states
+        .iter()
+        .find(|event| event["agent"] != replica.as_str())
+        .expect("estado idle de outro agente");
+    assert_eq!(other_idle["state"], "idle");
+    assert!(other_idle.get("itemId").is_none());
 }

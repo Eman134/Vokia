@@ -407,6 +407,7 @@ fn emit_agent_state(app: &AppHandle, agent: &Agent, state: AgentState, project_i
             agent: agent.clone(),
             state,
             project_id: Some(project_id),
+            item_id: None,
         },
     );
 }

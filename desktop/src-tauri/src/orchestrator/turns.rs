@@ -129,7 +129,7 @@ pub(super) async fn run_turns(
     let has_mcp_server = app.state::<McpState>().server().is_some();
     loop {
         if super::runs::is_agent_paused(app, project_id, &turn.speaker) {
-            emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+            emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle, *item_id)?;
             return Ok(TaskOutcome::Paused);
         }
         if let Some(motive) = policy::task_limit_reached(exchange.orchestration, &counters.task) {
@@ -480,7 +480,7 @@ pub(super) async fn run_turns(
                     objective: exchange.definition.objetivo.clone(),
                     variables: exchange.definition.variables.clone(),
                     channel_id: *channel_id,
-                    item_id: (*item_id).map(str::to_string),
+                    item_id: line_item.map(str::to_string),
                     // Contagem do próprio líder enquanto despacha: uma troca que termina cedo não dispara a junção.
                     pending: 1,
                     results: Vec::new(),
@@ -492,7 +492,7 @@ pub(super) async fn run_turns(
             )?;
             if super::runs::is_agent_paused(app, project_id, &turn.speaker) {
                 seal_batch(app, state, batch);
-                emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+                emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle, *item_id)?;
                 return Ok(TaskOutcome::Paused);
             }
             let fork_result: Result<(), FlowError> = (|| {
@@ -501,7 +501,7 @@ pub(super) async fn run_turns(
                         app,
                         exchange.run_id,
                         project_id,
-                        *item_id,
+                        line_item,
                         None,
                         &turn.speaker,
                         &helper,
@@ -512,12 +512,12 @@ pub(super) async fn run_turns(
                         .map_or(1, |placement| placement.max_instances);
                     let mut context = RequestContext::new(
                         exchange.run_id,
-                        (*item_id).map(str::to_string),
+                        line_item.map(str::to_string),
                         *channel_id,
                     );
                     context.batch = Some(batch);
                     context.ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
-                    count_branch(state, project_id, *item_id)?;
+                    count_branch(state, project_id, line_item)?;
                     dispatch_request(
                         app,
                         state,
@@ -536,7 +536,10 @@ pub(super) async fn run_turns(
                         Speaker::from(helper.clone()),
                         &request,
                         team,
-                        scope,
+                        MessageScope {
+                            channel_id: scope.channel_id,
+                            item_id: line_item,
+                        },
                         None,
                         None,
                         None,
@@ -567,7 +570,7 @@ pub(super) async fn run_turns(
                     )?;
                 }
                 if is_batch_open(state, batch) {
-                    emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting)?;
+                    emit_state(app, project_id, turn.speaker.clone(), AgentState::Waiting, *item_id)?;
                 } else {
                     reconcile_waiting(app, state, project_id);
                 }
@@ -646,7 +649,7 @@ pub(super) async fn run_turns(
             }
             waiters_guard.set(&[]);
             for requester in &turn.requesters {
-                emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
+                emit_state(app, project_id, requester.clone(), AgentState::Idle, *item_id)?;
             }
             match resolve(
                 exchange,
@@ -736,7 +739,10 @@ pub(super) async fn run_turns(
                 Speaker::from(helper.clone()),
                 helper_request,
                 team,
-                scope,
+                MessageScope {
+                    channel_id: scope.channel_id,
+                    item_id: line_item,
+                },
                 activity.take(),
                 proposal.take(),
                 usage.take(),
@@ -765,7 +771,7 @@ pub(super) async fn run_turns(
                         .or(line_item);
                     let ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
                     dispatch_async_branch(exchange, target_item, helper, helper_request, ping_seconds)?;
-                    emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle)?;
+                    emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle, *item_id)?;
                     return Ok(TaskOutcome::Finished);
                 }
             }
@@ -775,7 +781,7 @@ pub(super) async fn run_turns(
         } else {
             AgentState::Idle
         };
-        emit_state(app, project_id, turn.speaker.clone(), speaker_state)?;
+        emit_state(app, project_id, turn.speaker.clone(), speaker_state, *item_id)?;
         if !advanced {
             sessions
                 .review(&turn.speaker, counters.passes.by_speaker(&turn.speaker), 0)
@@ -877,7 +883,7 @@ async fn resolve(
             Step::End(TaskOutcome::Stalled)
         }
         Settlement::Ended => {
-            emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
+            emit_state(app, project_id, speaker.clone(), AgentState::Idle, exchange.item_id)?;
             // Conversa simples termina só com a resposta do agente: sem cartão de conclusão.
             if counters.kind == TaskKind::Demanda {
                 report_task_result(exchange, counters, TaskOutcome::Finished)?;
@@ -947,7 +953,7 @@ fn conclude(
     team: &Team,
     scope: MessageScope<'_>,
 ) -> Result<(), FlowError> {
-    emit_state(app, project_id, speaker.clone(), AgentState::Idle)?;
+    emit_state(app, project_id, speaker.clone(), AgentState::Idle, scope.item_id)?;
     say(
         app,
         project_id,
@@ -1074,9 +1080,9 @@ fn raise_decision(
         flow.turn_waiters.remove(key);
     }
     for requester in &turn.requesters {
-        emit_state(app, project_id, requester.clone(), AgentState::Idle)?;
+        emit_state(app, project_id, requester.clone(), AgentState::Idle, *item_id)?;
     }
-    emit_state(app, project_id, agent, AgentState::Waiting)?;
+    emit_state(app, project_id, agent, AgentState::Waiting, *item_id)?;
     Ok(TaskOutcome::Finished)
 }
 

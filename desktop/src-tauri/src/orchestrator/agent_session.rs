@@ -58,8 +58,10 @@ pub(super) async fn ask_step(
     agent: &Agent,
     prompts: &StepPrompts,
 ) -> Result<StepReply, FlowError> {
-    let Exchange { app, key, .. } = exchange;
-    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking)?;
+    let Exchange {
+        app, key, item_id, ..
+    } = exchange;
+    emit_state(app, key.project_id, agent.clone(), AgentState::Thinking, *item_id)?;
     let console = ConsoleSink::new(
         app,
         SessionKey {

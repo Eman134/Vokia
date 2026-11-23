@@ -236,6 +236,7 @@ pub(super) fn emit_state(
     project_id: i64,
     agent: Agent,
     state: AgentState,
+    item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     record_agent_state(app, project_id, &agent, state);
     if matches!(state, AgentState::Sending | AgentState::Thinking) {
@@ -247,6 +248,7 @@ pub(super) fn emit_state(
             agent,
             state,
             project_id: Some(project_id),
+            item_id: item_id.map(str::to_string),
         },
     )
 }

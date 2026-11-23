@@ -112,7 +112,7 @@ fn estado_sending_ou_thinking_do_agente_destino_marca_a_delegacao_como_ativada()
         let vexa = Agent::vexa();
         world.register(delegation(PROJECT, &vexa, Duration::ZERO));
 
-        emit_state(world.app.handle(), PROJECT, vexa.clone(), state).unwrap();
+        emit_state(world.app.handle(), PROJECT, vexa.clone(), state, Some(ITEM)).unwrap();
 
         assert_eq!(world.snapshot(PROJECT, &vexa).map(|(activated, _, _)| activated), Some(true));
     }
@@ -125,7 +125,7 @@ fn estado_idle_ou_waiting_nao_ativa_a_delegacao() {
         let vexa = Agent::vexa();
         world.register(delegation(PROJECT, &vexa, Duration::ZERO));
 
-        emit_state(world.app.handle(), PROJECT, vexa.clone(), state).unwrap();
+        emit_state(world.app.handle(), PROJECT, vexa.clone(), state, Some(ITEM)).unwrap();
 
         assert_eq!(world.snapshot(PROJECT, &vexa).map(|(activated, _, _)| activated), Some(false));
     }
@@ -140,7 +140,7 @@ fn ativacao_vale_so_para_o_agente_e_o_projeto_do_estado_emitido() {
     world.register(delegation(PROJECT, &axiom, Duration::ZERO));
     world.register(delegation(OTHER_PROJECT, &vexa, Duration::ZERO));
 
-    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Thinking).unwrap();
+    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Thinking, Some(ITEM)).unwrap();
 
     assert_eq!(world.snapshot(PROJECT, &vexa).unwrap().0, true);
     assert_eq!(world.snapshot(PROJECT, &axiom).unwrap().0, false);
@@ -207,7 +207,7 @@ fn delegacao_ativada_entre_tentativas_nao_gera_erro() {
     world.sweep();
     world.expire(PROJECT, &vexa);
 
-    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Sending).unwrap();
+    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Sending, Some(ITEM)).unwrap();
     world.sweep();
     world.sweep();
 
@@ -372,4 +372,86 @@ fn fluxo_com_job_na_fila_continua_e_mantem_as_delegacoes_registradas() {
 
     assert_eq!(next.map(|job| job.text), Some("próximo".to_string()));
     assert_eq!(registered_keys(&world), [(PROJECT, vexa.as_str().to_string(), Some(ITEM.to_string()))]);
+}
+
+#[test]
+fn emit_state_propaga_item_id_apenas_quando_presente() {
+    let world = world();
+    let vexa = Agent::vexa();
+
+    emit_state(world.app.handle(), PROJECT, vexa.clone(), AgentState::Thinking, Some(ITEM)).unwrap();
+    emit_state(world.app.handle(), PROJECT, vexa, AgentState::Idle, None).unwrap();
+
+    let states: Vec<Value> = world
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| event["type"] == "agent-state")
+        .cloned()
+        .collect();
+    assert_eq!(states.len(), 2);
+    assert_eq!(states[0]["state"], "thinking");
+    assert_eq!(states[0]["itemId"], ITEM);
+    assert_eq!(states[1]["state"], "idle");
+    assert!(states[1].get("itemId").is_none());
+}
+
+#[test]
+fn emit_message_e_emit_error_message_preservam_item_id_do_escopo() {
+    let world = world();
+    let db_state = world.app.state::<crate::db::DbState>();
+    let db = db_state.require().unwrap();
+    let project_id = db
+        .insert_project(&crate::db::NewProject {
+            name: "p1",
+            symbol: "folder",
+            description: "",
+            path: &world.dir.to_string_lossy(),
+            origin_kind: "folder",
+            origin_repo: None,
+        })
+        .unwrap()
+        .id;
+    let speaker = crate::events::Speaker::from(Agent::vexa());
+    let scope = crate::orchestrator::MessageScope {
+        channel_id: None,
+        item_id: Some(ITEM),
+    };
+
+    crate::orchestrator::emit_message(
+        world.app.handle(),
+        project_id,
+        speaker.clone(),
+        crate::events::Speaker::User,
+        "progresso",
+        scope,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    crate::orchestrator::emit::emit_error_message(
+        world.app.handle(),
+        project_id,
+        speaker,
+        scope,
+        "falha",
+    )
+    .unwrap();
+
+    let messages: Vec<Value> = world
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|event| event["type"] == "message")
+        .cloned()
+        .collect();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["itemId"], ITEM);
+    assert_eq!(messages[0]["text"], "progresso");
+    assert_eq!(messages[1]["itemId"], ITEM);
+    assert_eq!(messages[1]["text"], "falha");
+    assert_eq!(messages[1]["isError"], true);
 }
