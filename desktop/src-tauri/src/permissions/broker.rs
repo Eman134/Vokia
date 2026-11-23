@@ -11,6 +11,7 @@ use crate::claude::{PermissionRequest, PermissionVerdict};
 use crate::db::{root_command, ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
+use crate::projects::worktree::project_worktrees_dir;
 use super::bypass::is_destructive;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
@@ -78,7 +79,11 @@ impl PermissionGate<'_> {
             announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), false);
             return PermissionVerdict::Allow;
         }
-        let destructive = is_destructive(&request.input, project_root(self.app, self.project_id).as_deref());
+        let destructive = is_destructive(
+            &request.input,
+            project_root(self.app, self.project_id).as_deref(),
+            worktrees_root(self.app, self.project_id).as_deref(),
+        );
         // Bypass ligado no projeto: aprova sem balão nem pergunta, mas ação destrutiva segue para o usuário.
         if !destructive && self.broker.bypass_enabled(self.project_id) {
             announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), true);
@@ -398,6 +403,12 @@ fn project_root(app: &AppHandle, project_id: i64) -> Option<String> {
         .db()
         .and_then(|db| db.project(project_id).ok())
         .map(|project| project.path)
+}
+
+// Os agentes com card trabalham em worktrees dentro dos dados do app, fora da pasta do projeto. Sem a pasta, não há escopo.
+fn worktrees_root(app: &AppHandle, project_id: i64) -> Option<String> {
+    let data_dir = app.path().app_data_dir().ok()?;
+    Some(project_worktrees_dir(&data_dir, project_id).to_string_lossy().into_owned())
 }
 
 // Só o que o usuário costuma aceitar e não recusou na janela recente recebe a sugestão.

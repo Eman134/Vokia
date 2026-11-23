@@ -10,6 +10,7 @@ use tauri::{Listener, Manager};
 use super::*;
 use crate::agents::Agent;
 use crate::commands::dispatcher::dispatch;
+use crate::projects::worktree::project_worktrees_dir;
 use crate::db::{DbState, NewProject};
 use crate::mcp::support::build_app;
 use crate::state::AppState;
@@ -165,6 +166,11 @@ impl World {
 
     fn bash(&self, per_session: bool, command: &str, reply: Reply) -> (PermissionVerdict, Option<Value>) {
         self.ask(per_session, BASH, json!({ "command": command }), reply)
+    }
+
+    fn worktrees_dir(&self, project_id: i64) -> String {
+        let data_dir = self.app.path().app_data_dir().expect("pasta de dados do app");
+        project_worktrees_dir(&data_dir, project_id).to_string_lossy().replace('\\', "/")
     }
 }
 
@@ -368,6 +374,29 @@ fn bypass_ligado_mantem_perguntando_as_acoes_destrutivas_e_os_caminhos_fora_do_p
 }
 
 #[test]
+fn bypass_ligado_aprova_comando_composto_que_lista_a_pasta_de_worktrees_do_projeto() {
+    let world = world();
+    set_bypass(&world, true);
+    let command = format!("git worktree list; ls \"{}/\"", world.worktrees_dir(world.project_id));
+
+    let (verdict, _) = world.bash(false, &command, Reply::NoPromptExpected);
+
+    assert_eq!(verdict, PermissionVerdict::Allow);
+    assert_eq!(bypass_prompts(&world).len(), 1);
+}
+
+#[test]
+fn bypass_ligado_continua_perguntando_a_pasta_de_worktrees_de_outro_projeto() {
+    let world = world();
+    set_bypass(&world, true);
+    let other = world.worktrees_dir(world.project_id + 1);
+
+    let (_, prompt) = world.bash(false, &format!("ls \"{other}/\""), ALLOW_ONCE);
+
+    assert!(prompt.is_some());
+}
+
+#[test]
 fn bypass_ligado_aprova_escrita_dentro_da_pasta_do_projeto() {
     let world = world();
     set_bypass(&world, true);
@@ -456,19 +485,24 @@ fn bypass_nao_persiste_entre_execucoes_e_comeca_desligado() {
 fn deteccao_de_acao_destrutiva_separa_o_que_pede_aprovacao() {
     use crate::permissions::is_destructive;
     let root = Some("C:/projetos/a");
+    let worktrees = Some("C:/dados/worktrees/1");
+    let destructive = |input: &Value| is_destructive(input, root, worktrees);
     let command = |text: &str| json!({ "command": text });
 
-    assert!(!is_destructive(&command("npm test"), root));
-    assert!(!is_destructive(&command("git push origin main"), root));
-    assert!(!is_destructive(&command("rm -rf build"), root));
-    assert!(!is_destructive(&command("rm -rf C:/projetos/a/dist"), root));
-    assert!(is_destructive(&command("git push --force origin main"), root));
-    assert!(is_destructive(&command("git push -fu origin main"), root));
-    assert!(is_destructive(&command("git reset --hard HEAD~1"), root));
-    assert!(is_destructive(&command("git clean -fd"), root));
-    assert!(is_destructive(&command("rm -rf C:/outra/pasta"), root));
-    assert!(is_destructive(&command("cat ../segredo.txt"), root));
-    assert!(is_destructive(&json!({ "file_path": "C:/Meus Documentos/a.txt" }), root));
-    assert!(!is_destructive(&json!({ "file_path": "C:/projetos/a/src/lib.rs" }), root));
-    assert!(is_destructive(&command("npm test"), None), "sem pasta do projeto nada é seguro");
+    assert!(!destructive(&command("npm test")));
+    assert!(!destructive(&command("git push origin main")));
+    assert!(!destructive(&command("rm -rf build")));
+    assert!(!destructive(&command("rm -rf C:/projetos/a/dist")));
+    assert!(destructive(&command("git push --force origin main")));
+    assert!(destructive(&command("git push -fu origin main")));
+    assert!(destructive(&command("git reset --hard HEAD~1")));
+    assert!(destructive(&command("git clean -fd")));
+    assert!(destructive(&command("rm -rf C:/outra/pasta")));
+    assert!(destructive(&command("cat ../segredo.txt")));
+    assert!(destructive(&json!({ "file_path": "C:/Meus Documentos/a.txt" })));
+    assert!(!destructive(&json!({ "file_path": "C:/projetos/a/src/lib.rs" })));
+    assert!(!destructive(&command("ls \"C:/dados/worktrees/1/\"")));
+    assert!(!destructive(&json!({ "file_path": "C:/dados/worktrees/1/item-119/src/lib.rs" })));
+    assert!(destructive(&command("ls C:/dados/worktrees/2/")));
+    assert!(is_destructive(&command("npm test"), None, worktrees), "sem pasta do projeto nada é seguro");
 }

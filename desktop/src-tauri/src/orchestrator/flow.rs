@@ -1164,8 +1164,6 @@ async fn run_exchange(
     result
 }
 
-const WORKTREES_DIR: &str = "worktrees";
-
 // Pedido com card roda no worktree do card quando a política manda; sem card, na pasta do projeto.
 async fn working_dir(
     app: &AppHandle,
@@ -1181,12 +1179,10 @@ async fn working_dir(
         return Ok(project_dir.to_path_buf());
     }
     let project = load_project(app, project_id)?;
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(FlowError::ArchivePath)?
-        .join(WORKTREES_DIR)
-        .join(project_id.to_string());
+    let root = worktree::project_worktrees_dir(
+        &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
+        project_id,
+    );
     let worktree = worktree::ensure(project_dir, &root, item, project.setup_command.as_deref())
         .await
         .map_err(FlowError::Worktree)?;
@@ -1735,12 +1731,10 @@ async fn done_cleanup(
     item_id: &str,
 ) -> Result<worktree::CleanupOutcome, FlowError> {
     let project = load_project(app, project_id)?;
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(FlowError::ArchivePath)?
-        .join(WORKTREES_DIR)
-        .join(project_id.to_string());
+    let root = worktree::project_worktrees_dir(
+        &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
+        project_id,
+    );
     worktree::cleanup_done(Path::new(&project.path), &root, item_id)
         .await
         .map_err(FlowError::Worktree)

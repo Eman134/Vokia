@@ -12,6 +12,7 @@ use super::process::{run, tail, RunError, GIT_MISSING_MESSAGE, GIT_PROGRAM};
 static ITEM_LOCKS: LazyLock<StdMutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
+const WORKTREES_DIR: &str = "worktrees";
 const BRANCH_PREFIX: &str = "vokia/";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_PATH_CHARS: usize = 260;
@@ -155,6 +156,11 @@ async fn run_setup(path: &Path, command: &str) -> Result<(), WorktreeError> {
         path: path.to_path_buf(),
         output: tail(&output),
     })
+}
+
+// Pasta onde ficam os worktrees de um projeto; o agente trabalha e lista dentro dela.
+pub(crate) fn project_worktrees_dir(data_dir: &Path, project_id: i64) -> PathBuf {
+    data_dir.join(WORKTREES_DIR).join(project_id.to_string())
 }
 
 pub async fn create(
