@@ -89,6 +89,41 @@ fn schema_project_id() -> Value {
     )
 }
 
+fn schema_link_git_ref() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "itemId": { "type": "string" },
+            "kind": { "type": "string", "enum": ["commit", "branch", "pr"] },
+            "refId": { "type": "string" },
+            "label": { "type": "string" },
+            "url": { "type": "string" },
+        }),
+        &["projectId", "itemId", "kind", "refId"],
+    )
+}
+
+fn schema_unlink_git_ref() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "itemId": { "type": "string" },
+            "linkId": { "type": "string" },
+        }),
+        &["projectId", "itemId", "linkId"],
+    )
+}
+
+fn schema_list_git_refs() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "limit": { "type": "integer" },
+        }),
+        &["projectId"],
+    )
+}
+
 fn schema_read_attachment_preview() -> Value {
     obj_schema(json!({ "path": { "type": "string" } }), &["path"])
 }
@@ -379,6 +414,9 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog.", "Para gravar o plano de execução de um card.", empty_object_schema),
     exposed("backlog", "add_backlog_label", "Adiciona um rótulo a um item do backlog.", "Para marcar um card com um rótulo.", empty_object_schema),
     exposed("backlog", "remove_backlog_label", "Remove um rótulo de um item do backlog.", "Para tirar um rótulo de um card.", empty_object_schema),
+    exposed("backlog", "link_git_ref", "Vincula um commit, branch ou PR a um card do backlog. Parâmetros: projectId, itemId, kind (commit|branch|pr), refId, label (opcional), url (opcional). Devolve o Link criado.", "Para associar um commit, branch ou PR a um card sem duplicar vínculos.", schema_link_git_ref),
+    exposed("backlog", "unlink_git_ref", "Remove um vínculo Git de um card do backlog. Parâmetros: projectId, itemId, linkId.", "Para desvincular um commit, branch ou PR de um card pelo linkId (ex.: commit:abc1234).", schema_unlink_git_ref),
+    exposed("backlog", "list_git_refs", "Lista branches e commits recentes do repositório Git do projeto. Parâmetros: projectId, limit (opcional, padrão 20, máx 100).", "Para consultar referências Git disponíveis no projeto antes de vincular a um card.", schema_list_git_refs),
     exposed("backlog", "set_backlog_responsible", "Define ou troca o agente responsável por um item do backlog.", "Para definir ou trocar o responsável de um card (projectId, itemId, agent); o agente precisa existir no elenco. Trocar um responsável já definido cabe ao Ember ou ao responsável atual; indicar o próprio responsável não faz nada.", empty_object_schema),
     exposed("backlog", "archive_backlog_item", "Arquiva um item do backlog.", "Para arquivar um card que saiu de uso sem apagá-lo.", empty_object_schema),
     exposed("backlog", "restore_backlog_item", "Restaura um item arquivado do backlog.", "Para trazer de volta um card arquivado.", empty_object_schema),
@@ -633,6 +671,11 @@ async fn run(
             app,
             parse_args(arguments)?,
         )),
+        "link_git_ref" => json_result(backlog::link_git_ref_exec(app, parse_args(arguments)?)),
+        "unlink_git_ref" => json_result(backlog::unlink_git_ref_exec(app, parse_args(arguments)?)),
+        "list_git_refs" => {
+            json_result(backlog::list_git_refs_exec(app, parse_args(arguments)?).await)
+        }
         "set_backlog_responsible" => json_result(backlog::set_backlog_responsible_exec(
             app,
             parse_args(arguments)?,

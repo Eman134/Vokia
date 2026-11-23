@@ -16,6 +16,7 @@ use super::connection::Db;
 use super::error::DbError;
 
 pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
+pub const GIT_REF_KINDS: &[&str] = &["commit", "branch", "pr"];
 const DEFAULT_COLUMN: &str = "Backlog";
 const IN_PROGRESS_COLUMN: &str = "In progress";
 const IN_REVIEW_COLUMN: &str = "In review";
@@ -166,11 +167,24 @@ pub struct Activity {
     pub at: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Link {
     pub id: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRefLinkInput {
+    pub kind: String,
+    pub ref_id: String,
+    pub label: Option<String>,
+    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -622,6 +636,51 @@ impl Db {
             .filter(|tag| label_key(tag) != label)
             .collect();
         write_tags(&conn, project_id, item_id, &tags)
+    }
+
+    pub fn link_git_ref(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        input: &GitRefLinkInput,
+    ) -> Result<Link, DbError> {
+        let link = normalized_git_ref_link(input)?;
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let item = find_card(&conn, project_id, item_id)?;
+        validate_item(&item)?;
+        if item.links.iter().any(|existing| existing.id == link.id) {
+            return Err(DbError::DuplicateGitRef(link.id.clone()));
+        }
+        let mut links = item.links;
+        links.push(link.clone());
+        write_links(&conn, project_id, item_id, &links)?;
+        Ok(link)
+    }
+
+    pub fn unlink_git_ref(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        link_id: &str,
+    ) -> Result<(), DbError> {
+        let link_id = link_id.trim();
+        if link_id.is_empty() {
+            return Err(DbError::EmptyGitRef);
+        }
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let item = find_card(&conn, project_id, item_id)?;
+        validate_item(&item)?;
+        if !item.links.iter().any(|existing| existing.id == link_id) {
+            return Err(DbError::GitRefNotFound(link_id.to_string()));
+        }
+        let links: Vec<Link> = item
+            .links
+            .into_iter()
+            .filter(|existing| existing.id != link_id)
+            .collect();
+        write_links(&conn, project_id, item_id, &links)
     }
 
     // Requester None é a interface do usuário, que tem permissão global como o Ember.
@@ -1146,6 +1205,45 @@ fn write_tags(conn: &Connection, project_id: i64, item_id: &str, tags: &[String]
     let json = to_json(item_id, "tags", &tags)?;
     conn.execute(
         "UPDATE backlog_items SET tags = ?3 WHERE project_id = ?1 AND id = ?2",
+        params![project_id, item_id, json],
+    )?;
+    Ok(())
+}
+
+fn normalized_git_ref_link(input: &GitRefLinkInput) -> Result<Link, DbError> {
+    let kind = input.kind.trim().to_ascii_lowercase();
+    if !GIT_REF_KINDS.contains(&kind.as_str()) {
+        return Err(DbError::InvalidGitRefKind(input.kind.clone()));
+    }
+    let ref_id = input.ref_id.trim();
+    if ref_id.is_empty() {
+        return Err(DbError::EmptyGitRef);
+    }
+    let label = input
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(ref_id)
+        .to_string();
+    let url = input
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    Ok(Link {
+        id: format!("{kind}:{ref_id}"),
+        label,
+        kind: Some(kind),
+        url,
+    })
+}
+
+fn write_links(conn: &Connection, project_id: i64, item_id: &str, links: &[Link]) -> Result<(), DbError> {
+    let json = to_json(item_id, "links", &links)?;
+    conn.execute(
+        "UPDATE backlog_items SET links = ?3 WHERE project_id = ?1 AND id = ?2",
         params![project_id, item_id, json],
     )?;
     Ok(())
@@ -2012,3 +2110,7 @@ fn plan_from_row(row: &Row<'_>) -> Result<ItemPlanEntry, DbError> {
 #[cfg(test)]
 #[path = "../../tests/plan_note_tests.rs"]
 mod plan_note_tests;
+
+#[cfg(test)]
+#[path = "../../tests/git_ref_links_tests.rs"]
+mod git_ref_links_tests;

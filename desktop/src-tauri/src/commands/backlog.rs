@@ -3,10 +3,11 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::agents::{Agent, AgentError, AgentRegistry};
 use crate::db::{
-    AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardResult, DbState, ItemPlanInput,
-    NewCard,
+    AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardResult, DbState, GitRefLinkInput,
+    ItemPlanInput, Link, NewCard,
 };
 use crate::orchestrator::{self, emit_backlog_changed};
+use crate::projects::{self, GitRefs};
 use crate::state::AppState;
 
 const MISSING_RESULT: &str = "O banco não devolveu o card criado.";
@@ -101,6 +102,32 @@ pub(crate) struct ReturnTaskArgs {
     pub project_id: i64,
     pub item_id: String,
     pub motive: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LinkGitRefArgs {
+    pub project_id: i64,
+    pub item_id: String,
+    pub kind: String,
+    pub ref_id: String,
+    pub label: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UnlinkGitRefArgs {
+    pub project_id: i64,
+    pub item_id: String,
+    pub link_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListGitRefsArgs {
+    pub project_id: i64,
+    pub limit: Option<usize>,
 }
 
 pub(crate) fn list_backlog_exec(
@@ -231,6 +258,53 @@ pub(crate) fn remove_backlog_label_exec(
         .map_err(|error| error.to_string())?;
     notify_backlog_changed(app, args.project_id);
     Ok(())
+}
+
+pub(crate) fn link_git_ref_exec(
+    app: &AppHandle,
+    args: LinkGitRefArgs,
+) -> Result<Link, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    let input = GitRefLinkInput {
+        kind: args.kind,
+        ref_id: args.ref_id,
+        label: args.label,
+        url: args.url,
+    };
+    let link = db
+        .link_git_ref(args.project_id, &args.item_id, &input)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(app, args.project_id);
+    Ok(link)
+}
+
+pub(crate) fn unlink_git_ref_exec(
+    app: &AppHandle,
+    args: UnlinkGitRefArgs,
+) -> Result<(), String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    db.unlink_git_ref(args.project_id, &args.item_id, &args.link_id)
+        .map_err(|error| error.to_string())?;
+    notify_backlog_changed(app, args.project_id);
+    Ok(())
+}
+
+pub(crate) async fn list_git_refs_exec(
+    app: &AppHandle,
+    args: ListGitRefsArgs,
+) -> Result<GitRefs, String> {
+    let project_path = {
+        let state = app.state::<DbState>();
+        let db = state.require().map_err(|error| error.to_string())?;
+        db.project(args.project_id)
+            .map_err(|error| error.to_string())?
+            .path
+    };
+    projects::list_git_refs(&project_path, args.limit)
+        .await
+        .map_err(|error| error.message().to_string())
 }
 
 pub(crate) fn set_backlog_responsible_exec(
@@ -550,4 +624,53 @@ pub async fn return_task(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub fn link_git_ref(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+    kind: String,
+    ref_id: String,
+    label: Option<String>,
+    url: Option<String>,
+) -> Result<Link, String> {
+    link_git_ref_exec(
+        &app,
+        LinkGitRefArgs {
+            project_id,
+            item_id,
+            kind,
+            ref_id,
+            label,
+            url,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn unlink_git_ref(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+    link_id: String,
+) -> Result<(), String> {
+    unlink_git_ref_exec(
+        &app,
+        UnlinkGitRefArgs {
+            project_id,
+            item_id,
+            link_id,
+        },
+    )
+}
+
+#[tauri::command]
+pub async fn list_git_refs(
+    app: AppHandle,
+    project_id: i64,
+    limit: Option<usize>,
+) -> Result<GitRefs, String> {
+    list_git_refs_exec(&app, ListGitRefsArgs { project_id, limit }).await
 }
