@@ -8,7 +8,8 @@ use crate::task::{
 use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, TeamOutline};
 use serde_json::Value;
 
-const MAESTRO_INSTRUCTIONS: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time ou agente certo; não execute trabalho técnico. Card novo nasce em triagem: passe ao líder para ler o código, usar request_decision se faltar definição e gravar o plano via save_item_plan antes da implementação. Respeite camadas e limites de turno e relate o resultado.";
+const MAESTRO_INSTRUCTIONS_AUTO_TRIAGE: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time ou agente certo; não execute trabalho técnico. Card novo nasce em triagem: passe ao líder para ler o código, usar request_decision se faltar definição e gravar o plano via save_item_plan antes da implementação. Respeite camadas e limites de turno e relate o resultado.";
+const MAESTRO_INSTRUCTIONS_MANUAL_TRIAGE: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time ou agente certo; não execute trabalho técnico. Card novo nasce em triagem: crie o card via create_card sem delegar a triagem automaticamente ao líder, a menos que o usuário peça explicitamente para triar (nesse caso, passe ao líder para ler o código, usar request_decision se faltar definição e gravar o plano via save_item_plan antes da implementação). Respeite camadas e limites de turno e relate o resultado.";
 const MAESTRO_PROJECT_RULE: &str = "Identifique o projeto do pedido pelo contexto da conversa, que é o projeto em que o pedido foi feito. Sem contexto, use o projeto fixado pelo usuário. Se ainda houver dúvida, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português (por exemplo: Em qual projeto devo seguir com este pedido?) e options com os rótulos dos projetos listados abaixo, exatamente como aparecem (nome e #id).";
 const MAESTRO_PINNED_LABEL: &str = "Projeto fixado pelo usuário:";
 const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
@@ -19,7 +20,8 @@ const MAESTRO_APP_COMMANDS_VOKIA_CLI: &str = " Use `vokia-cli` no terminal para 
 const NO_PROJECT_TEXT: &str = "nenhum";
 const CRITERIA_LABEL: &str = "Para concluir sua etapa:";
 const MAESTRO_TEAMS_LABEL: &str = "Times do Vokia:";
-const MAESTRO_TEAM_RULE: &str = "Escolha um time, crie o card (nasce em triagem) e delegue ao líder disponível para triar (ler código, usar request_decision se necessário e save_item_plan) antes da implementação. Em dúvida real entre times, chame request_decision (kind escolha, title em português, options com os nomes dos times).";
+const MAESTRO_TEAM_RULE_AUTO_TRIAGE: &str = "Escolha um time, crie o card (nasce em triagem) e delegue ao líder disponível para triar (ler código, usar request_decision se necessário e save_item_plan) antes da implementação. Em dúvida real entre times, chame request_decision (kind escolha, title em português, options com os nomes dos times).";
+const MAESTRO_TEAM_RULE_MANUAL_TRIAGE: &str = "Escolha um time e crie o card (nasce em triagem) sem delegar a triagem automaticamente ao líder, a menos que o usuário peça explicitamente para triar (nesse caso, delegue ao líder disponível para ler o código, usar request_decision se necessário e save_item_plan antes da implementação). Em dúvida real entre times, chame request_decision (kind escolha, title em português, options com os nomes dos times).";
 const NO_AVAILABLE_LEADER: &str = "sem líder disponível";
 const NO_TEAM_MEMBERS: &str = "nenhum agente posicionado";
 
@@ -157,16 +159,22 @@ fn maestro_teams_text(
     orchestration: Option<&OrchestrationSnapshot>,
     team: &Team,
     paused: &[Agent],
+    auto_triage: bool,
 ) -> Option<String> {
     let outlines = team_outlines(orchestration?, team, paused);
     if outlines.teams.is_empty() {
         return None;
     }
     let lines: Vec<String> = outlines.teams.iter().map(maestro_team_line).collect();
+    let team_rule = if auto_triage {
+        MAESTRO_TEAM_RULE_AUTO_TRIAGE
+    } else {
+        MAESTRO_TEAM_RULE_MANUAL_TRIAGE
+    };
     Some(format!(
         "{MAESTRO_TEAMS_LABEL}
 {}
-{MAESTRO_TEAM_RULE}",
+{team_rule}",
         lines.join(
             "
 "
@@ -347,6 +355,7 @@ pub(super) fn maestro_role(
     team: &Team,
     paused: &[Agent],
     tool_mode: ToolPromptMode,
+    auto_triage: bool,
 ) -> String {
     let pinned = choices.pinned.as_deref().unwrap_or(NO_PROJECT_TEXT);
     let labels = if choices.labels.is_empty() {
@@ -360,7 +369,7 @@ pub(super) fn maestro_role(
         .filter(|text| !text.is_empty())
         .map(|text| format!(" {MAESTRO_EXTRA_LABEL} {text}"))
         .unwrap_or_default();
-    let teams = maestro_teams_text(orchestration, team, paused)
+    let teams = maestro_teams_text(orchestration, team, paused, auto_triage)
         .map(|text| format!(" {text}"))
         .unwrap_or_default();
     let cli_hint = match tool_mode {
@@ -368,8 +377,13 @@ pub(super) fn maestro_role(
         ToolPromptMode::VokiaCli => MAESTRO_APP_COMMANDS_VOKIA_CLI,
         ToolPromptMode::None => "",
     };
+    let instructions = if auto_triage {
+        MAESTRO_INSTRUCTIONS_AUTO_TRIAGE
+    } else {
+        MAESTRO_INSTRUCTIONS_MANUAL_TRIAGE
+    };
     let head =
-        format!("{base} {MAESTRO_INSTRUCTIONS} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
+        format!("{base} {instructions} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
     // O servidor MCP já entrega o schema das ferramentas; no CLI vai só o catálogo compacto das essenciais.
     match tool_mode {
         ToolPromptMode::Mcp => return head,

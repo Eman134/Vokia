@@ -50,6 +50,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             team,
             &[],
             ToolPromptMode::Mcp,
+            false,
         );
         assert!(prompt_mcp.contains(MAESTRO_APP_COMMANDS_MCP));
         assert!(prompt_mcp.contains("app_commands_list"));
@@ -66,6 +67,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             team,
             &[],
             ToolPromptMode::VokiaCli,
+            false,
         );
         assert!(prompt_cli.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
         assert!(prompt_cli.contains("vokia-cli commands [--domain <dom>]"));
@@ -82,6 +84,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             team,
             &[],
             ToolPromptMode::None,
+            false,
         );
         assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_MCP));
         assert!(!prompt_none.contains(MAESTRO_APP_COMMANDS_VOKIA_CLI));
@@ -97,16 +100,17 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
         };
         let mcp = maestro_role(
             "Base Ember.",
-            &[serde_json::json!({"name": "create_card"})],
+            &[serde_json::json!({"name": "dummy_tool", "description": "desc"})],
             &choices,
             None,
             None,
             team,
             &[],
             ToolPromptMode::Mcp,
+            false,
         );
         assert!(!mcp.contains("Comandos disponíveis:"));
-        assert!(!mcp.contains("create_card"));
+        assert!(!mcp.contains("dummy_tool"));
         assert!(mcp.contains("app_commands_list"));
 
         let cli = maestro_role(
@@ -118,11 +122,12 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
             team,
             &[],
             ToolPromptMode::VokiaCli,
+            false,
         );
         assert!(cli.contains("Comandos disponíveis:"));
         assert!(cli.contains("list_backlog"));
         assert!(cli.contains("vokia-cli tools"));
-        assert!(cli.chars().count() < 1800);
+        assert!(cli.chars().count() < 2000);
     });
 
     let agent = Agent::ember();
@@ -252,7 +257,7 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
             pinned: Some("projeto-a".to_string()),
             labels: vec!["projeto-a".to_string()],
         };
-        let maestro = maestro_role(
+        let maestro_auto = maestro_role(
             "Base Ember.",
             &[],
             &choices,
@@ -261,14 +266,33 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
             team,
             &[],
             ToolPromptMode::Mcp,
+            true,
         );
-        assert!(maestro.contains("triagem"));
-        assert!(maestro.contains("request_decision"));
-        assert!(maestro.contains("save_item_plan"));
+        assert!(maestro_auto.contains("triagem"));
+        assert!(maestro_auto.contains("request_decision"));
+        assert!(maestro_auto.contains("save_item_plan"));
+        assert!(maestro_auto.contains(MAESTRO_INSTRUCTIONS_AUTO_TRIAGE));
 
-        assert!(MAESTRO_TEAM_RULE.contains("triagem"));
-        assert!(MAESTRO_TEAM_RULE.contains("request_decision"));
-        assert!(MAESTRO_TEAM_RULE.contains("save_item_plan"));
+        let maestro_manual = maestro_role(
+            "Base Ember.",
+            &[],
+            &choices,
+            None,
+            None,
+            team,
+            &[],
+            ToolPromptMode::Mcp,
+            false,
+        );
+        assert!(maestro_manual.contains("create_card"));
+        assert!(maestro_manual.contains("sem delegar a triagem automaticamente ao líder"));
+        assert!(maestro_manual.contains(MAESTRO_INSTRUCTIONS_MANUAL_TRIAGE));
+
+        assert!(MAESTRO_TEAM_RULE_AUTO_TRIAGE.contains("triagem"));
+        assert!(MAESTRO_TEAM_RULE_AUTO_TRIAGE.contains("request_decision"));
+        assert!(MAESTRO_TEAM_RULE_AUTO_TRIAGE.contains("save_item_plan"));
+        assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("sem delegar a triagem automaticamente"));
+        assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("a menos que o usuário peça explicitamente para triar"));
 
         let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp);
         assert!(role_mcp.contains("triagem"));

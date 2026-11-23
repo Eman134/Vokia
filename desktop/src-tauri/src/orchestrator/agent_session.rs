@@ -9,7 +9,8 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentProfile, Team};
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity, TurnUsage};
 use crate::db::{
-    Db, DbError, DbState, OrchestrationSnapshot, GRANT_SESSION, SETTING_PERMISSION_GRANT,
+    Db, DbError, DbState, OrchestrationSnapshot, GRANT_SESSION, SETTING_AUTO_TRIAGE,
+    SETTING_PERMISSION_GRANT,
 };
 use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
@@ -167,6 +168,7 @@ async fn run_step(
                 team,
                 &paused,
                 tool_mode,
+                auto_triage_enabled(app)?,
             )
         } else {
             base
@@ -409,15 +411,23 @@ fn paused_agents(app: &AppHandle, project_id: i64) -> Result<Vec<Agent>, FlowErr
         .map_err(FlowError::Orchestration)
 }
 
-fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {
+const AUTO_TRIAGE_ENABLED: &str = "true";
+
+fn setting_equals(app: &AppHandle, key: &str, expected: &str) -> Result<bool, FlowError> {
     let state = app.state::<DbState>();
     let Some(db) = state.db() else {
         return Ok(false);
     };
     let settings = db.load_settings().map_err(FlowError::Settings)?;
-    Ok(settings
-        .get(SETTING_PERMISSION_GRANT)
-        .is_some_and(|grant| grant == GRANT_SESSION))
+    Ok(settings.get(key).is_some_and(|value| value == expected))
+}
+
+fn grants_per_session(app: &AppHandle) -> Result<bool, FlowError> {
+    setting_equals(app, SETTING_PERMISSION_GRANT, GRANT_SESSION)
+}
+
+fn auto_triage_enabled(app: &AppHandle) -> Result<bool, FlowError> {
+    setting_equals(app, SETTING_AUTO_TRIAGE, AUTO_TRIAGE_ENABLED)
 }
 
 // Contexto novo a cada chamada, mas pela sessão viva: só ela tem canal para o usuário decidir comandos fora da allowlist.
@@ -868,6 +878,7 @@ pub(super) fn open_preloaded_session(
             team,
             paused,
             tool_mode,
+            auto_triage_enabled(app)?,
         )
     } else {
         base
