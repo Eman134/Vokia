@@ -177,3 +177,33 @@ fn live_session_com_cli_real_claude_retorna_usage_limit() {
         assert_eq!(limit.resets_at, 1795240800);
     });
 }
+
+const MAX_TURNS_EMPTY_LINE: &str = r#"{"type":"result","subtype":"error_max_turns","is_error":true,"result":"","session_id":"sess-1"}"#;
+const MAX_TURNS_PARTIAL_LINE: &str = r#"{"type":"result","subtype":"error_max_turns","is_error":true,"result":"parcial","session_id":"sess-1"}"#;
+const EXECUTION_ERROR_EMPTY_LINE: &str = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"","session_id":"sess-1"}"#;
+
+fn reported_message(line: &str) -> String {
+    let (response, limits) = parse_stream(&stream(&[line])).unwrap();
+    match into_reply(response, limits) {
+        Err(ClaudeError::Reported(message)) => message,
+        _ => panic!("deveria virar erro reportado pela CLI"),
+    }
+}
+
+#[test]
+fn limite_de_turnos_sem_texto_vira_mensagem_especifica() {
+    assert_eq!(reported_message(MAX_TURNS_EMPTY_LINE), MAX_TURNS_MESSAGE);
+}
+
+#[test]
+fn limite_de_turnos_com_texto_parcial_preserva_o_texto() {
+    assert_eq!(reported_message(MAX_TURNS_PARTIAL_LINE), "parcial");
+}
+
+#[test]
+fn erro_sem_texto_de_outro_subtipo_mantem_o_subtipo() {
+    assert_eq!(
+        reported_message(EXECUTION_ERROR_EMPTY_LINE),
+        "sem texto (subtype: error_during_execution)"
+    );
+}

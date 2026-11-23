@@ -10,6 +10,8 @@ const RATE_LIMIT_KIND: &str = "rate_limit_event";
 const REJECTED_STATUS: &str = "rejected";
 const USAGE_LIMIT_ERROR: &str = "usage_limit_reached";
 const USAGE_LIMIT_STATUS: u16 = 429;
+const MAX_TURNS_SUBTYPE: &str = "error_max_turns";
+const MAX_TURNS_MESSAGE: &str = "a CLI claude atingiu o limite de turnos antes de produzir o texto final; peça de novo ou divida a tarefa em partes menores";
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -229,10 +231,12 @@ pub(super) fn into_reply(
         return Err(ClaudeError::LimitExhausted);
     }
     if response.is_error {
-        let message = if response.result.is_empty() {
-            format!("sem texto (subtype: {})", response.subtype)
-        } else {
+        let message = if !response.result.is_empty() {
             response.result
+        } else if response.subtype == MAX_TURNS_SUBTYPE {
+            MAX_TURNS_MESSAGE.to_string()
+        } else {
+            format!("sem texto (subtype: {})", response.subtype)
         };
         return Err(ClaudeError::Reported(message));
     }
