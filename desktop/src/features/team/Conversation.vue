@@ -133,14 +133,16 @@ const scopedPendingAgents = computed<AgentProfile[]>(() => {
   return filterPendingAgentsForScreen(feed.pendingAgents, feed.screen, {
     channels: channels.channels,
     thread: activeThread.value,
+    agentItems: feed.stateItem,
   })
 })
 const pendingGroups = computed(() =>
   groupPendingAgentsByState(scopedPendingAgents.value, feed.states, feed.stateSince),
 )
+const activeThreadItemId = computed(() => (feed.screen.kind === 'thread' ? feed.screen.itemId : undefined))
 const scopedLiveRuns = computed(() =>
   scopedPendingAgents.value
-    .map((agent) => ({ agent, activity: feed.liveActivityOf(agent.id) }))
+    .map((agent) => ({ agent, activity: feed.liveActivityOf(agent.id, activeThreadItemId.value) }))
     .filter((item): item is { agent: AgentProfile; activity: TurnActivity } => item.activity !== undefined),
 )
 const pendingLabel = computed(() => formatPendingStatusLabel(pendingGroups.value))
@@ -360,7 +362,7 @@ watch(
               :agent="entry.agent"
               :state="entry.state"
               :since="entry.since"
-              :activity="feed.liveActivityOf(entry.agent.id)"
+              :activity="feed.liveActivityOf(entry.agent.id, activeThreadItemId)"
             />
           </div>
         </div>

@@ -24,6 +24,7 @@ export interface PendingScreenContext {
     assignee: Agent | null
     participants: readonly Agent[]
   }
+  agentItems?: Readonly<Record<Agent, string | undefined>>
 }
 
 const PENDING_STATE_ORDER: readonly PendingState[] = ['thinking', 'sending']
@@ -59,6 +60,9 @@ export function isAgentInScreen(
       return channel?.members.includes(agentId) ?? false
     }
     case 'thread': {
+      if (context.agentItems !== undefined) {
+        return context.agentItems[agentId] === screen.itemId
+      }
       if (!context.thread) {
         return false
       }

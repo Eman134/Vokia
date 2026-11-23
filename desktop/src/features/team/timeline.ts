@@ -47,8 +47,12 @@ function entryHasChannel(entry: FeedEntry, channels: readonly Channel[]): boolea
   return false
 }
 
-function threadParticipants(feed: readonly FeedEntry[], itemId: string): Set<Agent> {
-  const participants = new Set<Agent>()
+function threadParticipants(
+  feed: readonly FeedEntry[],
+  itemId: string,
+  extraParticipants?: ReadonlySet<Agent>,
+): Set<Agent> {
+  const participants = new Set<Agent>(extraParticipants)
   for (const entry of feed) {
     if (entry.type === 'message' && entry.itemId === itemId) {
       if (entry.from !== 'user') participants.add(entry.from)
@@ -75,6 +79,7 @@ export function screenEntries(
   feed: readonly FeedEntry[],
   screen: ConversationScreen,
   channels: readonly Channel[],
+  threadAgents?: ReadonlySet<Agent>,
 ): readonly FeedEntry[] {
   switch (screen.kind) {
     case 'all':
@@ -86,7 +91,7 @@ export function screenEntries(
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
     case 'thread': {
-      const participants = threadParticipants(feed, screen.itemId)
+      const participants = threadParticipants(feed, screen.itemId, threadAgents)
       return feed.filter((entry) => entryInThread(entry, screen.itemId, participants))
     }
   }
