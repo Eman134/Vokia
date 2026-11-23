@@ -11,15 +11,18 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      SCCACHE_GHA_ENABLED: 'true'
+      RUSTC_WRAPPER: 'sccache'
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       # Em push de tag o checkout pode trazer a referência leve; sem o fetch forçado o objeto anotado não existe.
       - name: Buscar tags anotados
         shell: bash
-        run: git fetch --tags --force
+        run: git fetch --depth=1 --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
 
       - name: Conferir versão do tag
         shell: bash
@@ -54,13 +57,17 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+          shared-key: release
+          cache-on-failure: true
 
       - name: Instalar dependências
         working-directory: desktop
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - uses: tauri-apps/tauri-action@v0
         env:
