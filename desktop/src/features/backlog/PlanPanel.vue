@@ -4,6 +4,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiMarker from '../../ui/UiMarker.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import MarkdownText from '../team/MarkdownText.vue'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { DEFAULT_RECIPIENT } from '../team/agents'
@@ -182,11 +183,11 @@ function onCardAction(action: TaskCardAction): void {
           <span class="text-caption text-muted">Etiquetas sugeridas</span>
           <UiMarker v-for="tag in parsed.tags" :key="tag" :tone="tagMarkerTone(tag)" class="text-meta">{{ tagLabel(tag) }}</UiMarker>
         </div>
-        <p v-if="parsed.summary" class="whitespace-pre-wrap text-caption text-muted">{{ parsed.summary }}</p>
+        <MarkdownText v-if="parsed.summary" :text="parsed.summary" class="text-caption! text-muted!" />
       </template>
       <template v-else>
         <p class="text-label font-semibold text-ink">Proposta de {{ agentName }}</p>
-        <p class="whitespace-pre-wrap text-control text-ink">{{ current.proposal }}</p>
+        <MarkdownText v-if="current.proposal" :text="current.proposal" />
       </template>
       <div class="flex flex-wrap gap-2">
         <UiButton variant="approve" size="lg" @press="itemPlan.accept(item.id)">Aceitar e vincular</UiButton>
