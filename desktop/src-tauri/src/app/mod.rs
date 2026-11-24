@@ -118,6 +118,7 @@ pub(crate) fn run() {
             commands::orchestration::unplace_agent,
             commands::orchestration::save_team_flow,
             commands::orchestration::set_final_validation,
+            commands::orchestration::set_judge_full_flow,
             commands::orchestration::save_orchestration_settings,
             commands::orchestration::list_agent_activity,
             commands::orchestration::list_agent_copies,

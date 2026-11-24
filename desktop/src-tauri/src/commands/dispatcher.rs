@@ -218,6 +218,13 @@ fn schema_set_final_validation() -> Value {
     )
 }
 
+fn schema_set_judge_full_flow() -> Value {
+    obj_schema(
+        json!({ "teamId": { "type": "string" }, "enabled": { "type": "boolean" } }),
+        &["teamId", "enabled"],
+    )
+}
+
 fn schema_save_orchestration_settings() -> Value {
     obj_schema(json!({ "settings": { "type": "object" } }), &["settings"])
 }
@@ -491,6 +498,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("orchestration", "unplace_agent", "Remove a posição de um agente na orquestração.", "Para tirar um agente da orquestração sem excluí-lo.", schema_unplace_agent),
     exposed("orchestration", "save_team_flow", "Grava o fluxo de um time.", "Para gravar de uma vez a estrutura do fluxo de um time (agentes, gateways e ligações); fluxo inválido volta com a lista de problemas.", schema_save_team_flow),
     exposed("orchestration", "set_final_validation", "Define o modo de validação final de um time.", "Para definir como o time faz a validação final de uma task.", schema_set_final_validation),
+    exposed("orchestration", "set_judge_full_flow", "Liga ou desliga o julgamento de fluxo do líder de um time (args: teamId, enabled). Ligado, o líder escreve #fluxo completo|motivo ou #fluxo reduzido|motivo antes de delegar uma task nova, e o reduzido pula a camada de Revisão.", "Para deixar o líder do time escolher entre o fluxo completo e o reduzido em cada task.", schema_set_judge_full_flow),
     exposed("orchestration", "save_orchestration_settings", "Grava as configurações da orquestração.", "Para gravar os limites e opções gerais da orquestração.", schema_save_orchestration_settings),
     exposed("orchestration", "list_agent_activity", "Lista as execuções em andamento por agente.", "Para ver o que cada agente está executando agora em todos os projetos.", empty_object_schema),
     exposed("orchestration", "list_agent_copies", "Lista as réplicas de agentes em execução em um projeto.", "Para ver as réplicas de agentes em execução em um projeto e os cards delas.", schema_project_id),
@@ -801,6 +809,10 @@ async fn run(
             parse_args(arguments)?,
         )),
         "set_final_validation" => json_result(orchestration::set_final_validation_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "set_judge_full_flow" => json_result(orchestration::set_judge_full_flow_exec(
             app,
             parse_args(arguments)?,
         )),

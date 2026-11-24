@@ -712,3 +712,26 @@ fn apagar_o_projeto_apaga_movimentos_e_pedidos_dele_e_mantem_a_orquestracao() {
     assert_eq!(layer_order(&t.db), vec!["lideranca", "implementacao"]);
     assert_eq!((snapshot.teams.len(), snapshot.placements.len()), (1, 1));
 }
+
+#[test]
+fn julgamento_de_fluxo_liga_e_desliga_por_time() {
+    let temp = TempDb::open();
+    let team = temp.team("Core");
+    let judges = |db: &Db| {
+        db.orchestration().unwrap().teams.iter().find(|saved| saved.id == team.id).unwrap().judge_full_flow
+    };
+    assert!(!judges(&temp.db));
+
+    temp.db.set_judge_full_flow(&team.id, true).unwrap();
+    assert!(judges(&temp.db));
+
+    temp.db.set_judge_full_flow(&team.id, false).unwrap();
+    assert!(!judges(&temp.db));
+}
+
+#[test]
+fn julgamento_de_fluxo_em_time_inexistente_e_recusado() {
+    let temp = TempDb::open();
+    let refused = temp.db.set_judge_full_flow("time-inexistente", true);
+    assert!(matches!(refused, Err(DbError::TeamNotFound(team)) if team == "time-inexistente"));
+}

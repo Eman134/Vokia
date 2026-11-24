@@ -1,4 +1,5 @@
 use crate::agents::{join_items, replica_of, Agent, Team};
+use super::stages::{judging_team, JUDGMENT_RULE};
 use crate::db::{
     FlowEdge, FlowGateway, Layer, OrchestrationSnapshot, Placement, FLOW_END, FLOW_START,
     GATEWAY_PARALLEL, LINK_COMMUNICATION, LINK_FLOW,
@@ -76,6 +77,12 @@ pub(crate) fn agent_prompt(
         team.roster_line_among(&destinations)
     };
     let map_rules = enforced.then(|| map_rules_text(snapshot, team, agent, &placement.team_id));
+    // A resposta do líder que julga é lida mesmo sem as regras do mapa ligadas (turns.rs), então a regra também vem.
+    let judgment = judging_team(snapshot, agent).map(|_| JUDGMENT_RULE);
+    let map_rules = match (map_rules, judgment) {
+        (Some(rules), Some(rule)) => Some(format!("{rules} {rule}")),
+        (rules, rule) => rules.or_else(|| rule.map(str::to_string)),
+    };
     AgentPrompt {
         roster,
         layer: Some(LayerContext {

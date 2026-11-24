@@ -82,7 +82,7 @@ pub struct Worktree {
 
 pub enum RemoveOutcome {
     Removed,
-    BranchKept { branch: String, commits: u32 },
+    BranchKept { commits: u32 },
 }
 
 // Id com caractere fora de [A-Za-z0-9._-] vira "-" para caber em nome de branch e de pasta.
@@ -248,10 +248,7 @@ pub async fn remove(
         0
     };
     if commits > 0 {
-        return Ok(RemoveOutcome::BranchKept {
-            branch: branch.to_string(),
-            commits,
-        });
+        return Ok(RemoveOutcome::BranchKept { commits });
     }
     if worktree_exists {
         let path_arg = worktree_path.to_string_lossy();
@@ -298,7 +295,7 @@ pub async fn cleanup_done(
     }
     match remove(project_dir, &path, &branch, &base).await {
         Ok(RemoveOutcome::Removed) => Ok(CleanupOutcome::Removed),
-        Ok(RemoveOutcome::BranchKept { commits, .. }) => Ok(CleanupOutcome::Kept(format!(
+        Ok(RemoveOutcome::BranchKept { commits }) => Ok(CleanupOutcome::Kept(format!(
             "a branch {branch} tem {commits} commit(s) que não estão em {base}"
         ))),
         Err(WorktreeError::UncommittedChanges(_)) => Ok(CleanupOutcome::Kept(

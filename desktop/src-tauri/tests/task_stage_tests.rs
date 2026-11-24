@@ -162,3 +162,28 @@ fn roteiro_aceita_etapa_inicial_de_qualquer_membro_e_camada_pulada() {
     let lots = [(1, Some("vexa")), (2, Some("kairo")), (3, None)];
     assert_eq!(plan_script_refusal(&snapshot, &team(), &lots), None);
 }
+
+fn prompt_text(snapshot: &OrchestrationSnapshot, agent: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("vokia-judgment-prompt-{}-{agent}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cast = crate::agents::AgentRegistry::load(&dir).team().expect("time padrão");
+    let agent = crate::agents::Agent::from_stored(agent).expect("agente");
+    let prompt = crate::orchestration::snapshot::agent_prompt(Some(snapshot), &cast, &agent);
+    let _ = std::fs::remove_dir_all(&dir);
+    prompt.layer.and_then(|layer| layer.map_rules).unwrap_or_default()
+}
+
+fn judged(mut snapshot: OrchestrationSnapshot, enabled: bool) -> OrchestrationSnapshot {
+    snapshot.teams[0].judge_full_flow = enabled;
+    snapshot
+}
+
+#[test]
+fn lider_com_julgamento_ligado_recebe_a_regra_do_fluxo() {
+    let placements = vec![placement("axiom", "lideranca"), placement("kairo", "implementacao")];
+
+    assert!(prompt_text(&judged(snapshot(placements.clone()), true), "axiom").contains(JUDGMENT_RULE));
+    assert!(!prompt_text(&judged(snapshot(placements.clone()), false), "axiom").contains(JUDGMENT_RULE));
+    // Só o líder julga: o membro do mesmo time não recebe a regra.
+    assert!(!prompt_text(&judged(snapshot(placements), true), "kairo").contains(JUDGMENT_RULE));
+}

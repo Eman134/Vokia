@@ -148,6 +148,13 @@ pub(crate) struct SetFinalValidationArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SetJudgeFullFlowArgs {
+    pub team_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SaveOrchestrationSettingsArgs {
     pub settings: OrchestrationSettings,
 }
@@ -315,6 +322,18 @@ pub(crate) fn set_final_validation_exec(
     )
 }
 
+pub(crate) fn set_judge_full_flow_exec(
+    app: &AppHandle,
+    args: SetJudgeFullFlowArgs,
+) -> Result<(), String> {
+    write(
+        app,
+        &app.state::<DbState>(),
+        &app.state::<AgentRegistry>(),
+        |db| db.set_judge_full_flow(&args.team_id, args.enabled),
+    )
+}
+
 pub(crate) fn save_orchestration_settings_exec(
     app: &AppHandle,
     args: SaveOrchestrationSettingsArgs,
@@ -402,6 +421,11 @@ pub fn save_team_flow(
 #[tauri::command]
 pub fn set_final_validation(app: AppHandle, team_id: String, mode: String) -> Result<(), String> {
     set_final_validation_exec(&app, SetFinalValidationArgs { team_id, mode })
+}
+
+#[tauri::command]
+pub fn set_judge_full_flow(app: AppHandle, team_id: String, enabled: bool) -> Result<(), String> {
+    set_judge_full_flow_exec(&app, SetJudgeFullFlowArgs { team_id, enabled })
 }
 
 #[tauri::command]

@@ -240,7 +240,7 @@ fn remover_worktree_com_commit_guarda_a_branch_e_conta_os_commits() {
     let outcome = remove_item(&sandbox, &worktree).expect("remoção");
 
     assert!(
-        matches!(&outcome, RemoveOutcome::BranchKept { branch, commits: 1 } if branch == "vokia/card-1")
+        matches!(outcome, RemoveOutcome::BranchKept { commits: 1 })
     );
     // Commit fora da base: pasta e branch ficam como estão, para o trabalho não se perder.
     assert!(worktree.path.exists());

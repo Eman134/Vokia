@@ -51,7 +51,8 @@ pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use queued_requests::{PersistedFlowJob, QueuedRequestRecord};
 pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
 pub use settings::{
-    GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_PAUSE_ON_LIMIT, SETTING_AUTO_TRIAGE,
-    SETTING_LLM_FALLBACK,
+    GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_LLM_FALLBACK,
     SETTING_PERMISSION_GRANT,
 };
+#[cfg(test)]
+pub use settings::SETTING_AUTO_PAUSE_ON_LIMIT;
