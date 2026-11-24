@@ -38,5 +38,5 @@ pub(crate) use flow::{
     restore_flow_queue,
 };
 pub(crate) use plan_stages::start_approved_plan;
-pub(crate) use session_pool::{schedule_preload, SessionPool};
+pub(crate) use session_pool::{schedule_preload, spawn_idle_reaper, SessionPool};
 pub(crate) use validation::return_task;

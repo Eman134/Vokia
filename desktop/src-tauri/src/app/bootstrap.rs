@@ -32,5 +32,6 @@ pub(crate) fn setup(app: &mut App) -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::spawn(crate::orchestrator::restore_flow_queue(
         app.handle().clone(),
     ));
+    crate::orchestrator::spawn_idle_reaper(app.handle().clone());
     shell::setup_tray(app)
 }

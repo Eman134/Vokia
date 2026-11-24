@@ -44,7 +44,7 @@ use super::session_pool::{ExchangeSessions, NO_PID};
 use super::turns::Exchange;
 
 pub(super) const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
-const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
+pub(super) const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
 
 pub(super) struct StepReply {
     pub(super) text: String,
@@ -792,6 +792,15 @@ impl AgentSession {
 
     pub(super) fn is_unused_preload(&self) -> bool {
         self.live.is_some() && self.last_used.is_none()
+    }
+
+    // A sessão usada conta desde a última resposta; a pré-carregada, desde a abertura.
+    pub(super) fn is_idle(&self, limit: Duration) -> bool {
+        self.live.is_some()
+            && self
+                .last_used
+                .or(self.preloaded_at)
+                .is_some_and(|since| since.elapsed() >= limit)
     }
 }
 

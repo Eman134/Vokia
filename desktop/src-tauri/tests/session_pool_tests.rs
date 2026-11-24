@@ -501,3 +501,92 @@ fn agent_session_adopt_e_is_unused_preload() {
     session.last_used = Some(Instant::now());
     assert!(!session.is_unused_preload());
 }
+
+// O cmd.exe ignora as flags da CLI e fica vivo enquanto o stdin estiver aberto, como o claude ocioso.
+#[cfg(windows)]
+fn idle_stand_in() -> crate::claude::LiveSession {
+    crate::claude::LiveSession::open(
+        std::path::Path::new("cmd.exe"),
+        &[],
+        "",
+        "haiku",
+        crate::claude::Access::TextOnly,
+        None,
+        None,
+    )
+    .expect("abre o processo substituto")
+}
+
+#[cfg(windows)]
+fn live_slot(pool: &SessionPool, agent: &Agent, last_used: Option<std::time::Instant>) -> Arc<SessionSlot> {
+    let slot = pool.slot(crate::session_key::SessionKey {
+        project_id: PROJECT,
+        agent: agent.clone(),
+    });
+    let mut session = slot.session.try_lock().expect("slot recém-criado está livre");
+    session.adopt_preload(
+        idle_stand_in(),
+        Some("sessao-anterior".into()),
+        Place::for_preload(PathBuf::from("/test/project")),
+        ("claude".into(), "haiku".into()),
+    );
+    session.last_used = last_used;
+    drop(session);
+    slot
+}
+
+#[cfg(windows)]
+#[test]
+fn reap_idle_fecha_sessao_usada_parada_e_preserva_o_resume() {
+    tauri::async_runtime::block_on(async {
+        let pool = SessionPool::default();
+        let slot = live_slot(&pool, &base_agent(), Some(std::time::Instant::now()));
+        assert!(slot.is_live());
+
+        pool.reap_idle(Duration::ZERO).await;
+
+        let session = slot.session.lock().await;
+        assert!(session.live.is_none(), "processo ocioso deveria ter sido encerrado");
+        assert!(!slot.is_live(), "pid deveria ter sido zerado");
+        assert_eq!(
+            session.session_id.as_deref(),
+            Some("sessao-anterior"),
+            "a próxima mensagem precisa do session_id para o --resume"
+        );
+    });
+}
+
+#[cfg(windows)]
+#[test]
+fn reap_idle_fecha_precarga_nunca_usada() {
+    tauri::async_runtime::block_on(async {
+        let pool = SessionPool::default();
+        let slot = live_slot(&pool, &base_agent(), None);
+
+        pool.reap_idle(Duration::ZERO).await;
+
+        assert!(slot.session.lock().await.live.is_none());
+    });
+}
+
+#[cfg(windows)]
+#[test]
+fn reap_idle_mantem_sessao_recente_e_sessao_em_uso() {
+    tauri::async_runtime::block_on(async {
+        let pool = SessionPool::default();
+        let recent = live_slot(&pool, &base_agent(), Some(std::time::Instant::now()));
+        let busy = live_slot(&pool, &replica_id(&base_agent(), 2), Some(std::time::Instant::now()));
+        let mut exchange = ExchangeSessions::new(&pool, PROJECT);
+        let held = exchange.hold(&replica_id(&base_agent(), 2)).await;
+
+        pool.reap_idle(SESSION_IDLE_LIMIT).await;
+        assert!(recent.session.lock().await.live.is_some(), "sessão recente não está ociosa");
+
+        pool.reap_idle(Duration::ZERO).await;
+        assert!(busy.is_live(), "sessão com mensagem em andamento não pode ser encerrada");
+        drop(held);
+
+        recent.session.lock().await.close_live().await;
+        busy.session.lock().await.close_live().await;
+    });
+}

@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::time::MissedTickBehavior;
 
 use crate::agents::{replica_of, Agent, AgentRegistry};
 use crate::claude::kill_process_tree;
@@ -14,18 +15,18 @@ use crate::session_key::SessionKey;
 use crate::state::AppState;
 
 use super::agent_session::{
-    open_preloaded_session, preload_candidate, preload_targets, AgentSession,
+    open_preloaded_session, preload_candidate, preload_targets, AgentSession, SESSION_IDLE_LIMIT,
 };
 use super::fallback::{load_global_active_llm, load_global_fallback, resolve_program_for};
 use super::flow::{load_orchestration, profile_of};
 use super::project_context::{
     load_project, project_context, project_context_without_tree, project_dir, scan_structure,
 };
-use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS, SESSION_IDLE_LIMIT_SECS};
+use super::session_policy::{degrades_to_fresh, MAX_LIVE_SESSIONS, SESSION_REAP_INTERVAL_SECS};
 
 pub(super) const NO_PID: u32 = 0;
 const PRELOAD_DEBOUNCE: Duration = Duration::from_millis(300);
-const PRELOAD_TTL: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
+const SESSION_REAP_INTERVAL: Duration = Duration::from_secs(SESSION_REAP_INTERVAL_SECS);
 
 // `closing` e `pid` ficam fora do lock da sessão: o fechamento pode ser marcado e o processo encerrado com uma mensagem em andamento.
 pub(super) struct SessionSlot {
@@ -179,28 +180,28 @@ impl SessionPool {
         live_count < MAX_LIVE_SESSIONS
     }
 
-    pub(super) async fn preload_project(&self, app: &AppHandle, project_id: i64) -> usize {
+    pub(super) async fn preload_project(&self, app: &AppHandle, project_id: i64) {
         let state = app.state::<AppState>();
         let Ok(cli) = state.cli.as_ref() else {
-            return 0;
+            return;
         };
         let Ok(project_dir) = project_dir(app, project_id) else {
-            return 0;
+            return;
         };
         let Ok(project) = load_project(app, project_id) else {
-            return 0;
+            return;
         };
         let Ok(data_dir) = app.path().app_data_dir() else {
-            return 0;
+            return;
         };
         let Ok(attachments_dir) = crate::attachments::project_dir(&data_dir, project_id) else {
-            return 0;
+            return;
         };
         let Ok(team) = app.state::<AgentRegistry>().team() else {
-            return 0;
+            return;
         };
         let Ok(orchestration) = load_orchestration(app) else {
-            return 0;
+            return;
         };
         let paused = app
             .state::<DbState>()
@@ -209,7 +210,7 @@ impl SessionPool {
             .unwrap_or_default();
         let targets = preload_targets(orchestration.as_ref(), &team, &paused);
         if targets.is_empty() {
-            return 0;
+            return;
         }
         // Só agente técnico precisa da árvore; o Ember pré-carregado fica com a identidade do projeto.
         let tree = if Self::has_preload_capacity(self.live_count())
@@ -220,14 +221,13 @@ impl SessionPool {
             None
         };
         if !is_selected_project(app, project_id) {
-            return 0;
+            return;
         }
         let context = project_context(&project, tree.as_ref());
         let ember_context = project_context_without_tree(&project);
         let providers = app.state::<ProviderRegistry>();
         let global_active = load_global_active_llm(app);
         let global_fallback = load_global_fallback(app);
-        let mut adopted = 0;
         for agent in targets {
             let Ok(profile) = profile_of(&team, &agent) else {
                 continue;
@@ -249,7 +249,7 @@ impl SessionPool {
                         continue;
                     }
                     if !is_selected_project(app, project_id) {
-                        return adopted;
+                        return;
                     }
                     let slot = self.slot(SessionKey {
                         project_id,
@@ -281,7 +281,6 @@ impl SessionPool {
                     ) {
                         Ok((live, resume, place, provider_key)) => {
                             guard.adopt_preload(live, resume, place, provider_key);
-                            adopted += 1;
                         }
                         Err(err) => {
                             eprintln!("Não foi possível pré-carregar a sessão de {agent}: {err}");
@@ -299,23 +298,35 @@ impl SessionPool {
                 }
             }
         }
-        adopted
     }
 
-    pub(super) async fn expire_unused_preloads(&self, project_id: i64) {
-        for slot in self.matching(|key| key.project_id == project_id) {
+    // Sessão com mensagem em andamento (lock tomado) fica; close_live mantém o session_id para o --resume.
+    pub(super) async fn reap_idle(&self, limit: Duration) {
+        for slot in self.matching(|_| true) {
             let Ok(mut guard) = Arc::clone(&slot.session).try_lock_owned() else {
                 continue;
             };
-            if guard.is_unused_preload()
-                && guard
-                    .preloaded_at
-                    .is_some_and(|at| at.elapsed() >= PRELOAD_TTL)
-            {
+            if guard.is_idle(limit) {
                 guard.close_live().await;
             }
         }
     }
+}
+
+// Sem isto o limite de ociosidade só seria checado na próxima mensagem ao agente, e um agente que não volta a falar
+// mantém o processo da CLI vivo até o app fechar.
+pub(crate) fn spawn_idle_reaper(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(SESSION_REAP_INTERVAL);
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        loop {
+            ticker.tick().await;
+            app.state::<AppState>()
+                .sessions
+                .reap_idle(SESSION_IDLE_LIMIT)
+                .await;
+        }
+    });
 }
 
 fn is_selected_project(app: &AppHandle, project_id: i64) -> bool {
@@ -331,18 +342,9 @@ pub(crate) fn schedule_preload(app: AppHandle, project_id: i64) {
         if !is_selected_project(&app, project_id) {
             return;
         }
-        let adopted = app
-            .state::<AppState>()
-            .sessions
-            .preload_project(&app, project_id)
-            .await;
-        if adopted == 0 {
-            return;
-        }
-        tokio::time::sleep(PRELOAD_TTL).await;
         app.state::<AppState>()
             .sessions
-            .expire_unused_preloads(project_id)
+            .preload_project(&app, project_id)
             .await;
     });
 }
