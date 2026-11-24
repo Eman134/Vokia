@@ -1684,9 +1684,7 @@ fn sweep_stalled_stages(app: &AppHandle) {
         let Some(agent) = Agent::from_stored(&stage.agent) else {
             continue;
         };
-        if has_pending_delegation(&state, stage.project_id, &stage.item_id)
-            || has_flow(&state, Some(stage.project_id)).unwrap_or(true)
-        {
+        if stage_is_moving(&state, stage.project_id, &stage.item_id, &agent) {
             continue;
         }
         let item = stage.item_id.as_str();
@@ -1719,6 +1717,7 @@ fn sweep_stalled_stages(app: &AppHandle) {
                         let message = STALL_NO_LEADER_TEXT
                             .replace("{item}", item)
                             .replace("{agent}", agent.as_str());
+                        record_on_card(app, stage.project_id, item, &message);
                         let _ = emit(app, VokiaEvent::Error { message });
                     }
                 }
@@ -1738,6 +1737,27 @@ fn stage_leader(snapshot: &OrchestrationSnapshot, agent: &Agent) -> Option<Agent
         .iter()
         .find(|team| team.id == placement.team_id)?;
     Agent::from_stored(team.leader_agent.as_deref()?)
+}
+
+// Só o próprio card, o agente da etapa (ou réplica dele) e as delegações do card seguram a etapa: outra task
+// rodando no mesmo projeto não pode impedir que a parada seja vista.
+fn stage_is_moving(state: &AppState, project_id: i64, item_id: &str, agent: &Agent) -> bool {
+    if has_pending_delegation(state, project_id, item_id) {
+        return true;
+    }
+    let Ok(flow) = state.flow.lock() else {
+        return true;
+    };
+    let base = base_agent(agent);
+    let item_running = flow
+        .running
+        .iter()
+        .any(|(key, running)| key.project_id == project_id && running == item_id);
+    let agent_busy = flow
+        .pending
+        .keys()
+        .any(|key| key.project_id == project_id && base_agent(&key.agent) == base);
+    item_running || agent_busy
 }
 
 fn has_pending_delegation(state: &AppState, project_id: i64, item_id: &str) -> bool {
@@ -1785,12 +1805,19 @@ pub(crate) fn schedule_done_cleanup(app: &AppHandle, project_id: i64, item_id: &
             }
             Err(error) => format!("Não consegui limpar o worktree de {item}: {error}."),
         };
-        let state = app.state::<DbState>();
-        if let Some(db) = state.db() {
-            let _ = db.add_card_activity(project_id, &item, &text);
-        }
-        let _ = emit_backlog_changed(&app, project_id);
+        record_on_card(&app, project_id, &item, &text);
     });
+}
+
+// Registro no card que precisa sobreviver ao app fechado; card inexistente ou sem banco não vira erro de quem chama.
+fn record_on_card(app: &AppHandle, project_id: i64, item_id: &str, text: &str) {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return;
+    };
+    if db.add_card_activity(project_id, item_id, text).is_ok() {
+        let _ = emit_backlog_changed(app, project_id);
+    }
 }
 
 async fn done_cleanup(
@@ -1876,11 +1903,15 @@ fn sweep_silent_delegations(app: &AppHandle) {
     for delegation in gave_up {
         let target = delegation
             .item_id
+            .as_ref()
             .map_or_else(String::new, |item| format!(" do card {item}"));
         let message = format!(
             "O agente {} não respondeu à delegação{target}.",
             delegation.to_agent.as_str()
         );
+        if let Some(item) = &delegation.item_id {
+            record_on_card(app, delegation.project_id, item, &message);
+        }
         let _ = emit(app, VokiaEvent::Error { message });
     }
 }

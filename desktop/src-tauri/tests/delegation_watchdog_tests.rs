@@ -455,3 +455,112 @@ fn emit_message_e_emit_error_message_preservam_item_id_do_escopo() {
     assert_eq!(messages[1]["text"], "falha");
     assert_eq!(messages[1]["isError"], true);
 }
+
+fn run_item(world: &World, project_id: i64, agent: &Agent, item: &str) {
+    let key = SessionKey { project_id, agent: agent.clone() };
+    let state = world.state();
+    let mut flow = state.flow.lock().unwrap();
+    flow.pending.insert(key.clone(), VecDeque::new());
+    flow.running.insert(key, item.to_string());
+}
+
+fn moving(world: &World, agent: &Agent) -> bool {
+    stage_is_moving(&world.state(), PROJECT, ITEM, agent)
+}
+
+#[test]
+fn etapa_parada_nao_espera_outra_task_do_projeto_terminar() {
+    let world = world();
+    run_item(&world, PROJECT, &Agent::axiom(), OTHER_ITEM);
+
+    assert!(!moving(&world, &Agent::vexa()));
+}
+
+#[test]
+fn etapa_com_o_proprio_card_rodando_esta_andando() {
+    let world = world();
+    run_item(&world, PROJECT, &Agent::axiom(), ITEM);
+
+    assert!(moving(&world, &Agent::vexa()));
+}
+
+#[test]
+fn etapa_cujo_agente_ou_replica_esta_ocupado_no_projeto_esta_andando() {
+    let world = world();
+    let vexa = Agent::vexa();
+    run_item(&world, PROJECT, &crate::agents::replica_id(&vexa, 2), OTHER_ITEM);
+
+    assert!(moving(&world, &vexa));
+}
+
+#[test]
+fn etapa_com_delegacao_pendente_para_o_card_esta_andando() {
+    let world = world();
+    register_with_item(&world, PROJECT, &Agent::axiom(), Some(ITEM));
+
+    assert!(moving(&world, &Agent::vexa()));
+}
+
+#[test]
+fn mesmo_card_rodando_em_outro_projeto_nao_conta() {
+    let world = world();
+    let vexa = Agent::vexa();
+    run_item(&world, OTHER_PROJECT, &vexa, ITEM);
+
+    assert!(!moving(&world, &vexa));
+}
+
+#[test]
+fn etapa_gravada_com_replica_ve_o_agente_base_ocupado() {
+    let world = world();
+    let vexa = Agent::vexa();
+    run_item(&world, PROJECT, &vexa, OTHER_ITEM);
+
+    assert!(moving(&world, &crate::agents::replica_id(&vexa, 2)));
+}
+
+#[test]
+fn desistencia_com_card_fica_registrada_na_atividade_do_card() {
+    let world = world();
+    let db_state = world.app.state::<crate::db::DbState>();
+    let db = db_state.require().unwrap();
+    let project_id = db
+        .insert_project(&crate::db::NewProject {
+            name: "p1",
+            symbol: "folder",
+            description: "",
+            path: &world.dir.to_string_lossy(),
+            origin_kind: "folder",
+            origin_repo: None,
+        })
+        .unwrap()
+        .id;
+    let card = db
+        .create_card(
+            project_id,
+            &crate::db::NewCard {
+                title: "Card travado".to_string(),
+                description: None,
+                origin: "usuario".to_string(),
+                links: Vec::new(),
+            },
+        )
+        .unwrap();
+    let vexa = Agent::vexa();
+    let mut silent = delegation(project_id, &vexa, PING + Duration::from_secs(1));
+    silent.item_id = Some(card.id.clone());
+    silent.retries = MAX_WATCHDOG_RETRIES;
+    world
+        .state()
+        .flow
+        .lock()
+        .unwrap()
+        .active_delegations
+        .insert((project_id, vexa.clone(), Some(card.id.clone())), silent);
+
+    world.sweep();
+
+    let activity = db.read_card(project_id, &card.id).unwrap().activity;
+    let expected = format!("O agente {} não respondeu à delegação do card {}.", vexa.as_str(), card.id);
+    assert_eq!(activity.last().map(|entry| entry.text.as_str()), Some(expected.as_str()));
+}
