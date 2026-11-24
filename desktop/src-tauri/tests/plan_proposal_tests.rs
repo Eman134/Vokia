@@ -19,6 +19,7 @@ fn proposta_completa_vira_resumo_estimativa_lotes_riscos_e_etiquetas() {
                 meta: "Base pronta".to_string(),
                 tasks: vec!["Criar tabela".to_string(), "Criar API".to_string()],
                 who: None,
+                after: None,
             },
             PlanLot {
                 n: 2,
@@ -26,6 +27,7 @@ fn proposta_completa_vira_resumo_estimativa_lotes_riscos_e_etiquetas() {
                 meta: "Tela funcionando".to_string(),
                 tasks: Vec::new(),
                 who: None,
+                after: None,
             },
         ]
     );
@@ -165,4 +167,47 @@ fn proposta_antiga_sem_roteiro_mantem_regressao_exata() {
     assert_eq!(draft.lots[1].tasks, ["Tela 1"]);
     assert_eq!(draft.risks, ["Dependência externa"]);
     assert_eq!(draft.tags, ["backend", "frontend"]);
+}
+
+#[test]
+fn apos_define_dependencias_e_sem_apos_vale_o_lote_anterior() {
+    let draft = parse_proposal(
+        "#lote 1|A|a|x
+#lote 2|B|b|x
+#lote 3|C|c|x
+#lote 4|D|d|x
+         #roteiro 1|quem:kairo~apos:0
+#roteiro 2|quem:vexa~apos:1
+#roteiro 3|quem:kairo~apos:1
+         #roteiro 4|quem:sentry~apos:2, 3",
+    );
+
+    assert_eq!(
+        draft.dependencies(),
+        [(1, vec![]), (2, vec![1]), (3, vec![1]), (4, vec![2, 3])]
+    );
+    assert_eq!(draft.dependency_refusal(), None);
+}
+
+#[test]
+fn proposta_sem_apos_segue_em_sequencia() {
+    let draft = parse_proposal("#lote 1|A|a|x
+#lote 2|B|b|x
+#lote 3|C|c|x");
+
+    assert_eq!(draft.dependencies(), [(1, vec![]), (2, vec![1]), (3, vec![2])]);
+}
+
+#[test]
+fn apos_para_lote_que_nao_vem_antes_e_recusado() {
+    for after in ["2", "3", "9"] {
+        let draft = parse_proposal(&format!(
+            "#lote 1|A|a|x
+#lote 2|B|b|x
+#lote 3|C|c|x
+#roteiro 2|quem:kairo~apos:{after}"
+        ));
+
+        assert!(draft.dependency_refusal().is_some(), "apos:{after}");
+    }
 }

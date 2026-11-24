@@ -14,6 +14,7 @@ const FILE_SEPARATOR = ','
 const TAG_SEPARATOR = ','
 const TASK_SEPARATOR = ';'
 const TASKS_JOINER = `${TASK_SEPARATOR} `
+const DEPENDENCY_SEPARATOR = ','
 const LIST_JOINER = ', '
 const LINE_SEPARATOR = '\n'
 const PARAGRAPH_SEPARATOR = '\n\n'
@@ -27,6 +28,7 @@ const SCRIPT_KEY = {
   step: 'passo',
   done: 'pronto',
   limit: 'nao',
+  after: 'apos',
 } as const
 
 const RESEARCH_INSTRUCTION =
@@ -37,7 +39,7 @@ const QUESTION_INSTRUCTION =
   'Se faltar informação, pergunte antes de propor terminando a resposta com uma linha: #decisao pergunta|<título>|<detalhe>|<opção1>;<opção2>. Quando o usuário responder, continue a pesquisa.'
 const USER_NOTE_PREFIX = 'Instruções do usuário (têm prioridade sobre o resto):'
 export const PLAN_PROTOCOL_HINT =
-  'primeira linha #plano-pronto e depois, um marcador por linha: #estimativa ~<tempo>, uma linha #lote <n>|<título>|<meta>|<tarefa>; <tarefa> por lote (ao menos um), se quiser uma linha #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>, <arquivo>~passo:<passo>~pronto:<critério>~nao:<limite> por lote (passo, pronto e nao podem se repetir), #risco <frase curta>, #etiquetas <etiqueta>, <etiqueta> (livres, em minúsculas) e, se quiser, um resumo.'
+  'primeira linha #plano-pronto e depois, um marcador por linha: #estimativa ~<tempo>, uma linha #lote <n>|<título>|<meta>|<tarefa>; <tarefa> por lote (ao menos um), se quiser uma linha #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>, <arquivo>~passo:<passo>~pronto:<critério>~nao:<limite>~apos:<n>, <n> por lote (passo, pronto e nao podem se repetir; apos: lista os lotes que terminam antes, sem apos: vale o lote anterior, apos:0 começa junto do lote 1 e lotes com o mesmo apos: rodam em paralelo), #risco <frase curta>, #etiquetas <etiqueta>, <etiqueta> (livres, em minúsculas) e, se quiser, um resumo.'
 const FINAL_INSTRUCTION =
   `Quando terminar, responda em português com a ${PLAN_PROTOCOL_HINT} Mesmo depois das respostas do usuário, termine sempre com #plano-pronto.`
 const IMPORT_INSTRUCTION =
@@ -46,6 +48,8 @@ const IMPORT_INSTRUCTION =
 export interface LotScript {
   who?: string
   model?: string
+  // Lotes que terminam antes deste; ausente = lote anterior, vazio = começa junto do primeiro.
+  after?: number[]
   block: ScriptBlock
 }
 
@@ -76,6 +80,13 @@ function parseLot(rest: string, n: number): ProposalLot | undefined {
   return title === '' ? undefined : { n, title, meta, tasks }
 }
 
+function parseDependencies(value: string): number[] {
+  return value
+    .split(DEPENDENCY_SEPARATOR)
+    .map((part) => Number(part.trim()))
+    .filter((dependency) => Number.isInteger(dependency) && dependency > 0)
+}
+
 function parseLotScript(rest: string): { n: number; script: LotScript } | undefined {
   const pipeIndex = rest.indexOf(LOT_FIELD_SEPARATOR)
   if (pipeIndex === -1) return undefined
@@ -87,6 +98,7 @@ function parseLotScript(rest: string): { n: number; script: LotScript } | undefi
 
   let who: string | undefined
   let model: string | undefined
+  let after: number[] | undefined
   const block: ScriptBlock = { context: '', files: [], steps: [], done: [], limits: [] }
 
   for (const rawEntry of body.split(SCRIPT_ENTRY_SEPARATOR)) {
@@ -121,12 +133,15 @@ function parseLotScript(rest: string): { n: number; script: LotScript } | undefi
       case SCRIPT_KEY.limit:
         if (value !== '') block.limits.push(value)
         break
+      case SCRIPT_KEY.after:
+        if (value !== '') after = parseDependencies(value)
+        break
       default:
         return undefined
     }
   }
 
-  return { n, script: { ...(who ? { who } : {}), ...(model ? { model } : {}), block } }
+  return { n, script: { ...(who ? { who } : {}), ...(model ? { model } : {}), ...(after ? { after } : {}), block } }
 }
 
 export function parseProposal(text: string): ParsedProposal {
@@ -210,6 +225,7 @@ function scriptLine(script: LotScript, n: number): string | undefined {
   const entries = [
     ...entry(SCRIPT_KEY.who, script.who ?? ''),
     ...entry(SCRIPT_KEY.model, script.model ?? ''),
+    ...(script.after ? [`${SCRIPT_KEY.after}${SCRIPT_KEY_SEPARATOR}${script.after.length === 0 ? 0 : script.after.join(LIST_JOINER)}`] : []),
     ...entry(SCRIPT_KEY.context, script.block.context),
     ...entry(SCRIPT_KEY.files, files.filter((file) => file !== '').join(LIST_JOINER)),
     ...script.block.steps.flatMap((step) => entry(SCRIPT_KEY.step, step)),

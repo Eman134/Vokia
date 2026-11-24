@@ -7,12 +7,15 @@ const TAGS_MARKER: &str = "#etiquetas";
 const LOT_FIELD_SEPARATOR: char = '|';
 const SCRIPT_FIELD_SEPARATOR: char = '~';
 const SCRIPT_WHO_FIELD: &str = "quem:";
+const SCRIPT_AFTER_FIELD: &str = "apos:";
+const DEPENDENCY_SEPARATOR: char = ',';
+const NO_DEPENDENCY: u32 = 0;
 const TASK_SEPARATOR: char = ';';
 const TAG_SEPARATOR: char = ',';
 const LINE_SEPARATOR: &str = "\n";
 
-// Com time selecionado, o front e o backend leem a mesma regra: uma etapa por camada/aresta do fluxo, quem só do time.
-pub const PLAN_PROTOCOL_HINT: &str = "Formato do proposal: primeira linha #plano-pronto, depois um marcador por linha: #estimativa ~<tempo>, #lote <n>|<título>|<meta>|<tarefa>; <tarefa> (ao menos um), opcional #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>~passo:<passo>~pronto:<critério>~nao:<limite>, #risco <frase>, #etiquetas <e1>, <e2> e resumo livre. Com time selecionado: um #lote por camada ou aresta do fluxo, na ordem do fluxo, com #roteiro quem: só de agentes do time, sem pular camada obrigatória.";
+// Front e backend leem a mesma regra: etapas pelo papel de cada agente do time, `apos:` marca paralelo ou sequência.
+pub const PLAN_PROTOCOL_HINT: &str = "Formato do proposal: primeira linha #plano-pronto, depois um marcador por linha: #estimativa ~<tempo>, #lote <n>|<título>|<meta>|<tarefa>; <tarefa> (ao menos um), opcional #roteiro <n>|quem:<agente>~modelo:<modelo>~ctx:<contexto>~arq:<arquivo>~passo:<passo>~pronto:<critério>~nao:<limite>~apos:<n>, <n>, #risco <frase>, #etiquetas <e1>, <e2> e resumo livre. Com time selecionado: monte os lotes pelo papel e pelas instruções de cada agente, com #roteiro quem: só de agentes do time. apos: lista os lotes que precisam terminar antes (sem apos: vale o lote anterior; apos:0 começa junto do lote 1), então lotes com o mesmo apos: rodam em paralelo.";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanLot {
@@ -22,6 +25,8 @@ pub struct PlanLot {
     pub tasks: Vec<String>,
     // Agente responsável pela etapa, vindo do #roteiro de mesmo número.
     pub who: Option<String>,
+    // Lotes que precisam concluir antes deste; None é o lote anterior, Some(vazio) começa junto do primeiro.
+    pub after: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -31,6 +36,30 @@ pub struct PlanDraft {
     pub lots: Vec<PlanLot>,
     pub risks: Vec<String>,
     pub tags: Vec<String>,
+}
+
+impl PlanDraft {
+    // Lotes que cada lote espera concluir, na ordem do plano; sem `apos:` espera o lote anterior.
+    pub fn dependencies(&self) -> Vec<(u32, Vec<u32>)> {
+        self.lots
+            .iter()
+            .map(|lot| {
+                let after = lot
+                    .after
+                    .clone()
+                    .unwrap_or_else(|| if lot.n > 1 { vec![lot.n - 1] } else { Vec::new() });
+                (lot.n, after)
+            })
+            .collect()
+    }
+
+    // Dependência só vale para lote anterior; isso impede ciclo e espera por etapa inexistente.
+    pub fn dependency_refusal(&self) -> Option<String> {
+        self.lots.iter().find_map(|lot| {
+            let invalid = lot.after.iter().flatten().find(|dep| **dep >= lot.n)?;
+            Some(format!("A etapa {} depende de apos:{invalid}, que não vem antes dela.", lot.n))
+        })
+    }
 }
 
 // Mesmo protocolo do parseProposal do front (planProposal.ts): linha sem marcador vai para o resumo.
@@ -64,29 +93,48 @@ pub fn parse_proposal(text: &str) -> PlanDraft {
         }
     }
     for script in scripts {
-        let Some((n, who)) = parse_script(script) else {
+        let Some(parsed) = parse_script(script) else {
             continue;
         };
-        if let Some(lot) = draft.lots.iter_mut().find(|lot| lot.n == n) {
-            lot.who = who;
+        if let Some(lot) = draft.lots.iter_mut().find(|lot| lot.n == parsed.n) {
+            lot.who = parsed.who;
+            lot.after = parsed.after;
         }
     }
     draft.summary = summary.join(LINE_SEPARATOR).trim().to_string();
     draft
 }
 
+struct ParsedScript {
+    n: u32,
+    who: Option<String>,
+    after: Option<Vec<u32>>,
+}
+
 // `#roteiro <n>|quem:<agente>~...`: o número liga o roteiro ao lote; os demais campos seguem o front.
-fn parse_script(rest: &str) -> Option<(u32, Option<String>)> {
+fn parse_script(rest: &str) -> Option<ParsedScript> {
     let (number, fields) = rest.trim().split_once(LOT_FIELD_SEPARATOR)?;
     let n = number.trim().parse::<u32>().ok()?;
-    let who = fields
-        .split(SCRIPT_FIELD_SEPARATOR)
-        .map(str::trim)
-        .find_map(|field| field.strip_prefix(SCRIPT_WHO_FIELD))
-        .map(str::trim)
-        .filter(|who| !who.is_empty())
-        .map(str::to_string);
-    Some((n, who))
+    let field_value = |prefix: &str| {
+        fields
+            .split(SCRIPT_FIELD_SEPARATOR)
+            .map(str::trim)
+            .find_map(|field| field.strip_prefix(prefix))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    };
+    let who = field_value(SCRIPT_WHO_FIELD).map(str::to_string);
+    let after = field_value(SCRIPT_AFTER_FIELD).map(parse_dependencies);
+    Some(ParsedScript { n, who, after })
+}
+
+// `apos:0` zera a lista: o lote começa junto do primeiro.
+fn parse_dependencies(value: &str) -> Vec<u32> {
+    value
+        .split(DEPENDENCY_SEPARATOR)
+        .filter_map(|part| part.trim().parse::<u32>().ok())
+        .filter(|n| *n != NO_DEPENDENCY)
+        .collect()
 }
 
 fn parse_lot(rest: &str, n: u32) -> Option<PlanLot> {
@@ -104,6 +152,7 @@ fn parse_lot(rest: &str, n: u32) -> Option<PlanLot> {
         meta: fields.get(1).copied().unwrap_or_default().to_string(),
         tasks: split_trimmed(fields.get(2).copied().unwrap_or_default(), TASK_SEPARATOR),
         who: None,
+        after: None,
     })
 }
 

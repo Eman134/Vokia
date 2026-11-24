@@ -126,6 +126,23 @@ test('serializeProposal — é o inverso de parseProposal, com #roteiro e sem pe
   })
 })
 
+test('apos: — dependência entre lotes sobrevive ao ciclo parse/serialize, inclusive apos:0', () => {
+  const parsed = parseProposal(
+    [
+      '#lote 1|A|a|x',
+      '#lote 2|B|b|x',
+      '#lote 3|C|c|x',
+      '#roteiro 1|quem:kairo~apos:0',
+      '#roteiro 2|quem:vexa~apos:1',
+      '#roteiro 3|quem:sentry~apos:1, 2',
+    ].join('\n'),
+  )
+  assert.deepEqual(parsed.lots.map((lot) => lot.script.after), [[], [1], [1, 2]])
+  const reparsed = parseProposal(serializeProposal(parsed))
+  assert.deepEqual(reparsed.lots.map((lot) => lot.script.after), [[], [1], [1, 2]])
+  assert.equal(parseProposal('#lote 1|A|a|x\n#roteiro 1|quem:kairo').lots[0].script.after, undefined)
+})
+
 test('serializeProposal — separadores do protocolo dentro de campos não criam campos nem entradas extras', () => {
   const parsed = parseProposal(PROPOSAL)
   parsed.lots[0].title = 'Base | parte 1'
