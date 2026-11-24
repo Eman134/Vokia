@@ -111,7 +111,7 @@ Itens do [plano de melhorias](plano-de-melhorias.md) de 2026-11-24, inspirados n
 
 | ID | Nome | O que faz | Documento |
 | --- | --- | --- | --- |
-| 036 | Preparo do worktree | Roda o setup e o teardown do projeto no worktree do card e dá a ele uma porta própria. | [036](backlog/036.md) |
+| 036 | Preparo do worktree | Completa o preparo do worktree com encerramento, variáveis e porta própria. | [036](backlog/036.md) |
 | 037 | Checkpoint por turno e desfazer | Guarda o estado do worktree antes de cada turno e deixa voltar a ele pela conversa. | [037](backlog/037.md) |
 | 038 | Diff do card com comentário na linha | Mostra o diff do card em três escopos e devolve comentários de linha ao agente autor. | [038](backlog/038.md) |
 | 039 | PR e vigilância de CI | Abre o PR pelo card e devolve falha de CI, revisão e conflito ao agente. | [039](backlog/039.md) |

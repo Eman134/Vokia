@@ -21,7 +21,7 @@ Conferido em `desktop/` em 2026-11-24.
 
 | Tema | Estado |
 |---|---|
-| Worktree por card | Existe (`projects/worktree.rs`: criar, garantir, remover, limpar ao concluir). Não roda nenhum preparo depois de criar. |
+| Worktree por card | Existe (`projects/worktree.rs`: criar, garantir, remover, limpar ao concluir), com um comando de preparo por projeto (`setup_command`, editável na tela do projeto) que roda ao criar o worktree, com tempo-limite. Faltam teardown, variáveis e porta por worktree. |
 | Checkpoint, desfazer turno | Não existe. |
 | Tela de diff e revisão (seção 8.11) | Não existe; só o bloco de diff dentro da conversa (`UiDiffBlock.vue`). |
 | PR e CI | Não existe; há vínculo manual de commit, branch e PR ao card (`link_git_ref`). |
@@ -39,7 +39,7 @@ As prioridades seguem o impacto no ciclo de entrega. "Essencial" trava o fluxo d
 
 | ID | Melhoria | Inspiração | Lado |
 |---|---|---|---|
-| [036](backlog/036.md) | Preparo do worktree: script de setup e teardown, variáveis e porta por worktree | T3 Code (`t3.json`) | Backend |
+| [036](backlog/036.md) | Preparo do worktree: teardown, variáveis e porta por worktree, somados ao comando de preparo que já existe | T3 Code (`t3.json`) | Backend |
 | [037](backlog/037.md) | Checkpoint por turno e desfazer a partir da conversa | T3 Code | Backend e usuário |
 | [038](backlog/038.md) | Diff do card com comentário na linha que vira pedido ao agente | Orca e T3 Code | Usuário |
 | [039](backlog/039.md) | Abrir PR pelo card e vigiar o CI, devolvendo falhas ao agente | T3 Code ("Watch a pull request") e Orca | Backend |
