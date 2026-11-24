@@ -336,3 +336,35 @@ fn dois_worktrees_editam_o_mesmo_arquivo_sem_interferir_um_no_outro_nem_na_princ
     assert_eq!(read(&sandbox.project.join(SHARED_FILE)), ORIGINAL);
     assert_eq!(git_in(&sandbox.project, &["status", "--porcelain"]), "");
 }
+
+const SETUP_MARK: &str = "preparo.txt";
+const SETUP_OK: &str = "echo ok> preparo.txt";
+const SETUP_FAILS: &str = "exit 1";
+
+fn ensure_with_setup(sandbox: &Sandbox, item: &str, setup: &str) -> Result<Worktree, WorktreeError> {
+    tauri::async_runtime::block_on(ensure(&sandbox.project, &sandbox.worktrees, item, Some(setup)))
+}
+
+#[test]
+fn preparo_roda_dentro_do_worktree_e_nao_na_pasta_principal() {
+    let sandbox = Sandbox::with_repo();
+
+    let worktree = ensure_with_setup(&sandbox, "card-1", SETUP_OK).expect("worktree preparado");
+
+    assert!(worktree.path.join(SETUP_MARK).exists());
+    assert!(!sandbox.project.join(SETUP_MARK).exists());
+}
+
+#[test]
+fn preparo_que_falha_desfaz_o_worktree_e_o_proximo_pedido_prepara_de_novo() {
+    let sandbox = Sandbox::with_repo();
+
+    let failed = ensure_with_setup(&sandbox, "card-1", SETUP_FAILS);
+
+    assert!(matches!(failed, Err(WorktreeError::SetupFailed { .. })));
+    assert!(!sandbox.worktrees.join("card-1").exists(), "pasta sem preparo não pode ser reaproveitada");
+    assert!(!branches(&sandbox).contains(&"vokia/card-1".to_string()));
+
+    let worktree = ensure_with_setup(&sandbox, "card-1", SETUP_OK).expect("segunda tentativa prepara");
+    assert!(worktree.path.join(SETUP_MARK).exists());
+}

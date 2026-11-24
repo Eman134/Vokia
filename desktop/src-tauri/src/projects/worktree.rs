@@ -192,7 +192,19 @@ pub async fn create(
     )
     .await?;
     if let Some(command) = setup_command.map(str::trim).filter(|text| !text.is_empty()) {
-        run_setup(&path, command).await?;
+        // A pasta que fica depois de um preparo falho seria reaproveitada pelo ensure como se estivesse pronta.
+        if let Err(error) = run_setup(&path, command).await {
+            let rollback_steps: [&[&str]; 2] = [
+                &["worktree", "remove", "--force", &path_arg],
+                &["branch", "-D", &branch],
+            ];
+            for args in rollback_steps {
+                if let Err(rollback) = git(&git_path, project_dir, args).await {
+                    eprintln!("Não foi possível desfazer o worktree de {item_id} após o preparo falhar: {rollback}");
+                }
+            }
+            return Err(error);
+        }
     }
     Ok(Worktree { branch, path })
 }
