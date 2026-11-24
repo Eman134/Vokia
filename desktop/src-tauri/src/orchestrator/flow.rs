@@ -284,6 +284,32 @@ pub(super) fn dispatch_request(
     )
 }
 
+// Delegação do orquestrador: o líder roda a cadeia inteira no próprio fluxo (é ele quem espera os ajudantes),
+// enquanto quem delegou fica livre. Mesmas regras de instância, teto e espera de `dispatch_request`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn dispatch_flow(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    base: &Agent,
+    request: &str,
+    context: RequestContext,
+    max_instances: i64,
+    max_parallel: i64,
+) -> Result<(), FlowError> {
+    start_dispatch(
+        app,
+        state,
+        project_id,
+        base,
+        request,
+        context,
+        max_instances,
+        max_parallel,
+        true,
+    )
+}
+
 // Card que ainda não tem worktree e cujo líder já usa o máximo dele: o pedido espera.
 struct WorktreeWait {
     leader: String,
@@ -1011,6 +1037,7 @@ async fn run_flow(
     let parallel_run = context.run_id;
     let mut batch = context.batch;
     let mut resumed_run = context.resumed_run;
+    let mut reply_to = context.reply_to;
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
@@ -1064,6 +1091,7 @@ async fn run_flow(
                 channel_id,
                 team,
                 current_run,
+                reply_to.as_ref(),
             )
             .await
         };
@@ -1136,6 +1164,7 @@ async fn run_flow(
                 parallel = job.context.parallel;
                 batch = job.context.batch;
                 resumed_run = job.context.resumed_run;
+                reply_to = job.context.reply_to;
             }
             None => {
                 if !is_limit_pause {
@@ -1160,6 +1189,7 @@ async fn run_exchange(
     channel_id: Option<i64>,
     team: &Team,
     run_id: Option<u64>,
+    reply_to: Option<&Agent>,
 ) -> Result<TaskOutcome, FlowError> {
     // Uma tarefa por projeto: a troca de líder segura o lock da tarefa; cada passo reserva só a instância que fala.
     let task = state.sessions.task_lock(key.project_id);
@@ -1176,6 +1206,7 @@ async fn run_exchange(
         &mut sessions,
         team,
         run_id,
+        reply_to,
     )
     .await;
     sessions.release().await;
@@ -1274,6 +1305,7 @@ async fn run_parallel_item(
         team,
         orchestration: orchestration.as_ref(),
         run_id,
+        reply_to: None,
     };
     let mut sessions = ExchangeSessions::per_step(&state.sessions, key.project_id);
     let result = answer_once(&exchange, &mut sessions, batch).await;
@@ -1972,6 +2004,7 @@ async fn exchange_turns(
     sessions: &mut ExchangeSessions<'_>,
     team: &Team,
     run_id: Option<u64>,
+    reply_to: Option<&Agent>,
 ) -> Result<TaskOutcome, FlowError> {
     emit_state(app, key.project_id, key.agent.clone(), AgentState::Sending, item_id)?;
     let channel = find_channel(app, key.project_id, channel_id, team);
@@ -2060,6 +2093,7 @@ async fn exchange_turns(
         team,
         orchestration: orchestration.as_ref(),
         run_id,
+        reply_to,
     };
     let result = run_turns(&exchange, sessions, &mut transcript).await;
     let outcome = match &result {

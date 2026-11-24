@@ -72,6 +72,8 @@ pub struct RequestContext {
     pub resumed_run: Option<i64>,
     // Intervalo de verificação pedido pelo agente que delegou; o watchdog aplica padrão e limites.
     pub ping_seconds: Option<u64>,
+    // Orquestrador que delegou e seguiu atendendo: a resposta final do fluxo vai para ele como mensagem, sem abrir turno.
+    pub reply_to: Option<crate::events::Agent>,
 }
 
 impl RequestContext {
@@ -88,6 +90,7 @@ impl RequestContext {
             attachments: Vec::new(),
             resumed_run: None,
             ping_seconds: None,
+            reply_to: None,
         }
     }
 }

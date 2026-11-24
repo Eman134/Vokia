@@ -24,7 +24,7 @@ use super::emit::{
 };
 use super::error::FlowError;
 use super::flow::{
-    announce_batch, count_branch, dispatch_request, emit_stage, is_batch_open, mark_flow_end,
+    announce_batch, count_branch, dispatch_flow, dispatch_request, emit_stage, is_batch_open, mark_flow_end,
     open_batch, seal_batch, set_stage_state, stop_with_error,
 };
 use super::plan_stages::advance_plan;
@@ -63,6 +63,8 @@ pub(super) struct Exchange<'a> {
     pub(super) team: &'a Team,
     pub(super) orchestration: Option<&'a OrchestrationSnapshot>,
     pub(super) run_id: Option<u64>,
+    // Orquestrador a quem a resposta final do fluxo é endereçada quando ninguém mais espera por ela.
+    pub(super) reply_to: Option<&'a Agent>,
 }
 
 impl<'a> Exchange<'a> {
@@ -649,7 +651,7 @@ pub(super) async fn run_turns(
             feed.as_deref().unwrap_or_default(),
             delegation.as_ref(),
         );
-        let to = speech_recipient(definition, &turn, next.as_ref());
+        let to = final_recipient(definition, &turn, next.as_ref(), exchange.reply_to);
         if let Some(text) = &feed {
             say(
                 app,
@@ -817,13 +819,23 @@ pub(super) async fn run_turns(
                     helper,
                     passage,
                 )?;
-                if passage.asynchronous {
+                // O Ember só orquestra: despacha o líder e fica livre, quem espera o ajudante é o líder.
+                let orchestrator_hands_off = turn.speaker == Agent::ember();
+                if passage.asynchronous || orchestrator_hands_off {
                     let target_item = intent
                         .as_ref()
                         .and_then(|intent| intent.item_id.as_deref())
                         .or(line_item);
                     let ping_seconds = intent.as_ref().and_then(|intent| intent.ping_seconds);
-                    dispatch_async_branch(exchange, target_item, helper, helper_request, ping_seconds)?;
+                    let reply_to = orchestrator_hands_off.then(|| turn.speaker.clone());
+                    dispatch_async_branch(
+                        exchange,
+                        target_item,
+                        helper,
+                        helper_request,
+                        ping_seconds,
+                        reply_to,
+                    )?;
                     emit_state(app, project_id, turn.speaker.clone(), AgentState::Idle, *item_id)?;
                     return Ok(TaskOutcome::Finished);
                 }
@@ -1189,12 +1201,14 @@ pub(super) fn count_passage(
 }
 
 // Linha assíncrona: o pedido segue como ramo separado do mesmo card, e quem enviou termina o turno na entrega.
+// Com `reply_to`, o ramo é um fluxo completo do líder (cadeia com os ajudantes) que responde a esse agente.
 fn dispatch_async_branch(
     exchange: &Exchange<'_>,
     item_id: Option<&str>,
     helper: &Agent,
     request: &str,
     ping_seconds: Option<u64>,
+    reply_to: Option<Agent>,
 ) -> Result<(), FlowError> {
     let snapshot = exchange.orchestration;
     let max_instances = snapshot
@@ -1208,7 +1222,13 @@ fn dispatch_async_branch(
     );
     context.ping_seconds = ping_seconds;
     count_branch(exchange.state, exchange.key.project_id, item_id)?;
-    dispatch_request(
+    let dispatch = if reply_to.is_some() {
+        dispatch_flow
+    } else {
+        dispatch_request
+    };
+    context.reply_to = reply_to;
+    dispatch(
         exchange.app,
         exchange.state,
         exchange.key.project_id,
@@ -1411,6 +1431,21 @@ fn speech_recipient(definition: &TaskDefinition, turn: &Turn, next: Option<&Turn
         .last()
         .cloned()
         .map_or(Speaker::User, Speaker::from)
+}
+
+// A resposta que fecha o fluxo de uma delegação do orquestrador vai a ele (mensagem, sem turno); o resto segue a regra comum.
+fn final_recipient(
+    definition: &TaskDefinition,
+    turn: &Turn,
+    next: Option<&Turn>,
+    reply_to: Option<&Agent>,
+) -> Speaker {
+    match (next, reply_to) {
+        (None, Some(orchestrator)) if turn.requesters.is_empty() => {
+            Speaker::from(orchestrator.clone())
+        }
+        _ => speech_recipient(definition, turn, next),
+    }
 }
 
 fn next_participant(participants: &[Agent], speaker: &Agent) -> Agent {

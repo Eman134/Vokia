@@ -84,6 +84,27 @@ fn sem_delegacao_nem_requisitante_a_fala_vai_ao_usuario_e_a_conversa_termina() {
     assert!(speech_recipient(&definition, &axiom, None) == Speaker::User);
 }
 
+// Release com CI/CD: Ember→Axiom→Gitta. O Axiom espera o Gitta (requisitante dele) e só a resposta final vai ao Ember.
+#[test]
+fn resposta_final_do_lider_delegado_pelo_ember_vai_ao_ember_e_a_do_gitta_ao_axiom() {
+    let definition = definition();
+    let ember = Agent::ember();
+    let gitta = Turn::new(agent("gitta"), "release", "release", vec![agent("axiom")]);
+    let axiom = Turn::new(agent("axiom"), "release", "release", Vec::new());
+
+    assert!(final_recipient(&definition, &gitta, None, Some(&ember)) == Speaker::from(agent("axiom")));
+    assert!(final_recipient(&definition, &axiom, None, Some(&ember)) == Speaker::from(ember.clone()));
+    assert!(final_recipient(&definition, &axiom, None, None) == Speaker::User);
+}
+
+#[test]
+fn contexto_gravado_antes_do_reply_to_ainda_carrega() {
+    let legacy = r#"{"run_id":null,"item_id":"item-28","channel_id":null,"parallel":false,"batch":null,"attachments":[],"resumed_run":null,"ping_seconds":null}"#;
+    let context: crate::state::RequestContext = serde_json::from_str(legacy).expect("contexto antigo");
+
+    assert!(context.reply_to.is_none());
+}
+
 #[test]
 fn cls1_settlement_ended_persiste_task_result_somente_para_demanda_ou_conversa_promovida() {
     use std::path::{Path, PathBuf};
@@ -125,6 +146,7 @@ fn cls1_settlement_ended_persiste_task_result_somente_para_demanda_ou_conversa_p
             team,
             orchestration: None,
             run_id: None,
+            reply_to: None,
         };
         let mut counters = Counters::default();
         counters.kind = definition.kind;
