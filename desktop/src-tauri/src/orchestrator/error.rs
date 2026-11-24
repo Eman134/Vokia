@@ -139,7 +139,6 @@ impl FlowError {
         matches!(self, FlowError::Claude(_))
     }
 
-    #[allow(dead_code)]
     pub fn is_model_unavailable(&self) -> bool {
         match self {
             FlowError::Claude(error) => error.is_model_unavailable(),

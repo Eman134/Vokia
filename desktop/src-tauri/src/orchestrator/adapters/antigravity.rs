@@ -11,7 +11,7 @@ use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
 use crate::providers::ProviderConfig;
 
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub(crate) fn build_command(
     program: &Path,
     user_args: &[String],
@@ -138,7 +138,7 @@ pub(super) async fn run_turn(
     parse_stream_output_with_provider(&stdout, Some(provider), model)
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub(crate) fn parse_stream_output(stdout: &[u8]) -> Result<Reply, ClaudeError> {
     parse_stream_output_with_provider(stdout, None, "")
 }

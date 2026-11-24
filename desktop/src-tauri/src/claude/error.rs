@@ -65,25 +65,11 @@ impl ClaudeError {
         }
     }
 
-    #[allow(dead_code)]
     pub fn is_model_unavailable(&self) -> bool {
         match self {
             ClaudeError::ForCli { inner, .. } => inner.is_model_unavailable(),
             ClaudeError::ModelUnavailable { .. } => true,
             _ => false,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn model_unavailable(&self) -> Option<(&str, &str, &str)> {
-        match self {
-            ClaudeError::ForCli { inner, .. } => inner.model_unavailable(),
-            ClaudeError::ModelUnavailable {
-                provider,
-                model,
-                detail,
-            } => Some((provider.as_str(), model.as_str(), detail.as_str())),
-            _ => None,
         }
     }
 }

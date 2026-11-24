@@ -76,7 +76,6 @@ impl ProviderAdapter {
         self.config().supports_mcp
     }
 
-    #[allow(dead_code)]
     pub(in crate::orchestrator) fn tool_transport(&self) -> ToolTransport {
         self.config().effective_tool_transport()
     }

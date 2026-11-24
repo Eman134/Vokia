@@ -32,18 +32,6 @@ pub struct TurnUsage {
     pub is_fallback: Option<bool>,
 }
 
-impl TurnUsage {
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.provider.is_none()
-            && self.model.is_none()
-            && self.input_tokens.is_none()
-            && self.output_tokens.is_none()
-            && self.cached_input_tokens.is_none()
-            && self.cost_usd.is_none()
-    }
-}
-
 pub struct Reply {
     pub text: String,
     pub limits: Option<RateLimits>,

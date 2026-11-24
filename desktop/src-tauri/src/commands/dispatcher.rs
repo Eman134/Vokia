@@ -523,7 +523,7 @@ struct ConfirmArgs {
 }
 
 // Sem chamador interno: o protocolo MCP usa a versão filtrada; mantida como API sem filtro.
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub fn list_commands() -> Vec<Value> {
     list_commands_filtered(None)
 }

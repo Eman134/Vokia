@@ -207,7 +207,7 @@ impl ProviderRegistry {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
     pub fn seeded() -> ProviderRegistry {
         ProviderRegistry {
             file: None,
@@ -237,7 +237,6 @@ impl ProviderRegistry {
             .collect())
     }
 
-    #[allow(dead_code)]
     pub fn save_provider(&self, config: ProviderConfig) -> Result<ProviderConfig, ProviderError> {
         let mut state = self.lock();
         let providers = match &mut *state {
@@ -257,7 +256,6 @@ impl ProviderRegistry {
         Ok(config)
     }
 
-    #[allow(dead_code)]
     pub fn remove_provider(&self, id: &str) -> Result<(), ProviderError> {
         let mut state = self.lock();
         let providers = match &mut *state {

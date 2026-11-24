@@ -109,7 +109,7 @@ pub(super) async fn run_turn(
     parse_jsonl_output_with_provider(&stdout, Some(provider), model)
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub(crate) fn parse_jsonl_output(stdout: &[u8]) -> Result<Reply, ClaudeError> {
     parse_jsonl_output_with_provider(stdout, None, "")
 }

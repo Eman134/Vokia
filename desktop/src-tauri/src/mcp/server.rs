@@ -59,7 +59,6 @@ impl McpConfigFile {
 pub struct McpSession {
     shared: Arc<Shared>,
     token: Token,
-    #[allow(dead_code)]
     url: String,
     config: Option<McpConfigFile>,
     slot: ExchangeSlot,
@@ -70,12 +69,10 @@ impl McpSession {
         self.config.as_ref()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn url(&self) -> &str {
         &self.url
     }
 
-    #[allow(dead_code)]
     pub(crate) fn token(&self) -> &str {
         self.token.as_str()
     }
@@ -172,7 +169,6 @@ impl McpServer {
         Ok(session)
     }
 
-    #[allow(dead_code)]
     pub fn open_headless(&self, binding: Binding) -> Result<McpSession, McpError> {
         let slot = binding.slot.clone();
         let token = self

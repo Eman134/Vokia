@@ -174,7 +174,7 @@ pub struct CliPreset {
     pub builtin_seed: bool,
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
 pub fn presets() -> Vec<CliPreset> {
     crate::providers::initial_presets()
 }
