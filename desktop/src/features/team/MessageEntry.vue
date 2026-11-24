@@ -86,6 +86,7 @@ const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
   denied: '✕ Negado:',
   expired: '⏱ Expirou sem resposta:',
   'project-rule': '✓ Regra do projeto:',
+  auto: '✓ Modo auto:',
   bypass: '✓ Modo bypass:',
 }
 

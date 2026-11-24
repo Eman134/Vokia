@@ -1,4 +1,5 @@
 import type { OrchTaskStage } from '../orchestration/orchestrationTypes'
+import type { ExecutionMode } from '../permissions/executionModes'
 
 export const VOKIA_EVENT = 'vokia://event'
 
@@ -106,7 +107,10 @@ export interface FeedNotice {
 
 export type PermissionOutcome = 'allowed' | 'denied' | 'expired'
 
-export type PermissionResultOutcome = PermissionOutcome | 'project-rule' | 'bypass'
+export type PermissionResultOutcome = PermissionOutcome | 'project-rule' | AutoApprovalMode
+
+/** Modos que aprovam pedidos sozinhos, sem regra salva. */
+export type AutoApprovalMode = Extract<ExecutionMode, 'auto' | 'bypass'>
 
 export interface FeedPermissionResult {
   type: 'permission-result'
@@ -146,14 +150,14 @@ export interface VokiaPermissionByRule {
   agent: Agent
   detail: string
   projectId: number | null
-  /** true quando a aprovação veio do modo bypass do projeto, e não de uma regra salva. */
-  bypass?: boolean
+  /** Presente quando a aprovação veio do modo de execução do projeto, e não de uma regra salva. */
+  mode?: AutoApprovalMode
 }
 
-export interface VokiaBypassChanged {
-  type: 'bypass-changed'
+export interface VokiaExecutionModeChanged {
+  type: 'execution-mode-changed'
   projectId: number
-  enabled: boolean
+  mode: ExecutionMode
 }
 
 export type DecisionKind = 'aprovacao' | 'escolha' | 'pergunta' | 'revisao' | 'validacao'
@@ -343,7 +347,7 @@ export type VokiaEvent =
   | VokiaPermission
   | VokiaPermissionClosed
   | VokiaPermissionByRule
-  | VokiaBypassChanged
+  | VokiaExecutionModeChanged
   | VokiaDecision
   | VokiaPlanUsage
   | VokiaUsageLimit

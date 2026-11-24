@@ -23,7 +23,7 @@ import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
 import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
-import BypassToggle from './bar/BypassToggle.vue'
+import ExecutionModeSelector from './bar/ExecutionModeSelector.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
 import OfflineNotice from './bar/OfflineNotice.vue'
 import PageActionsButton from './bar/PageActionsButton.vue'
@@ -64,6 +64,7 @@ const actionMenuOpen = ref(false)
 const queueOpen = ref(false)
 const menuOpen = ref(false)
 const llmSwitcherOpen = ref(false)
+const modeOpen = ref(false)
 const { railPage, runAction } = usePageActions(actionMenuOpen, (size) => emit('compose', size))
 
 const hasDraft = computed(() => hasComposerContent(draft.value, attachments.attachments.value.length, confirmed.value.size))
@@ -75,7 +76,8 @@ const interacting = computed(
     menuOpen.value ||
     actionMenuOpen.value ||
     queueOpen.value ||
-    llmSwitcherOpen.value,
+    llmSwitcherOpen.value ||
+    modeOpen.value,
 )
 const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() =>
@@ -133,6 +135,7 @@ watch(menuOpen, (open) => {
     actionMenuOpen.value = false
     queueOpen.value = false
     llmSwitcherOpen.value = false
+    modeOpen.value = false
   }
 })
 
@@ -140,6 +143,7 @@ watch(actionMenuOpen, (open) => {
   if (open) {
     queueOpen.value = false
     llmSwitcherOpen.value = false
+    modeOpen.value = false
   }
 })
 
@@ -147,6 +151,7 @@ watch(queueOpen, (open) => {
   if (open) {
     actionMenuOpen.value = false
     llmSwitcherOpen.value = false
+    modeOpen.value = false
   }
 })
 
@@ -154,6 +159,15 @@ watch(llmSwitcherOpen, (open) => {
   if (open) {
     actionMenuOpen.value = false
     queueOpen.value = false
+    modeOpen.value = false
+  }
+})
+
+watch(modeOpen, (open) => {
+  if (open) {
+    actionMenuOpen.value = false
+    queueOpen.value = false
+    llmSwitcherOpen.value = false
   }
 })
 
@@ -232,7 +246,7 @@ function onPointerLeave(): void {
       <FlowSteps v-if="flow.active" />
       <div class="flex shrink-0 items-center gap-0.5 empty:hidden">
         <PageActionsButton v-model:open="actionMenuOpen" :visible="expanded && !inlinePermission && !flow.active" />
-        <BypassToggle v-if="canAsk && !flow.active && !inlinePermission" :expanded="expanded" />
+        <ExecutionModeSelector v-if="canAsk && !flow.active && !inlinePermission" v-model:open="modeOpen" />
         <PinnedProject v-if="canAsk && projectsStore.projects.length > 1" />
         <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
       </div>

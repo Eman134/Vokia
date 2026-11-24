@@ -9,8 +9,8 @@ use crate::plan_proposal::PLAN_PROTOCOL_HINT;
 use crate::projects::ProjectError;
 
 use super::{
-    agents, artifacts, attachments, backlog, bypass, channels, orchestration, projects, providers, roles,
-    settings, team,
+    agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
+    roles, settings, team,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -414,8 +414,8 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("projects", "list_projects", "Lista os projetos.", "Para descobrir os projetos e seus ids; use antes de qualquer comando que peça projectId.", empty_object_schema),
     exposed("projects", "select_project", "Seleciona o projeto ativo.", "Para trocar o projeto ativo do usuário; use só quando o usuário pedir.", empty_object_schema),
     ui_only("projects", "pick_folder", "Abre o seletor de pasta do sistema."),
-    ui_only("permissions", "set_bypass_mode", "Liga ou desliga o modo bypass de permissões de um projeto (só a interface)."),
-    exposed("permissions", "get_bypass_mode", "Diz se o modo bypass de permissões de um projeto está ligado.", "Para saber se o projeto aprova pedidos de permissão automaticamente.", schema_project_id),
+    ui_only("permissions", "set_execution_mode", "Define o modo de execução de um projeto: manual, planejamento, auto ou bypass (só a interface)."),
+    exposed("permissions", "get_execution_mode", "Devolve o modo de execução de um projeto: manual, planejamento, auto ou bypass. Parâmetro: projectId.", "Para saber como o projeto trata os pedidos de permissão dos agentes (perguntando, só lendo, aprovando o seguro ou aprovando tudo).", schema_project_id),
     exposed("projects", "inspect_folder", "Inspeciona uma pasta local para criar um projeto.", "Para ver o que há numa pasta local antes de criar um projeto a partir dela.", empty_object_schema),
     exposed("projects", "inspect_github_repo", "Inspeciona um repositório do GitHub para criar um projeto.", "Para validar um repositório do GitHub antes de criar um projeto a partir dele.", empty_object_schema),
     exposed("projects", "create_project", "Cria um projeto.", "Para criar um projeto novo, depois de inspecionar a pasta ou o repositório.", empty_object_schema),
@@ -652,7 +652,9 @@ async fn run(
         "set_permission_level" => {
             json_result(projects::set_permission_level_exec(app, parse_args(arguments)?).await)
         }
-        "get_bypass_mode" => json_result(bypass::get_bypass_mode_exec(app, parse_args(arguments)?)),
+        "get_execution_mode" => {
+            json_result(execution_mode::get_execution_mode_exec(app, parse_args(arguments)?))
+        }
         "list_permission_rules" => json_result(projects::list_permission_rules_exec(
             app,
             parse_args(arguments)?,

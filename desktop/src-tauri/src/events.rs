@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::claude::{ConsoleKind, LimitName, TurnActivity, TurnUsage};
 use crate::orchestrator::fallback::TemporaryOverride;
 use crate::orchestrator::RequestOutcome;
+use crate::permissions::ExecutionMode;
 
 pub use crate::agents::Agent;
 
@@ -218,12 +219,15 @@ pub enum VokiaEvent {
         // true quando a aprovação veio do modo bypass do projeto, e não de uma regra salva.
         #[serde(default, skip_serializing_if = "is_false")]
         bypass: bool,
+        // Modo de execução que aprovou o pedido; ausente quando foi uma regra salva.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<ExecutionMode>,
     },
-    // Modo bypass do projeto ligado ou desligado: a interface atualiza a Actionbar e o aviso ao vivo.
+    // Modo de execução do projeto mudou: a interface atualiza a Actionbar e o aviso ao vivo.
     #[serde(rename_all = "camelCase")]
-    BypassChanged {
+    ExecutionModeChanged {
         project_id: i64,
-        enabled: bool,
+        mode: ExecutionMode,
     },
     #[serde(rename_all = "camelCase")]
     Decision {

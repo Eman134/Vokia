@@ -5,7 +5,10 @@ import { useFeed } from '../team/useFeed'
 import { useTheme } from '../theme/useTheme'
 import { useAvatarProfiles } from '../identities/useAvatarProfiles'
 import { useProjects } from '../projects/useProjects'
-import { useBypass } from '../permissions/useBypass'
+import BypassWarning from '../permissions/BypassWarning.vue'
+import { EXECUTION_MODE_INFO, EXECUTION_MODES, type ExecutionMode } from '../permissions/executionModes'
+import { useExecutionMode } from '../permissions/useExecutionMode'
+import { useModeChoice } from '../permissions/useModeChoice'
 import { useConsole } from '../console/useConsole'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
@@ -22,14 +25,12 @@ const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
 const consoleStore = useConsole()
 const feed = useFeed()
-const bypass = useBypass()
-const bypassProjectId = computed(() => projects.selected?.id ?? null)
-const bypassOn = computed({
-  get: () => bypass.isOn(bypassProjectId.value),
-  set: (next: boolean) => {
-    if (bypassProjectId.value !== null) void bypass.set(bypassProjectId.value, next)
-  },
-})
+const executionMode = useExecutionMode()
+const modeProjectId = computed(() => projects.selected?.id ?? null)
+const { warningOpen: bypassWarningOpen, choose: chooseMode, acceptWarning: acceptBypassWarning } = useModeChoice(modeProjectId)
+const projectMode = computed(() => executionMode.modeOf(modeProjectId.value))
+const MODE_OPTIONS = EXECUTION_MODES.map((mode) => ({ label: EXECUTION_MODE_INFO[mode].label, value: mode }))
+const NO_PROJECT_TEXT = 'Selecione um projeto'
 const theme = useTheme()
 const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
@@ -133,8 +134,8 @@ onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'auto-pause-on-limit') {
     void loadAutoPauseOnLimit()
   }
-  if (props.item.kind === 'row' && props.item.control.kind === 'bypass' && bypassProjectId.value !== null) {
-    void bypass.load(bypassProjectId.value)
+  if (props.item.kind === 'row' && props.item.control.kind === 'execution-mode' && modeProjectId.value !== null) {
+    void executionMode.load(modeProjectId.value)
   }
 })
 
@@ -223,12 +224,20 @@ function toOptions(labels: readonly string[]) {
         />
         <p v-if="grantError" role="alert" :class="ERROR_CLASSES">{{ grantError }}</p>
       </div>
-      <div v-else-if="item.control.kind === 'bypass'" :class="STACK_CLASSES">
-        <span class="flex items-center gap-2 text-small" :class="bypassOn ? 'text-warn-text' : 'text-muted'" data-testid="bypass-setting-state">
-          {{ bypassProjectId === null ? 'Selecione um projeto' : bypassOn ? 'Ligado neste projeto' : 'Desligado' }}
-          <UiSwitch v-model="bypassOn" label="Modo bypass" :disabled="bypassProjectId === null" />
-        </span>
-        <p v-if="bypass.error" role="alert" :class="ERROR_CLASSES">{{ bypass.error }}</p>
+      <div v-else-if="item.control.kind === 'execution-mode'" :class="STACK_CLASSES" data-testid="execution-mode-setting">
+        <span v-if="modeProjectId === null" class="text-small text-muted">{{ NO_PROJECT_TEXT }}</span>
+        <UiSelect
+          v-else
+          :model-value="projectMode"
+          :options="MODE_OPTIONS"
+          label="Modo de execução"
+          @update:model-value="chooseMode($event as ExecutionMode)"
+        />
+        <p v-if="modeProjectId !== null" class="text-small" :class="EXECUTION_MODE_INFO[projectMode].warn ? 'text-warn-text' : 'text-muted'">
+          {{ EXECUTION_MODE_INFO[projectMode].description }}
+        </p>
+        <p v-if="executionMode.error" role="alert" :class="ERROR_CLASSES">{{ executionMode.error }}</p>
+        <BypassWarning v-model:open="bypassWarningOpen" @accept="acceptBypassWarning" />
       </div>
       <div v-else-if="item.control.kind === 'auto-pause-on-limit'" :class="STACK_CLASSES">
         <UiSwitch

@@ -45,8 +45,8 @@ pub(crate) fn run() {
             commands::projects::set_permission_level,
             commands::projects::list_permission_rules,
             commands::projects::delete_permission_rule,
-            commands::bypass::set_bypass_mode,
-            commands::bypass::get_bypass_mode,
+            commands::execution_mode::set_execution_mode,
+            commands::execution_mode::get_execution_mode,
             // channels
             commands::channels::list_channels,
             commands::channels::create_channel,

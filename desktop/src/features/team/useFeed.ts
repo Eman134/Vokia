@@ -1,4 +1,4 @@
-import { useBypass } from '../permissions/useBypass'
+import { useExecutionMode } from '../permissions/useExecutionMode'
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
@@ -212,12 +212,12 @@ export const useFeed = defineStore('feed', () => {
           type: 'permission-result',
           agent: event.agent,
           detail: event.detail,
-          outcome: event.bypass ? 'bypass' : 'project-rule',
+          outcome: event.mode ?? 'project-rule',
           time: Date.now(),
         })
         break
-      case 'bypass-changed':
-        useBypass().apply(event)
+      case 'execution-mode-changed':
+        useExecutionMode().apply(event)
         break
       case 'decision':
         useDecisions().apply(event)

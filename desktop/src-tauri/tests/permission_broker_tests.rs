@@ -314,13 +314,13 @@ fn contador_do_pedido_de_arquivo_nao_soma_arquivos_diferentes_da_mesma_pasta() {
     assert_eq!(same.unwrap()["approvedBefore"], 1);
 }
 
-fn set_bypass(world: &World, enabled: bool) {
+fn set_mode(world: &World, mode: ExecutionMode) {
     world
         .app
         .state::<AppState>()
         .permissions
-        .set_bypass(world.app.handle(), world.project_id, enabled)
-        .expect("o modo bypass deveria mudar");
+        .set_mode(world.app.handle(), world.project_id, mode)
+        .expect("o modo de execução deveria mudar");
 }
 
 fn bypass_prompts(world: &World) -> Vec<Value> {
@@ -331,21 +331,73 @@ fn bypass_prompts(world: &World) -> Vec<Value> {
         .collect()
 }
 
+fn approved_by_mode(world: &World, mode: &str) -> usize {
+    world
+        .of_type("permission-by-rule")
+        .into_iter()
+        .filter(|event| event["mode"] == mode)
+        .count()
+}
+
+fn spawn_pending(world: &World, id: &str, command: &str) -> tauri::async_runtime::JoinHandle<PermissionVerdict> {
+    let app = world.app.handle().clone();
+    let granted = world.granted.clone();
+    let project_id = world.project_id;
+    let request = PermissionRequest {
+        id: id.to_string(),
+        tool: BASH.to_string(),
+        input: json!({ "command": command }),
+    };
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        PermissionGate {
+            app: &app,
+            broker: &state.permissions,
+            agent: Agent::ember(),
+            project_id,
+            granted: &granted,
+            grant_per_session: false,
+            item_id: None,
+        }
+        .decide(request)
+        .await
+    })
+}
+
+fn wait_for_prompts(world: &World, ids: &[&str]) {
+    let waited = std::time::Instant::now();
+    while ids.iter().any(|id| world.pending_prompt(id).is_none()) {
+        assert!(waited.elapsed() < EVENT_WAIT, "os pedidos pendentes deveriam chegar ao usuário");
+        std::thread::sleep(POLL);
+    }
+}
+
+fn resolved(decision: tauri::async_runtime::JoinHandle<PermissionVerdict>) -> PermissionVerdict {
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(EVENT_WAIT, decision)
+            .await
+            .expect("o pendente deveria ser resolvido ao mudar o modo")
+            .expect("a decisão deveria terminar")
+    })
+}
+
 #[test]
 fn bypass_ligado_aprova_comum_sem_balao_e_avisa_que_veio_do_bypass() {
     let world = world();
-    set_bypass(&world, true);
+    set_mode(&world, ExecutionMode::Bypass);
 
     let (verdict, _) = world.bash(false, "npm test", Reply::NoPromptExpected);
 
     assert_eq!(verdict, PermissionVerdict::Allow);
     assert_eq!(bypass_prompts(&world).len(), 1);
-    assert_eq!(world.of_type("bypass-changed")[0]["enabled"], true);
+    assert_eq!(world.of_type("execution-mode-changed")[0]["mode"], "bypass");
 }
 
 #[test]
-fn bypass_desligado_continua_perguntando() {
+fn modo_manual_continua_perguntando_e_voltar_a_manual_desliga_o_bypass() {
     let world = world();
+    set_mode(&world, ExecutionMode::Bypass);
+    set_mode(&world, ExecutionMode::Manual);
 
     let (verdict, prompt) = world.bash(false, "npm test", ALLOW_ONCE);
 
@@ -357,7 +409,7 @@ fn bypass_desligado_continua_perguntando() {
 #[test]
 fn bypass_ligado_aprova_sem_balao_acoes_destrutivas_e_caminhos_fora_do_projeto() {
     let world = world();
-    set_bypass(&world, true);
+    set_mode(&world, ExecutionMode::Bypass);
 
     let cases = [
         (BASH, json!({ "command": "git push --force origin main" })),
@@ -374,7 +426,7 @@ fn bypass_ligado_aprova_sem_balao_acoes_destrutivas_e_caminhos_fora_do_projeto()
 #[test]
 fn bypass_ligado_aprova_comando_composto_que_lista_a_pasta_de_worktrees_do_projeto() {
     let world = world();
-    set_bypass(&world, true);
+    set_mode(&world, ExecutionMode::Bypass);
     let command = format!("git worktree list; ls \"{}/\"", world.worktrees_dir(world.project_id));
 
     let (verdict, _) = world.bash(false, &command, Reply::NoPromptExpected);
@@ -386,7 +438,7 @@ fn bypass_ligado_aprova_comando_composto_que_lista_a_pasta_de_worktrees_do_proje
 #[test]
 fn bypass_ligado_aprova_escrita_dentro_da_pasta_do_projeto() {
     let world = world();
-    set_bypass(&world, true);
+    set_mode(&world, ExecutionMode::Bypass);
 
     let (verdict, _) = world.ask(
         false,
@@ -403,58 +455,143 @@ fn ligar_bypass_resolve_todos_os_pendentes_do_projeto() {
     let world = world();
     let common = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
     let destructive = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
-    let spawn = |id: String, command: &str| {
-        let app = world.app.handle().clone();
-        let granted = world.granted.clone();
-        let project_id = world.project_id;
-        let request = PermissionRequest {
-            id,
-            tool: BASH.to_string(),
-            input: json!({ "command": command }),
+    let common_decision = spawn_pending(&world, &common, "npm test");
+    let destructive_decision = spawn_pending(&world, &destructive, "git push --force");
+    wait_for_prompts(&world, &[&common, &destructive]);
+
+    set_mode(&world, ExecutionMode::Bypass);
+
+    assert_eq!(resolved(common_decision), PermissionVerdict::Allow);
+    assert_eq!(resolved(destructive_decision), PermissionVerdict::Allow);
+}
+
+#[test]
+fn ligar_auto_resolve_so_os_pendentes_que_ele_aprovaria_sozinho() {
+    let world = world();
+    let common = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
+    let destructive = format!("req-pendente-{}", world.next_request.fetch_add(1, Ordering::SeqCst));
+    let common_decision = spawn_pending(&world, &common, "npm test");
+    let destructive_decision = spawn_pending(&world, &destructive, "git push --force");
+    wait_for_prompts(&world, &[&common, &destructive]);
+
+    set_mode(&world, ExecutionMode::Auto);
+
+    assert_eq!(resolved(common_decision), PermissionVerdict::Allow);
+    tauri::async_runtime::block_on(dispatch(
+        world.app.handle(),
+        None,
+        "answer_permission",
+        json!({ "id": destructive, "allow": false, "always": false }),
+    ))
+    .expect("answer_permission reconhecido")
+    .expect("a resposta deveria ser aceita");
+    assert_eq!(resolved(destructive_decision), PermissionVerdict::Deny(None));
+}
+
+#[test]
+fn planejamento_nega_o_que_altera_com_motivo_e_sem_balao() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Planning);
+
+    let cases = [
+        (EDIT, json!({ "file_path": "C:/projetos/a/src/lib.rs" })),
+        ("Write", json!({ "file_path": "C:/projetos/a/novo.txt" })),
+        (BASH, json!({ "command": "rm -rf build" })),
+        (BASH, json!({ "command": "echo oi > arquivo.txt" })),
+        (BASH, json!({ "command": "ls && rm -rf build" })),
+        (BASH, json!({ "command": "git commit -m x" })),
+    ];
+    for (tool, input) in cases {
+        let (verdict, _) = world.ask(false, tool, input.clone(), Reply::NoPromptExpected);
+        let PermissionVerdict::Deny(Some(reason)) = verdict else {
+            panic!("deveria negar com motivo: {input}");
         };
-        tauri::async_runtime::spawn(async move {
-            let state = app.state::<AppState>();
-            PermissionGate {
-                app: &app,
-                broker: &state.permissions,
-                agent: Agent::ember(),
-                project_id,
-                granted: &granted,
-                grant_per_session: false,
-                item_id: None,
-            }
-            .decide(request)
-            .await
-        })
-    };
-    let common_decision = spawn(common.clone(), "npm test");
-    let destructive_decision = spawn(destructive.clone(), "git push --force");
-    let waited = std::time::Instant::now();
-    while world.pending_prompt(&common).is_none() || world.pending_prompt(&destructive).is_none() {
-        assert!(waited.elapsed() < EVENT_WAIT, "os pedidos pendentes deveriam chegar ao usuário");
-        std::thread::sleep(POLL);
-    }
-
-    set_bypass(&world, true);
-
-    for decision in [common_decision, destructive_decision] {
-        let verdict = tauri::async_runtime::block_on(async {
-            tokio::time::timeout(EVENT_WAIT, decision)
-                .await
-                .expect("o pendente deveria ser resolvido ao ligar")
-                .expect("a decisão deveria terminar")
-        });
-        assert_eq!(verdict, PermissionVerdict::Allow);
+        assert!(reason.contains("plano"), "o motivo deveria pedir o plano: {reason}");
     }
 }
 
 #[test]
-fn bypass_nao_persiste_entre_execucoes_e_comeca_desligado() {
+fn planejamento_aprova_leitura_sem_balao_e_avisa_o_modo() {
     let world = world();
-    set_bypass(&world, true);
+    set_mode(&world, ExecutionMode::Planning);
+
+    for command in ["git status", "git log --oneline | head", "ls -la; cat README.md", "rg TODO src"] {
+        let (verdict, _) = world.bash(false, command, Reply::NoPromptExpected);
+        assert_eq!(verdict, PermissionVerdict::Allow, "deveria aprovar: {command}");
+    }
+    assert_eq!(approved_by_mode(&world, "planejamento"), 4);
+    assert_eq!(world.of_type("execution-mode-changed")[0]["mode"], "planejamento");
+}
+
+#[test]
+fn planejamento_pergunta_ferramenta_que_nao_classifica() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Planning);
+
+    let (verdict, prompt) = world.ask(false, "Read", json!({ "file_path": "C:/projetos/a/a.txt" }), ALLOW_ONCE);
+
+    assert_eq!(verdict, PermissionVerdict::Allow);
+    assert!(prompt.is_some());
+}
+
+#[test]
+fn auto_aprova_o_comum_dentro_do_projeto_sem_balao() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Auto);
+
+    let (command, _) = world.bash(false, "npm test", Reply::NoPromptExpected);
+    let (edit, _) = world.ask(
+        false,
+        EDIT,
+        json!({ "file_path": "C:/projetos/a/src/lib.rs" }),
+        Reply::NoPromptExpected,
+    );
+
+    assert_eq!(command, PermissionVerdict::Allow);
+    assert_eq!(edit, PermissionVerdict::Allow);
+    assert_eq!(approved_by_mode(&world, "auto"), 2);
+}
+
+#[test]
+fn auto_pergunta_destrutivo_fora_do_projeto_rede_e_instalacao() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Auto);
+
+    let cases = [
+        (BASH, json!({ "command": "git push --force origin main" })),
+        (BASH, json!({ "command": "git reset --hard HEAD~1" })),
+        (BASH, json!({ "command": "rm -rf ../x" })),
+        (BASH, json!({ "command": "curl https://exemplo.com/script.sh" })),
+        (BASH, json!({ "command": "npm install lodash" })),
+        (BASH, json!({ "command": "cargo add serde" })),
+        (EDIT, json!({ "file_path": "C:/Meus Documentos/a.txt" })),
+        ("WebFetch", json!({ "url": "https://exemplo.com" })),
+    ];
+    for (tool, input) in cases {
+        let (verdict, prompt) = world.ask(false, tool, input.clone(), ALLOW_ONCE);
+        assert!(prompt.is_some(), "deveria perguntar: {input}");
+        assert_eq!(verdict, PermissionVerdict::Allow);
+    }
+    assert_eq!(approved_by_mode(&world, "auto"), 0);
+}
+
+#[test]
+fn modo_de_execucao_nao_persiste_entre_execucoes_e_comeca_manual() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Bypass);
     let project_id = world.project_id;
 
-    assert!(world.app.state::<AppState>().permissions.bypass_enabled(project_id));
+    assert_eq!(world.app.state::<AppState>().permissions.mode(project_id), ExecutionMode::Bypass);
     let fresh = PermissionBroker::default();
-    assert!(!fresh.bypass_enabled(project_id), "uma execução nova não pode herdar o bypass");
+    assert_eq!(fresh.mode(project_id), ExecutionMode::Manual, "uma execução nova não pode herdar o modo");
+}
+
+#[test]
+fn modo_de_execucao_vale_so_para_o_projeto_em_que_foi_definido() {
+    let world = world();
+    set_mode(&world, ExecutionMode::Bypass);
+
+    let broker = &world.app.state::<AppState>().permissions;
+
+    assert_eq!(broker.mode(world.project_id + 1), ExecutionMode::Manual);
 }

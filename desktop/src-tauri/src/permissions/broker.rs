@@ -11,10 +11,14 @@ use crate::claude::{PermissionRequest, PermissionVerdict};
 use crate::db::{root_command, ApprovalHistory, Db, DbError, DbState};
 use crate::events::{Agent, AgentState, PermissionOutcome, VokiaEvent, EVENT_NAME};
 use crate::orchestrator::now_millis;
+use crate::projects::worktree::project_worktrees_dir;
+use super::mode::ExecutionMode;
+use super::planning::{planning_outcome, PlanningOutcome, PLANNING_DENIAL};
+use super::risk::is_demanding;
 
 pub const PERMISSION_WAIT_LIMIT: Duration = Duration::from_secs(300);
-const COMMAND_FIELD: &str = "command";
-const PATH_FIELD: &str = "file_path";
+pub(super) const COMMAND_FIELD: &str = "command";
+pub(super) const PATH_FIELD: &str = "file_path";
 const APPROVAL_SEPARATOR: char = '\u{1f}';
 const ROOT_GRANT_PREFIX: &str = "root:";
 const ROOT_RULE_SUFFIX: &str = " *";
@@ -48,13 +52,15 @@ pub enum Answer {
 #[derive(Default)]
 pub struct PermissionBroker {
     pending: Mutex<HashMap<String, PendingPermission>>,
-    // Modo bypass por projeto: só em memória, então volta a desligado a cada abertura do app.
-    bypass: Mutex<HashSet<i64>>,
+    // Modo de execução por projeto: só em memória, então volta a manual a cada abertura do app.
+    modes: Mutex<HashMap<i64, ExecutionMode>>,
 }
 
 struct PendingPermission {
     project_id: i64,
     agent: Agent,
+    // O modo auto, ao ser ligado, só aprova os pendentes que ele aprovaria sozinho.
+    demanding: bool,
     sender: oneshot::Sender<Answer>,
 }
 
@@ -72,13 +78,27 @@ pub struct PermissionGate<'a> {
 impl PermissionGate<'_> {
     pub async fn decide(self, request: PermissionRequest) -> PermissionVerdict {
         if rule_allows(self.app, self.project_id, &request.tool, &target_of(&request)) {
-            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), false);
+            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), None);
             return PermissionVerdict::Allow;
         }
-        // Bypass ligado no projeto: aprova sem balão nem pergunta.
-        if self.broker.bypass_enabled(self.project_id) {
-            announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(&request), true);
-            return PermissionVerdict::Allow;
+        let mode = self.broker.mode(self.project_id);
+        match mode {
+            ExecutionMode::Bypass => return self.approve_by_mode(&request, mode),
+            ExecutionMode::Planning => match planning_outcome(&request.tool, &request.input) {
+                PlanningOutcome::Allow => return self.approve_by_mode(&request, mode),
+                PlanningOutcome::Deny => return PermissionVerdict::Deny(Some(PLANNING_DENIAL.to_string())),
+                PlanningOutcome::Ask => {}
+            },
+            ExecutionMode::Auto | ExecutionMode::Manual => {}
+        }
+        let demanding = is_demanding(
+            &request.tool,
+            &request.input,
+            project_root(self.app, self.project_id).as_deref(),
+            worktrees_root(self.app, self.project_id).as_deref(),
+        );
+        if mode == ExecutionMode::Auto && !demanding {
+            return self.approve_by_mode(&request, mode);
         }
         let approval = approval_key(&request);
         let root_grant = root_grant_key(&request);
@@ -95,6 +115,7 @@ impl PermissionGate<'_> {
                 self.project_id,
                 self.item_id.as_deref(),
                 request,
+                demanding,
             )
             .await;
         if verdict == PermissionVerdict::Allow && self.grant_per_session {
@@ -104,6 +125,11 @@ impl PermissionGate<'_> {
             }
         }
         verdict
+    }
+
+    fn approve_by_mode(&self, request: &PermissionRequest, mode: ExecutionMode) -> PermissionVerdict {
+        announce_by_rule(self.app, self.agent.clone(), self.project_id, detail(request), Some(mode));
+        PermissionVerdict::Allow
     }
 
     // Lock envenenado vale como "não aprovado": o comando volta a ser perguntado.
@@ -129,10 +155,11 @@ impl PermissionBroker {
         project_id: i64,
         item_id: Option<&str>,
         request: PermissionRequest,
+        demanding: bool,
     ) -> (PermissionVerdict, bool) {
         let (sender, receiver) = oneshot::channel();
         if self
-            .register(&request.id, project_id, agent.clone(), sender)
+            .register(&request.id, project_id, agent.clone(), demanding, sender)
             .is_err()
         {
             return (PermissionVerdict::Deny(None), false);
@@ -237,6 +264,7 @@ impl PermissionBroker {
         id: &str,
         project_id: i64,
         agent: Agent,
+        demanding: bool,
         sender: oneshot::Sender<Answer>,
     ) -> Result<(), PermissionError> {
         self.pending
@@ -247,41 +275,50 @@ impl PermissionBroker {
                 PendingPermission {
                     project_id,
                     agent,
+                    demanding,
                     sender,
                 },
             );
         Ok(())
     }
 
-    // Lock envenenado vale como desligado: o pedido volta a ser perguntado.
-    pub fn bypass_enabled(&self, project_id: i64) -> bool {
-        self.bypass
+    // Lock envenenado vale como manual: o pedido volta a ser perguntado.
+    pub fn mode(&self, project_id: i64) -> ExecutionMode {
+        self.modes
             .lock()
-            .is_ok_and(|projects| projects.contains(&project_id))
+            .ok()
+            .and_then(|modes| modes.get(&project_id).copied())
+            .unwrap_or_default()
     }
 
-    // Ligar resolve como permitidos todos os pedidos pendentes do projeto; desligar não mexe neles.
-    pub fn set_bypass(&self, app: &AppHandle, project_id: i64, enabled: bool) -> Result<(), PermissionError> {
+    // Bypass resolve como permitidos todos os pendentes do projeto e auto só os que ele aprovaria sozinho; sair do modo não mexe neles.
+    pub fn set_mode(&self, app: &AppHandle, project_id: i64, mode: ExecutionMode) -> Result<(), PermissionError> {
         {
-            let mut projects = self.bypass.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
-            if enabled {
-                projects.insert(project_id);
+            let mut modes = self.modes.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
+            if mode == ExecutionMode::Manual {
+                modes.remove(&project_id);
             } else {
-                projects.remove(&project_id);
+                modes.insert(project_id, mode);
             }
         }
-        if enabled {
-            self.allow_pending(project_id)?;
+        match mode {
+            ExecutionMode::Bypass => self.allow_pending(project_id, |_| true)?,
+            ExecutionMode::Auto => self.allow_pending(project_id, |entry| !entry.demanding)?,
+            ExecutionMode::Manual | ExecutionMode::Planning => {}
         }
-        let _ = app.emit(EVENT_NAME, VokiaEvent::BypassChanged { project_id, enabled });
+        let _ = app.emit(EVENT_NAME, VokiaEvent::ExecutionModeChanged { project_id, mode });
         Ok(())
     }
 
-    fn allow_pending(&self, project_id: i64) -> Result<(), PermissionError> {
+    fn allow_pending(
+        &self,
+        project_id: i64,
+        approves: impl Fn(&PendingPermission) -> bool,
+    ) -> Result<(), PermissionError> {
         let mut pending = self.pending.lock().map_err(|_: PoisonError<_>| PermissionError::Poisoned)?;
         let ids: Vec<String> = pending
             .iter()
-            .filter(|(_, entry)| entry.project_id == project_id)
+            .filter(|(_, entry)| entry.project_id == project_id && approves(entry))
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
@@ -370,17 +407,33 @@ fn rule_allows(app: &AppHandle, project_id: i64, tool: &str, target: &str) -> bo
         .is_some_and(|db| db.has_permission_rule(project_id, tool, target).unwrap_or(false))
 }
 
-// Aprovação automática: por regra salva ou pelo modo bypass do projeto (`bypass` marca o segundo caso).
-fn announce_by_rule(app: &AppHandle, agent: Agent, project_id: i64, detail: String, bypass: bool) {
+// Aprovação automática: por regra salva (`mode` None) ou pelo modo de execução do projeto.
+fn announce_by_rule(app: &AppHandle, agent: Agent, project_id: i64, detail: String, mode: Option<ExecutionMode>) {
     let _ = app.emit(
         EVENT_NAME,
         VokiaEvent::PermissionByRule {
             agent,
             detail,
             project_id: Some(project_id),
-            bypass,
+            bypass: mode == Some(ExecutionMode::Bypass),
+            mode,
         },
     );
+}
+
+// Pasta do projeto, usada para saber se o pedido fica dentro dela. Falha de leitura vira None (pergunta).
+fn project_root(app: &AppHandle, project_id: i64) -> Option<String> {
+    let db_state = app.state::<DbState>();
+    db_state
+        .db()
+        .and_then(|db| db.project(project_id).ok())
+        .map(|project| project.path)
+}
+
+// Os agentes com card trabalham em worktrees dentro dos dados do app, fora da pasta do projeto. Sem a pasta, não há escopo.
+fn worktrees_root(app: &AppHandle, project_id: i64) -> Option<String> {
+    let data_dir = app.path().app_data_dir().ok()?;
+    Some(project_worktrees_dir(&data_dir, project_id).to_string_lossy().into_owned())
 }
 
 // Só o que o usuário costuma aceitar e não recusou na janela recente recebe a sugestão.

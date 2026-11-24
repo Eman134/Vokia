@@ -5,7 +5,7 @@ type SettingsAction = { label: string; variant: 'quiet' | 'danger'; id?: Setting
 type SettingsControl =
   | { kind: 'theme' }
   | { kind: 'permission-grant' }
-  | { kind: 'bypass' }
+  | { kind: 'execution-mode' }
   | { kind: 'auto-pause-on-limit' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
@@ -263,12 +263,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       },
       { kind: 'row', label: 'Mexer fora do worktree', control: { kind: 'switch', on: true } },
       { kind: 'row', label: 'Apagar arquivos', control: { kind: 'switch', on: true } },
-      { kind: 'group', label: 'Modo bypass' },
+      { kind: 'group', label: 'Modo de execução' },
       {
         kind: 'row',
-        label: 'Aprovar permissões automaticamente',
-        hint: 'vale para o projeto selecionado e desliga ao fechar o app; nada pede confirmação, nem apagar nem push forçado fora do projeto',
-        control: { kind: 'bypass' },
+        label: 'Como os pedidos de permissão são decididos',
+        hint: 'vale para o projeto selecionado e volta a manual ao fechar o app; o mesmo seletor fica na barra de ações',
+        control: { kind: 'execution-mode' },
       },
       { kind: 'group', label: 'Comandos' },
       {
