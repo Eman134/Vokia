@@ -1,5 +1,5 @@
 use super::*;
-use crate::db::Layer;
+use crate::db::{Layer, OrchestrationSnapshot};
 
 fn layer(id: &str, name: &str, position: i64, kind: &str) -> Layer {
     Layer {
@@ -90,4 +90,75 @@ fn parada_reenvia_enquanto_houver_tentativas_e_depois_escala() {
     assert_eq!(stall_action(0, 2), StallAction::Resend);
     assert_eq!(stall_action(1, 2), StallAction::Resend);
     assert_eq!(stall_action(2, 2), StallAction::Escalate);
+}
+
+fn team() -> OrchTeam {
+    OrchTeam {
+        id: "time".to_string(),
+        name: "Core".to_string(),
+        position: 0,
+        leader_agent: Some("axiom".to_string()),
+        instructions: String::new(),
+        final_validation: String::new(),
+        start_x: None,
+        start_y: None,
+        end_x: None,
+        end_y: None,
+        judge_full_flow: false,
+    }
+}
+
+fn placement(agent: &str, layer: &str) -> crate::db::Placement {
+    crate::db::Placement {
+        agent_id: agent.to_string(),
+        team_id: "time".to_string(),
+        layer_id: layer.to_string(),
+        instructions: String::new(),
+        max_instances: 1,
+        pos_x: 0.0,
+        pos_y: 0.0,
+        criteria: String::new(),
+        max_worktrees: None,
+    }
+}
+
+fn snapshot(placements: Vec<crate::db::Placement>) -> OrchestrationSnapshot {
+    OrchestrationSnapshot {
+        settings: crate::db::OrchestrationSettings {
+            enforcement: String::new(),
+            leader_agent: "axiom".to_string(),
+            step_mode: String::new(),
+            human_gate: String::new(),
+            max_parallel: 1,
+            pair_turn_limit: 1,
+            task_turn_limit: 1,
+            worktree_policy: String::new(),
+        },
+        layers: layers(),
+        teams: vec![team()],
+        placements,
+        edges: Vec::new(),
+        gateways: Vec::new(),
+        task_stages: Vec::new(),
+    }
+}
+
+#[test]
+fn roteiro_recusa_agente_fora_do_time() {
+    let snapshot = snapshot(vec![placement("kairo", "implementacao")]);
+    let refusal = plan_script_refusal(&snapshot, &team(), &[(1, Some("kairo")), (2, Some("vexa"))]);
+    assert_eq!(
+        refusal.as_deref(),
+        Some("A etapa 2 é de vexa, que não está no time Core.")
+    );
+}
+
+#[test]
+fn roteiro_aceita_etapa_inicial_de_qualquer_membro_e_camada_pulada() {
+    let snapshot = snapshot(vec![
+        placement("kairo", "implementacao"),
+        placement("vexa", "entrega"),
+    ]);
+    let lots = [(1, Some("vexa")), (2, Some("kairo")), (3, None)];
+    assert_eq!(plan_script_refusal(&snapshot, &team(), &lots), None);
 }
