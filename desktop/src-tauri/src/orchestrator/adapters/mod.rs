@@ -67,7 +67,6 @@ impl ProviderAdapter {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::orchestrator) fn is_claude(&self) -> bool {
         matches!(self, Self::Claude(_))
     }

@@ -23,6 +23,7 @@ use crate::orchestration::policy::{
 };
 use crate::orchestration::worktree_policy::{leader_limit, should_use};
 use crate::projects::worktree;
+use crate::roles::RoleRegistry;
 use crate::session_key::SessionKey;
 use crate::state::{
     ActiveDelegation, AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
@@ -2185,6 +2186,10 @@ async fn interpret_task(
         team.roster_line(),
         team.name_of(&origin)
     );
+    let registered_role = app
+        .state::<RoleRegistry>()
+        .find(&profile.role)
+        .map_err(FlowError::Roles)?;
     let reply = super::fallback::ask_with_fallback(
         app,
         state,
@@ -2192,7 +2197,7 @@ async fn interpret_task(
         &origin,
         profile,
         &message,
-        &interpreter_role(team, orchestration),
+        &interpreter_role(team, orchestration, registered_role.as_ref()),
     )
     .await?;
     report_limits(app, reply.limits)?;

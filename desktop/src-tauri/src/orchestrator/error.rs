@@ -8,6 +8,7 @@ use crate::attachments::AttachmentError;
 use crate::claude::{ClaudeError, UsageLimit};
 use crate::db::DbError;
 use crate::projects::worktree::WorktreeError;
+use crate::roles::RoleError;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -45,6 +46,7 @@ pub enum FlowError {
     Runs(DbError),
     Team(AgentError),
     Worktree(WorktreeError),
+    Roles(RoleError),
 }
 
 impl fmt::Display for FlowError {
@@ -113,6 +115,7 @@ impl fmt::Display for FlowError {
             }
             FlowError::Team(error) => write!(f, "{error}"),
             FlowError::Worktree(error) => write!(f, "{error}"),
+            FlowError::Roles(error) => write!(f, "{error}"),
         }
     }
 }

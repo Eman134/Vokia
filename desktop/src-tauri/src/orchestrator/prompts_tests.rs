@@ -47,8 +47,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::Mcp,
@@ -64,8 +63,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::VokiaCli,
@@ -81,8 +79,7 @@ fn maestro_role_inclui_orientacoes_conforme_tool_mode() {
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::None,
@@ -104,8 +101,7 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
             "Base Ember.",
             &[serde_json::json!({"name": "dummy_tool", "description": "desc"})],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::Mcp,
@@ -119,8 +115,7 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::VokiaCli,
@@ -238,17 +233,17 @@ fn step_prompt_com_variaveis_nao_usa_rotulos_antigos_e_traz_objetivo_uma_vez() {
 fn role_prompt_inclui_regras_de_ferramenta_conforme_tool_mode() {
     with_test_context(|_, profile| {
         // Modo MCP
-        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
+        let role_mcp = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator, None);
         assert!(role_mcp.contains("app_commands_list"));
         assert!(role_mcp.contains("app_command_call"));
 
         // Modo VokiaCli
-        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator);
+        let role_cli = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator, None);
         assert!(role_cli.contains("vokia-cli commands"));
         assert!(role_cli.contains("vokia-cli cmd"));
 
         // Modo None
-        let role_none = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::None, ToolScope::Coordinator);
+        let role_none = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::None, ToolScope::Coordinator, None);
         assert!(!role_none.contains("app_commands_list"));
         assert!(!role_none.contains("vokia-cli commands"));
     });
@@ -265,8 +260,7 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::Mcp,
@@ -281,8 +275,7 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
             "Base Ember.",
             &[],
             &choices,
-            None,
-            None,
+                        None,
             team,
             &[],
             ToolPromptMode::Mcp,
@@ -298,13 +291,13 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
         assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("sem delegar a triagem automaticamente"));
         assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("a menos que o usuário peça explicitamente para triar"));
 
-        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
+        let role_mcp = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator, None);
         assert!(role_mcp.contains("triagem"));
         assert!(role_mcp.contains("request_decision"));
         assert!(role_mcp.contains("save_item_plan"));
         assert!(role_mcp.contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
 
-        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator);
+        let role_cli = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator, None);
         assert!(role_cli.contains("triagem"));
         assert!(role_cli.contains("request-decision"));
         assert!(role_cli.contains("save_item_plan"));
@@ -315,14 +308,91 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
 #[test]
 fn worker_nao_ve_orientacao_de_ferramentas_que_nao_recebe() {
     with_test_context(|_, profile| {
-        let worker = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Worker);
+        let worker = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Worker, None);
         assert!(!worker.contains("app_commands_list"), "{worker}");
         assert!(!worker.contains("app_command_call"), "{worker}");
         assert!(worker.contains("delegate"));
         assert!(worker.contains(TOOLS_RULE));
 
-        let coordinator = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
+        let coordinator = role(profile, None, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator, None);
         assert!(coordinator.contains(ADMIN_TOOLS_RULE));
+    });
+}
+
+#[test]
+fn prompt_da_gitta_traz_o_papel_registrado_entre_identidade_e_camada() {
+    use crate::roles::{RoleDraft, RoleRegistry};
+
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-prompts-gitta-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).expect("diretório temporário");
+    let agents = AgentRegistry::load(&dir);
+    let roles = RoleRegistry::load(&dir, &agents);
+    roles
+        .create(&RoleDraft {
+            name: "Git & GitHub Specialist".to_string(),
+            description: "Cuida do histórico e do fluxo de PRs.".to_string(),
+            instructions: "Condição de fim: a branch foi integrada. Fim de task: remova worktree e branch."
+                .to_string(),
+        })
+        .expect("papel criado");
+
+    let mut gitta = agents.team().expect("team padrão").profiles()[0].clone();
+    gitta.name = "Gitta".to_string();
+    gitta.role = "Git & GitHub Specialist".to_string();
+    gitta.extra_instructions = "Extra da Gitta.".to_string();
+    let layer = LayerContext {
+        layer_name: "Entrega".to_string(),
+        layer_instructions: "Regra da camada.".to_string(),
+        agent_instructions: "Regra do agente.".to_string(),
+        agent_criteria: String::new(),
+        map_rules: None,
+    };
+    let registered = roles.find(&gitta.role).expect("leitura").expect("papel registrado");
+
+    for mode in [ToolPromptMode::Mcp, ToolPromptMode::VokiaCli, ToolPromptMode::None] {
+        let prompt = role(&gitta, Some(&registered), "Roster.", Some(&layer), "Contexto.", mode, ToolScope::Coordinator, None);
+        let positions: Vec<usize> = [
+            "Você é Gitta, Git & GitHub Specialist.",
+            "Condição de fim",
+            "Fim de task",
+            "Regra da camada.",
+            "Regra do agente.",
+            "Extra da Gitta.",
+        ]
+        .iter()
+        .map(|marker| prompt.find(marker).unwrap_or_else(|| panic!("{marker} ausente: {prompt}")))
+        .collect();
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "ordem {positions:?}: {prompt}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn role_with(description: &str, instructions: &str) -> crate::roles::Role {
+    crate::roles::Role {
+        id: "role-teste".to_string(),
+        name: "Papel de teste".to_string(),
+        description: description.to_string(),
+        instructions: instructions.to_string(),
+    }
+}
+
+#[test]
+fn papel_sem_texto_ou_ausente_nao_muda_o_prompt() {
+    with_test_context(|_, profile| {
+        for mode in [ToolPromptMode::Mcp, ToolPromptMode::VokiaCli, ToolPromptMode::None] {
+            let baseline = role(profile, None, "Roster.", None, "Contexto.", mode, ToolScope::Coordinator, None);
+            let empty = role_with("  ", "\n");
+            let with_empty = role(profile, Some(&empty), "Roster.", None, "Contexto.", mode, ToolScope::Coordinator, None);
+            assert_eq!(baseline, with_empty);
+            assert!(!baseline.contains(ROLE_INSTRUCTIONS_LABEL));
+        }
     });
 }
 
@@ -350,4 +420,63 @@ fn card_da_troca_vai_na_abertura_e_na_recuperacao_mas_nao_no_seguimento() {
 
     let without = StepPrompts::build(&cache, &definition, &agent, "Siga", ToolPromptMode::Mcp, None);
     assert!(!without.opening.contains("card:"));
+}
+
+#[test]
+fn regra_de_fonte_do_papel_vale_nos_tres_modos_de_ferramenta() {
+    with_test_context(|_, profile| {
+        for mode in [ToolPromptMode::Mcp, ToolPromptMode::VokiaCli, ToolPromptMode::None] {
+            let prompt = role(profile, None, "Roster.", None, "Contexto.", mode, ToolScope::Coordinator, None);
+            assert!(prompt.contains(ROLE_SOURCE_RULE), "{prompt}");
+            assert!(prompt.contains("role_list"));
+        }
+    });
+}
+
+#[test]
+fn instrucao_longa_do_papel_entra_inteira_no_prompt() {
+    with_test_context(|_, profile| {
+        let long = format!("{}FIM-DA-INSTRUCAO", "regra ".repeat(700));
+        assert!(long.len() > 4000);
+        let registered = role_with("Descrição.", &long);
+        let prompt = role(profile, Some(&registered), "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator, None);
+        assert!(prompt.contains(&long));
+    });
+}
+
+#[test]
+fn interpretador_recebe_secao_do_papel_e_a_regra_de_fonte() {
+    with_test_context(|team, _| {
+        let registered = role_with("Descrição do papel.", "Instrução do papel.");
+        let prompt = interpreter_role(team, None, Some(&registered));
+        assert!(prompt.contains(&format!("{ROLE_INSTRUCTIONS_LABEL} Papel de teste: Descrição do papel. Instrução do papel.")), "{prompt}");
+        assert!(prompt.ends_with(ROLE_SOURCE_RULE), "{prompt}");
+    });
+}
+
+#[test]
+fn interpretador_sem_papel_ou_com_papel_vazio_so_recebe_a_regra() {
+    with_test_context(|team, _| {
+        let empty = role_with(" ", "\n");
+        for registered in [None, Some(&empty)] {
+            let prompt = interpreter_role(team, None, registered);
+            assert!(!prompt.contains(ROLE_INSTRUCTIONS_LABEL), "{prompt}");
+            assert!(prompt.ends_with(ROLE_SOURCE_RULE), "{prompt}");
+        }
+    });
+}
+
+#[test]
+fn maestro_recebe_a_secao_do_papel_uma_unica_vez_via_base() {
+    with_test_context(|team, profile| {
+        let registered = role_with("Descrição do papel.", "Instrução única do papel.");
+        let choices = ProjectChoices { pinned: None, labels: vec![] };
+        for mode in [ToolPromptMode::Mcp, ToolPromptMode::VokiaCli, ToolPromptMode::None] {
+            let base = role(profile, Some(&registered), "Roster.", None, "Contexto.", mode, ToolScope::Coordinator, None);
+            let prompt = maestro_role(&base, &[], &choices, None, team, &[], mode, false);
+            assert_eq!(prompt.matches("Instrução única do papel.").count(), 1, "{prompt}");
+            assert_eq!(prompt.matches(ROLE_INSTRUCTIONS_LABEL).count(), 1, "{prompt}");
+            assert!(prompt.contains(ROLE_SOURCE_RULE), "{prompt}");
+        }
+    });
 }

@@ -107,6 +107,14 @@ impl RoleRegistry {
         Ok(loaded(&self.lock())?.clone())
     }
 
+    pub fn find(&self, name: &str) -> Result<Option<Role>, RoleError> {
+        let name = name.trim();
+        Ok(loaded(&self.lock())?
+            .iter()
+            .find(|role| role.name == name)
+            .cloned())
+    }
+
     pub fn ensure_exists(&self, name: &str) -> Result<(), RoleError> {
         let name = name.trim();
         if loaded(&self.lock())?.iter().any(|role| role.name == name) {

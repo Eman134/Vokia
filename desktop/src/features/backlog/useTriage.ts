@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { listRoles } from '../agents/rolesApi'
 import { fetchOrchestration } from '../orchestration/orchestrationApi'
 import { useProjects } from '../projects/useProjects'
 import { useFeed } from '../team/useFeed'
@@ -34,7 +35,8 @@ export const useTriage = defineStore('triage', () => {
       const leader = roster.profileOf(snapshot.settings.leaderAgent)
       setWithoutLeader(item.id, leader === undefined)
       if (leader === undefined) return
-      await requests.send(buildTriagePrompt(item, snapshot, roster.agents), leader.id, { projectId: project.id })
+      const roles = await listRoles()
+      await requests.send(buildTriagePrompt(item, snapshot, roster.agents, roles), leader.id, { projectId: project.id })
     } catch (error) {
       feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
     }

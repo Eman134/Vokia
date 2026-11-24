@@ -1,10 +1,12 @@
 import type { OrchestrationSnapshot, OrchLayer } from '../orchestration/orchestrationTypes'
 import type { AgentProfile } from '../team/teamApi'
 import type { BacklogItem } from './backlogTypes'
+import type { Role } from '../agents/rolesApi'
 import { PLAN_PROTOCOL_HINT } from './planProposal'
 
 const NO_TEAM_LABEL = 'Sem time'
 const EMPTY_TEAM_TEXT = 'nenhum agente posicionado'
+const ROLES_HEADING = 'Papéis dos agentes (descrição e instruções):'
 const FLOW_HEADING = 'Fluxo de cada time (referência de handoff entre camadas, não obrigatório):'
 const NO_FLOW_TEXT = 'sem arestas definidas'
 const NO_LEADER_TEXT = 'sem líder'
@@ -23,10 +25,21 @@ function instructionLines(label: string, text: string | undefined): string[] {
   return trimmed ? [`${DETAIL_INDENT}${label}: ${trimmed}`] : []
 }
 
+function roleLines(agents: readonly AgentProfile[], roles: readonly Role[]): string[] {
+  const used = new Set(agents.map((agent) => agent.role))
+  return roles
+    .filter((role) => used.has(role.name))
+    .flatMap((role) => {
+      const text = [role.description, role.instructions].map((part) => part.trim()).filter(Boolean).join(' ')
+      return text ? [`- ${role.name}: ${text}`] : []
+    })
+}
+
 export function buildTriagePrompt(
   item: BacklogItem,
   snapshot: OrchestrationSnapshot,
   agents: readonly AgentProfile[],
+  roles: readonly Role[],
 ): string {
   const layerOf = (layerId: string): OrchLayer | undefined => snapshot.layers.find((layer) => layer.id === layerId)
   const profileOf = (agentId: string): AgentProfile | undefined => agents.find((agent) => agent.id === agentId)
@@ -63,6 +76,8 @@ export function buildTriagePrompt(
   const unplacedLine = unplaced.length
     ? [`- ${NO_TEAM_LABEL}: ${unplaced.map((agent) => `${agent.name} (${agent.id})`).join('; ')}`]
     : []
+  const roleSection = roleLines(agents, roles)
+  const rolesBlock = roleSection.length ? ['', ROLES_HEADING, ...roleSection] : []
   const description = item.description ? [item.description] : []
   return [
     `Triagem do item ${item.id}: ${item.title}`,
@@ -76,6 +91,7 @@ export function buildTriagePrompt(
     'Times e camadas deste projeto:',
     ...teamLines,
     ...unplacedLine,
+    ...rolesBlock,
     '',
     FLOW_HEADING,
     ...flowLines,

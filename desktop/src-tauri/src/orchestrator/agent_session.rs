@@ -20,7 +20,7 @@ use crate::mcp::{
 use crate::orchestration::instances::display_name;
 use crate::orchestration::snapshot::{agent_prompt, leader_of};
 use crate::permissions::{PermissionGate, PermissionLevel};
-use crate::providers::ProviderRegistry;
+use crate::providers::{ProviderProtocol, ProviderRegistry};
 use crate::session_key::SessionKey;
 use crate::state::AppState;
 
@@ -36,12 +36,15 @@ use super::fallback::{
 use super::flow::profile_of;
 use super::project_context::project_choices;
 use super::prompts::{maestro_role, role, StepPrompts, ToolPromptMode};
+use crate::roles::RoleRegistry;
 use super::session_policy::{
     call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
     SESSION_RECOVERY_LIMIT, SESSION_ROTATE_MESSAGES,
 };
 use super::session_pool::{ExchangeSessions, NO_PID};
 use super::turns::Exchange;
+
+const GLOBAL_INSTRUCTIONS_PATH: &str = ".claude/CLAUDE.md";
 
 pub(super) const SESSION_CLOSE_GRACE: Duration = Duration::from_secs(SESSION_CLOSE_TIMEOUT_SECS);
 pub(super) const SESSION_IDLE_LIMIT: Duration = Duration::from_secs(SESSION_IDLE_LIMIT_SECS);
@@ -153,22 +156,26 @@ async fn run_step(
             _ => ToolPromptMode::None,
         };
         let prompt = agent_prompt(*orchestration, team, agent);
+        let registered_role = app
+            .state::<RoleRegistry>()
+            .find(&profile.role)
+            .map_err(FlowError::Roles)?;
         let base = role(
             profile,
+            registered_role.as_ref(),
             &prompt.roster,
             prompt.layer.as_ref(),
             project_context,
             tool_mode,
             scope,
+            global_instructions(app, adapter.is_claude()).as_deref(),
         );
         let role = if agent == &Agent::ember() {
-            // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
             let paused = paused_agents(app, key.project_id)?;
             maestro_role(
                 &base,
                 &[],
                 &project_choices(app)?,
-                None,
                 *orchestration,
                 team,
                 &paused,
@@ -876,6 +883,29 @@ mod provider_session_tests;
 
 pub(super) type PreloadedSession = (LiveSession, Option<String>, Place, (String, String));
 
+// O Claude roda sem setting sources, então o CLAUDE.md global do usuário só chega pelo prompt.
+fn global_instructions(app: &AppHandle, is_claude: bool) -> Option<String> {
+    if !is_claude {
+        return None;
+    }
+    let home = match app.path().home_dir() {
+        Ok(home) => home,
+        Err(err) => {
+            eprintln!("Não foi possível localizar a pasta do usuário: {err}");
+            return None;
+        }
+    };
+    let path = home.join(GLOBAL_INSTRUCTIONS_PATH);
+    match std::fs::read_to_string(&path) {
+        Ok(text) => Some(text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => {
+            eprintln!("Não foi possível ler {}: {err}", path.display());
+            None
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn open_preloaded_session(
     app: &AppHandle,
@@ -904,20 +934,26 @@ pub(super) fn open_preloaded_session(
         ToolPromptMode::None
     };
     let prompt = agent_prompt(orchestration, team, agent);
+    let registered_role = app
+        .state::<RoleRegistry>()
+        .find(&profile.role)
+        .map_err(FlowError::Roles)?;
     let base = role(
         profile,
+        registered_role.as_ref(),
         &prompt.roster,
         prompt.layer.as_ref(),
         project_context,
         tool_mode,
         scope,
+        global_instructions(app, candidate.provider.protocol == ProviderProtocol::ClaudeLive)
+            .as_deref(),
     );
     let role_text = if agent == &Agent::ember() {
         maestro_role(
             &base,
             &[],
             &project_choices(app)?,
-            None,
             orchestration,
             team,
             paused,

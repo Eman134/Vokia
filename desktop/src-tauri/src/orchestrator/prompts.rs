@@ -8,6 +8,7 @@ use crate::task::{
 use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, TeamOutline};
 use crate::mcp::ToolScope;
 use crate::plan_proposal::PLAN_PROTOCOL_HINT;
+use crate::roles::Role;
 use serde_json::Value;
 
 const MAESTRO_INSTRUCTIONS_AUTO_TRIAGE: &str = "Você é o orquestrador geral do Vokia. Redirecione cada pedido ao líder do time ou agente certo; não execute trabalho técnico. Card novo nasce em triagem: passe ao líder para ler o código, usar request_decision se faltar definição e gravar o plano via save_item_plan antes da implementação. Delegou, está livre: o líder responde ao terminar e você segue atendendo novos pedidos. Respeite camadas e limites de turno.";
@@ -15,7 +16,6 @@ const MAESTRO_INSTRUCTIONS_MANUAL_TRIAGE: &str = "Você é o orquestrador geral 
 const MAESTRO_PROJECT_RULE: &str = "Identifique o projeto do pedido pelo contexto da conversa, que é o projeto em que o pedido foi feito. Sem contexto, use o projeto fixado pelo usuário. Se ainda houver dúvida, não chute: chame a ferramenta request_decision com kind escolha, title com a pergunta em português (por exemplo: Em qual projeto devo seguir com este pedido?) e options com os rótulos dos projetos listados abaixo, exatamente como aparecem (nome e #id).";
 const MAESTRO_PINNED_LABEL: &str = "Projeto fixado pelo usuário:";
 const MAESTRO_PROJECTS_LABEL: &str = "Projetos disponíveis:";
-const MAESTRO_EXTRA_LABEL: &str = "Instruções extras do agente:";
 const MAESTRO_COMMANDS_LABEL: &str = "Comandos disponíveis:";
 const MAESTRO_APP_COMMANDS_MCP: &str = " Você administra o Vokia: para gerenciar papéis, agentes, orquestração, provedores, canais, projetos ou configurações, descubra os comandos com app_commands_list (opcionalmente com domain; cada um traz when_to_use e o schema) e execute com app_command_call (name e arguments).";
 const MAESTRO_APP_COMMANDS_VOKIA_CLI: &str = " Use `vokia-cli` no terminal para acionar as ferramentas listadas abaixo. Você administra o Vokia: para gerenciar papéis, agentes, orquestração, provedores, canais, projetos ou configurações, liste os comandos com `vokia-cli commands [--domain <dom>]` (cada um traz when_to_use) e execute com `vokia-cli cmd <comando> --json <obj>`.";
@@ -59,13 +59,16 @@ const TOOLS_RULE_VOKIA_CLI: &str = "Use `vokia-cli` no terminal para backlog/dec
 const DELEGATION_TOOL_RULE_VOKIA_CLI: &str = "Para delegar: `vokia-cli delegate --agent <nome> --request \"<pedido>\"` (`--item-id <id>` em card). Delegue só o que não souber ou se pedido pelo nome; nunca para confirmar resposta. Antes de delegar a implementação de um card em triagem, leia o código, pergunte via `vokia-cli request-decision` se necessário e grave o plano via `save_item_plan`. Após delegar ou `vokia-cli request-decision`, encerre.";
 const STAGE_REPORT_RULE: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com artifact_set_criterion (artifact_id e criterion_id conforme a linha Critério desta etapa do card, que já vem na mensagem ou sai de read_card; done true) e grave o progresso com set_variable. Quem lidera acompanha por read_card.";
 const STAGE_REPORT_RULE_VOKIA_CLI: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com `vokia-cli set-criterion --artifact-id <id> --criterion-id <c> --done true` (os ids aparecem em `vokia-cli read-card --id <card>`, na linha Critério desta etapa) e grave o progresso com `vokia-cli set-variable`. Quem lidera acompanha por `vokia-cli read-card`.";
-const INSTRUCTION_FILES_RULE: &str = "Antes de editar arquivo, leia CLAUDE.md/AGENTS.md da pasta até a raiz (mais próximo vence) e instruções globais. Se contradizer o pedido, responda BLOQUEADO.";
+const INSTRUCTION_FILES_RULE: &str = "Antes de editar arquivo, leia CLAUDE.md/AGENTS.md da pasta até a raiz do projeto (mais próximo vence). Se contradizer o pedido, responda BLOQUEADO.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
     "É a sua vez. Atualize as variáveis conforme o objetivo.";
 pub(super) const NO_NAMES: &str = "nenhuma";
 pub(super) const CHANNEL_NOTE_PREFIX: &str = "Mensagem enviada no canal #";
 const NO_VARIABLES: &str = "- nenhuma";
+const GLOBAL_INSTRUCTIONS_LABEL: &str = "Instruções globais do usuário";
+const ROLE_INSTRUCTIONS_LABEL: &str = "Instruções do papel";
+const ROLE_SOURCE_RULE: &str = "Suas instruções são só as que estão neste prompt: não procure papéis em arquivos do repositório nem invente caminhos. Se faltar uma regra, diga que ela não está no prompt e consulte role_list.";
 const LAYER_INSTRUCTIONS_LABEL: &str = "Instruções da camada";
 const AGENT_INSTRUCTIONS_LABEL: &str = "Instruções do agente";
 const EXTRA_INSTRUCTIONS_LABEL: &str = "Instruções extras";
@@ -89,6 +92,7 @@ const EXAMPLE_TARGET_REPORT: &str = r#""monte o relatório e me avise quando ele
 pub(super) fn interpreter_role(
     team: &Team,
     orchestration: Option<&OrchestrationSnapshot>,
+    registered_role: Option<&Role>,
 ) -> String {
     let leader = leader_of(orchestration);
     let leader_name = team.name_of(&leader);
@@ -108,8 +112,9 @@ pub(super) fn interpreter_role(
         })
         .collect();
     let intro = INTERPRETER_INTRO.replace(LEADER_TOKEN, leader_name);
+    let role_section = role_instructions(registered_role);
     format!(
-        "{}{} {} {} {}.",
+        "{}{} {} {} {}. {role_section}{ROLE_SOURCE_RULE}",
         intro,
         INTERPRETER_FIELDS,
         team_map_text(team, orchestration),
@@ -363,7 +368,6 @@ pub(super) fn maestro_role(
     base: &str,
     tools: &[Value],
     choices: &ProjectChoices,
-    extra: Option<&str>,
     orchestration: Option<&OrchestrationSnapshot>,
     team: &Team,
     paused: &[Agent],
@@ -377,11 +381,6 @@ pub(super) fn maestro_role(
         join_items(&choices.labels)
     };
     let projects = format!("{MAESTRO_PINNED_LABEL} {pinned}. {MAESTRO_PROJECTS_LABEL} {labels}.");
-    let extra = extra
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(|text| format!(" {MAESTRO_EXTRA_LABEL} {text}"))
-        .unwrap_or_default();
     let teams = maestro_teams_text(orchestration, team, paused, auto_triage)
         .map(|text| format!(" {text}"))
         .unwrap_or_default();
@@ -396,7 +395,7 @@ pub(super) fn maestro_role(
         MAESTRO_INSTRUCTIONS_MANUAL_TRIAGE
     };
     let head =
-        format!("{base} {instructions} {MAESTRO_PROJECT_RULE} {projects}{teams}{extra}{cli_hint}");
+        format!("{base} {instructions} {MAESTRO_PROJECT_RULE} {projects}{teams}{cli_hint}");
     // O servidor MCP já entrega o schema das ferramentas; no CLI vai só o catálogo compacto das essenciais.
     match tool_mode {
         ToolPromptMode::Mcp => return head,
@@ -422,11 +421,13 @@ fn command_line(tool: &Value) -> Option<String> {
 
 pub(super) fn role(
     profile: &AgentProfile,
+    registered_role: Option<&Role>,
     roster: &str,
     layer: Option<&LayerContext>,
     project_context: &str,
     tool_mode: ToolPromptMode,
     scope: ToolScope,
+    global_instructions: Option<&str>,
 ) -> String {
     // Sem o servidor MCP/Vokia CLI a sessão volta a ensinar os marcadores de texto.
     let tools_rules = match tool_mode {
@@ -435,19 +436,44 @@ pub(super) fn role(
                 ToolScope::Coordinator => format!(" {ADMIN_TOOLS_RULE}"),
                 ToolScope::Worker => String::new(),
             };
-            format!("{DELEGATION_TOOL_RULE} {STAGE_REPORT_RULE} {PLAN_PROTOCOL_HINT} {TOOLS_RULE}{admin}")
+            format!("{DELEGATION_TOOL_RULE} {STAGE_REPORT_RULE} {PLAN_PROTOCOL_HINT} {TOOLS_RULE}{admin} {ROLE_SOURCE_RULE}")
         }
         ToolPromptMode::VokiaCli => {
-            format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {STAGE_REPORT_RULE_VOKIA_CLI} {PLAN_PROTOCOL_HINT} {TOOLS_RULE_VOKIA_CLI}")
+            format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {STAGE_REPORT_RULE_VOKIA_CLI} {PLAN_PROTOCOL_HINT} {TOOLS_RULE_VOKIA_CLI} {ROLE_SOURCE_RULE}")
         }
-        ToolPromptMode::None => format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE}"),
+        ToolPromptMode::None => format!("{DELEGATION_RULE} {DECISION_RULE} {CARD_RULE} {ROLE_SOURCE_RULE}"),
     };
+    let global_section = global_instructions_section(global_instructions);
+    let role_section = role_instructions(registered_role);
     let layer_sections = layer_sections(layer);
     let extra = extra_instructions(profile);
     format!(
-        "Você é {}, {}. {roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{extra}{PROJECT_RULE} {INSTRUCTION_FILES_RULE} {project_context}",
+        "Você é {}, {}. {global_section}{role_section}{roster} Responda o pedido diretamente, em português, em no máximo 3 frases, salvo quando a instrução pedir só um valor. {tools_rules} {layer_sections}{extra}{PROJECT_RULE} {INSTRUCTION_FILES_RULE} {project_context}",
         profile.name, profile.role
     )
+}
+
+// Sem arquivo global (ou vazio), o prompt sai igual ao de antes.
+fn global_instructions_section(text: Option<&str>) -> String {
+    match text.map(str::trim).filter(|text| !text.is_empty()) {
+        Some(text) => format!("{GLOBAL_INSTRUCTIONS_LABEL}: {text} "),
+        None => String::new(),
+    }
+}
+
+// Papel sem descrição nem instruções não gera seção.
+fn role_instructions(role: Option<&Role>) -> String {
+    let Some(role) = role else {
+        return String::new();
+    };
+    let texts: Vec<&str> = [role.description.trim(), role.instructions.trim()]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect();
+    if texts.is_empty() {
+        return String::new();
+    }
+    format!("{ROLE_INSTRUCTIONS_LABEL} {}: {} ", role.name, texts.join(" "))
 }
 
 // Sem instruções extras, o prompt sai igual ao de antes.
