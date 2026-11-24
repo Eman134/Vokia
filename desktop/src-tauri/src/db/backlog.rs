@@ -968,6 +968,14 @@ impl Db {
         Ok(plan.state == LINKED_PLAN && previous.as_deref() != Some(LINKED_PLAN))
     }
 
+    // Dependências entre as etapas, lidas do plano gravado: número da etapa e números que ela espera.
+    pub fn plan_dependencies(&self, project_id: i64, item_id: &str) -> Result<Vec<(u32, Vec<u32>)>, DbError> {
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        let plan = read_plan_artifact(&conn, project_id, &artifact_id(item_id))?;
+        Ok(plan.map(|plan| parse_proposal(&plan.detail).dependencies()).unwrap_or_default())
+    }
+
     // Etapas (#lote) do plano do card, na ordem do plano; etapas arquivadas ficam de fora.
     pub fn plan_stages(&self, project_id: i64, item_id: &str) -> Result<Vec<BacklogItem>, DbError> {
         let conn = self.conn()?;
@@ -1540,6 +1548,9 @@ fn insert_card(
 // Ids derivados do plano tornam a criação idempotente: aceitar de novo não duplica nem altera etapas.
 // Plano de card com time: quem de cada etapa precisa ser do time e a ordem não pode pular camada obrigatória.
 fn validate_plan_roteiro(conn: &Connection, item: &BacklogItem, draft: &PlanDraft) -> Result<(), DbError> {
+    if let Some(motive) = draft.dependency_refusal() {
+        return Err(DbError::PlanRoteiroRefused(motive));
+    }
     let snapshot = read_snapshot(conn)?;
     let Some(team) = snapshot
         .teams
@@ -1618,6 +1629,11 @@ fn plan_children(conn: &Connection, project_id: i64, parent: &str) -> Result<Vec
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+// Etapa que terminou o trabalho: em revisão ou concluída.
+pub fn is_stage_finished(column: &str) -> bool {
+    column == IN_REVIEW_COLUMN || column == DONE_COLUMN
 }
 
 // Só Backlog e Ready ainda não começaram; daí em diante a etapa tem trabalho feito e não sai do plano.

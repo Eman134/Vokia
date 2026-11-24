@@ -30,7 +30,7 @@ pub use artifact_kinds::{ArtifactKind, ARTIFACT_KINDS};
 pub use messages::StoredTaskResult;
 pub use permission_rules::{root_command, PermissionRule};
 pub use backlog::{
-    board_column, is_unstarted, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible,
+    board_column, is_stage_finished, is_unstarted, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible,
     CardResult, GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
     BOARD_COLUMNS,
 };
