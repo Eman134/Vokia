@@ -108,8 +108,10 @@ const EXCHANGE_ARROW_PATH = sketchArrow(
   EXCHANGE_ARROW_SEED,
   DEFAULT_JITTER,
 )
-const EXCHANGE_TEXT_CLASSES = 'max-w-xs text-caption text-muted'
-const USER_TEXT_CLASSES = 'w-fit max-w-full wrap-break-word px-3 py-1.5'
+const EXCHANGE_TEXT_CLASSES = 'max-w-full sm:max-w-xs text-caption text-muted'
+// Caps line length on wide monitors now that the feed spans the whole panel.
+const USER_BUBBLE_MAX_WIDTH_CLASSES = 'max-w-[85%] md:max-w-xl lg:max-w-2xl'
+const USER_TEXT_CLASSES = `w-fit ${USER_BUBBLE_MAX_WIDTH_CLASSES} wrap-break-word px-3 py-1.5`
 const ERROR_SCRIBBLE_CLASSES = 'pointer-events-none absolute inset-x-0 -bottom-1.5 h-2 w-full text-danger/70'
 const AUTHOR_CLASSES = 'text-control font-semibold text-ink'
 

@@ -44,7 +44,7 @@ import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 
-const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex max-w-3xl flex-col gap-3'
+const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex w-full min-w-0 flex-col gap-3'
 const LIVE_BLOCK_CLASSES = 'flex min-w-0 items-start gap-2'
 const STATUS_GROUP_CLASSES = 'flex items-start gap-2.5'
 const STATUS_PORTRAITS_CLASSES = 'flex shrink-0 items-center gap-1.5'
@@ -343,7 +343,7 @@ watch(
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
-      <ol class="flex max-w-3xl flex-col gap-2">
+      <ol class="flex w-full min-w-0 flex-col gap-2">
         <li v-for="item in feed.timeline" :key="item.start">
           <div v-if="item.type === 'group'" class="flex flex-col gap-2">
             <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
@@ -351,7 +351,7 @@ watch(
           <MessageEntry v-else :entry="item.entry" />
         </li>
       </ol>
-      <ol v-if="feed.permissions.length > 0" class="mt-3 flex max-w-3xl flex-col gap-3">
+      <ol v-if="feed.permissions.length > 0" class="mt-3 flex w-full min-w-0 flex-col gap-3">
         <li v-for="permission in feed.permissions" :key="permission.id">
           <PermissionPrompt :permission="permission" @decide="(allow, reason) => feed.decidePermission(permission.id, allow, false, reason)" />
         </li>
