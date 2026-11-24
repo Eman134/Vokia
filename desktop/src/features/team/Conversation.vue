@@ -29,7 +29,8 @@ import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useChannels } from '../channels/useChannels'
 import { useThreads } from './useThreads'
-import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
+import { useBacklog } from '../backlog/useBacklog'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
 import UiButton from '../../ui/UiButton.vue'
@@ -60,6 +61,12 @@ const TAB_ON = 'text-ink'
 const TAB_OFF = 'text-muted hover:text-ink'
 const TAB_MARK = `${HAND_MARK_CLASSES} -bottom-0.5 left-0 w-full`
 const TAB_LABELS = { conversa: 'Conversa', fila: 'Fila' } as const
+const TRIAGE_ROLE_NONE = 'Nenhum card em triagem'
+
+function triageRole(count: number): string {
+  if (count === 0) return TRIAGE_ROLE_NONE
+  return `${count} ${count === 1 ? 'card' : 'cards'} em triagem`
+}
 const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
 const CLEAR_CONVERSATION_TITLE = 'Limpar conversa?'
 const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
@@ -85,6 +92,7 @@ function channelName(target: number | typeof GENERAL_CHANNEL_NAME): string | nul
 }
 
 const threads = useThreads()
+const backlog = useBacklog()
 const activeThread = computed(() => (feed.screen.kind === 'thread' ? threads.find(feed.screen.itemId) : undefined))
 
 const screenLabel = computed(() => {
@@ -101,6 +109,9 @@ const screenLabel = computed(() => {
   if (feed.screen.kind === 'thread') {
     return activeThread.value?.title ?? 'Thread'
   }
+  if (feed.screen.kind === 'triage') {
+    return `#${TRIAGE_CHANNEL_NAME}`
+  }
   return ALL_SCREEN_LABEL
 })
 const screenRole = computed(() => {
@@ -112,6 +123,7 @@ const screenRole = computed(() => {
     return roster.profileOf(feed.screen.baseAgent)?.role ?? ''
   }
   if (feed.screen.kind === 'thread') return activeThread.value?.column ?? ''
+  if (feed.screen.kind === 'triage') return triageRole(backlog.triagingIds.size)
   return ''
 })
 
@@ -140,6 +152,7 @@ const scopedPendingAgents = computed<AgentProfile[]>(() => {
     channels: channels.channels,
     thread: activeThread.value,
     agentItems: feed.stateItem,
+    triagingIds: backlog.triagingIds,
   })
 })
 const pendingGroups = computed(() =>

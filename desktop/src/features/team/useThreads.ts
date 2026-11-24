@@ -24,7 +24,7 @@ export const useThreads = defineStore('threads', () => {
 
   const threads = computed<TaskThread[]>(() => {
     const activeItems = backlog.items.filter(
-      (item) => (item.column !== undefined && ACTIVE_THREAD_COLUMNS.has(item.column)) || item.triageStep !== undefined,
+      (item) => (item.column !== undefined && ACTIVE_THREAD_COLUMNS.has(item.column)) || backlog.triagingIds.has(item.id),
     )
     if (activeItems.length === 0) return []
 
@@ -68,7 +68,7 @@ export const useThreads = defineStore('threads', () => {
           participants,
           lastActivity: bucket?.lastActivity ?? 0,
           messageCount: bucket?.messageCount ?? 0,
-          isTriaging: item.triageStep !== undefined,
+          isTriaging: backlog.triagingIds.has(item.id),
         }
       })
       .sort((a, b) => b.lastActivity - a.lastActivity)

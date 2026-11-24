@@ -25,6 +25,7 @@ export interface PendingScreenContext {
     participants: readonly Agent[]
   }
   agentItems?: Readonly<Record<Agent, string | undefined>>
+  triagingIds?: ReadonlySet<string>
 }
 
 const PENDING_STATE_ORDER: readonly PendingState[] = ['thinking', 'sending']
@@ -67,6 +68,10 @@ export function isAgentInScreen(
         return false
       }
       return context.thread.assignee === agentId || context.thread.participants.includes(agentId)
+    }
+    case 'triage': {
+      const itemId = context.agentItems?.[agentId]
+      return itemId !== undefined && (context.triagingIds?.has(itemId) ?? false)
     }
   }
 }

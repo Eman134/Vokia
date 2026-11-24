@@ -10,7 +10,11 @@ import { useThreads } from './useThreads'
 import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import { useChannels } from '../channels/useChannels'
-import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
+import UnreadDot from '../channels/UnreadDot.vue'
+import type { UnreadState } from '../channels/unread'
+import { useUnread } from '../channels/useUnread'
+import type { ConversationScreen } from './timeline'
 import type { Channel } from '../channels/channelsApi'
 import ChannelDialog from '../channels/ChannelDialog.vue'
 import ChannelMenu from '../channels/ChannelMenu.vue'
@@ -31,6 +35,7 @@ import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
+const TRIAGE_SCREEN: ConversationScreen = { kind: 'triage' }
 const BACKLOG_PAGE: AppPage = 'backlog'
 const OPEN_CARD_LABEL = 'Abrir card no backlog'
 const OPEN_CARD_ICON_PATH = 'M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3M9.5 2.5h4v4M13.5 2.5L7.5 8.5'
@@ -122,6 +127,16 @@ function isCopyThinking(copyId: string): boolean {
 }
 
 const threads = useThreads()
+const unread = useUnread()
+
+// O item aberto já está à vista: a bolinha só aparece nos outros.
+function indicatorOf(screen: ConversationScreen, shown: boolean): UnreadState {
+  return shown ? 'read' : unread.stateOf(screen)
+}
+
+function triageShown(): boolean {
+  return feed.screen.kind === 'triage'
+}
 
 function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
   return feed.screen.kind === 'channel' && feed.screen.channel === target
@@ -192,7 +207,25 @@ function closeChannelDialog(): void {
             @click="feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })"
           >
             #{{ GENERAL_CHANNEL_NAME }}
+            <UnreadDot
+              :state="indicatorOf({ kind: 'channel', channel: GENERAL_CHANNEL_NAME }, channelShown(GENERAL_CHANNEL_NAME))"
+              class="ml-auto"
+            />
             <UiHandLine v-if="channelShown(GENERAL_CHANNEL_NAME)" draw :class="CHANNEL_MARK_CLASSES" />
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            :class="[CHANNEL_CLASSES, 'gap-1.5', triageShown() ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+            :aria-label="`Abrir canal ${TRIAGE_CHANNEL_NAME}`"
+            :aria-pressed="triageShown()"
+            @click="feed.showScreen(TRIAGE_SCREEN)"
+          >
+            <UiIcon :path="HOURGLASS_ICON_PATH" class="h-3.5 w-3.5 shrink-0" />
+            {{ TRIAGE_CHANNEL_NAME }}
+            <UnreadDot :state="indicatorOf(TRIAGE_SCREEN, triageShown())" class="ml-auto" />
+            <UiHandLine v-if="triageShown()" draw :class="CHANNEL_MARK_CLASSES" />
           </button>
         </li>
         <li v-for="channel in channels.channels" :key="channel.id" class="group relative">
@@ -204,6 +237,7 @@ function closeChannelDialog(): void {
             @click="feed.showScreen({ kind: 'channel', channel: channel.id })"
           >
             #{{ channel.name }}
+            <UnreadDot :state="indicatorOf({ kind: 'channel', channel: channel.id }, channelShown(channel.id))" class="ml-auto" />
             <UiHandLine v-if="channelShown(channel.id)" draw :class="CHANNEL_MARK_CLASSES" />
           </button>
           <ChannelMenu :name="channel.name" @edit="openChannelDialog(channel)" @remove="removeChannel(channel)" />
@@ -225,6 +259,7 @@ function closeChannelDialog(): void {
                 :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
               />
               <span class="min-w-0 truncate">{{ thread.title }}</span>
+              <UnreadDot :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))" class="ml-auto" />
               <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
             </button>
             <button

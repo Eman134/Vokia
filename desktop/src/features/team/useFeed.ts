@@ -72,10 +72,10 @@ export const useFeed = defineStore('feed', () => {
   function itemOf(agent: Agent): string | undefined {
     return stateItem.value[agent]
   }
-  function activeAgentsForItem(itemId: string): Set<Agent> {
+  function activeAgentsForItems(itemIds: ReadonlySet<string>): Set<Agent> {
     const agents = new Set<Agent>()
     for (const [agent, agentItemId] of Object.entries(stateItem.value)) {
-      if (agentItemId === itemId && stateOf(agent) !== 'idle') {
+      if (agentItemId !== undefined && itemIds.has(agentItemId) && stateOf(agent) !== 'idle') {
         agents.add(agent)
       }
     }
@@ -114,8 +114,13 @@ export const useFeed = defineStore('feed', () => {
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
   const channels = useChannels()
   const timeline = computed<TimelineItem[]>(() => {
-    const threadAgents = screen.value.kind === 'thread' ? activeAgentsForItem(screen.value.itemId) : undefined
-    return buildTimeline(screenEntries(feed.value, screen.value, channels.channels, threadAgents))
+    const current = screen.value
+    if (current.kind === 'triage') {
+      const triagingIds = useBacklog().triagingIds
+      return buildTimeline(screenEntries(feed.value, current, channels.channels, activeAgentsForItems(triagingIds), triagingIds))
+    }
+    const threadAgents = current.kind === 'thread' ? activeAgentsForItems(new Set([current.itemId])) : undefined
+    return buildTimeline(screenEntries(feed.value, current, channels.channels, threadAgents))
   })
 
   async function restoreHistory(): Promise<void> {

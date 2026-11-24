@@ -52,6 +52,9 @@ export const useBacklog = defineStore('backlog', () => {
   let loadSeq = 0
 
   const openItem = computed(() => items.value.find((item) => item.id === openId.value) ?? null)
+  const triagingIds = computed<ReadonlySet<string>>(
+    () => new Set(items.value.filter((item) => item.triageStep !== undefined).map((item) => item.id)),
+  )
 
   function find(id: string): BacklogItem | undefined {
     return items.value.find((item) => item.id === id)
@@ -348,6 +351,7 @@ export const useBacklog = defineStore('backlog', () => {
     loadedProjectId,
     openId,
     openItem,
+    triagingIds,
     requestDraft,
     creating,
     loading,

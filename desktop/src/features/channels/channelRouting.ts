@@ -2,6 +2,7 @@ import type { Agent, VokiaMessage } from '../team/events'
 import type { Channel } from './channelsApi'
 
 export const GENERAL_CHANNEL_NAME = 'geral'
+export const TRIAGE_CHANNEL_NAME = 'triagem'
 
 // Mensagem com o usuário fica em #geral e na tela do agente, nunca em canal específico (P6).
 export function channelOf(message: VokiaMessage, channels: readonly Channel[]): number | null {

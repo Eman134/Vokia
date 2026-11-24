@@ -1,5 +1,5 @@
 import type { AppPage } from '../../shell/railNav'
-import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
 import type { Channel } from '../channels/channelsApi'
 import { DEFAULT_RECIPIENT } from './agents'
 import type { Agent } from './events'
@@ -7,6 +7,8 @@ import type { ConversationScreen } from './timeline'
 
 export const CONVERSATIONS_PAGE: AppPage = 'conversas'
 export const GENERAL_SCREEN_PLACEHOLDER = 'Mensagem para o time · #geral'
+// #triagem só agrupa as threads em triagem: o que se escreve nela vai para #geral, como em qualquer conversa sem card.
+export const TRIAGE_SCREEN_PLACEHOLDER = `Mensagem para o time · #${TRIAGE_CHANNEL_NAME} responde em #${GENERAL_CHANNEL_NAME}`
 
 // A tela aberta fica velha fora de Conversas; por isso o destino e o texto só valem nela.
 export function screenAgent(page: AppPage | null, screen: ConversationScreen): Agent | null {
@@ -81,5 +83,6 @@ export function screenPlaceholder(
     const to = channelRecipient(channel, rosterOrder)
     return to === null ? `Mensagem para #${channel.name}` : `Mensagem para #${channel.name} · vai para ${nameOf(to)}`
   }
+  if (screen.kind === 'triage') return TRIAGE_SCREEN_PLACEHOLDER
   return screen.kind === 'channel' && screen.channel === GENERAL_CHANNEL_NAME ? GENERAL_SCREEN_PLACEHOLDER : undefined
 }

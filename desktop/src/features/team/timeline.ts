@@ -18,6 +18,7 @@ export type ConversationScreen =
   | { kind: 'copy'; copyId: string; baseAgent: Agent; number: number; itemId?: string | null; itemTitle?: string | null }
   | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
   | { kind: 'thread'; itemId: string }
+  | { kind: 'triage' }
 
 export const ALL_SCREEN: ConversationScreen = { kind: 'all' }
 export const ALL_SCREEN_LABEL = 'Todos'
@@ -47,26 +48,30 @@ function entryHasChannel(entry: FeedEntry, channels: readonly Channel[]): boolea
   return false
 }
 
+function belongsTo(itemId: string | null | undefined, itemIds: ReadonlySet<string>): boolean {
+  return itemId != null && itemIds.has(itemId)
+}
+
 function threadParticipants(
   feed: readonly FeedEntry[],
-  itemId: string,
+  itemIds: ReadonlySet<string>,
   extraParticipants?: ReadonlySet<Agent>,
 ): Set<Agent> {
   const participants = new Set<Agent>(extraParticipants)
   for (const entry of feed) {
-    if (entry.type === 'message' && entry.itemId === itemId) {
+    if (entry.type === 'message' && belongsTo(entry.itemId, itemIds)) {
       if (entry.from !== 'user') participants.add(entry.from)
       if (entry.to !== 'user') participants.add(entry.to)
-    } else if (entry.type === 'task-result' && entry.itemId === itemId) {
+    } else if (entry.type === 'task-result' && belongsTo(entry.itemId, itemIds)) {
       for (const agent of entry.agents) participants.add(agent)
     }
   }
   return participants
 }
 
-function entryInThread(entry: FeedEntry, itemId: string, participants: ReadonlySet<Agent>): boolean {
+function entryInThreads(entry: FeedEntry, itemIds: ReadonlySet<string>, participants: ReadonlySet<Agent>): boolean {
   if (entry.type === 'message' || entry.type === 'task-result' || entry.type === 'usage-limit-failed') {
-    return entry.itemId === itemId
+    return belongsTo(entry.itemId, itemIds)
   }
   if (entry.type === 'permission-result') {
     return participants.has(entry.agent)
@@ -74,12 +79,23 @@ function entryInThread(entry: FeedEntry, itemId: string, participants: ReadonlyS
   return false
 }
 
+function entriesOfItems(
+  feed: readonly FeedEntry[],
+  itemIds: ReadonlySet<string>,
+  threadAgents?: ReadonlySet<Agent>,
+): readonly FeedEntry[] {
+  const participants = threadParticipants(feed, itemIds, threadAgents)
+  return feed.filter((entry) => entryInThreads(entry, itemIds, participants))
+}
+
 // Filtra antes de agrupar: na tela de um agente, um grupo misto mostra só as mensagens dele (P4).
+// Em #triagem, `triagingIds` são os cards em triagem e `threadAgents` os agentes ativos neles.
 export function screenEntries(
   feed: readonly FeedEntry[],
   screen: ConversationScreen,
   channels: readonly Channel[],
   threadAgents?: ReadonlySet<Agent>,
+  triagingIds: ReadonlySet<string> = new Set(),
 ): readonly FeedEntry[] {
   switch (screen.kind) {
     case 'all':
@@ -90,10 +106,10 @@ export function screenEntries(
       return feed.filter((entry) => entryInvolves(entry, screen.copyId) && !entryHasChannel(entry, channels))
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
-    case 'thread': {
-      const participants = threadParticipants(feed, screen.itemId, threadAgents)
-      return feed.filter((entry) => entryInThread(entry, screen.itemId, participants))
-    }
+    case 'thread':
+      return entriesOfItems(feed, new Set([screen.itemId]), threadAgents)
+    case 'triage':
+      return entriesOfItems(feed, triagingIds, threadAgents)
   }
 }
 
