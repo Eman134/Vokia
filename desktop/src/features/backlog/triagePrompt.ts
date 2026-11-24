@@ -1,18 +1,26 @@
-import type { OrchestrationSnapshot } from '../orchestration/orchestrationTypes'
+import type { OrchestrationSnapshot, OrchLayer } from '../orchestration/orchestrationTypes'
 import type { AgentProfile } from '../team/teamApi'
 import type { BacklogItem } from './backlogTypes'
 import { PLAN_PROTOCOL_HINT } from './planProposal'
 
 const NO_TEAM_LABEL = 'Sem time'
 const EMPTY_TEAM_TEXT = 'nenhum agente posicionado'
-const FLOW_HEADING = 'Fluxo de cada time (uma etapa por lote, na ordem das camadas):'
+const FLOW_HEADING = 'Fluxo de cada time (referência de handoff entre camadas, não obrigatório):'
 const NO_FLOW_TEXT = 'sem arestas definidas'
 const NO_LEADER_TEXT = 'sem líder'
 const STAGE_RULE =
-  'Ao propor o plano, derive um #lote por camada/aresta do time escolhido, em ordem, e use no #roteiro apenas agentes desse time (quem:).'
+  'Ao propor o plano, monte as etapas pelo papel e pelas instruções de cada agente do time escolhido e use no #roteiro (quem:) apenas agentes desse time. Qualquer membro pode abrir o plano. Divida o trabalho em quantas etapas forem necessárias (um #lote por etapa); etapas independentes rodam em paralelo e uma que depende de outra declara apos:<n> no #roteiro.'
+const DETAIL_INDENT = '    '
 
-function memberLabel(profile: AgentProfile | undefined, agentId: string, layerName: string): string {
-  return `${profile?.name ?? agentId} (${agentId}, camada ${layerName})`
+function memberLabel(profile: AgentProfile | undefined, agentId: string, layer: OrchLayer | undefined): string {
+  const layerText = layer ? `camada ${layer.name}, tipo ${layer.kind}` : 'camada desconhecida'
+  const role = profile?.role ? `, papel ${profile.role}` : ''
+  return `${profile?.name ?? agentId} (${agentId}, ${layerText}${role})`
+}
+
+function instructionLines(label: string, text: string | undefined): string[] {
+  const trimmed = text?.trim()
+  return trimmed ? [`${DETAIL_INDENT}${label}: ${trimmed}`] : []
 }
 
 export function buildTriagePrompt(
@@ -20,13 +28,22 @@ export function buildTriagePrompt(
   snapshot: OrchestrationSnapshot,
   agents: readonly AgentProfile[],
 ): string {
-  const layerNameOf = (layerId: string): string => snapshot.layers.find((layer) => layer.id === layerId)?.name ?? layerId
+  const layerOf = (layerId: string): OrchLayer | undefined => snapshot.layers.find((layer) => layer.id === layerId)
   const profileOf = (agentId: string): AgentProfile | undefined => agents.find((agent) => agent.id === agentId)
-  const teamLines = snapshot.teams.map((team) => {
+  const teamLines = snapshot.teams.flatMap((team) => {
     const members = snapshot.placements
       .filter((placement) => placement.teamId === team.id)
-      .map((placement) => memberLabel(profileOf(placement.agentId), placement.agentId, layerNameOf(placement.layerId)))
-    return `- ${team.name}: ${members.join('; ') || EMPTY_TEAM_TEXT}`
+      .flatMap((placement) => {
+        const profile = profileOf(placement.agentId)
+        const layer = layerOf(placement.layerId)
+        return [
+          `  - ${memberLabel(profile, placement.agentId, layer)}`,
+          ...instructionLines('instruções do agente', profile?.extraInstructions),
+          ...instructionLines('instruções da camada', layer?.instructions),
+          ...instructionLines('instruções do posicionamento', placement.instructions),
+        ]
+      })
+    return [`- ${team.name}:`, ...instructionLines('instruções do time', team.instructions), ...(members.length ? members : [`  ${EMPTY_TEAM_TEXT}`])]
   })
   const flowLines = snapshot.teams.flatMap((team) => {
     const layers = snapshot.layers
