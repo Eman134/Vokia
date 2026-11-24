@@ -1191,8 +1191,12 @@ fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> Too
     let approved = {
         let state = app.state::<DbState>();
         let db = state.require().map_err(|error| refusal_or_system(&error))?;
-        db.save_item_plan(binding.project_id, &args.item_id, &args.plan)
-            .map_err(|error| refusal_or_system(&error))?
+        match db.save_item_plan(binding.project_id, &args.item_id, &args.plan) {
+            Ok(approved) => approved,
+            // Roteiro fora da ordem do fluxo é correção esperada do agente, não falha da ferramenta.
+            Err(error @ DbError::PlanRoteiroRefused(_)) => return Ok(error.to_string()),
+            Err(error) => return Err(refusal_or_system(&error)),
+        }
     };
     if approved {
         start_approved_plan(app, binding.project_id, &args.item_id)
