@@ -37,6 +37,9 @@ const ICON_PATHS: Readonly<Record<RowIconKind, string>> = {
 }
 
 const SVG_CLASSES = 'size-3.5 shrink-0 fill-none stroke-current stroke-2'
+// Alinhado ao texto, depois do ícone (size-3.5 + gap-1.5), como o "└" sob a frase no terminal.
+const COMMAND_LINE_CLASSES = 'flex min-w-0 items-baseline gap-1 pl-5 font-mono text-muted'
+const COMMAND_PREFIX = '└ $'
 const CHIP_CLASSES = 'inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-surface-2 px-1.5 py-0.5 text-ink'
 const COUNT_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 text-caption font-semibold text-muted'
 const OPEN_HINT = 'Clique para abrir o arquivo'
@@ -90,7 +93,8 @@ async function showPreview(): Promise<void> {
       <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true">
         <path :d="ICON_PATHS[row.icon]" />
       </svg>
-      <span class="shrink-0 font-semibold text-ink">{{ row.verb }}</span>
+      <UiTooltip v-if="row.command" :text="row.verb" class="min-w-0 truncate font-semibold text-ink">{{ row.verb }}</UiTooltip>
+      <span v-else class="shrink-0 font-semibold text-ink">{{ row.verb }}</span>
       <UiTooltip v-if="row.chip" :text="row.chip.title" :class="CHIP_CLASSES" data-testid="activity-chip">
         <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true" :data-icon="row.chip.icon">
           <path :d="ICON_PATHS[row.chip.icon]" />
@@ -111,6 +115,10 @@ async function showPreview(): Promise<void> {
         <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
       </button>
       <slot />
+    </div>
+    <div v-if="row.command" :class="COMMAND_LINE_CLASSES" data-testid="activity-command">
+      <span class="shrink-0" aria-hidden="true">{{ COMMAND_PREFIX }}</span>
+      <UiTooltip :text="row.command" class="min-w-0 truncate">{{ row.command }}</UiTooltip>
     </div>
     <slot name="details" />
     <ul v-if="row.items?.length && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">

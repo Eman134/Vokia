@@ -1,12 +1,14 @@
 import type { Agent, FeedNotice, FeedPermissionResult, FeedUsageLimitFailed, VokiaError, VokiaMessage, VokiaTaskResult } from './events'
 import type { Channel } from '../channels/channelsApi'
 import { channelOf, GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
+import { isAutomaticPermission } from './permissionSummary'
 
 export type FeedEntry = VokiaMessage | VokiaError | FeedNotice | FeedPermissionResult | VokiaTaskResult | FeedUsageLimitFailed
 
 export type TimelineItem =
   | { type: 'entry'; start: number; entry: FeedEntry }
   | { type: 'group'; start: number; messages: VokiaMessage[] }
+  | { type: 'permissions'; start: number; agent: Agent; results: FeedPermissionResult[] }
 
 export function isBetweenAgents(message: VokiaMessage): boolean {
   return message.from !== 'user' && message.to !== 'user'
@@ -136,7 +138,13 @@ export function buildTimeline(feed: readonly FeedEntry[]): TimelineItem[] {
     // Erros vão para o popup da Actionbar, não para a conversa.
     if (entry.type === 'error') return
     const last = items.at(-1)
-    if (entry.type !== 'message' || !isBetweenAgents(entry)) {
+    if (entry.type === 'permission-result' && isAutomaticPermission(entry)) {
+      if (last?.type === 'permissions' && last.agent === entry.agent) {
+        last.results.push(entry)
+      } else {
+        items.push({ type: 'permissions', start: index, agent: entry.agent, results: [entry] })
+      }
+    } else if (entry.type !== 'message' || !isBetweenAgents(entry)) {
       items.push({ type: 'entry', start: index, entry })
     } else if (last?.type === 'group') {
       last.messages.push(entry)

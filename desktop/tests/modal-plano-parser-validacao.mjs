@@ -318,7 +318,7 @@ test('breakdownOf mapeia stages vinculadas plano-<item>.<n> com status da coluna
   const s1 = breakdown.steps[0]
   assert.equal(s1.id, 'PAY-14.1')
   assert.equal(s1.title, 'Etapa 1 Feita')
-  assert.equal(s1.status, 'feito')
+  assert.equal(s1.status, 'concluído')
   assert.equal(s1.who, 'axiom')
   assert.equal(s1.model, undefined)
   assert.equal(s1.stageId, 'plano-PAY-14.1')

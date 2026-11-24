@@ -25,6 +25,7 @@ import {
   NEW_REQUEST_LABEL,
 } from './tasksPageCopy'
 import {
+  COLUMN_LABEL,
   DEFAULT_COLUMN,
   type TaskCardAction,
   type BacklogColumn,
@@ -35,16 +36,19 @@ import { useBacklog } from './useBacklog'
 import { PLAN_TAB_BY_ACTION, useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
 
-const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto ${PAGE_INSET_CLASSES}`
+// Do md para cima a página não rola: cada coluna rola sozinha, e o cabeçalho e o "Novo pedido" ficam à vista.
+// A folga da barra de ação sai da página e vai para o fim de cada coluna.
+const PAGE_CLASSES = `flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto md:overflow-hidden ${PAGE_INSET_CLASSES} md:pb-0`
 const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
+const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 bg-bg pb-1'
 const COLUMN_TITLE_CLASSES = 'relative flex w-fit items-baseline gap-2 pb-1.5 text-card-title text-ink'
 const COLUMN_COUNT_CLASSES = 'text-caption text-muted'
 const COLUMN_UNDERLINE_CLASSES = 'pointer-events-none absolute inset-x-0 bottom-0 h-1.5'
 const EMPTY_COLUMN_CLASSES = 'font-hand text-annotation text-faint'
-const GRID_SCROLL_CLASSES = 'min-w-0'
-const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-2 md:grid-cols-[repeat(5,minmax(0,1fr))]'
-const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5'
-const BOARD_AREA_CLASSES = 'flex flex-1 flex-col'
+const GRID_SCROLL_CLASSES = 'min-w-0 md:min-h-0 md:flex-1'
+const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-2 md:h-full md:grid-cols-[repeat(5,minmax(0,1fr))] md:items-stretch'
+const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5 md:min-h-0 md:overflow-y-auto md:pb-bar-clearance md:pr-1'
+const BOARD_AREA_CLASSES = 'flex min-h-0 flex-1 flex-col'
 const EMPTY_BOARD_CLASSES = 'flex flex-1 items-center justify-center'
 
 const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
@@ -126,12 +130,20 @@ watch(
     <UiNotice v-if="backlog.loadError && !dismissedError" :text="LOAD_ERROR_PREFIX + backlog.loadError" @close="dismissedError = true" />
     <div :class="BOARD_AREA_CLASSES">
       <div :class="GRID_SCROLL_CLASSES">
-        <div role="list" aria-label="Colunas do backlog" :aria-busy="backlog.loading" :class="GRID_CLASSES">
-          <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="column.name" :class="COLUMN_CLASSES">
-            <div :class="COLUMN_TITLE_CLASSES">
-              <b>{{ column.name }}</b>
-              <span :class="COLUMN_COUNT_CLASSES">{{ column.cards.length }}</span>
-              <UiHandLine :class="COLUMN_UNDERLINE_CLASSES" :style="{ color: colorVar(column.colorToken) }" />
+        <div
+          :key="projectsStore.selected?.id"
+          role="list"
+          aria-label="Colunas do backlog"
+          :aria-busy="backlog.loading"
+          :class="GRID_CLASSES"
+        >
+          <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="COLUMN_LABEL[column.name]" :class="COLUMN_CLASSES">
+            <div :class="COLUMN_HEADER_CLASSES">
+              <div :class="COLUMN_TITLE_CLASSES">
+                <b>{{ COLUMN_LABEL[column.name] }}</b>
+                <span :class="COLUMN_COUNT_CLASSES">{{ column.cards.length }}</span>
+                <UiHandLine :class="COLUMN_UNDERLINE_CLASSES" :style="{ color: colorVar(column.colorToken) }" />
+              </div>
             </div>
             <span v-if="!backlog.loading && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
             <TaskCard

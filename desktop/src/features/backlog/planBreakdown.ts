@@ -1,10 +1,9 @@
 import { planProgress, type Progress } from '../artifacts/planProgress'
-import { COLUMN_CHIP } from './backlogLabels'
 import type { BacklogColumn, BacklogItem, ScriptBlock } from './backlogTypes'
 import type { OrchTaskStage, TaskStageState } from '../orchestration/orchestrationTypes'
 import type { ParsedProposal } from './planProposal'
 
-export type BreakdownStatus = 'proposta' | 'ready' | 'em andamento' | 'em revisão' | 'feito'
+export type BreakdownStatus = 'proposta' | 'pronto' | 'em andamento' | 'em revisão' | 'concluído'
 
 export interface BreakdownStep {
   id: string
@@ -30,7 +29,7 @@ export interface StageFlow {
 
 const FLOW_STATUS: Partial<Record<TaskStageState, BreakdownStatus>> = {
   em_andamento: 'em andamento',
-  concluida: 'feito',
+  concluida: 'concluído',
 }
 
 export interface PlanBreakdown {
@@ -54,12 +53,16 @@ export function linkKind(id: string): string {
   return LINK_PREFIX_KIND.find(([prefix]) => lower.startsWith(prefix))?.[1] ?? 'link'
 }
 
+const COLUMN_STATUS: Partial<Record<BacklogColumn, BreakdownStatus>> = {
+  Ready: 'pronto',
+  'In progress': 'em andamento',
+  'In review': 'em revisão',
+  Done: 'concluído',
+}
+const DEFAULT_STATUS: BreakdownStatus = 'pronto'
+
 function statusFromColumn(column: BacklogColumn | undefined): BreakdownStatus {
-  const label = column ? COLUMN_CHIP[column]?.label : undefined
-  if (label === 'ready' || label === 'em andamento' || label === 'em revisão' || label === 'feito') {
-    return label
-  }
-  return 'ready'
+  return (column && COLUMN_STATUS[column]) || DEFAULT_STATUS
 }
 
 function flowDetails(stageId: string | undefined, column: BreakdownStatus, flow?: StageFlow): Pick<BreakdownStep, 'status' | 'layer' | 'edge' | 'flowState'> {

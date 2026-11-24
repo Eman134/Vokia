@@ -26,7 +26,6 @@ As melhorias seguem três ideias:
 | Anexos como chips "image.png" | `AttachmentPreviewList compact` mostra um chip por anexo | Nome sem informação; dois chips para dizer "tem 2 imagens" |
 | Filtro solitário | O único filtro é `UiSegmented` de feature, que hoje só tem "Todas" | Ocupa uma linha sem servir; busca, agente e tipo não existem (`item-26` no backlog) |
 | ID longo no card | Cards criados por agente recebem o slug do título como ID (ex.: `ids-curtos-para-cards-criados-por`) | Quebra o alinhamento do título. Já está em andamento no card "IDs curtos" |
-| Pílula flutuante sobre o conteúdo | "Axiom trabalhando · um agente" fica fixa no centro, embaixo | Cobre cards da coluna Ready e mensagens no fim da conversa |
 
 ### 2.2 Modal do card (`TaskItemModal.vue`)
 
@@ -52,6 +51,19 @@ As melhorias seguem três ideias:
 | Threads sem estado | A lista lateral mostra 19 threads com o mesmo ícone, sem agente, atividade ou card | Não dá para saber qual está viva, qual terminou e a que card pertence |
 | Agentes livres ocupam o mesmo espaço que os ocupados | `AgentList.vue` lista os 8 agentes em linhas iguais | O único agente trabalhando (Axiom) não se destaca |
 | Cabeçalho alto em toda tela | `UiPageHeader` com título grande e "Vokia" manuscrito | ~100px fixos, que fazem falta numa ferramenta aberta o dia todo |
+
+### 2.4 Tela de Artefatos (`ArtefatosPage.vue`)
+
+| Problema | Onde | Efeito |
+|---|---|---|
+| Tipo dito três vezes em cada card | Aba desenhada "plano", caminho "Artefatos › Plano · item-15" e aba "Planos 45" | Linha inteira de ruído em todos os 48 cards |
+| Markdown cru no resumo | `PlanCard.vue` mostra `proposal.summary` como texto: "## Causa raiz", "# Pesquisa:", crases | O resumo lê como o início de um arquivo, não como frase |
+| Selo "pronto" para plano concluído | `PlanCard.vue` usa `STATE_CHIP[state]`, o estado do plano, e ignora a coluna do card | Plano de card já no Done aparece como "pronto" |
+| "0 etapas" e alturas desiguais | `stageLabel` aparece sempre; a barra só existe quando há etapas | Linha inútil e barras desalinhadas na grade |
+| Sem ordem nem agrupamento | `plans` segue a ordem do backlog; concluídos e propostas misturados | O que pede ação fica perdido entre dezenas de planos |
+| Sem busca | Só as abas de tipo | Achar o item-49 entre 48 artefatos exige rolar a grade |
+| Abas no singular e total repetido | `filterOptions` usa o rótulo do tipo ("Documento 2", "Decisão 1"); `countLabel` repete o total | Concordância errada e informação duplicada |
+| Plano sem caminho de volta ao card | `PlanArtifact.vue` não tem link para o card | Para ver o card do plano é preciso ir a Tasks e procurar |
 
 ## 3. Princípios
 
@@ -206,12 +218,6 @@ Cada item tem um ID `UX-nn` para virar card. A coluna "Lado" diz se precisa de b
 
 ### 4.4 Transversais
 
-#### UX-18 · Barra de estado no lugar da pílula flutuante
-- **Proposta.** "Axiom trabalhando · um agente" sai do centro da tela e vai para uma barra de estado fina no rodapé da janela, com altura fixa, que não cobre conteúdo. A barra também mostra decisões pendentes e a fila. Clicar abre o painel "Agora" (`NowPanel.vue`).
-- **Onde.** `App.vue` e `ActionBar.vue`, `StatusRing.vue`.
-- **Aceite.** Nenhuma tela tem conteúdo coberto pelo indicador de trabalho.
-- **Lado.** Frontend.
-
 #### UX-19 · Cabeçalho de página compacto
 - **Proposta.** O título da página fica com ~40px de altura, na linha das ações (filtros e "Novo pedido"). O "Vokia" manuscrito vira o nome do projeto no seletor da sidebar, onde já tem função.
 - **Onde.** `UiPageHeader.vue`, `pageLayout.ts`.
@@ -228,13 +234,56 @@ Cada item tem um ID `UX-nn` para virar card. A coluna "Lado" diz se precisa de b
 - **Onde.** Um composable `useShortcuts.ts` em `src/ui/`, com limpeza do listener no `onUnmounted`.
 - **Lado.** Frontend.
 
+### 4.5 Tela de Artefatos
+
+#### UX-22 · Card de artefato sem repetição
+- **Proposta.** Tira do card o caminho "Artefatos › Plano" e o "0 etapas", e alinha o rodapé de todos os cards.
+- **Onde.** `PlanCard.vue`, `ArtifactCard.vue`, `artifactCardClasses.ts`.
+- **Lado.** Frontend.
+
+#### UX-23 · Resumo do artefato sem markdown cru
+- **Proposta.** O resumo do card mostra texto corrido, sem "#", "##", crases e asteriscos.
+- **Onde.** `PlanCard.vue`, `ArtifactCard.vue`; função pura nova, testável em `desktop/tests/*.mjs`.
+- **Lado.** Frontend.
+
+#### UX-24 · Estado do plano igual ao do card
+- **Proposta.** O selo do plano segue o card ligado: proposta, pronto, em andamento, em revisão ou concluído.
+- **Onde.** `PlanCard.vue`, `backlogLabels.ts` (`STATE_CHIP`, `COLUMN_CHIP`), `backlogTypes.ts` (`COLUMN_LABEL`).
+- **Lado.** Frontend.
+
+#### UX-25 · Artefatos agrupados por estado e recência
+- **Proposta.** A grade separa o que precisa de você, o que está em execução e o que acabou, com os mais recentes primeiro.
+- **Onde.** `ArtefatosPage.vue`, `useArtifacts.ts`.
+- **Lado.** Frontend.
+
+#### UX-26 · Busca e filtro de estado nos artefatos
+- **Proposta.** Campo de busca por título, ID e resumo e filtro por estado, para achar um artefato entre dezenas.
+- **Onde.** `ArtefatosPage.vue`.
+- **Lado.** Frontend.
+
+#### UX-27 · Abas de tipo no plural e sem contador duplicado
+- **Proposta.** As abas dizem "Documentos 2" e "Decisões 1", e o "48 artefatos" repetido sai da linha.
+- **Onde.** `ArtefatosPage.vue` (`filterOptions`, `countLabel`), `artifactsCopy.ts`.
+- **Lado.** Frontend.
+
+#### UX-28 · Visão em lista dos artefatos
+- **Proposta.** Alterna a grade de folhas por uma lista compacta, uma linha por artefato, para consulta.
+- **Onde.** `ArtefatosPage.vue`; componente novo de linha.
+- **Lado.** Frontend.
+
+#### UX-29 · Plano leva ao card ligado
+- **Proposta.** O plano mostra o card ligado e a coluna dele, com um link que abre o card no quadro.
+- **Onde.** `PlanCard.vue`, `PlanArtifact.vue`; navegação igual à de `PlanStageRow.vue` (`openCard`).
+- **Lado.** Frontend.
+
 ## 5. Ordem de execução
 
-1. **Onda 1, rolagem e ruído.** Pequenos e sem dependência, com o maior ganho por linha mudada: UX-01, UX-13, UX-18 e UX-12.
+1. **Onda 1, rolagem e ruído.** Pequenos e sem dependência, com o maior ganho por linha mudada: UX-01, UX-13 e UX-12.
 2. **Onda 2, densidade.** UX-04, UX-02 e UX-03, nesta ordem, porque os três dependem da prop `density` do `TaskCard`.
 3. **Onda 3, card aberto.** UX-09, UX-10, UX-11 e depois UX-08. O painel lateral é a mudança maior e fica mais simples depois que o conteúdo já foi enxugado.
 4. **Onda 4, conversa.** UX-14, UX-15, UX-16 e UX-17.
 5. **Onda 5, navegação.** UX-05, UX-06, UX-19, UX-20, UX-21 e UX-07 (este quando o 049 sair).
+6. **Onda 6, artefatos.** UX-22, UX-23 e UX-27 primeiro (pequenos e só de apresentação), depois UX-24, UX-29, UX-25, UX-26 e UX-28.
 
 ## 6. Verificação
 
@@ -244,7 +293,8 @@ Cada item tem um ID `UX-nn` para virar card. A coluna "Lado" diz se precisa de b
   3. Um turno com 7 aprovações automáticas mostra um bloco só, que expande e mostra as 7 (UX-13).
   4. Remover pelo menu `⋯` exige confirmação, e Escape cancela (UX-09).
   5. Buscar pelo ID filtra o quadro, e o filtro sobrevive ao recarregar (UX-05).
-- **No navegador**, com capturas antes e depois na mesma resolução (1920×1080) e nos temas claro e escuro: densidade dos cards, cabeçalho, barra de estado e largura de leitura.
+  6. Um plano de card concluído aparece com o selo "concluído" no grupo recolhido, e a busca pelo ID o encontra (UX-24, UX-25, UX-26).
+- **No navegador**, com capturas antes e depois na mesma resolução (1920×1080) e nos temas claro e escuro: densidade dos cards, cabeçalho e largura de leitura.
 - **Antes de cada commit:** `cd desktop && npm run typecheck`. Para o UX-12 também `cargo check --bins` e `cargo test --quiet -- --skip live_session`.
 
 ## 7. Fora do escopo
@@ -255,7 +305,7 @@ Cada item tem um ID `UX-nn` para virar card. A coluna "Lado" diz se precisa de b
 
 ## 8. Cards
 
-Cada item virou um documento de requisito em [backlog/](backlog/) e um card no backlog do projeto no app.
+Cada item virou um documento de requisito em [backlog/](backlog/) e um card no backlog do projeto no app. O UX-18 (barra de estado no lugar da Actionbar) saiu em 2026-11-24: partia de uma leitura errada, porque a "pílula" é a própria Actionbar, que fica onde está.
 
 | Item | Requisito |
 |---|---|
@@ -276,7 +326,14 @@ Cada item virou um documento de requisito em [backlog/](backlog/) e um card no b
 | UX-15 · Largura de leitura nas mensagens | [068](backlog/068.md) |
 | UX-16 · Threads com estado e agrupamento | [069](backlog/069.md) |
 | UX-17 · Agentes ocupados primeiro | [070](backlog/070.md) |
-| UX-18 · Barra de estado no lugar da pílula flutuante | [071](backlog/071.md) |
 | UX-19 · Cabeçalho de página compacto | [072](backlog/072.md) |
 | UX-20 · Idioma único na interface | [073](backlog/073.md) |
 | UX-21 · Atalhos de teclado | [074](backlog/074.md) |
+| UX-22 · Card de artefato sem repetição | [075](backlog/075.md) |
+| UX-23 · Resumo do artefato sem markdown cru | [076](backlog/076.md) |
+| UX-24 · Estado do plano igual ao do card | [077](backlog/077.md) |
+| UX-25 · Artefatos agrupados por estado e recência | [078](backlog/078.md) |
+| UX-26 · Busca e filtro de estado nos artefatos | [079](backlog/079.md) |
+| UX-27 · Abas de tipo no plural e sem contador duplicado | [080](backlog/080.md) |
+| UX-28 · Visão em lista dos artefatos | [081](backlog/081.md) |
+| UX-29 · Plano leva ao card ligado | [082](backlog/082.md) |

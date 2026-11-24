@@ -43,15 +43,24 @@ export interface BacklogLink {
   label: string
 }
 
+// Rótulo na tela; o valor interno (API, MCP, vokia-cli) continua o de BacklogColumn.
+export const COLUMN_LABEL: Record<BacklogColumn, string> = {
+  Backlog: 'A fazer',
+  Ready: 'Pronto',
+  'In progress': 'Em andamento',
+  'In review': 'Em revisão',
+  Done: 'Concluído',
+}
+
 export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'Done']
 export const DEFAULT_COLUMN: BacklogColumn = 'Backlog'
 // O dono "voce" é o padrão de card criado pelo usuário; o backend só troca o responsável quando ele é esse.
 export const USER_OWNER = 'voce'
 export const UNASSIGNED_TEXT = 'Sem responsável'
 export const isUnassigned = (item: BacklogItem): boolean => item.who === USER_OWNER || item.who === ''
-export const AUTO_COLUMNS_HINT = 'In progress e In review andam sozinhos'
+export const AUTO_COLUMNS_HINT = `${COLUMN_LABEL['In progress']} e ${COLUMN_LABEL['In review']} andam sozinhos`
 export const READY_COLUMN: BacklogColumn = 'Ready'
-export const READY_BLOCKED_HINT = 'Ready é para item com plano revisado; sem plano, inicie a task direto'
+export const READY_BLOCKED_HINT = `${COLUMN_LABEL.Ready} é para item com plano revisado; sem plano, inicie a task direto`
 export const DELEGATE_LABEL = 'Delegar a'
 export const UNLINKABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready']
 export const OTHER_OPTION = 'Outro…'
@@ -69,7 +78,7 @@ export const MODAL_STATE_CHIP: Record<BacklogState, string> = {
   vazio: 'Não triado',
   gerando: 'Escrevendo plano',
   proposto: 'Proposta',
-  vinculado: 'Pronto para o time',
+  vinculado: COLUMN_LABEL.Ready,
 }
 export const PLAN_HINT: Record<BacklogState, string> = {
   triagem: 'A líder lê o código e a memória, pergunta o que faltar e desdobra a feature.',

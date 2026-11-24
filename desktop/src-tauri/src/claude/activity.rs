@@ -113,6 +113,8 @@ pub struct ToolActivity {
     pub target: String,
     pub status: ToolStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub removed: Option<u32>,
@@ -264,6 +266,7 @@ impl ActivityParser {
             category,
             target: clean(&target_of(name, input)),
             status: ToolStatus::Running,
+            description: description_of(category, input),
             added,
             removed,
             change,
@@ -501,6 +504,15 @@ fn target_of<'a>(name: &str, input: &'a Value) -> Cow<'a, str> {
         _ => return Cow::Borrowed(""),
     };
     Cow::Borrowed(input[field].as_str().unwrap_or_default())
+}
+
+// No Bash o agente diz em uma frase o que o comando faz; é o que se lê antes do comando cru.
+fn description_of(category: ToolCategory, input: &Value) -> Option<String> {
+    if category != ToolCategory::Command {
+        return None;
+    }
+    let text = input["description"].as_str()?.trim();
+    (!text.is_empty()).then(|| clean(text))
 }
 
 fn cut(text: &str) -> String {

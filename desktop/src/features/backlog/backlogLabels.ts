@@ -1,5 +1,5 @@
 import type UiBadge from '../../ui/UiBadge.vue'
-import type { TaskCardAction, BacklogColumn, BacklogOrigin, BacklogState } from './backlogTypes'
+import { COLUMN_LABEL, type TaskCardAction, type BacklogColumn, type BacklogOrigin, type BacklogState } from './backlogTypes'
 import type { TaskStageState } from '../orchestration/orchestrationTypes'
 import type { BreakdownStatus } from './planBreakdown'
 
@@ -29,10 +29,10 @@ export const STATE_BADGE: Record<BacklogState, BadgeStatus> = {
 }
 export const MICRO_STATUS_BADGE: Record<BreakdownStatus, BadgeStatus> = {
   proposta: 'precisa de você',
-  ready: 'lote',
+  pronto: 'lote',
   'em andamento': 'lote',
   'em revisão': 'precisa de você',
-  feito: 'trabalhando',
+  concluído: 'trabalhando',
 }
 export const FLOW_STATE_LABEL: Record<TaskStageState, string> = {
   em_andamento: 'em andamento',
@@ -54,11 +54,15 @@ export const REOPEN_MOTIVE_PLACEHOLDER = 'Por que reabrir?'
 export const DONE_COLUMN_NAME = 'Done'
 export const CLOSED_BY_AUTOMATIC = 'automatico'
 
+function chipLabel(column: BacklogColumn): string {
+  return COLUMN_LABEL[column].toLocaleLowerCase('pt-BR')
+}
+
 export const COLUMN_CHIP: Partial<Record<BacklogColumn, { label: string; status: BadgeStatus }>> = {
-  Ready: { label: 'ready', status: 'lote' },
-  'In progress': { label: 'em andamento', status: 'lote' },
-  'In review': { label: 'em revisão', status: 'precisa de você' },
-  Done: { label: 'feito', status: 'trabalhando' },
+  Ready: { label: chipLabel('Ready'), status: 'lote' },
+  'In progress': { label: chipLabel('In progress'), status: 'lote' },
+  'In review': { label: chipLabel('In review'), status: 'precisa de você' },
+  Done: { label: chipLabel('Done'), status: 'trabalhando' },
 }
 
 export const ORIGIN_LABEL: Record<BacklogOrigin, string> = {

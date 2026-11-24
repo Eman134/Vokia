@@ -23,6 +23,7 @@ import {
   type PendingAgentEntry,
 } from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
+import AutoPermissionGroup from './AutoPermissionGroup.vue'
 import PermissionRow from './PermissionRow.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
@@ -348,6 +349,7 @@ watch(
           <div v-if="item.type === 'group'" class="flex flex-col gap-2">
             <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
           </div>
+          <AutoPermissionGroup v-else-if="item.type === 'permissions'" :agent="item.agent" :results="item.results" />
           <MessageEntry v-else :entry="item.entry" />
         </li>
         <li v-if="feed.permissions[0]" :key="feed.permissions[0].id">

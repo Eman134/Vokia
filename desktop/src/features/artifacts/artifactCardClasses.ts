@@ -13,3 +13,5 @@ export function sheetTilt(id: string): { transform: string } {
 }
 export const WRAP_CLASSES = 'wrap-break-word'
 export const SUMMARY_LINES_CLASSES = 'line-clamp-3'
+// Preso ao fim do card: na mesma linha da grade, barras e datas ficam na mesma altura.
+export const CARD_FOOTER_CLASSES = 'mt-auto flex flex-col gap-1.5 text-meta text-muted'

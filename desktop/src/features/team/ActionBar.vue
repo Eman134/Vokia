@@ -21,7 +21,7 @@ import Balloon from '../balloon/Balloon.vue'
 import { useDelegationNotices } from '../balloon/useDelegationNotices'
 import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
-import { BAR_COLLAPSE_TOTAL_MS, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
+import { BAR_COLLAPSE_TOTAL_MS, BAR_FADE_CLASSES, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
 import ComposerField from './bar/ComposerField.vue'
 import ExecutionModeSelector from './bar/ExecutionModeSelector.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
@@ -224,6 +224,7 @@ function onPointerLeave(): void {
 </script>
 
 <template>
+  <div v-if="connection.online" :class="BAR_FADE_CLASSES" aria-hidden="true" data-testid="action-bar-fade" />
   <div v-if="connection.online" :class="[BAR_WRAP_CLASSES, NARROW_WRAP_CLASS]">
     <Balloon />
     <PanelShell />

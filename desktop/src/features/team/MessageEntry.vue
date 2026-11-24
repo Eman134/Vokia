@@ -106,6 +106,9 @@ const USER_BUBBLE_MAX_WIDTH_CLASSES = 'max-w-[85%] md:max-w-xl lg:max-w-2xl'
 const USER_TEXT_CLASSES = `w-fit ${USER_BUBBLE_MAX_WIDTH_CLASSES} wrap-break-word px-3 py-1.5`
 const ERROR_SCRIBBLE_CLASSES = 'pointer-events-none absolute inset-x-0 -bottom-1.5 h-2 w-full text-danger/70'
 const AUTHOR_CLASSES = 'text-control font-semibold text-ink'
+// Só os blocos de texto ficam na largura de leitura; código, diff e tabela usam a coluna inteira.
+const READING_WIDTH_CLASSES =
+  '[&>blockquote]:max-w-[80ch] [&>h3]:max-w-[80ch] [&>h4]:max-w-[80ch] [&>ol]:max-w-[80ch] [&>p]:max-w-[80ch] [&>ul]:max-w-[80ch]'
 
 function taskResultLine(entry: VokiaTaskResult): ActivityRowModel {
   return taskResultRow(`task-result-${entry.time}`, entry.objective, entry.concluded, taskResultDetail(entry))
@@ -324,7 +327,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         <ul v-if="confirmations.rows.length > 0" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="vokia-confirmations">
           <ActivityRow v-for="row in confirmations.rows" :key="row.id" :row="row" />
         </ul>
-        <MarkdownText v-if="agentContent.text !== ''" :text="agentContent.text" />
+        <MarkdownText v-if="agentContent.text !== ''" :class="READING_WIDTH_CLASSES" :text="agentContent.text" />
         <AttachmentPreviewList
           v-if="agentContent.attachments.length > 0"
           :attachments="agentContent.attachments"

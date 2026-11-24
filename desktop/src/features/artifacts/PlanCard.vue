@@ -3,12 +3,13 @@ import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import { DEFAULT_JITTER, sketchRect } from '../../ui/sketch/sketchPath'
-import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
-import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
+import type { BacklogColumn, BacklogItem, BacklogState } from '../backlog/backlogTypes'
 import type { ParsedProposal } from '../backlog/planProposal'
-import { CARD_CLASSES, SUMMARY_LINES_CLASSES, WRAP_CLASSES, sheetTilt } from './artifactCardClasses'
-import { planProgress } from './planProgress'
+import { CARD_CLASSES, CARD_FOOTER_CLASSES, SUMMARY_LINES_CLASSES, WRAP_CLASSES, sheetTilt } from './artifactCardClasses'
+import { plainSummary } from './artifactsCopy'
+import { planChip, planProgress } from './planProgress'
 
+const DONE_COLUMN: BacklogColumn = 'Done'
 const TAB_WIDTH = 44
 const TAB_HEIGHT = 18
 const TAB_SEED = 9
@@ -27,6 +28,9 @@ defineEmits<{ open: [] }>()
 const progress = computed(() => planProgress(props.stages))
 const stageCount = computed(() => (props.stages.length > 0 ? props.stages.length : props.proposal.lots.length))
 const stageLabel = computed(() => `${stageCount.value} ${stageCount.value === 1 ? 'etapa' : 'etapas'}`)
+const chip = computed(() => planChip(props.state, props.item.column))
+const summary = computed(() => plainSummary(props.proposal.summary))
+const finished = computed(() => props.item.column === DONE_COLUMN)
 </script>
 
 <template>
@@ -38,19 +42,21 @@ const stageLabel = computed(() => `${stageCount.value} ${stageCount.value === 1 
       </svg>
       plano
     </span>
-    <span class="text-caption text-muted">Artefatos › Plano · <span class="font-mono">{{ item.id }}</span></span>
-    <span class="flex min-w-0 flex-wrap items-center gap-2.5">
-      <span :class="['min-w-0 flex-1 text-lead text-ink', WRAP_CLASSES]">{{ item.title }}</span>
-      <UiBadge :status="STATE_BADGE[state]" :label="STATE_CHIP[state]" />
+    <span class="flex min-w-0 flex-wrap items-center gap-2.5 pt-1">
+      <span :class="['min-w-0 flex-1 text-lead', finished ? 'text-muted' : 'text-ink', WRAP_CLASSES]">{{ item.title }}</span>
+      <UiBadge :status="chip.status" :label="chip.label" />
     </span>
-    <span v-if="proposal.summary" :class="['text-small text-muted', SUMMARY_LINES_CLASSES, WRAP_CLASSES]">{{ proposal.summary }}</span>
-    <span class="text-meta text-muted">{{ stageLabel }}</span>
-    <span v-if="progress" class="flex flex-col gap-1.5">
-      <span class="flex flex-wrap justify-between gap-x-3 text-meta text-muted">
+    <span v-if="summary" :class="['text-small text-muted', SUMMARY_LINES_CLASSES, WRAP_CLASSES]">{{ summary }}</span>
+    <span :class="CARD_FOOTER_CLASSES">
+      <span v-if="progress" class="flex flex-wrap justify-between gap-x-3">
         <span>{{ progress.done }} de {{ progress.total }} etapas feitas</span>
         <span>{{ progress.percent }}%</span>
       </span>
-      <UiProgress :value="progress.percent" pencil />
+      <UiProgress v-if="progress" :value="progress.percent" pencil />
+      <span class="flex flex-wrap justify-between gap-x-3">
+        <span class="font-mono text-faint">{{ item.id }}</span>
+        <span v-if="!progress && stageCount > 0">{{ stageLabel }}</span>
+      </span>
     </span>
   </button>
 </template>

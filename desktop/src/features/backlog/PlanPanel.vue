@@ -10,7 +10,7 @@ import { useRoster } from '../team/useRoster'
 import { DEFAULT_RECIPIENT } from '../team/agents'
 import { useConnection } from '../team/useConnection'
 import { useDecisions } from '../decisions/useDecisions'
-import { DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type TaskCardAction, type BacklogItem } from './backlogTypes'
+import { COLUMN_LABEL, DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type TaskCardAction, type BacklogItem } from './backlogTypes'
 import BacklogPlanActions from './BacklogPlanActions.vue'
 import { useBacklog } from './useBacklog'
 import { parseProposal } from './planProposal'
@@ -38,7 +38,7 @@ const props = defineProps<{ item: BacklogItem; simplified?: boolean }>()
 const SIMPLIFIED_FRAME = 'rounded-md border border-line p-3'
 const DISCARD_MESSAGE = 'Descarta a proposta do plano. Dá para pedir outra depois.'
 const PENDING_QUESTION_TEXT = 'Há uma pergunta esperando você no painel de Decisões.'
-const UNREVIEWED_PLAN_HINT = 'Plano ainda não revisado; ele só vai para Ready depois da revisão.'
+const UNREVIEWED_PLAN_HINT = `Plano ainda não revisado; ele só vai para ${COLUMN_LABEL.Ready} depois da revisão.`
 const TRIAGE_ACTION = { label: 'Triar', id: 'triar' } as const
 const AGENT_SLOT_LABEL = 'Escolher quem planeja'
 const DEPTH_SLOT_LABEL = 'Escolher a profundidade'

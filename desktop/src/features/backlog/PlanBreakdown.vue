@@ -27,7 +27,7 @@ const ROW_BUTTON_CLASSES =
 const BADGES_WRAP_CLASSES = 'ml-auto flex flex-wrap items-center gap-2 max-md:w-full max-md:pl-5'
 const FALLBACK_PANEL_CLASSES = 'flex flex-col gap-2 rounded-md bg-surface-2 p-3 text-caption'
 
-const doneCount = computed(() => props.breakdown.steps.filter((step) => step.status === 'feito').length)
+const doneCount = computed(() => props.breakdown.steps.filter((step) => step.status === 'concluído').length)
 const hasAnyValidScript = computed(() =>
   props.breakdown.steps.some((step) => step.script !== undefined && isScriptValid(step.script)),
 )

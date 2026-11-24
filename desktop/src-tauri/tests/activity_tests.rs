@@ -811,3 +811,24 @@ fn system_thinking_tokens_atualiza_thinking_ms_com_e_sem_duracao_explicita() {
     assert!(parser.push_line(&line_clock, t0 + Duration::from_millis(100)));
     assert_eq!(parser.finish().thinking_ms, Some(250));
 }
+
+#[test]
+fn comando_guarda_a_descricao_que_o_agente_deu() {
+    let tool = run_tool("Bash", json!({ "command": "sed -n 205,216p plano.md", "description": "Mostra os limites da seção" }));
+    assert_eq!(tool.description.as_deref(), Some("Mostra os limites da seção"));
+    assert_eq!(tool.target, "sed -n 205,216p plano.md");
+}
+
+#[test]
+fn comando_sem_descricao_nao_inventa_uma() {
+    assert_eq!(run_tool("Bash", json!({ "command": "ls" })).description, None);
+    assert_eq!(run_tool("Bash", json!({ "command": "ls", "description": "   " })).description, None);
+}
+
+#[test]
+fn descricao_passa_pelo_mesmo_filtro_do_alvo() {
+    let secret = run_tool("Bash", json!({ "command": "ls", "description": "usa GITHUB_TOKEN=ghp_e2eFakeToken1234567890abcdefABCDEF" }));
+    assert!(!secret.description.unwrap().contains("ghp_e2eFakeToken"));
+    let long = run_tool("Bash", json!({ "command": "ls", "description": "x".repeat(TEXT_MAX_CHARS + 100) }));
+    assert_eq!(long.description.unwrap().chars().count(), TEXT_MAX_CHARS);
+}

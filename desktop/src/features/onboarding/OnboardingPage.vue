@@ -35,7 +35,7 @@ const SAVE_STEP_ID: StepId = 'foto'
 const LAST_INDEX = STEPS.length - 1
 
 const ROOT_CLASSES =
-  'relative flex min-w-0 flex-1 flex-col items-center overflow-y-auto bg-bg px-6 pt-10 pb-[150px] text-ink'
+  'relative flex min-w-0 flex-1 flex-col items-center overflow-y-auto bg-bg px-6 pt-10 pb-bar-clearance text-ink'
 const MARK_CLASSES = 'grid size-8 place-items-center text-ink'
 const WORDMARK_CLASSES = 'text-card-title font-bold'
 const MAIN_CLASSES = 'mt-14 flex w-[min(600px,100%)] flex-col items-center gap-7'

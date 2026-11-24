@@ -1,5 +1,5 @@
-import { COLUMN_CHIP } from '../backlog/backlogLabels'
-import { DEFAULT_COLUMN, READY_COLUMN, type BacklogColumn, type BacklogItem } from '../backlog/backlogTypes'
+import { COLUMN_CHIP, STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
+import { DEFAULT_COLUMN, READY_COLUMN, type BacklogColumn, type BacklogItem, type BacklogState } from '../backlog/backlogTypes'
 import { planArtifactId } from './artifactApi'
 
 type StageChip = NonNullable<(typeof COLUMN_CHIP)[BacklogColumn]>
@@ -31,6 +31,14 @@ export function isStageDone(stage: BacklogItem): boolean {
 
 export function stageChip(stage: BacklogItem): StageChip {
   return (stage.column && COLUMN_CHIP[stage.column]) || PENDING_CHIP
+}
+
+const LINKED_STATE: BacklogState = 'vinculado'
+
+// Depois de aceito, o estado que importa é o do card: "pronto" num card já concluído engana.
+export function planChip(state: BacklogState, column: BacklogColumn | undefined): StageChip {
+  const columnChip = state === LINKED_STATE && column ? COLUMN_CHIP[column] : undefined
+  return columnChip ?? { label: STATE_CHIP[state], status: STATE_BADGE[state] }
 }
 
 export function isStageStarted(stage: BacklogItem): boolean {

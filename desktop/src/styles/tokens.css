@@ -69,6 +69,8 @@
   --shadow-seg: 0 1px 2px rgb(0 0 0 / 8%);
   --shadow-paper: 3px 3px 0 var(--color-graphite-soft);
   --shadow-paper-stack: 3px 3px 0 var(--color-graphite-soft), 6px 6px 0 var(--color-line);
+  /* No escuro a sombra preta some no fundo: a opacidade sobe para a barra continuar destacada. */
+  --shadow-bar: 0 8px 24px -10px light-dark(rgb(0 0 0 / 22%), rgb(0 0 0 / 60%)), 0 1px 3px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 40%));
 
   --stroke-hand: 1.4px;
   --stroke-hand-bold: 2px;
@@ -80,6 +82,8 @@
   --radius-full: 9999px;
 
   --container-bar: 760px;
+  /* Altura reservada no fim de toda área rolável para o último conteúdo não ficar sob a barra de ação. */
+  --spacing-bar-clearance: 150px;
 
   --text-title: 44px;
   --text-title--font-weight: 600;

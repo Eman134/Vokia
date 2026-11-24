@@ -20,6 +20,7 @@ import {
 } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { useTriage } from './useTriage'
+import { linkedPlanLine, PLAN_LINE_SEPARATOR } from './planLine'
 import {
   buildAdjustPrompt,
   buildImportPrompt,
@@ -49,7 +50,6 @@ const PLAN_STARTED_TITLE = 'Plano iniciado'
 export const NO_PLAN_TEXT = 'Este item ainda não tem plano. O plano é opcional: você pode iniciar a task direto.'
 
 export const REVIEWED_PLAN_META = 'proposta aceita'
-const PLAN_LINE_SEPARATOR = ' · '
 const PLAN_LINE_PROPOSED = 'proposta'
 export const PLAN_LINE_GENERATING = 'escrevendo o plano…'
 const NO_REPLY_ERROR = 'O agente terminou sem mandar um plano.'
@@ -114,7 +114,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     const state = stateFor(item)
     const saved = states.value[item.id]
     if (state === 'vazio') return undefined
-    if (state === 'vinculado' && saved?.plan) return [saved.plan.name, saved.plan.meta].join(PLAN_LINE_SEPARATOR)
+    if (state === 'vinculado' && saved?.plan) return linkedPlanLine(item.title, saved.plan)
     if (state === 'proposto' && saved?.agent) return [agentName(saved.agent), PLAN_LINE_PROPOSED].join(PLAN_LINE_SEPARATOR)
     if (state === 'gerando' && saved?.agent) {
       const open = item.questions?.filter((question) => question.id.startsWith(DECISION_QUESTION_PREFIX) && question.selected === undefined).length ?? 0

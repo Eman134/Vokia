@@ -201,7 +201,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       {
         kind: 'row',
         label: 'Proposta da feature',
-        hint: 'as micro-tarefas só vão para Ready depois do seu ok',
+        hint: 'as micro-tarefas só vão para Pronto depois do seu ok',
         control: { kind: 'switch', on: true },
       },
       {

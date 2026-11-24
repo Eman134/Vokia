@@ -28,6 +28,7 @@ import {
   ARTIFACTS_OPENING_TEXT,
   ARTIFACTS_PLANS_LABEL,
   IMPORT_LABEL,
+  kindTabLabel,
 } from './artifactsCopy'
 import PlanArtifact from './PlanArtifact.vue'
 import PlanCard from './PlanCard.vue'
@@ -39,7 +40,6 @@ const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4.5 overflow-y-auto ${PAG
 const AREA_CLASSES = 'relative flex flex-1 flex-col'
 const GRID_CLASSES = 'relative grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3.5 p-2'
 const EMPTY_AREA_CLASSES = 'relative flex flex-1 items-center justify-center'
-const COUNT_CLASSES = 'ml-auto text-caption text-muted'
 const ALL_FILTER = 'todos'
 const PLANS_FILTER = 'planos'
 const PLAN_SOURCE = 'plano'
@@ -84,7 +84,7 @@ const filterOptions = computed<{ value: string; label: string }[]>(() => {
   ]
   for (const info of artifacts.kinds) {
     const count = documents.value.filter((document) => document.kind === info.kind).length
-    if (count > 0) options.push({ value: info.kind, label: `${info.label} ${count}` })
+    if (count > 0) options.push({ value: info.kind, label: `${kindTabLabel(info.kind, info.label)} ${count}` })
   }
   return options
 })
@@ -99,7 +99,6 @@ const visibleDocuments = computed(() => {
   if (filter.value === PLANS_FILTER) return []
   return documents.value.filter((document) => document.kind === filter.value)
 })
-const countLabel = computed(() => `${total.value} ${total.value === 1 ? 'artefato' : 'artefatos'}`)
 
 const pendingPlanId = navigation.takePendingPlanId()
 const opened = ref<Opened | null>(pendingPlanId === null ? null : { source: PLAN_SOURCE, id: pendingPlanId })
@@ -220,7 +219,6 @@ function saved(document: ArtifactDocument): void {
       <UiNotice v-if="artifacts.error" :text="artifacts.error" @close="artifacts.clearFeedback()" />
       <div class="flex flex-wrap items-center gap-3">
         <UiSegmented v-model="filter" :options="filterOptions" :label="ARTIFACTS_FILTER_LABEL" wrap />
-        <span :class="COUNT_CLASSES">{{ countLabel }}</span>
       </div>
 
       <div :class="AREA_CLASSES">

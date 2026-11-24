@@ -65,6 +65,7 @@ import { useNavigation } from '../../shell/useNavigation'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
 import MarkdownText from '../team/MarkdownText.vue'
+import { activityTime } from './activityTime'
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
 const FRAME_CLASSES = 'w-215 max-w-full rounded-md border border-line bg-surface shadow-paper'
@@ -409,7 +410,9 @@ watch(
           <section v-if="item.activity?.length">
             <h3 class="mb-1 text-label font-semibold text-ink">Atividade</h3>
             <ul class="flex flex-col gap-1 text-caption text-muted">
-              <li v-for="entry in item.activity" :key="entry.id">{{ entry.at }} · {{ entry.text }}</li>
+              <li v-for="entry in item.activity" :key="entry.id">
+                <time :title="entry.at">{{ activityTime(entry.at) }}</time> · {{ entry.text }}
+              </li>
             </ul>
           </section>
         </div>

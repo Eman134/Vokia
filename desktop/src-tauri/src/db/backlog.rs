@@ -1933,6 +1933,21 @@ fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem
     .ok_or_else(|| DbError::BacklogItemNotFound(id.to_string()))
 }
 
+const TEAM_WORD: &str = "time";
+
+// O time padrão se chama "Time": sem este cuidado o texto sai "para o time Time".
+fn created_for_team(actor: &str, team_name: &str, leader: &str) -> String {
+    let name = team_name.trim();
+    let mut words = name.split_whitespace();
+    let starts_with_team = words.next().is_some_and(|word| word.eq_ignore_ascii_case(TEAM_WORD));
+    let team = match (starts_with_team, words.next()) {
+        (true, None) => TEAM_WORD.to_string(),
+        (true, Some(_)) => name.to_string(),
+        (false, _) => format!("{TEAM_WORD} {name}"),
+    };
+    format!("{actor} criou o card para o {team} (líder {leader}).")
+}
+
 fn create_agent_card(
     conn: &Connection,
     project_id: i64,
@@ -1947,10 +1962,7 @@ fn create_agent_card(
     let (owner, created) = match responsible {
         Some(responsible) => (
             responsible.leader.as_str(),
-            format!(
-                "{} criou o card para o time {} (líder {}).",
-                actor.name, responsible.team_name, responsible.leader_name
-            ),
+            created_for_team(&actor.name, &responsible.team_name, &responsible.leader_name),
         ),
         None => (
             actor.id.as_str(),
@@ -2371,3 +2383,7 @@ mod plan_note_tests;
 #[cfg(test)]
 #[path = "../../tests/git_ref_links_tests.rs"]
 mod git_ref_links_tests;
+
+#[cfg(test)]
+#[path = "../../tests/card_activity_text_tests.rs"]
+mod card_activity_text_tests;

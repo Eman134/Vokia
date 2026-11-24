@@ -10,7 +10,7 @@ import UiSelect from '../../ui/UiSelect.vue'
 import { DEFAULT_JITTER, sketchCheck } from '../../ui/sketch/sketchPath'
 import type { AppPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
-import { DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem } from '../backlog/backlogTypes'
+import { COLUMN_LABEL, DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem } from '../backlog/backlogTypes'
 
 const DONE_COLUMN: BacklogColumn = 'Done'
 const CHECK_BOX = 16
@@ -35,7 +35,7 @@ const column = computed<BacklogColumn>(() => props.stage.column ?? DEFAULT_COLUM
 const columnOptions = computed(() =>
   (MOVABLE_COLUMNS.includes(column.value) ? MOVABLE_COLUMNS : [column.value, ...MOVABLE_COLUMNS]).map((value) => ({
     value,
-    label: value,
+    label: COLUMN_LABEL[value],
   })),
 )
 const criteria = computed(() => props.stage.criteria ?? [])

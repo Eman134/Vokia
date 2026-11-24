@@ -159,6 +159,8 @@ export interface ActivityRowModel {
   meta?: string
   items?: string[]
   preview?: ToolChange
+  // Comando cru sob a frase do agente, quando ele explicou o que o comando faz.
+  command?: string
   failed: boolean
   // Ocorrências consecutivas idênticas fundidas nesta linha; ausente quando é uma só.
   count?: number
@@ -186,7 +188,7 @@ function joinClauses(clauses: readonly string[]): string {
 export function activitySentence(tools: readonly ToolActivity[]): string {
   const [only] = tools
   if (tools.length === 1 && only.category === 'command' && only.status !== 'running' && only.target !== '') {
-    return only.target
+    return only.description ?? only.target
   }
   return capitalize(joinClauses(activityClauses(tools)))
 }
@@ -308,6 +310,9 @@ function commandRow(tool: ToolActivity, detail: CommandDetail, nameOf: AgentName
 }
 
 function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
+  if (tool.category === 'command' && tool.description !== undefined) {
+    return { id: tool.callId, icon, verb: tool.description, command: tool.target, failed }
+  }
   const target = tool.target === '' && NAMED_CATEGORIES.includes(tool.category) ? shownName(tool) : tool.target
   const showChanges = tool.status === 'ok' && tool.added !== undefined && tool.removed !== undefined
   const meta = showChanges ? `+${tool.added} ${MINUS}${tool.removed}` : undefined
@@ -491,7 +496,7 @@ function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf:
 // Só linhas simples se fundem: as que têm lista ou prévia carregam conteúdo próprio que o contador esconderia.
 function repeatKey(row: ActivityRowModel): string | undefined {
   if (row.items !== undefined || row.preview !== undefined) return undefined
-  return JSON.stringify([row.icon, row.verb, row.chip?.label, row.chip?.title, row.chip?.icon, row.text, row.meta, row.failed])
+  return JSON.stringify([row.icon, row.verb, row.chip?.label, row.chip?.title, row.chip?.icon, row.text, row.meta, row.command, row.failed])
 }
 
 // Funde linhas consecutivas idênticas (mesmo verbo, alvo e status) em uma, na posição da primeira, com o total em `count`.

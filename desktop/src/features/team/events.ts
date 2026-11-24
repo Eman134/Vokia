@@ -45,6 +45,7 @@ export interface ToolActivity {
   category: ToolCategory
   target: string
   status: ToolStatus
+  description?: string
   added?: number
   removed?: number
   change?: ToolChange

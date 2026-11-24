@@ -16,6 +16,11 @@ const OUTCOME_LINES: Readonly<Record<PermissionResultOutcome, OutcomeLine>> = {
 }
 
 const PENDING_ROW_ID = 'permission-pending'
+// Resultados que ninguém precisou decidir: entram recolhidos na conversa.
+const AUTOMATIC_OUTCOMES: ReadonlySet<PermissionResultOutcome> = new Set(['auto', 'bypass', 'project-rule'])
+const COMMAND_WORDS = 2
+const SENTENCE_COMMANDS = 3
+const MORE_COMMANDS = '…'
 
 function commandChip(detail: string): ActivityRowModel['chip'] {
   return { label: detail, title: detail, icon: 'generic' }
@@ -41,4 +46,21 @@ export function permissionRequestRow(permission: VokiaPermission, nameOf: AgentN
     meta: permission.tool,
     failed: false,
   }
+}
+
+export function isAutomaticPermission(result: FeedPermissionResult): boolean {
+  return AUTOMATIC_OUTCOMES.has(result.outcome)
+}
+
+// "git commit -m ..." vira "git commit": o programa e o subcomando bastam para reconhecer o passo.
+function commandHead(detail: string): string {
+  return detail.trim().split(/\s+/).slice(0, COMMAND_WORDS).join(' ')
+}
+
+export function autoPermissionSentence(agentName: string, results: readonly FeedPermissionResult[]): string {
+  const heads = [...new Set(results.map((result) => commandHead(result.detail)))]
+  const shown = heads.slice(0, SENTENCE_COMMANDS)
+  if (heads.length > SENTENCE_COMMANDS) shown.push(MORE_COMMANDS)
+  const noun = results.length === 1 ? 'comando' : 'comandos'
+  return `${agentName} rodou ${results.length} ${noun} (${shown.join(', ')})`
 }

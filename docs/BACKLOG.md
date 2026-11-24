@@ -153,10 +153,17 @@ Itens do [plano de UI/UX](plano-ui-ux.md) de 2026-11-24 (UX-01 a UX-21, nesta or
 | 068 | Largura de leitura nas mensagens | Limita a largura do texto das mensagens para que linhas longas não cansem a leitura em monitores largos. | [068](backlog/068.md) |
 | 069 | Threads com estado e agrupamento | Mostra na lista de threads qual está viva, qual precisa do usuário e a que card pertence, separando as concluídas. | [069](backlog/069.md) |
 | 070 | Agentes ocupados primeiro | Destaca na lista de agentes quem está trabalhando e compacta os livres. | [070](backlog/070.md) |
-| 071 | Barra de estado no lugar da pílula flutuante | Tira o indicador "<agente> trabalhando" do meio da tela, onde cobre cards e mensagens, e o leva para uma barra de estado fixa. | [071](backlog/071.md) |
 | 072 | Cabeçalho de página compacto | Reduz o cabeçalho das páginas, que ocupa cerca de 100px fixos numa ferramenta aberta o dia todo. | [072](backlog/072.md) |
 | 073 | Idioma único na interface | Usa um idioma só nos rótulos de estado do card, para o usuário não traduzir de cabeça entre "Ready" e "Pronto para o time". | [073](backlog/073.md) |
 | 074 | Atalhos de teclado | Dá atalhos de teclado para as ações mais frequentes do quadro. | [074](backlog/074.md) |
+| 075 | Card de artefato sem repetição | Tira do card o caminho "Artefatos › Plano" e o "0 etapas", e alinha o rodapé de todos os cards. | [075](backlog/075.md) |
+| 076 | Resumo do artefato sem markdown cru | O resumo do card mostra texto corrido, sem "#", "##", crases e asteriscos. | [076](backlog/076.md) |
+| 077 | Estado do plano igual ao do card | O selo do plano segue o card ligado: proposta, pronto, em andamento, em revisão ou concluído. | [077](backlog/077.md) |
+| 078 | Artefatos agrupados por estado e recência | A grade separa o que precisa de você, o que está em execução e o que acabou, com os mais recentes primeiro. | [078](backlog/078.md) |
+| 079 | Busca e filtro de estado nos artefatos | Campo de busca por título, ID e resumo e filtro por estado, para achar um artefato entre dezenas. | [079](backlog/079.md) |
+| 080 | Abas de tipo no plural e sem contador duplicado | As abas dizem "Documentos 2" e "Decisões 1", e o "48 artefatos" repetido sai da linha. | [080](backlog/080.md) |
+| 081 | Visão em lista dos artefatos | Alterna a grade de folhas por uma lista compacta, uma linha por artefato, para consulta. | [081](backlog/081.md) |
+| 082 | Plano leva ao card ligado | O plano mostra o card ligado e a coluna dele, com um link que abre o card no quadro. | [082](backlog/082.md) |
 
 ## Pendências do diagrama
 

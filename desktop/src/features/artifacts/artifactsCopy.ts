@@ -120,3 +120,37 @@ export function updatedAgo(updatedAt: number, now: number = Date.now()): string 
   if (hours < HOURS_PER_DAY) return `atualizado há ${hours} h`
   return `atualizado há ${Math.floor(hours / HOURS_PER_DAY)} d`
 }
+
+// O backend devolve o rótulo no singular; a aba conta vários. Tipo novo sem plural aqui usa o rótulo como veio.
+const KIND_PLURAL: Record<string, string> = {
+  documento: 'Documentos',
+  especificacao: 'Especificações',
+  checklist: 'Checklists',
+  arquitetura: 'Arquiteturas',
+  decisao: 'Decisões',
+}
+
+export function kindTabLabel(kind: string, label: string): string {
+  return Object.hasOwn(KIND_PLURAL, kind) ? KIND_PLURAL[kind] : label
+}
+
+const HEADING_LINE = /^#{1,6}\s/
+const INLINE_HEADING = /(^|\s)#{1,6}\s+/g
+const LIST_MARKER = /^(?:[-*+]|\d+\.)\s+/
+const EMPHASIS = /\*\*|__/g
+const CODE_TICKS = /`+/g
+const SPACES = /\s+/g
+
+// Só "**", "__" e crases saem: um "_" sozinho costuma ser parte de identificador (run_turns).
+export function plainSummary(text: string): string {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
+  const body = lines.length > 1 ? lines.filter((line) => !HEADING_LINE.test(line)) : lines
+  return (body.length > 0 ? body : lines)
+    .map((line) => line.replace(LIST_MARKER, ''))
+    .join(' ')
+    .replace(INLINE_HEADING, '$1')
+    .replace(EMPHASIS, '')
+    .replace(CODE_TICKS, '')
+    .replace(SPACES, ' ')
+    .trim()
+}
