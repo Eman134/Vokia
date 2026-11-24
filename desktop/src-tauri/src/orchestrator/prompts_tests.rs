@@ -1,5 +1,6 @@
 use super::*;
 use crate::agents::{AgentProfile, AgentRegistry, Team};
+use crate::mcp::ToolScope;
 
 fn with_test_context(check: impl FnOnce(&Team, &AgentProfile)) {
     let dir = std::env::temp_dir().join(format!(
@@ -20,10 +21,11 @@ fn with_test_context(check: impl FnOnce(&Team, &AgentProfile)) {
 }
 
 #[test]
-fn tools_rule_contem_orientacao_mcp_para_app_commands() {
-    assert!(TOOLS_RULE.contains("app_commands_list"));
-    assert!(TOOLS_RULE.contains("app_command_call"));
-    assert!(TOOLS_RULE.contains("opcionalmente filtrando domain"));
+fn regra_de_administracao_contem_orientacao_mcp_para_app_commands() {
+    assert!(ADMIN_TOOLS_RULE.contains("app_commands_list"));
+    assert!(ADMIN_TOOLS_RULE.contains("app_command_call"));
+    assert!(ADMIN_TOOLS_RULE.contains("opcionalmente filtrando domain"));
+    assert!(!TOOLS_RULE.contains("app_command"));
 }
 
 #[test]
@@ -143,7 +145,7 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
         variables: Vec::new(),
         stop: None,
     };
-    let prompt = StepPrompts::build(&cache, &plain, &agent, "Oi", ToolPromptMode::VokiaCli);
+    let prompt = StepPrompts::build(&cache, &plain, &agent, "Oi", ToolPromptMode::VokiaCli, None);
     assert!(!prompt.opening.contains("variaveis:"));
     assert!(!prompt.opening.contains("set_variable"));
     assert!(prompt.opening.contains("pedido: Oi"));
@@ -170,6 +172,7 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
         &agent,
         "Comece a contagem",
         ToolPromptMode::Mcp,
+        None,
     );
     assert!(prompt_with_vars.opening.contains("variaveis:"));
     assert!(prompt_with_vars.opening.contains("set_variable"));
@@ -182,6 +185,7 @@ fn tok3_catalogo_cli_e_step_prompt_sem_variaveis_ficam_compactos() {
         &agent,
         "Axiom pediu: explique o projeto",
         ToolPromptMode::None,
+        None,
     );
     assert!(delegated.opening.contains("objetivo: Oi"));
     assert!(delegated.opening.contains("instrucao: Axiom pediu: explique o projeto"));
@@ -223,7 +227,7 @@ fn step_prompt_com_variaveis_nao_usa_rotulos_antigos_e_traz_objetivo_uma_vez() {
         )],
         stop: None,
     };
-    let opening = StepPrompts::build(&cache, &definition, &agent, "Comece", ToolPromptMode::None).opening;
+    let opening = StepPrompts::build(&cache, &definition, &agent, "Comece", ToolPromptMode::None, None).opening;
     for legacy in ["Objetivo:", "Variáveis visíveis:", "Instrução:", "Pedido:", "somente leitura"] {
         assert!(!opening.contains(legacy), "{legacy} não deveria aparecer: {opening}");
     }
@@ -234,17 +238,17 @@ fn step_prompt_com_variaveis_nao_usa_rotulos_antigos_e_traz_objetivo_uma_vez() {
 fn role_prompt_inclui_regras_de_ferramenta_conforme_tool_mode() {
     with_test_context(|_, profile| {
         // Modo MCP
-        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp);
+        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
         assert!(role_mcp.contains("app_commands_list"));
         assert!(role_mcp.contains("app_command_call"));
 
         // Modo VokiaCli
-        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli);
+        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator);
         assert!(role_cli.contains("vokia-cli commands"));
         assert!(role_cli.contains("vokia-cli cmd"));
 
         // Modo None
-        let role_none = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::None);
+        let role_none = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::None, ToolScope::Coordinator);
         assert!(!role_none.contains("app_commands_list"));
         assert!(!role_none.contains("vokia-cli commands"));
     });
@@ -294,16 +298,56 @@ fn maestro_e_role_orientam_triagem_com_decisao_e_plano_antes_da_implementacao() 
         assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("sem delegar a triagem automaticamente"));
         assert!(MAESTRO_TEAM_RULE_MANUAL_TRIAGE.contains("a menos que o usuário peça explicitamente para triar"));
 
-        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp);
+        let role_mcp = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
         assert!(role_mcp.contains("triagem"));
         assert!(role_mcp.contains("request_decision"));
         assert!(role_mcp.contains("save_item_plan"));
         assert!(role_mcp.contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
 
-        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli);
+        let role_cli = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::VokiaCli, ToolScope::Coordinator);
         assert!(role_cli.contains("triagem"));
         assert!(role_cli.contains("request-decision"));
         assert!(role_cli.contains("save_item_plan"));
         assert!(role_cli.contains(crate::plan_proposal::PLAN_PROTOCOL_HINT));
     });
+}
+
+#[test]
+fn worker_nao_ve_orientacao_de_ferramentas_que_nao_recebe() {
+    with_test_context(|_, profile| {
+        let worker = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Worker);
+        assert!(!worker.contains("app_commands_list"), "{worker}");
+        assert!(!worker.contains("app_command_call"), "{worker}");
+        assert!(worker.contains("delegate"));
+        assert!(worker.contains(TOOLS_RULE));
+
+        let coordinator = role(profile, "Roster.", None, "Contexto.", ToolPromptMode::Mcp, ToolScope::Coordinator);
+        assert!(coordinator.contains(ADMIN_TOOLS_RULE));
+    });
+}
+
+#[test]
+fn card_da_troca_vai_na_abertura_e_na_recuperacao_mas_nao_no_seguimento() {
+    let agent = Agent::axiom();
+    let cache = crate::task::Cache::default();
+    let definition = crate::task::TaskDefinition {
+        kind: crate::task::TaskKind::Demanda,
+        nova_tarefa: true,
+        objetivo: "Implementar".to_string(),
+        criterion: String::new(),
+        verify: false,
+        participants: vec![agent.clone()],
+        alternate: false,
+        variables: Vec::new(),
+        stop: None,
+    };
+    let card = "Card VOK-1: Login\nCritério desta etapa: plano-VOK-1 c2";
+
+    let with_card = StepPrompts::build(&cache, &definition, &agent, "Siga", ToolPromptMode::Mcp, Some(card));
+    assert!(with_card.opening.contains(card), "{}", with_card.opening);
+    assert!(with_card.minimal.contains(card), "{}", with_card.minimal);
+    assert!(!with_card.follow_up.contains(card), "{}", with_card.follow_up);
+
+    let without = StepPrompts::build(&cache, &definition, &agent, "Siga", ToolPromptMode::Mcp, None);
+    assert!(!without.opening.contains("card:"));
 }

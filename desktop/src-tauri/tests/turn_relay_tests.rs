@@ -136,6 +136,7 @@ fn cls1_settlement_ended_persiste_task_result_somente_para_demanda_ou_conversa_p
                 dir: project_dir,
                 attachments,
                 level: PermissionLevel::Edicao,
+                builtin_tools: true,
             },
             project_context: "",
             request: "Oi",

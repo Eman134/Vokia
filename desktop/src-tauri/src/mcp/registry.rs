@@ -7,6 +7,7 @@ use serde_json::Value;
 use crate::events::Agent;
 
 use super::slot::ExchangeSlot;
+use super::tools::ToolScope;
 
 const TOKEN_BYTES: usize = 32;
 
@@ -25,6 +26,7 @@ pub struct Binding {
     pub agent: Agent,
     pub agent_name: String,
     pub slot: ExchangeSlot,
+    pub scope: ToolScope,
 }
 
 #[derive(Debug)]
@@ -99,9 +101,22 @@ impl ToolRegistry {
         let _ = self.definitions.set(definitions);
     }
 
-    pub fn names(&self) -> impl Iterator<Item = &str> {
+    pub fn definitions_for(&self, scope: ToolScope) -> Vec<Value> {
         self.definitions()
             .iter()
-            .filter_map(|definition| definition.get("name").and_then(Value::as_str))
+            .filter(|definition| scope.allows(name_of(definition)))
+            .cloned()
+            .collect()
     }
+
+    pub fn names(&self, scope: ToolScope) -> impl Iterator<Item = &str> {
+        self.definitions()
+            .iter()
+            .map(name_of)
+            .filter(move |name| scope.allows(name))
+    }
+}
+
+fn name_of(definition: &Value) -> &str {
+    definition.get("name").and_then(Value::as_str).unwrap_or_default()
 }

@@ -15,6 +15,7 @@ pub use registry::{random_hex, Binding, RandomnessUnavailable};
 #[cfg(test)]
 pub use registry::Token;
 pub use server::{McpConfigFile, McpServer, McpSession};
+pub use tools::ToolScope;
 pub use slot::{Delegation, DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
 
 pub const SERVER_NAME: &str = "vokia";

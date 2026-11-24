@@ -49,7 +49,7 @@ pub async fn handle(
         "initialize" => success(id, initialize_result(request.params.as_ref())),
         "notifications/initialized" => Reply::NoContent,
         "ping" => success(id, json!({})),
-        "tools/list" => success(id, json!({ "tools": tools.definitions() })),
+        "tools/list" => success(id, json!({ "tools": tools.definitions_for(binding.scope) })),
         "tools/call" => call_tool(id, request.params.as_ref(), binding, app).await,
         "commands/list" => {
             let domain = request

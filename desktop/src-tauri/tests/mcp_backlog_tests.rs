@@ -100,6 +100,16 @@ impl World {
     }
 
     pub(super) fn agent(&self, id: &str, name: &str, project_id: i64) -> Caller {
+        self.agent_with_scope(id, name, project_id, ToolScope::Coordinator)
+    }
+
+    pub(super) fn agent_with_scope(
+        &self,
+        id: &str,
+        name: &str,
+        project_id: i64,
+        scope: ToolScope,
+    ) -> Caller {
         let slot = ExchangeSlot::default();
         let token = self
             .server
@@ -108,6 +118,7 @@ impl World {
                 agent: Agent::from_stored(id).expect("agente"),
                 agent_name: name.to_string(),
                 slot: slot.clone(),
+                scope,
             })
             .expect("token");
         Caller {
@@ -537,7 +548,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
         .collect();
     assert_eq!(columns, ["Backlog", "In progress", "In review"]);
     assert_eq!(
-        world.server.tool_names(),
+        world.server.tool_names(ToolScope::Coordinator),
         [
             "mcp__vokia__list_backlog",
             "mcp__vokia__read_card",
@@ -918,7 +929,7 @@ fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes
     let axiom = world.agent("axiom", "Axiom", project);
 
     // 1. McpServer::tool_names() inclui mcp__vokia__app_commands_list e mcp__vokia__app_command_call
-    let tool_names = world.server.tool_names();
+    let tool_names = world.server.tool_names(ToolScope::Coordinator);
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_commands_list"));
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_command_call"));
     assert_eq!(tool_names.len(), 25);
@@ -1011,3 +1022,41 @@ fn app_commands_list_e_commands_list_retornam_when_to_use_e_schema_com_filtro_do
 include!("artifact_commands_tests.rs");
 
 include!("resume_flow_tests.rs");
+
+#[test]
+fn worker_lista_so_as_ferramentas_de_trabalho_e_coordenador_lista_todas() {
+    let world = world();
+    let project = world.project("a");
+    let names_for = |caller: &Caller| -> Vec<String> {
+        let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+        let reply = run(send(world.port, &Request::post(world.port, &caller.token, body)));
+        reply.json()["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .map(|tool| tool["name"].as_str().expect("name").to_string())
+            .collect()
+    };
+
+    let worker = names_for(&world.agent_with_scope("kairo", "Kairo", project, ToolScope::Worker));
+    let coordinator = names_for(&world.agent("axiom", "Axiom", project));
+
+    for admin in [
+        "app_commands_list",
+        "app_command_call",
+        "get_orchestration",
+        "list_agents",
+        "list_movements",
+        "backlog_archive_item",
+        "backlog_restore_item",
+        "backlog_delete_item",
+    ] {
+        assert!(!worker.iter().any(|name| name == admin), "worker não deveria ver {admin}");
+        assert!(coordinator.iter().any(|name| name == admin), "coordenador perdeu {admin}");
+    }
+    for work in ["read_card", "delegate", "set_variable", "artifact_set_criterion", "request_decision", "save_item_plan"] {
+        assert!(worker.iter().any(|name| name == work), "worker perdeu {work}");
+    }
+    assert_eq!(worker.len(), 17);
+    assert_eq!(coordinator.len(), 25);
+}

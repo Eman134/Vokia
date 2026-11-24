@@ -14,7 +14,7 @@ use crate::db::{
 };
 use crate::events::{AgentState, VokiaEvent};
 use crate::mcp::{
-    Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState,
+    Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState, ToolScope,
     CONFIG_DIR,
 };
 use crate::orchestration::instances::display_name;
@@ -129,12 +129,14 @@ async fn run_step(
         if agent == &Agent::ember() && !adapter.has_tools() {
             continue;
         }
+        let scope = tool_scope(*orchestration, agent);
         let mcp = if adapter.has_tools() {
             McpLaunch::new(
                 app,
                 key.project_id,
                 agent,
                 &crate::orchestration::instances::display_name(team, agent),
+                scope,
             )?
         } else {
             None
@@ -157,6 +159,7 @@ async fn run_step(
             prompt.layer.as_ref(),
             project_context,
             tool_mode,
+            scope,
         );
         let role = if agent == &Agent::ember() {
             // Instruções extras do Ember entram aqui quando o campo do agente existir (Hefesto 28).
@@ -224,7 +227,10 @@ async fn run_step(
             item_id: exchange.item_id.map(str::to_string),
         };
         let access = if call.adapter.has_tools() {
-            Access::Project(*project)
+            Access::Project(ProjectAccess {
+                builtin_tools: has_builtin_tools(agent),
+                ..*project
+            })
         } else {
             Access::TextOnly
         };
@@ -804,19 +810,38 @@ impl AgentSession {
     }
 }
 
+// Ember, o líder geral e os líderes de time: quem distribui trabalho e administra o Vokia.
+fn coordinators(orchestration: Option<&OrchestrationSnapshot>) -> Vec<Agent> {
+    let mut agents = vec![Agent::ember(), leader_of(orchestration)];
+    for t in orchestration.map_or(&[][..], |s| s.teams.as_slice()) {
+        if let Some(leader) = t.leader_agent.as_deref().and_then(Agent::from_stored) {
+            agents.push(leader);
+        }
+    }
+    agents
+}
+
+pub(super) fn tool_scope(orchestration: Option<&OrchestrationSnapshot>, agent: &Agent) -> ToolScope {
+    if coordinators(orchestration).contains(agent) {
+        ToolScope::Coordinator
+    } else {
+        ToolScope::Worker
+    }
+}
+
+// O Ember só encaminha: sem Read/Grep/Bash ele não cai em trabalho técnico, que é o que mais consome tokens nele.
+fn has_builtin_tools(agent: &Agent) -> bool {
+    agent != &Agent::ember()
+}
+
 pub(super) fn preload_targets(
     orchestration: Option<&OrchestrationSnapshot>,
     team: &Team,
     paused: &[Agent],
 ) -> Vec<Agent> {
-    let mut raw = vec![Agent::ember(), leader_of(orchestration)];
-    for t in orchestration.map_or(&[][..], |s| s.teams.as_slice()) {
-        if let Some(leader) = t.leader_agent.as_deref().and_then(Agent::from_stored) {
-            raw.push(leader);
-        }
-    }
     let mut seen = HashSet::new();
-    raw.into_iter()
+    coordinators(orchestration)
+        .into_iter()
         .filter(|agent| {
             team.profile(agent).is_some() && !paused.contains(agent) && seen.insert(agent.clone())
         })
@@ -867,8 +892,9 @@ pub(super) fn open_preloaded_session(
     candidate: &ResolvedCandidate,
     cli: &Path,
 ) -> Result<PreloadedSession, FlowError> {
+    let scope = tool_scope(orchestration, agent);
     let mcp = if candidate.provider.has_tools() {
-        McpLaunch::new(app, project_id, agent, &display_name(team, agent))?
+        McpLaunch::new(app, project_id, agent, &display_name(team, agent), scope)?
     } else {
         None
     };
@@ -884,6 +910,7 @@ pub(super) fn open_preloaded_session(
         prompt.layer.as_ref(),
         project_context,
         tool_mode,
+        scope,
     );
     let role_text = if agent == &Agent::ember() {
         maestro_role(
@@ -914,6 +941,7 @@ pub(super) fn open_preloaded_session(
         dir: project_dir,
         attachments: attachments_dir,
         level: permission_level,
+        builtin_tools: has_builtin_tools(agent),
     });
     let live = LiveSession::open(
         &program,
@@ -993,6 +1021,7 @@ struct McpLaunch {
     project_id: i64,
     agent: Agent,
     agent_name: String,
+    scope: ToolScope,
 }
 
 impl McpLaunch {
@@ -1002,6 +1031,7 @@ impl McpLaunch {
         project_id: i64,
         agent: &Agent,
         agent_name: &str,
+        scope: ToolScope,
     ) -> Result<Option<McpLaunch>, FlowError> {
         let state = app.state::<McpState>();
         let Some(server) = state.server() else {
@@ -1014,6 +1044,7 @@ impl McpLaunch {
             project_id,
             agent: agent.clone(),
             agent_name: agent_name.to_string(),
+            scope,
         }))
     }
 
@@ -1023,6 +1054,7 @@ impl McpLaunch {
             agent: self.agent.clone(),
             agent_name: self.agent_name.clone(),
             slot: ExchangeSlot::default(),
+            scope: self.scope,
         };
         self.server
             .open_session(&self.dir, binding)
@@ -1035,6 +1067,7 @@ impl McpLaunch {
             agent: self.agent.clone(),
             agent_name: self.agent_name.clone(),
             slot: ExchangeSlot::default(),
+            scope: self.scope,
         };
         self.server
             .open_headless(binding)

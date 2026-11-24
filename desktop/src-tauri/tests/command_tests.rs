@@ -56,6 +56,10 @@ struct McpFixture {
 }
 
 fn mcp_fixture(folder: &str) -> McpFixture {
+    mcp_fixture_for(folder, crate::mcp::ToolScope::Coordinator)
+}
+
+fn mcp_fixture_for(folder: &str, scope: crate::mcp::ToolScope) -> McpFixture {
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let dir = std::env::temp_dir().join(format!(
         "vokia-command-mcp-{}-{}",
@@ -75,6 +79,7 @@ fn mcp_fixture(folder: &str) -> McpFixture {
                     agent: crate::agents::Agent::from_stored("axiom").expect("agente"),
                     agent_name: "Axiom".to_string(),
                     slot: crate::mcp::ExchangeSlot::default(),
+                    scope,
                 },
             )
             .expect("sessão MCP")
@@ -113,6 +118,7 @@ fn project_access(level: PermissionLevel) -> ProjectAccess<'static> {
         dir: Path::new("."),
         attachments: Path::new("."),
         level,
+        builtin_tools: true,
     }
 }
 
@@ -347,4 +353,62 @@ fn command_domain_cobre_todos_os_commands_e_retorna_none_para_desconhecido() {
     assert_eq!(command_domain("delete_channel"), Some("channels"));
     assert_eq!(command_domain("comando_inexistente_xyz"), None);
     assert_eq!(command_domain(""), None);
+}
+
+const COORDINATION_TOOLS: [&str; 8] = [
+    "mcp__vokia__backlog_archive_item",
+    "mcp__vokia__backlog_restore_item",
+    "mcp__vokia__backlog_delete_item",
+    "mcp__vokia__get_orchestration",
+    "mcp__vokia__list_agents",
+    "mcp__vokia__list_movements",
+    "mcp__vokia__app_commands_list",
+    "mcp__vokia__app_command_call",
+];
+
+#[test]
+fn worker_recebe_em_allowed_tools_so_as_ferramentas_de_trabalho() {
+    let fixture = mcp_fixture_for("mcp", crate::mcp::ToolScope::Worker);
+    let allowed = fixture.session.config().expect("config").allowed_tools();
+
+    let expected: Vec<&str> = VOKIA_TOOLS
+        .into_iter()
+        .filter(|name| !COORDINATION_TOOLS.contains(name))
+        .collect();
+    assert_eq!(allowed, expected);
+}
+
+#[test]
+fn sem_ferramentas_nativas_o_agente_fica_so_com_o_mcp_nos_tres_niveis() {
+    let fixture = mcp_fixture("mcp");
+
+    for level in LEVELS {
+        let access = ProjectAccess {
+            builtin_tools: false,
+            ..project_access(level)
+        };
+        let args = args_of(Access::Project(access), Some(fixture.session.config().expect("config")));
+
+        let at = position(&args, "--tools");
+        assert_eq!(args[at + 1], "", "{level:?}");
+        assert_eq!(args.iter().filter(|arg| *arg == "--tools").count(), 1, "{level:?}");
+        let allowed = &args[position(&args, ALLOWED_FLAG) + 1];
+        assert!(allowed.contains("mcp__vokia__delegate"), "{level:?}: {allowed}");
+    }
+}
+
+#[test]
+fn agente_desliga_a_busca_adiada_de_ferramentas_da_cli() {
+    let tool_search = |command: &Command| {
+        command
+            .as_std()
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("ENABLE_TOOL_SEARCH"))
+            .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+    };
+
+    for access in [Access::TextOnly, Access::Project(project_access(PermissionLevel::Edicao))] {
+        let command = agent_command(Path::new("claude"), &[], &["-p", "oi"], "papel", "haiku", access, None);
+        assert_eq!(tool_search(&command).as_deref(), Some("false"));
+    }
 }

@@ -163,6 +163,7 @@ pub fn binding(agent: &str, name: &str) -> Binding {
         agent: Agent::from_stored(agent).expect("id de agente válido no teste"),
         agent_name: name.to_string(),
         slot: ExchangeSlot::default(),
+        scope: crate::mcp::ToolScope::Coordinator,
     }
 }
 

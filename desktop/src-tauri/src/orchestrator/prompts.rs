@@ -6,6 +6,7 @@ use crate::task::{
 };
 
 use crate::orchestration::snapshot::{leader_of, team_outlines, LayerContext, TeamOutline};
+use crate::mcp::ToolScope;
 use crate::plan_proposal::PLAN_PROTOCOL_HINT;
 use serde_json::Value;
 
@@ -50,12 +51,13 @@ const MAESTRO_VOKIA_CLI_COMMANDS: &str = "- list_backlog / read_card / create_ca
 - request_decision / propose_request: pedir decisão ou propor card ao usuário
 - get_orchestration / list_agents: ler mapa de times e elenco (rode `vokia-cli tools` para detalhes)";
 const TOOLS_RULE: &str =
-    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids. Para gerenciar papéis, agentes, orquestração, provedores, canais ou configurações do Vokia, descubra comandos com app_commands_list (opcionalmente filtrando domain) e execute com app_command_call.";
+    "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
+const ADMIN_TOOLS_RULE: &str = "Para gerenciar papéis, agentes, orquestração, provedores, canais ou configurações do Vokia, descubra comandos com app_commands_list (opcionalmente filtrando domain) e execute com app_command_call.";
 const DELEGATION_TOOL_RULE: &str = "Para pedir algo a outro agente do time, chame a ferramenta delegate com agent e request; numa mesma resposta pode chamar delegate várias vezes (até 5), uma por pedido. Use notify true só para avisar um agente sem dar trabalho. Delegue só quando o pedido exigir algo que você não sabe fazer ou quando o usuário pediu outro agente pelo nome; nunca delegue para confirmar o que você já respondeu. Antes de delegar a implementação de um card em triagem, leia o código, tire dúvidas via request_decision se necessário e grave o plano via save_item_plan. Quando não houver mais pedidos, termine a resposta.";
 const PROMPT_RULES_VOKIA_CLI: &str = "Para registrar progresso, execute no terminal `vokia-cli set-variable --name <nome> --op <set|append> --value <valor>` (use `--int` para número inteiro; `--share` para compartilhar) e `vokia-cli get-variables` para ler. Execute a instrução agora: não se apresente nem comente o processo. Para pedir algo a outro agente do time, execute `vokia-cli delegate --agent <nome> --request \"<pedido>\"`.";
 const TOOLS_RULE_VOKIA_CLI: &str = "Use `vokia-cli` no terminal para backlog/decisões/variáveis (`vokia-cli tools` lista tudo); não invente ids nem use `#card`, `#decisao` ou `@Nome:`. Para gerir o Vokia: `vokia-cli commands [--domain <dom>]` e `vokia-cli cmd <comando> --json <obj>`.";
 const DELEGATION_TOOL_RULE_VOKIA_CLI: &str = "Para delegar: `vokia-cli delegate --agent <nome> --request \"<pedido>\"` (`--item-id <id>` em card). Delegue só o que não souber ou se pedido pelo nome; nunca para confirmar resposta. Antes de delegar a implementação de um card em triagem, leia o código, pergunte via `vokia-cli request-decision` se necessário e grave o plano via `save_item_plan`. Após delegar ou `vokia-cli request-decision`, encerre.";
-const STAGE_REPORT_RULE: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com artifact_set_criterion (artifact_id e criterion_id conforme read_card mostra em Critério desta etapa, done true) e grave o progresso com set_variable. Quem lidera acompanha por read_card.";
+const STAGE_REPORT_RULE: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com artifact_set_criterion (artifact_id e criterion_id conforme a linha Critério desta etapa do card, que já vem na mensagem ou sai de read_card; done true) e grave o progresso com set_variable. Quem lidera acompanha por read_card.";
 const STAGE_REPORT_RULE_VOKIA_CLI: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com `vokia-cli set-criterion --artifact-id <id> --criterion-id <c> --done true` (os ids aparecem em `vokia-cli read-card --id <card>`, na linha Critério desta etapa) e grave o progresso com `vokia-cli set-variable`. Quem lidera acompanha por `vokia-cli read-card`.";
 const INSTRUCTION_FILES_RULE: &str = "Antes de editar arquivo, leia CLAUDE.md/AGENTS.md da pasta até a raiz (mais próximo vence) e instruções globais. Se contradizer o pedido, responda BLOQUEADO.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
@@ -237,6 +239,7 @@ impl StepPrompts {
         agent: &Agent,
         instruction: &str,
         tool_mode: ToolPromptMode,
+        card: Option<&str>,
     ) -> Self {
         let prompt = |conversation_items, with_request| {
             step_prompt(
@@ -247,6 +250,7 @@ impl StepPrompts {
                 conversation_items,
                 with_request,
                 tool_mode,
+                card,
             )
         };
         Self {
@@ -257,6 +261,7 @@ impl StepPrompts {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn step_prompt(
     cache: &Cache,
     definition: &TaskDefinition,
@@ -265,6 +270,7 @@ fn step_prompt(
     conversation_items: usize,
     with_request: bool,
     tool_mode: ToolPromptMode,
+    card: Option<&str>,
 ) -> String {
     let has_variables = !definition.variables.is_empty()
         || cache
@@ -279,6 +285,10 @@ fn step_prompt(
     }
     if let Some(request) = cache.long_request().filter(|_| with_request) {
         sections.push(format!("pedido_original:\n{request}"));
+    }
+    // A sessão que já abriu com o card não o recebe de novo; quem precisar do estado atual chama read_card.
+    if let Some(card) = card.filter(|_| with_request) {
+        sections.push(format!("card:\n{card}"));
     }
     if has_variables {
         sections.push(format!(
@@ -416,10 +426,17 @@ pub(super) fn role(
     layer: Option<&LayerContext>,
     project_context: &str,
     tool_mode: ToolPromptMode,
+    scope: ToolScope,
 ) -> String {
     // Sem o servidor MCP/Vokia CLI a sessão volta a ensinar os marcadores de texto.
     let tools_rules = match tool_mode {
-        ToolPromptMode::Mcp => format!("{DELEGATION_TOOL_RULE} {STAGE_REPORT_RULE} {PLAN_PROTOCOL_HINT} {TOOLS_RULE}"),
+        ToolPromptMode::Mcp => {
+            let admin = match scope {
+                ToolScope::Coordinator => format!(" {ADMIN_TOOLS_RULE}"),
+                ToolScope::Worker => String::new(),
+            };
+            format!("{DELEGATION_TOOL_RULE} {STAGE_REPORT_RULE} {PLAN_PROTOCOL_HINT} {TOOLS_RULE}{admin}")
+        }
         ToolPromptMode::VokiaCli => {
             format!("{DELEGATION_TOOL_RULE_VOKIA_CLI} {STAGE_REPORT_RULE_VOKIA_CLI} {PLAN_PROTOCOL_HINT} {TOOLS_RULE_VOKIA_CLI}")
         }

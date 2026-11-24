@@ -22,6 +22,10 @@ const STRIPPED_AUTH_ENV: [&str; 3] = [
 // Proxy corporativo não pode interceptar o loopback do servidor MCP do app.
 const NO_PROXY_HOSTS: &str = "127.0.0.1,localhost";
 const PERMISSION_MODE: &str = "manual";
+const NO_BUILTIN_TOOLS: &str = "";
+// Com a busca adiada a CLI gasta uma ida à API (ToolSearch) só para carregar o schema das ferramentas do Vokia.
+const TOOL_SEARCH_ENV: &str = "ENABLE_TOOL_SEARCH";
+const TOOL_SEARCH_OFF: &str = "false";
 // Ignora hooks e regras do usuário (um hook que reescreve o comando faz a regra não casar).
 const NO_SETTING_SOURCES: &str = "";
 // Ferramentas de arquivo com padrão de caminho ficam na pasta do projeto (cwd); a regra sem padrão libera qualquer caminho, inclusive Glob e Grep.
@@ -90,6 +94,8 @@ pub struct ProjectAccess<'a> {
     pub dir: &'a Path,
     pub attachments: &'a Path,
     pub level: PermissionLevel,
+    // Sem as ferramentas nativas da CLI o agente só age pelo MCP do Vokia.
+    pub builtin_tools: bool,
 }
 
 pub(crate) fn timeout_for(access: Access<'_>) -> Duration {
@@ -131,6 +137,7 @@ pub(super) fn agent_command(
 ) -> Command {
     let mut command = base_command(program);
     command.kill_on_drop(true);
+    command.env(TOOL_SEARCH_ENV, TOOL_SEARCH_OFF);
     // Argumentos do usuário e mensagem de `-p` vêm antes das opções variádicas
     // (`--tools`, `--allowedTools`), que os engoliriam; `--append-system-prompt` fica por último.
     command.args(user_args);
@@ -144,7 +151,7 @@ pub(super) fn agent_command(
     ]);
     match access {
         Access::TextOnly => {
-            command.args(["--tools", "", "--max-turns", TEXT_ONLY_MAX_TURNS]);
+            command.args(["--tools", NO_BUILTIN_TOOLS, "--max-turns", TEXT_ONLY_MAX_TURNS]);
         }
         Access::Project(project) => {
             command.current_dir(project.dir);
@@ -154,7 +161,12 @@ pub(super) fn agent_command(
                 .arg(project.attachments)
                 .args(["--permission-mode", PERMISSION_MODE])
                 .args(["--setting-sources", NO_SETTING_SOURCES]);
-            if let Some(tools) = flags_for(project.level).tools {
+            let tools = if project.builtin_tools {
+                flags_for(project.level).tools
+            } else {
+                Some(NO_BUILTIN_TOOLS)
+            };
+            if let Some(tools) = tools {
                 command.args(["--tools", tools]);
             }
             command

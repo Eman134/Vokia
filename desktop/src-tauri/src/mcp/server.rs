@@ -18,7 +18,7 @@ use tokio::net::TcpListener;
 use super::protocol::{handle, Reply};
 use super::registry::{random_hex, Binding, RandomnessUnavailable, Sessions, Token, ToolRegistry};
 use super::slot::ExchangeSlot;
-use super::tools;
+use super::tools::{self, ToolScope};
 use super::{McpError, SERVER_NAME};
 
 const MCP_PATH: &str = "/mcp";
@@ -139,10 +139,10 @@ impl McpServer {
         format!("http://{}{MCP_PATH}", self.shared.host())
     }
 
-    pub fn tool_names(&self) -> Vec<String> {
+    pub fn tool_names(&self, scope: ToolScope) -> Vec<String> {
         self.shared
             .tools
-            .names()
+            .names(scope)
             .map(|name| format!("{TOOL_NAMESPACE}__{SERVER_NAME}__{name}"))
             .collect()
     }
@@ -150,6 +150,7 @@ impl McpServer {
     pub fn open_session(&self, dir: &Path, binding: Binding) -> Result<McpSession, McpError> {
         let file_name = random_hex(CONFIG_NAME_BYTES).map_err(McpError::Randomness)?;
         let slot = binding.slot.clone();
+        let allowed_tools = self.tool_names(binding.scope);
         let token = self
             .shared
             .sessions
@@ -158,7 +159,7 @@ impl McpServer {
         let url = self.url();
         let config = McpConfigFile {
             path: dir.join(format!("{file_name}.json")),
-            allowed_tools: self.tool_names(),
+            allowed_tools,
         };
         let session = McpSession {
             shared: self.shared.clone(),

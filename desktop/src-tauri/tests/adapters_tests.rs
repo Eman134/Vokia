@@ -10,6 +10,7 @@ fn project_access(level: PermissionLevel) -> ProjectAccess<'static> {
         dir: Path::new("C:/test/project"),
         attachments: Path::new("C:/test/attachments"),
         level,
+        builtin_tools: true,
     }
 }
 

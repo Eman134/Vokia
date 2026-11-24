@@ -61,3 +61,43 @@ fn tok4_provider_sessions_are_scoped_and_prefixed_ids_are_not_claude_resumes() {
     drop(app);
     let _ = std::fs::remove_dir_all(&data_dir);
 }
+
+#[test]
+fn ember_lider_geral_e_lideres_de_time_coordenam_e_os_demais_trabalham() {
+    use crate::db::{OrchestrationSettings, OrchestrationSnapshot, Team as OrchTeam};
+    use crate::mcp::ToolScope;
+
+    let team = |id: &str, leader: &str| OrchTeam {
+        id: id.into(),
+        name: id.into(),
+        position: 0,
+        leader_agent: Some(leader.into()),
+        instructions: String::new(),
+        final_validation: String::new(),
+        start_x: None,
+        start_y: None,
+        end_x: None,
+        end_y: None,
+        judge_full_flow: false,
+    };
+    let snapshot = OrchestrationSnapshot {
+        settings: OrchestrationSettings {
+            leader_agent: "axiom".to_string(),
+            ..Default::default()
+        },
+        layers: Vec::new(),
+        teams: vec![team("produto", "triage")],
+        placements: Vec::new(),
+        edges: Vec::new(),
+        gateways: Vec::new(),
+        task_stages: Vec::new(),
+    };
+    let agent = |id: &str| Agent::from_stored(id).expect("agente");
+
+    assert_eq!(tool_scope(Some(&snapshot), &Agent::ember()), ToolScope::Coordinator);
+    assert_eq!(tool_scope(Some(&snapshot), &agent("axiom")), ToolScope::Coordinator);
+    assert_eq!(tool_scope(Some(&snapshot), &agent("triage")), ToolScope::Coordinator);
+    assert_eq!(tool_scope(Some(&snapshot), &agent("kairo")), ToolScope::Worker);
+    assert_eq!(tool_scope(None, &agent("axiom")), ToolScope::Coordinator, "sem mapa o líder padrão é o Axiom");
+    assert_eq!(tool_scope(None, &agent("kairo")), ToolScope::Worker);
+}

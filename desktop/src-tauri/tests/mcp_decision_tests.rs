@@ -166,7 +166,7 @@ fn tools_list_traz_request_decision_com_os_quatro_tipos() {
     assert_eq!(tool["inputSchema"]["required"], json!(["kind", "title"]));
     assert!(world
         .server
-        .tool_names()
+        .tool_names(crate::mcp::ToolScope::Coordinator)
         .contains(&"mcp__vokia__request_decision".to_string()));
 }
 

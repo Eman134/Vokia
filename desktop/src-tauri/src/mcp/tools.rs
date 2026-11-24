@@ -73,6 +73,18 @@ const COMMAND_DOMAINS: [&str; 11] = [
     "providers",
     "settings",
 ];
+// Administração do Vokia e manutenção do mapa ficam com quem coordena: cada definição a menos sai do contexto
+// de toda chamada à API dos demais agentes.
+const COORDINATION_TOOLS: [&str; 8] = [
+    BACKLOG_ARCHIVE_ITEM,
+    BACKLOG_RESTORE_ITEM,
+    BACKLOG_DELETE_ITEM,
+    GET_ORCHESTRATION,
+    LIST_AGENTS,
+    LIST_MOVEMENTS,
+    APP_COMMANDS_LIST,
+    APP_COMMAND_CALL,
+];
 const OP_SET: &str = "set";
 const OP_APPEND: &str = "append";
 
@@ -231,6 +243,18 @@ struct CriterionArgs {
     artifact_id: String,
     criterion_id: String,
     done: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolScope {
+    Coordinator,
+    Worker,
+}
+
+impl ToolScope {
+    pub fn allows(self, name: &str) -> bool {
+        self == ToolScope::Coordinator || !COORDINATION_TOOLS.contains(&name)
+    }
 }
 
 pub(crate) fn is_tool(name: &str) -> bool {
@@ -608,8 +632,12 @@ fn list_backlog(app: &AppHandle, binding: &Binding, args: ListArgs) -> ToolText 
 fn read_card(app: &AppHandle, binding: &Binding, args: ReadArgs) -> ToolText {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
+    card_text(db, binding.project_id, &args.id)
+}
+
+pub(crate) fn card_text(db: &Db, project_id: i64, id: &str) -> ToolText {
     let card = db
-        .read_card(binding.project_id, &args.id)
+        .read_card(project_id, id)
         .map_err(|error| refusal_or_system(&error))?;
     let recent = card.activity.len().saturating_sub(RECENT_ACTIVITY_COUNT);
     let mut lines = vec![
@@ -622,7 +650,7 @@ fn read_card(app: &AppHandle, binding: &Binding, args: ReadArgs) -> ToolText {
             card.description.as_deref().unwrap_or(NO_DESCRIPTION)
         ),
     ];
-    lines.extend(progress_lines(db, binding.project_id, &card)?);
+    lines.extend(progress_lines(db, project_id, &card)?);
     lines.extend(
         card.activity[recent..]
             .iter()

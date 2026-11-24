@@ -1295,6 +1295,7 @@ async fn run_parallel_item(
             dir: &working,
             attachments: &attachments_dir,
             level: project.permission_level,
+            builtin_tools: true,
         },
         project_context: &context,
         request,
@@ -1345,6 +1346,7 @@ async fn answer_once(
         }
     };
     let with_tools = tool_mode != super::prompts::ToolPromptMode::None;
+    let card = exchange.card_context();
     let prompts = with_cache(exchange.state, project_id, |cache| {
         Ok(StepPrompts::build(
             cache,
@@ -1352,6 +1354,7 @@ async fn answer_once(
             &agent,
             exchange.request,
             tool_mode,
+            card.as_deref(),
         ))
     })?;
     let mut reply = match ask_step(exchange, sessions, &agent, &prompts).await {
@@ -1659,7 +1662,9 @@ pub(crate) fn spawn_delegation_watchdog(app: AppHandle) {
 
 // Task parada: a etapa ficou sem movimento além do intervalo de ping, sem delegação pendente nem fluxo rodando no projeto.
 // Reenvia ao nó da etapa enquanto houver tentativas; esgotadas, sobe ao líder do time desse nó.
-const STALL_AFTER_MS: i64 = DEFAULT_DELEGATION_PING_SECS as i64 * 1000;
+// Bem acima do ping de delegação: cada reenvio reabre o contexto inteiro do agente, então só vale para etapa parada de fato.
+const STALL_AFTER_SECS: i64 = 180;
+const STALL_AFTER_MS: i64 = STALL_AFTER_SECS * 1000;
 const MAX_STAGE_RESENDS: i64 = MAX_WATCHDOG_RETRIES as i64;
 const STALL_RESEND_TEXT: &str = "A task {item} parou na sua etapa, sem movimento. Retome o trabalho desta etapa de onde ele parou.";
 const STALL_ESCALATE_TEXT: &str = "A task {item} está parada na etapa de {agent}, sem movimento depois de {retries} reenvios. Decida como seguir: retome com quem tem o contexto, reenvie ao nó certo ou conclua a task.";
@@ -2078,6 +2083,7 @@ async fn exchange_turns(
         dir: &working,
         attachments: &attachments_dir,
         level: project.permission_level,
+        builtin_tools: true,
     };
     let exchange = Exchange {
         app,

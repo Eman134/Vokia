@@ -74,6 +74,15 @@ impl<'a> Exchange<'a> {
             item_id: self.item_id,
         }
     }
+
+    // O card no prompt poupa ao agente uma ida à API só para chamar read_card; sem banco ou card ilegível,
+    // o agente segue podendo chamar read_card.
+    pub(super) fn card_context(&self) -> Option<String> {
+        let item_id = self.item_id?;
+        let db_state = self.app.state::<DbState>();
+        let db = db_state.db()?;
+        crate::mcp::tools::card_text(db, self.key.project_id, item_id).ok()
+    }
 }
 
 struct TurnWaitersGuard<'a> {
@@ -176,6 +185,7 @@ pub(super) async fn run_turns(
             }
         };
         let with_tools = tool_mode != ToolPromptMode::None;
+        let card = exchange.card_context();
         let prompts = with_cache(state, project_id, |cache| {
             Ok(StepPrompts::build(
                 cache,
@@ -183,6 +193,7 @@ pub(super) async fn run_turns(
                 &turn.speaker,
                 &turn.instruction(),
                 tool_mode,
+                card.as_deref(),
             ))
         })?;
         let StepReply {

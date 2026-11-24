@@ -315,6 +315,6 @@ fn update_card_aparece_em_tools_list_com_titulo_limitado_e_so_id_obrigatorio() {
     );
     assert!(world
         .server
-        .tool_names()
+        .tool_names(crate::mcp::ToolScope::Coordinator)
         .contains(&"mcp__vokia__update_card".to_string()));
 }
