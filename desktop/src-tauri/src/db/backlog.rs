@@ -59,6 +59,7 @@ const AGENT_CARD_TYPE: &str = "task";
 const NEW_CARD_STATE: &str = "vazio";
 const TRIAGE_CARD_STATE: &str = "triagem";
 const CARD_ID_PREFIX: &str = "item-";
+const CARD_SLUG_MAX_LEN: usize = 40;
 const USER_CREATED_TEXT: &str = "Pedido criado por você.";
 const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
 const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
@@ -882,7 +883,7 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
-        let (id, position) = next_card_id(&tx, project_id)?;
+        let (id, position) = next_card_id(&tx, project_id, &title)?;
         let draft = CardDraft {
             title,
             kind: USER_CARD_TYPE,
@@ -1086,7 +1087,7 @@ impl Db {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         ensure_project(&tx, project_id)?;
-        let (id, position) = next_card_id(&tx, project_id)?;
+        let (id, position) = next_card_id(&tx, project_id, &title)?;
         let draft = CardDraft {
             title,
             kind: USER_CARD_TYPE,
@@ -1402,13 +1403,50 @@ fn parse_priority(raw: &str) -> Result<Option<&'static str>, DbError> {
         .ok_or_else(|| DbError::InvalidBacklogPriority(raw.to_string()))
 }
 
-fn next_card_id(conn: &Connection, project_id: i64) -> Result<(String, i64), DbError> {
+// Slug do título (acentos e caixa normalizados) cortado em fronteira de palavra; título sem letras ou dígitos cai no id sequencial.
+fn card_slug(title: &str) -> Option<String> {
+    let key = crate::agents::name_key(title);
+    let mut slug = String::new();
+    for word in key.split(|c: char| !c.is_ascii_alphanumeric()).filter(|word| !word.is_empty()) {
+        let separator = if slug.is_empty() { 0 } else { 1 };
+        if slug.len() + separator + word.len() > CARD_SLUG_MAX_LEN {
+            if slug.is_empty() {
+                slug.push_str(&word[..CARD_SLUG_MAX_LEN]);
+            }
+            break;
+        }
+        if separator == 1 {
+            slug.push('-');
+        }
+        slug.push_str(word);
+    }
+    (!slug.is_empty()).then_some(slug)
+}
+
+fn card_id_taken(conn: &Connection, project_id: i64, id: &str) -> Result<bool, DbError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM backlog_items WHERE project_id = ?1 AND id = ?2)",
+        params![project_id, id],
+        |row| row.get(0),
+    )?)
+}
+
+fn next_card_id(conn: &Connection, project_id: i64, title: &str) -> Result<(String, i64), DbError> {
     let position: i64 = conn.query_row(
         "SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1",
         [project_id],
         |row| row.get(0),
     )?;
-    Ok((format!("{CARD_ID_PREFIX}{position}"), position))
+    let Some(slug) = card_slug(title) else {
+        return Ok((format!("{CARD_ID_PREFIX}{position}"), position));
+    };
+    let mut id = slug.clone();
+    let mut suffix = 2;
+    while card_id_taken(conn, project_id, &id)? {
+        id = format!("{slug}-{suffix}");
+        suffix += 1;
+    }
+    Ok((id, position))
 }
 
 fn ensure_title_free(conn: &Connection, project_id: i64, title: &str) -> Result<(), DbError> {
@@ -1889,7 +1927,7 @@ fn create_agent_card(
 ) -> Result<CardResult, DbError> {
     let title = normalized_title(title)?;
     ensure_title_free(conn, project_id, &title)?;
-    let (id, position) = next_card_id(conn, project_id)?;
+    let (id, position) = next_card_id(conn, project_id, &title)?;
     let (owner, created) = match responsible {
         Some(responsible) => (
             responsible.leader.as_str(),
