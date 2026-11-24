@@ -109,3 +109,70 @@ fn tok4_scan_structure_nao_guarda_erro_no_cache() {
     assert_eq!(recovered.entries, vec!["a.txt".to_string()]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn project_at(dir: &std::path::Path) -> Project {
+    Project {
+        id: 1,
+        name: "Vokia".to_string(),
+        selected: true,
+        created_at: 0,
+        symbol: "folder".to_string(),
+        color: None,
+        description: String::new(),
+        path: dir.to_string_lossy().into_owned(),
+        pinned: false,
+        permission_level: crate::permissions::PermissionLevel::Edicao,
+        origin_kind: "folder".to_string(),
+        origin_repo: None,
+        last_activity_at: None,
+        setup_command: None,
+    }
+}
+
+fn instructions_dir(name: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("vokia-root-instructions-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (file, text) in files {
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn instrucoes_da_raiz_entram_no_contexto_de_quem_trabalha_mas_nao_no_do_ember() {
+    let dir = instructions_dir("ambos", &[("CLAUDE.md", "Regra do Claude"), ("AGENTS.md", "Regra dos agentes")]);
+    let project = project_at(&dir);
+
+    let worker = project_context(&project, None);
+    let ember = project_context_without_tree(&project);
+
+    assert!(worker.contains("CLAUDE.md") && worker.contains("Regra do Claude"));
+    assert!(worker.contains("AGENTS.md") && worker.contains("Regra dos agentes"));
+    assert!(!ember.contains("Regra do Claude"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn instrucoes_acima_do_teto_entram_cortadas_e_marcadas() {
+    let long = "x".repeat(ROOT_INSTRUCTIONS_MAX_CHARS + 500);
+    let dir = instructions_dir("longo", &[("CLAUDE.md", &long)]);
+
+    let context = project_context(&project_at(&dir), None);
+
+    assert!(context.contains(ROOT_INSTRUCTIONS_TRUNCATED));
+    assert!(context.contains(&"x".repeat(ROOT_INSTRUCTIONS_MAX_CHARS)));
+    assert!(!context.contains(&"x".repeat(ROOT_INSTRUCTIONS_MAX_CHARS + 1)));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn sem_arquivo_ou_com_arquivo_vazio_nao_ha_secao_de_instrucoes() {
+    let empty = instructions_dir("vazio", &[("CLAUDE.md", "  \n")]);
+    let none = instructions_dir("nenhum", &[]);
+
+    for dir in [&empty, &none] {
+        assert!(!project_context(&project_at(dir), None).contains(ROOT_INSTRUCTIONS_LABEL));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

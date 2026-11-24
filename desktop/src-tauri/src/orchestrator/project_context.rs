@@ -50,6 +50,11 @@ fn store_tree(dir: PathBuf, tree: &FolderTree) {
     cache.insert(dir, (Instant::now(), tree.clone()));
 }
 const PROMPT_TREE_MAX_CHARS: usize = 1800;
+const ROOT_INSTRUCTION_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md"];
+pub(super) const ROOT_INSTRUCTIONS_LABEL: &str = "Instruções da raiz do projeto";
+// Por arquivo: o texto vai em toda sessão nova, então um arquivo gigante não pode tomar o prompt.
+pub(super) const ROOT_INSTRUCTIONS_MAX_CHARS: usize = 8000;
+pub(super) const ROOT_INSTRUCTIONS_TRUNCATED: &str = "[incompleto: leia o arquivo para o resto]";
 const RESERVED_FOOTER_CHARS: usize = 64;
 
 pub(super) fn load_project(app: &AppHandle, project_id: i64) -> Result<Project, FlowError> {
@@ -153,6 +158,53 @@ pub(super) async fn scan_structure(dir: &Path) -> Option<FolderTree> {
 }
 
 pub(super) fn project_context(project: &Project, tree: Option<&FolderTree>) -> String {
+    let mut context = project_identity(project);
+    for (file, text) in root_instructions(Path::new(&project.path)) {
+        context.push_str(&format!("\n{ROOT_INSTRUCTIONS_LABEL} ({file}):\n{text}"));
+    }
+    if let Some(tree) = tree {
+        context.push('\n');
+        context.push_str(&project_tree_block(tree));
+    }
+    context
+}
+
+// O Ember só roteia pedidos: nem a árvore de arquivos nem as instruções da raiz entram no prompt dele.
+pub(super) fn project_context_without_tree(project: &Project) -> String {
+    project_identity(project)
+}
+
+// O Claude roda sem setting sources: sem isto, cada sessão nova gastaria uma ida à API lendo esses arquivos.
+fn root_instructions(dir: &Path) -> Vec<(&'static str, String)> {
+    ROOT_INSTRUCTION_FILES
+        .iter()
+        .filter_map(|file| {
+            let path = dir.join(file);
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+                Err(error) => {
+                    eprintln!("Não foi possível ler {}: {error}", path.display());
+                    return None;
+                }
+            };
+            let text = text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            Some((*file, capped_instructions(text)))
+        })
+        .collect()
+}
+
+fn capped_instructions(text: &str) -> String {
+    match text.char_indices().nth(ROOT_INSTRUCTIONS_MAX_CHARS) {
+        Some((cut, _)) => format!("{}\n{ROOT_INSTRUCTIONS_TRUNCATED}", &text[..cut]),
+        None => text.to_string(),
+    }
+}
+
+fn project_identity(project: &Project) -> String {
     let name = project.name.trim();
     let mut sentences = vec![format!(
         "{PROJECT_IDENTITY_PREFIX}{name}{PROJECT_IDENTITY_PATH_PREFIX}{}.",
@@ -174,17 +226,7 @@ pub(super) fn project_context(project: &Project, tree: Option<&FolderTree>) -> S
     sentences.push(format!(
         "{PROJECT_NAME_RULE_PREFIX}{name}{PROJECT_NAME_RULE_SUFFIX}"
     ));
-    let mut context = sentences.join(" ");
-    if let Some(tree) = tree {
-        context.push('\n');
-        context.push_str(&project_tree_block(tree));
-    }
-    context
-}
-
-// O Ember só roteia pedidos: a árvore de arquivos não entra no prompt dele.
-pub(super) fn project_context_without_tree(project: &Project) -> String {
-    project_context(project, None)
+    sentences.join(" ")
 }
 
 fn entry_depth(entry: &str) -> usize {
