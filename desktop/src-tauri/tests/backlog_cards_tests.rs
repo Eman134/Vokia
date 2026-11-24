@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::agents::Agent;
-use crate::db::{AgentActor, CardOperation, CardOutcome, Db, DbError, NewProject};
+use crate::db::{AgentActor, CardOperation, CardOutcome, Db, DbError, NewCard, NewProject};
 
 static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
@@ -627,7 +627,7 @@ fn reordenar_coluna_atualiza_posicoes_em_transacao_sem_colidir_novos_cards() {
         .expect("novo card após reordenação não deve colidir")
         .pop()
         .unwrap();
-    assert_eq!(fifth.id, "item-5");
+    assert_eq!(fifth.id, "quinto");
 }
 
 #[test]
@@ -701,4 +701,112 @@ fn definir_prioridade_valida_valores_normaliza_e_limpa_com_vazio() {
         db.set_item_priority(project_id, "item-99", "Alta"),
         Err(DbError::BacklogItemNotFound(_))
     ));
+}
+
+fn created_ids(db: &Db, project_id: i64, titles: &[&str]) -> Vec<String> {
+    let operations: Vec<CardOperation> = titles.iter().map(|title| create(title)).collect();
+    db.apply_card_operations(project_id, &vexa(), &operations)
+        .expect("a criação deveria ser aceita")
+        .into_iter()
+        .map(|result| result.id)
+        .collect()
+}
+
+#[test]
+fn id_do_card_deriva_do_titulo_sem_acento_caixa_ou_pontuacao() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-basico");
+
+    let ids = created_ids(&db, project_id, &["Revisar Autenticação & Sessões!", "  Ajustar   o  CSS  "]);
+
+    assert_eq!(ids, vec!["revisar-autenticacao-sessoes", "ajustar-o-css"]);
+}
+
+#[test]
+fn id_do_card_corta_em_fronteira_de_palavra_no_limite_de_tamanho() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-limite");
+
+    let ids = created_ids(
+        &db,
+        project_id,
+        &[
+            "Implementar migracao completa do banco de dados legado",
+            &"a".repeat(60),
+        ],
+    );
+
+    assert_eq!(ids[0], "implementar-migracao-completa-do-banco");
+    assert!(ids[0].len() <= 40);
+    assert_eq!(ids[1], "a".repeat(40));
+}
+
+#[test]
+fn id_do_card_colidido_ganha_sufixo_numerico_crescente() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-colisao");
+
+    let ids = created_ids(
+        &db,
+        project_id,
+        &["Revisar login", "Revisar login!", "revisar-login", "Revisar  login?"],
+    );
+
+    assert_eq!(ids, vec!["revisar-login", "revisar-login-2", "revisar-login-3", "revisar-login-4"]);
+}
+
+#[test]
+fn id_do_card_nao_colide_com_slug_que_ja_termina_em_numero() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-sufixo");
+
+    let ids = created_ids(&db, project_id, &["Revisar login 2", "Revisar login", "Revisar login!"]);
+
+    assert_eq!(ids, vec!["revisar-login-2", "revisar-login", "revisar-login-3"]);
+}
+
+#[test]
+fn id_do_card_e_unico_apenas_dentro_do_projeto() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let first = project(&db, "slug-projeto-a");
+    let second = project(&db, "slug-projeto-b");
+
+    assert_eq!(created_ids(&db, first, &["Revisar login"]), vec!["revisar-login"]);
+    assert_eq!(created_ids(&db, second, &["Revisar login"]), vec!["revisar-login"]);
+}
+
+#[test]
+fn titulo_sem_letras_ou_digitos_cai_no_id_sequencial() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-fallback");
+
+    let ids = created_ids(&db, project_id, &["Primeiro", "!!! ???", "日本語"]);
+
+    assert_eq!(ids, vec!["primeiro", "item-2", "item-3"]);
+}
+
+#[test]
+fn card_criado_pelo_usuario_tambem_recebe_id_derivado_do_titulo() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "slug-usuario");
+    let new_card = |title: &str| NewCard {
+        title: title.to_string(),
+        description: None,
+        origin: "usuario".to_string(),
+        links: Vec::new(),
+    };
+
+    let first = db.create_card(project_id, &new_card("Tornar a tela responsiva")).unwrap();
+    let second = db.create_card(project_id, &new_card("Tornar a tela responsiva!")).unwrap();
+
+    assert_eq!(first.id, "tornar-a-tela-responsiva");
+    assert_eq!(second.id, "tornar-a-tela-responsiva-2");
+    assert_eq!(db.read_card(project_id, &first.id).unwrap().title, "Tornar a tela responsiva");
 }

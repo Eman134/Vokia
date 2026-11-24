@@ -822,8 +822,8 @@ fn excluir_plano_so_apaga_as_etapas_do_proprio_plano_mesmo_com_prefixo_de_id_par
     let project_id = project(&db, "a");
     let other_project = project(&db, "b");
     let mut accepted_plans = Vec::new();
-    for index in 0..10 {
-        accepted_plans.push(accepted(&db, project_id, &format!("Card {index}")));
+    for index in 1..=10 {
+        accepted_plans.push(accepted(&db, project_id, &format!("Item {index}")));
     }
     let (other_item, other_plan) = accepted(&db, other_project, "Outro");
     let (target_item, target_plan) = accepted_plans.remove(0);
