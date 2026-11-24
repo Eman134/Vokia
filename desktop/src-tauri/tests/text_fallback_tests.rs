@@ -107,7 +107,7 @@ fn sem_mcp_card_criar_grava_o_card_do_agente_e_a_linha_some_do_texto() {
     assert!(reply.cards.changed);
     assert_eq!(
         reply.cards.confirmations,
-        ["Card item-1 criado: Revisar login."]
+        ["Card revisar-login criado: Revisar login."]
     );
     let cards = world.cards();
     assert_eq!(cards.len(), 1);
@@ -120,12 +120,12 @@ fn sem_mcp_card_mover_leva_o_card_do_proprio_agente_para_a_coluna() {
     let world = world();
     world.read(false, "axiom", "#card criar Um");
 
-    let reply = world.read(false, "axiom", "#card mover item-1|In progress");
+    let reply = world.read(false, "axiom", "#card mover um|In progress");
 
     assert!(reply.rejected.is_empty(), "{:?}", reply.rejected);
     assert_eq!(
         reply.cards.confirmations,
-        ["Card item-1 movido para In progress."]
+        ["Card um movido para In progress."]
     );
     assert_eq!(world.cards()[0].column.as_deref(), Some("In progress"));
 }

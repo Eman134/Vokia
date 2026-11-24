@@ -161,7 +161,7 @@ fn create_card_grava_no_projeto_do_binding_com_o_agente_dono_e_confirma_na_frase
     );
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card item-1 criado: Revisar login.");
+    assert_eq!(outcome.text, "Card revisar-login criado: Revisar login.");
     let card = &world.cards(project)[0];
     assert_eq!(card.who, "axiom");
     assert_eq!(card.origin, "agente");
@@ -184,7 +184,7 @@ fn move_card_aceita_coluna_em_minuscula_e_grava_a_forma_canonica() {
     );
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card item-1 movido para In progress.");
+    assert_eq!(outcome.text, "Card um movido para In progress.");
     assert_eq!(
         world.cards(project)[0].column.as_deref(),
         Some("In progress")
@@ -203,7 +203,7 @@ fn move_card_para_a_coluna_atual_avisa_sem_mudar_nem_confirmar_no_slot() {
     let outcome = world.call(&axiom, "move_card", json!({ "id": id, "column": "Backlog" }));
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card item-1 já está em Backlog.");
+    assert_eq!(outcome.text, "Card um já está em Backlog.");
     assert!(!axiom.slot.lock().changed);
     assert!(axiom.slot.lock().confirmations.is_empty());
 }
@@ -219,14 +219,14 @@ fn read_card_devolve_coluna_dono_origem_descricao_e_atividade() {
         json!({ "title": "Um", "description": "Detalhe" }),
     );
 
-    let outcome = world.call(&axiom, "read_card", json!({ "id": "item-1" }));
+    let outcome = world.call(&axiom, "read_card", json!({ "id": "um" }));
 
     assert!(!outcome.is_error);
     let lines: Vec<&str> = outcome.text.lines().collect();
     assert_eq!(
         &lines[..5],
         [
-            "Card item-1: Um",
+            "Card um: Um",
             "Coluna: Backlog",
             "Dono: axiom",
             "Origem: agente",
@@ -259,9 +259,9 @@ fn list_backlog_lista_do_mais_novo_para_o_mais_antigo_e_filtra_por_coluna() {
 
     assert_eq!(
         all.text,
-        "item-2 | Segundo | In review | axiom | agente\nitem-1 | Primeiro | Backlog | axiom | agente"
+        "segundo | Segundo | In review | axiom | agente\nprimeiro | Primeiro | Backlog | axiom | agente"
     );
-    assert_eq!(done.text, "item-2 | Segundo | In review | axiom | agente");
+    assert_eq!(done.text, "segundo | Segundo | In review | axiom | agente");
     assert_eq!((ready.is_error, ready.text.as_str()), (false, NO_CARDS));
 }
 
@@ -433,30 +433,30 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_aparece_nem_se_confunde() {
     let second = world.project("b");
     let in_a = world.agent("axiom", "Axiom", first);
     let in_b = world.agent("axiom", "Axiom", second);
-    world.create(&in_a, "Só do A");
+    world.create(&in_a, "Mesmo card");
 
-    let missing = world.call(&in_b, "read_card", json!({ "id": "item-1" }));
+    let missing = world.call(&in_b, "read_card", json!({ "id": "mesmo-card" }));
     let moved = world.call(
         &in_b,
         "move_card",
-        json!({ "id": "item-1", "column": "Done" }),
+        json!({ "id": "mesmo-card", "column": "Done" }),
     );
-    world.create(&in_b, "Do B");
-    let read_b = world.call(&in_b, "read_card", json!({ "id": "item-1" }));
+    world.create(&in_b, "Mesmo card");
+    let read_b = world.call(&in_b, "read_card", json!({ "id": "mesmo-card" }));
     let list_b = world.call(&in_b, "list_backlog", json!({}));
 
     assert_eq!(
         (missing.is_error, missing.text.as_str()),
-        (true, "O item item-1 não existe no backlog deste projeto.")
+        (true, "O item mesmo-card não existe no backlog deste projeto.")
     );
     assert!(moved.is_error);
     assert!(
-        read_b.text.starts_with("Card item-1: Do B"),
+        read_b.text.starts_with("Card mesmo-card: Mesmo card"),
         "{}",
         read_b.text
     );
-    assert_eq!(list_b.text, "item-1 | Do B | Backlog | axiom | agente");
-    assert_eq!(column(&world, first, "item-1"), "Backlog");
+    assert_eq!(list_b.text, "mesmo-card | Mesmo card | Backlog | axiom | agente");
+    assert_eq!(column(&world, first, "mesmo-card"), "Backlog");
 }
 
 #[test]
@@ -585,18 +585,18 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "item-1", "column": "Backlog" }),
+        json!({ "id": "um", "column": "Backlog" }),
     );
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "item-1", "column": "Ready" }),
+        json!({ "id": "um", "column": "Ready" }),
     );
-    world.call(&axiom, "read_card", json!({ "id": "item-1" }));
+    world.call(&axiom, "read_card", json!({ "id": "um" }));
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "item-1", "column": "In review" }),
+        json!({ "id": "um", "column": "In review" }),
     );
     std::thread::sleep(std::time::Duration::from_millis(300));
 
@@ -604,7 +604,7 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     assert!(slot.changed);
     assert_eq!(
         slot.confirmations,
-        ["Card item-1 criado: Um.", "Card item-1 movido para In review."]
+        ["Card um criado: Um.", "Card um movido para In review."]
     );
     let seen: Vec<Value> = events.lock().unwrap().clone();
     let backlog: Vec<&Value> = seen
@@ -628,7 +628,7 @@ fn confirmacao_da_troca_sai_no_end_e_o_slot_fica_vazio_depois_do_envio() {
     let collected = axiom.slot.end().confirmations;
     let again = axiom.slot.end().confirmations;
 
-    assert_eq!(collected, ["Card item-1 criado: Um."]);
+    assert_eq!(collected, ["Card um criado: Um."]);
     assert!(again.is_empty());
     assert!(!axiom.slot.lock().changed);
     assert!(axiom.slot.lock().confirmations.is_empty());
