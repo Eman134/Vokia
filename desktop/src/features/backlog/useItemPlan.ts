@@ -354,6 +354,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
       }
       plans.value = linkedPlansOf(entries)
     },
+    { immediate: true },
   )
 
   function proposalFor(item: BacklogItem): ParsedProposal | undefined {
