@@ -105,6 +105,59 @@ Conferido no código em 2026-10-28, em `desktop/src`, para os itens ligados às 
 | --- | --- | --- | --- |
 | 035 | Criação de agentes pela interface | Permite criar agentes pela interface, ao lado da Iara e do Davi, com nome, papel, retrato, CLI, modelo, skills e permissões. | [035](backlog/035.md) |
 
+## G · Entrega e orquestração
+
+Itens do [plano de melhorias](plano-de-melhorias.md) de 2026-11-24, inspirados no T3 Code e no Orca. A ordem de execução está na seção 5 do plano.
+
+| ID | Nome | O que faz | Documento |
+| --- | --- | --- | --- |
+| 036 | Preparo do worktree | Roda o setup e o teardown do projeto no worktree do card e dá a ele uma porta própria. | [036](backlog/036.md) |
+| 037 | Checkpoint por turno e desfazer | Guarda o estado do worktree antes de cada turno e deixa voltar a ele pela conversa. | [037](backlog/037.md) |
+| 038 | Diff do card com comentário na linha | Mostra o diff do card em três escopos e devolve comentários de linha ao agente autor. | [038](backlog/038.md) |
+| 039 | PR e vigilância de CI | Abre o PR pelo card e devolve falha de CI, revisão e conflito ao agente. | [039](backlog/039.md) |
+| 040 | Notificação nativa do sistema | Avisa pelo sistema operacional, com o app fora de foco, que há decisão esperando. | [040](backlog/040.md) |
+| 041 | Registro de eventos da orquestração | Grava a orquestração de cada card como eventos, para retomar, reproduzir e medir. | [041](backlog/041.md) |
+| 042 | Contexto levado na troca de provedor | Passa um resumo com teto de tokens ao agente quando o fallback troca o provedor. | [042](backlog/042.md) |
+| 043 | Dependência entre cards | Bloqueia um card até outro estar em Done e mostra o bloqueio no kanban. | [043](backlog/043.md) |
+| 044 | Estado do git no card do kanban | Mostra branch, tamanho do diff, PR e CI no próprio card. | [044](backlog/044.md) |
+| 045 | Corrigir o rumo do turno em andamento | Entrega uma correção ao agente durante o turno, além da fila. | [045](backlog/045.md) |
+| 046 | Comparar agentes na mesma tarefa | Roda o card em dois agentes ou modelos e deixa escolher o melhor resultado. | [046](backlog/046.md) |
+| 047 | Automações e gatilhos | Cria cards por agenda ou por evento do repositório. | [047](backlog/047.md) |
+| 048 | Issues do GitHub e do Linear no backlog | Importa issues como cards e liga card, issue e PR. | [048](backlog/048.md) |
+| 049 | Limite de trabalho em andamento e tempo de ciclo | Limita cards por coluna e por agente e mede o tempo de ciclo. | [049](backlog/049.md) |
+| 050 | Separar decisão e efeito na orquestração | Deixa a regra da orquestração sem efeitos, testável sem processo nem banco. | [050](backlog/050.md) |
+| 051 | Acesso remoto e celular | Acompanha e responde decisões de outro aparelho. | [051](backlog/051.md) |
+| 052 | Instruções da raiz do projeto no prompt do agente | Coloca o `CLAUDE.md` e o `AGENTS.md` da raiz no prompt, poupando leituras. | [052](backlog/052.md) |
+| 053 | Limpar avisos de código morto do build | Deixa o `cargo check` sem avisos. | [053](backlog/053.md) |
+
+## H · Interface e experiência
+
+Itens do [plano de UI/UX](plano-ui-ux.md) de 2026-11-24 (UX-01 a UX-21, nesta ordem). A ordem de execução está na seção 5 do plano.
+
+| ID | Nome | O que faz | Documento |
+| --- | --- | --- | --- |
+| 054 | Rolagem por coluna com cabeçalho fixo | Faz cada coluna do quadro de Tasks rolar sozinha, para que uma coluna longa (como o Done com 60 cards) não arraste as outras nem esconda o cabeçalho e o "Novo pedido". | [054](backlog/054.md) |
+| 055 | Done compacto, agrupado e recolhível | Transforma o Done num arquivo de consulta: card em uma linha, agrupado por data de conclusão e recolhível, para não gastar espaço com o que ninguém opera. | [055](backlog/055.md) |
+| 056 | Backlog compacto com triagem em lote | Deixa o Backlog grande legível e permite triar vários itens de uma vez, em vez de 46 botões "Triar" iguais. | [056](backlog/056.md) |
+| 057 | Card sem repetição e conteúdo por coluna | Faz cada card mostrar só o que interessa na coluna em que está e nunca repetir o mesmo texto. | [057](backlog/057.md) |
+| 058 | Barra de filtros real | Troca o filtro único de feature por uma barra de busca e filtros que ajuda a achar cards e o que precisa do usuário. | [058](backlog/058.md) |
+| 059 | Visão em lista para consulta | Oferece uma tabela ordenável dos cards, para consultar o Backlog grande e o histórico do Done. | [059](backlog/059.md) |
+| 060 | Limite de trabalho visível na coluna | Mostra no título da coluna quanto do limite de trabalho em andamento está ocupado. | [060](backlog/060.md) |
+| 061 | Painel lateral no lugar do modal do card | Abre o card num painel à direita, com o quadro visível atrás, para comparar e passar de um card ao outro sem fechar e abrir. | [061](backlog/061.md) |
+| 062 | Rodapé do card com hierarquia de ação | Organiza as ações do card em primária, secundárias e raras, e tira as destrutivas de perto das ações comuns. | [062](backlog/062.md) |
+| 063 | Desdobramento do plano legível | Torna o desdobramento do plano no card fácil de ler: código como código, uma etapa aberta por vez e sem selos repetidos. | [063](backlog/063.md) |
+| 064 | Coluna lateral do card sem repetição | Enxuga a coluna lateral do card: nomes em vez de IDs, sem repetir o plano e com custo e tempo nos detalhes. | [064](backlog/064.md) |
+| 065 | Atividade do card com texto e tempo humanos | Corrige o texto gerado na atividade do card e mostra datas relativas, com a data completa à mão. | [065](backlog/065.md) |
+| 066 | Permissões automáticas dentro da atividade do turno | Recolhe as aprovações automáticas de comando dentro da atividade do turno, para que a resposta do agente não fique escondida entre linhas de PowerShell. | [066](backlog/066.md) |
+| 067 | Delegação em linha na conversa | Mostra a delegação entre agentes como uma linha no eixo das mensagens, em vez de um bloco centralizado de duas linhas. | [067](backlog/067.md) |
+| 068 | Largura de leitura nas mensagens | Limita a largura do texto das mensagens para que linhas longas não cansem a leitura em monitores largos. | [068](backlog/068.md) |
+| 069 | Threads com estado e agrupamento | Mostra na lista de threads qual está viva, qual precisa do usuário e a que card pertence, separando as concluídas. | [069](backlog/069.md) |
+| 070 | Agentes ocupados primeiro | Destaca na lista de agentes quem está trabalhando e compacta os livres. | [070](backlog/070.md) |
+| 071 | Barra de estado no lugar da pílula flutuante | Tira o indicador "<agente> trabalhando" do meio da tela, onde cobre cards e mensagens, e o leva para uma barra de estado fixa. | [071](backlog/071.md) |
+| 072 | Cabeçalho de página compacto | Reduz o cabeçalho das páginas, que ocupa cerca de 100px fixos numa ferramenta aberta o dia todo. | [072](backlog/072.md) |
+| 073 | Idioma único na interface | Usa um idioma só nos rótulos de estado do card, para o usuário não traduzir de cabeça entre "Ready" e "Pronto para o time". | [073](backlog/073.md) |
+| 074 | Atalhos de teclado | Dá atalhos de teclado para as ações mais frequentes do quadro. | [074](backlog/074.md) |
+
 ## Pendências do diagrama
 
 Sete pendências foram levantadas no diagrama; a 7 foi removida porque o modo "desligada" não existe. As decisões já aceitas e as pendências abertas (PEN) estão em [PENDENCIAS.md](PENDENCIAS.md). Os requisitos abaixo citam cada ponto como `Pendência do diagrama (n)`.
