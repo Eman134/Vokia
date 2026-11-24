@@ -23,7 +23,7 @@ import {
   type PendingAgentEntry,
 } from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
-import PermissionPrompt from './PermissionPrompt.vue'
+import PermissionRow from './PermissionRow.vue'
 import AgentPortrait from './AgentPortrait.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
@@ -350,10 +350,8 @@ watch(
           </div>
           <MessageEntry v-else :entry="item.entry" />
         </li>
-      </ol>
-      <ol v-if="feed.permissions.length > 0" class="mt-3 flex w-full min-w-0 flex-col gap-3">
-        <li v-for="permission in feed.permissions" :key="permission.id">
-          <PermissionPrompt :permission="permission" @decide="(allow, reason) => feed.decidePermission(permission.id, allow, false, reason)" />
+        <li v-if="feed.permissions[0]" :key="feed.permissions[0].id">
+          <PermissionRow :permission="feed.permissions[0]" :pending-count="feed.permissions.length" />
         </li>
       </ol>
       <div

@@ -6,7 +6,8 @@ import { useRoster } from './useRoster'
 import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
 import TemporaryOverrideBadge from '../agents/TemporaryOverrideBadge.vue'
 import type { AgentProfile } from './teamApi'
-import type { PermissionResultOutcome, Speaker, VokiaTaskResult } from './events'
+import type { Speaker, VokiaTaskResult } from './events'
+import { permissionResultRow } from './permissionSummary'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStartedRow, type ActivityRowModel } from './activitySummary'
@@ -80,15 +81,6 @@ const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
 const USAGE_REVEAL_CLASSES =
   'flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none'
-
-const OUTCOME_LABELS: Record<PermissionResultOutcome, string> = {
-  allowed: '✓ Aprovado:',
-  denied: '✕ Negado:',
-  expired: '⏱ Expirou sem resposta:',
-  'project-rule': '✓ Regra do projeto:',
-  auto: '✓ Modo auto:',
-  bypass: '✓ Modo bypass:',
-}
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
@@ -360,11 +352,11 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   >
     <ActivityRow :row="taskResultLine(entry)" />
   </ul>
-  <p
+  <ul
     v-else-if="entry.type === 'permission-result'"
     data-testid="permission-result"
-    class="wrap-break-word whitespace-pre-wrap text-caption text-muted"
+    class="flex min-w-0 flex-col gap-1 text-caption text-muted"
   >
-    {{ OUTCOME_LABELS[entry.outcome] }} {{ entry.detail }}
-  </p>
+    <ActivityRow :row="permissionResultRow(entry)" />
+  </ul>
 </template>

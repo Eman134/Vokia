@@ -110,7 +110,9 @@ async function showPreview(): Promise<void> {
       >
         <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
       </button>
+      <slot />
     </div>
+    <slot name="details" />
     <ul v-if="row.items?.length && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">
       <li v-for="item in row.items" :key="item" class="truncate">
         <UiTooltip :text="item" class="block truncate">{{ item }}</UiTooltip>
