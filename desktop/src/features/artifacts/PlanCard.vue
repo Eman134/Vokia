@@ -3,13 +3,12 @@ import { computed } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import { DEFAULT_JITTER, sketchRect } from '../../ui/sketch/sketchPath'
-import type { BacklogColumn, BacklogItem, BacklogState } from '../backlog/backlogTypes'
+import { COLUMN_LABEL, type BacklogItem, type BacklogState } from '../backlog/backlogTypes'
 import type { ParsedProposal } from '../backlog/planProposal'
 import { CARD_CLASSES, CARD_FOOTER_CLASSES, SUMMARY_LINES_CLASSES, WRAP_CLASSES, sheetTilt } from './artifactCardClasses'
 import { plainSummary } from './artifactsCopy'
-import { planChip, planProgress } from './planProgress'
+import { isStageDone, planChip, planProgress } from './planProgress'
 
-const DONE_COLUMN: BacklogColumn = 'Done'
 const TAB_WIDTH = 44
 const TAB_HEIGHT = 18
 const TAB_SEED = 9
@@ -30,7 +29,9 @@ const stageCount = computed(() => (props.stages.length > 0 ? props.stages.length
 const stageLabel = computed(() => `${stageCount.value} ${stageCount.value === 1 ? 'etapa' : 'etapas'}`)
 const chip = computed(() => planChip(props.state, props.item.column))
 const summary = computed(() => plainSummary(props.proposal.summary))
-const finished = computed(() => props.item.column === DONE_COLUMN)
+const finished = computed(() => isStageDone(props.item))
+// Depois de aceito o selo já diz a coluna; antes, o rodapé diz onde o card está.
+const cardColumn = computed(() => (props.state === 'vinculado' || props.item.column === undefined ? undefined : COLUMN_LABEL[props.item.column]))
 </script>
 
 <template>
@@ -55,7 +56,8 @@ const finished = computed(() => props.item.column === DONE_COLUMN)
       <UiProgress v-if="progress" :value="progress.percent" pencil />
       <span class="flex flex-wrap justify-between gap-x-3">
         <span class="font-mono text-faint">{{ item.id }}</span>
-        <span v-if="!progress && stageCount > 0">{{ stageLabel }}</span>
+        <span v-if="cardColumn">{{ cardColumn }}</span>
+        <span v-else-if="!progress && stageCount > 0">{{ stageLabel }}</span>
       </span>
     </span>
   </button>

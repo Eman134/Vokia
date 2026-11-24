@@ -1,3 +1,6 @@
+import type { ArtifactGroupId, StateFilter } from './artifactBrowse'
+import type { ArtifactsLayout } from './artifactsView'
+
 const MS_PER_MINUTE = 60_000
 const MINUTES_PER_HOUR = 60
 const HOURS_PER_DAY = 24
@@ -154,3 +157,30 @@ export function plainSummary(text: string): string {
     .replace(SPACES, ' ')
     .trim()
 }
+
+export const GROUP_LABEL: Record<ArtifactGroupId, string> = {
+  precisa: 'Precisa de você',
+  execucao: 'Em execução',
+  prontos: 'Prontos',
+  concluidos: 'Concluídos',
+  documentos: 'Documentos',
+}
+export const STATE_FILTER_LABEL = 'Estado'
+export const STATE_FILTER_OPTIONS: readonly { value: StateFilter; label: string }[] = [
+  { value: 'todos', label: 'Todos os estados' },
+  { value: 'proposta', label: 'Proposta' },
+  { value: 'pronto', label: 'Pronto' },
+  { value: 'execucao', label: 'Em execução' },
+  { value: 'concluido', label: 'Concluído' },
+]
+export const SEARCH_LABEL = 'Buscar artefatos'
+export const SEARCH_PLACEHOLDER = 'Buscar por título, ID ou resumo'
+export const SEARCH_CLEAR_LABEL = 'Limpar busca'
+export const NOTHING_FOUND_TITLE = 'Nada encontrado'
+export const CLEAR_FILTERS_LABEL = 'Limpar filtros'
+export const LAYOUT_LABEL = 'Visualização'
+export const LAYOUT_OPTIONS: readonly { value: ArtifactsLayout; label: string }[] = [
+  { value: 'grade', label: 'Grade' },
+  { value: 'lista', label: 'Lista' },
+]
+export const PLAN_KIND_LABEL = 'Plano'

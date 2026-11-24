@@ -8,8 +8,6 @@ import UiIcon from '../../ui/UiIcon.vue'
 import UiProgress from '../../ui/UiProgress.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import { DEFAULT_JITTER, sketchCheck } from '../../ui/sketch/sketchPath'
-import type { AppPage } from '../../shell/railNav'
-import { useNavigation } from '../../shell/useNavigation'
 import { COLUMN_LABEL, DEFAULT_COLUMN, MOVABLE_COLUMNS, type BacklogColumn, type BacklogItem } from '../backlog/backlogTypes'
 
 const DONE_COLUMN: BacklogColumn = 'Done'
@@ -18,18 +16,17 @@ const CHECK_SEED = 5
 const CHECK_PATH = sketchCheck(CHECK_BOX, CHECK_BOX, CHECK_SEED, DEFAULT_JITTER)
 const STRIKE_CLASSES = 'pointer-events-none absolute inset-x-0 top-1/2 h-2 -translate-y-1/2 text-muted'
 import { useBacklog } from '../backlog/useBacklog'
+import { useOpenCard } from './useOpenCard'
 import { STAGE_COLUMN_LABEL, STAGE_OPEN_LABEL } from './artifactsCopy'
 import { progressOf, stageChip, stagesOf } from './planProgress'
 
 const WRAP_CLASSES = 'wrap-break-word'
 const ROW_CLASSES = 'flex min-w-0 flex-col gap-3 rounded-md border border-line p-3.5'
 const EMPTY_PROGRESS = { done: 0, total: 0, percent: 0 }
-const BACKLOG_PAGE: AppPage = 'backlog'
 
 const props = defineProps<{ stage: BacklogItem; parentTitle?: string }>()
 
 const backlog = useBacklog()
-const navigation = useNavigation()
 const column = computed<BacklogColumn>(() => props.stage.column ?? DEFAULT_COLUMN)
 // Uma etapa em execução (In progress, In review) aparece com a coluna atual, que não é destino de moveTo.
 const columnOptions = computed(() =>
@@ -48,11 +45,7 @@ function moveTo(target: string | undefined): void {
   if (next) backlog.moveTo(props.stage.id, next)
 }
 
-// O modal do card mora na página Backlog: abrir sem navegar não mostraria nada.
-function openCard(): void {
-  backlog.open(props.stage.id)
-  navigation.goTo(BACKLOG_PAGE)
-}
+const openCard = useOpenCard()
 
 const childProgress = computed(
   () =>
@@ -86,7 +79,7 @@ const childProgress = computed(
         data-testid="stage-column"
         @update:model-value="moveTo"
       />
-      <UiButton variant="quiet" size="sm" data-testid="stage-open" @press="openCard">{{ STAGE_OPEN_LABEL }}</UiButton>
+      <UiButton variant="quiet" size="sm" data-testid="stage-open" @press="openCard(stage.id)">{{ STAGE_OPEN_LABEL }}</UiButton>
     </div>
 
     <div v-if="children.length" class="flex flex-col gap-1.5">

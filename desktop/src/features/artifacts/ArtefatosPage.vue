@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import UiButton from '../../ui/UiButton.vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
@@ -8,16 +9,19 @@ import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
+import UiSelect from '../../ui/UiSelect.vue'
 import { PAGE_LABELS } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import { useBacklog } from '../backlog/useBacklog'
 import { parseProposal } from '../backlog/planProposal'
 import { useItemPlan } from '../backlog/useItemPlan'
 import { useProjects } from '../projects/useProjects'
-import type { ArtifactDocument } from './artifactApi'
+import { planArtifactId, type ArtifactDocument, type ArtifactSummary } from './artifactApi'
+import { ALL_STATES, groupEntries, matchesQuery, matchesState, type BrowsableArtifact, type StateFilter } from './artifactBrowse'
 import ArtifactCard from './ArtifactCard.vue'
 import ArtifactDocumentView from './ArtifactDocumentView.vue'
 import ArtifactEditorDialog from './ArtifactEditorDialog.vue'
+import ArtifactListRow from './ArtifactListRow.vue'
 import {
   ARTIFACTS_ALL_LABEL,
   ARTIFACTS_BACK_LABEL,
@@ -27,18 +31,38 @@ import {
   ARTIFACTS_NEW_LABEL,
   ARTIFACTS_OPENING_TEXT,
   ARTIFACTS_PLANS_LABEL,
+  CLEAR_FILTERS_LABEL,
+  GROUP_LABEL,
   IMPORT_LABEL,
   kindTabLabel,
+  LAYOUT_LABEL,
+  LAYOUT_OPTIONS,
+  NOTHING_FOUND_TITLE,
+  PLAN_KIND_LABEL,
+  SEARCH_CLEAR_LABEL,
+  SEARCH_LABEL,
+  SEARCH_PLACEHOLDER,
+  STATE_FILTER_LABEL,
+  STATE_FILTER_OPTIONS,
 } from './artifactsCopy'
+import { DEFAULT_VIEW, readView, writeView, type ArtifactsView } from './artifactsView'
 import PlanArtifact from './PlanArtifact.vue'
 import PlanCard from './PlanCard.vue'
 import PlanImportDialog from './PlanImportDialog.vue'
-import { stagesOf } from './planProgress'
+import { planChip, planProgress, stagesOf } from './planProgress'
 import { useArtifacts } from './useArtifacts'
 
 const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-4.5 overflow-y-auto ${PAGE_INSET_CLASSES}`
 const AREA_CLASSES = 'relative flex flex-1 flex-col'
 const GRID_CLASSES = 'relative grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-3.5 p-2'
+const LIST_CLASSES = 'relative flex flex-col rounded-md border border-line bg-surface'
+const GROUPS_CLASSES = 'relative flex flex-col gap-5'
+const GROUP_TITLE_CLASSES = 'flex items-baseline gap-2 px-2 text-card-title text-ink'
+const GROUP_TOGGLE_CLASSES = `flex w-fit cursor-pointer disabled:cursor-not-allowed items-baseline gap-2 rounded-sm px-2 text-card-title text-ink ${INK_FOCUS_CLASSES}`
+const GROUP_COUNT_CLASSES = 'text-caption text-muted'
+const SEARCH_CLASSES = `h-9 w-full min-w-0 rounded-md border border-line bg-surface pl-3 pr-8 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`
+const SEARCH_CLEAR_CLASSES = `absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer rounded-sm px-1.5 text-muted hover:text-ink ${INK_FOCUS_CLASSES}`
+const CLOSED_GROUP = 'concluidos'
 const EMPTY_AREA_CLASSES = 'relative flex flex-1 items-center justify-center'
 const ALL_FILTER = 'todos'
 const PLANS_FILTER = 'planos'
@@ -93,12 +117,104 @@ watch(filterOptions, (options) => {
   if (!options.some((option) => option.value === filter.value)) filter.value = ALL_FILTER
 })
 
-const visiblePlans = computed(() => (filter.value === ALL_FILTER || filter.value === PLANS_FILTER ? plans.value : []))
-const visibleDocuments = computed(() => {
-  if (filter.value === ALL_FILTER) return documents.value
-  if (filter.value === PLANS_FILTER) return []
-  return documents.value.filter((document) => document.kind === filter.value)
+type PlanView = (typeof plans.value)[number]
+interface CatalogEntry extends BrowsableArtifact {
+  plan?: PlanView
+  document?: ArtifactSummary
+}
+
+const view = ref<ArtifactsView>({ ...DEFAULT_VIEW })
+// A busca, o estado, a visualização e o recolhido valem por projeto; a aba de tipo não é salva.
+watch(
+  () => projectsStore.selected?.id,
+  (projectId) => {
+    view.value = projectId === undefined ? { ...DEFAULT_VIEW } : readView(projectId)
+  },
+  { immediate: true },
+)
+watch(
+  view,
+  (next) => {
+    const projectId = projectsStore.selected?.id
+    if (projectId !== undefined) writeView(projectId, next)
+  },
+  { deep: true },
+)
+
+const catalog = computed<CatalogEntry[]>(() => [
+  ...plans.value.map((plan) => ({
+    key: `${PLAN_SOURCE}:${plan.item.id}`,
+    id: plan.item.id,
+    title: plan.item.title,
+    summary: plan.proposal.summary,
+    state: plan.state,
+    column: plan.item.column,
+    updatedAt: artifacts.planUpdatedAt[planArtifactId(plan.item.id)],
+    plan,
+  })),
+  ...documents.value.map((document) => ({
+    key: `${DOCUMENT_SOURCE}:${document.id}`,
+    id: document.id,
+    title: document.title,
+    summary: document.summary,
+    updatedAt: document.updatedAt,
+    document,
+  })),
+])
+
+function inTab(entry: CatalogEntry): boolean {
+  if (filter.value === ALL_FILTER) return true
+  if (filter.value === PLANS_FILTER) return entry.plan !== undefined
+  return entry.document?.kind === filter.value
+}
+
+const filtering = computed(() => view.value.query.trim() !== '' || view.value.state !== ALL_STATES)
+const groups = computed(() =>
+  groupEntries(
+    catalog.value.filter(
+      (entry) => inTab(entry) && matchesQuery(entry, view.value.query) && matchesState(entry, view.value.state),
+    ),
+  ),
+)
+const showGroupTitles = computed(() => groups.value.length > 1 || groups.value[0]?.id === CLOSED_GROUP)
+const stateModel = computed({
+  get: (): StateFilter => view.value.state,
+  set: (value) => {
+    view.value.state = STATE_FILTER_OPTIONS.find((option) => option.value === value)?.value ?? ALL_STATES
+  },
 })
+
+// Com busca ou filtro ativo, o grupo recolhido abre à força: um resultado escondido pareceria "nada encontrado".
+function groupOpen(id: string): boolean {
+  return id !== CLOSED_GROUP || filtering.value || view.value.doneOpen
+}
+
+function clearFilters(): void {
+  view.value.query = ''
+  view.value.state = ALL_STATES
+}
+
+function kindOf(entry: CatalogEntry): string {
+  return entry.document ? kindLabelOf(entry.document.kind) : PLAN_KIND_LABEL
+}
+
+function chipOf(entry: CatalogEntry): ReturnType<typeof planChip> | undefined {
+  return entry.plan ? planChip(entry.plan.state, entry.plan.item.column) : undefined
+}
+
+function progressOf(entry: CatalogEntry): string | undefined {
+  if (entry.plan) {
+    const progress = planProgress(entry.plan.stages)
+    return progress ? `${progress.done} de ${progress.total} etapas` : undefined
+  }
+  const checklist = entry.document ? artifacts.progress[entry.document.id] : undefined
+  return checklist && checklist.total > 0 ? `${checklist.done} de ${checklist.total} itens` : undefined
+}
+
+function openEntry(entry: CatalogEntry): void {
+  if (entry.plan) opened.value = { source: PLAN_SOURCE, id: entry.plan.item.id }
+  else if (entry.document) openDocument(entry.document.id)
+}
 
 const pendingPlanId = navigation.takePendingPlanId()
 const opened = ref<Opened | null>(pendingPlanId === null ? null : { source: PLAN_SOURCE, id: pendingPlanId })
@@ -219,33 +335,89 @@ function saved(document: ArtifactDocument): void {
       <UiNotice v-if="artifacts.error" :text="artifacts.error" @close="artifacts.clearFeedback()" />
       <div class="flex flex-wrap items-center gap-3">
         <UiSegmented v-model="filter" :options="filterOptions" :label="ARTIFACTS_FILTER_LABEL" wrap />
+        <div class="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+          <div class="relative w-64 max-w-full">
+            <input
+              v-model="view.query"
+              type="text"
+              :class="SEARCH_CLASSES"
+              :aria-label="SEARCH_LABEL"
+              :placeholder="SEARCH_PLACEHOLDER"
+              data-testid="artifacts-search"
+            />
+            <button v-if="view.query" type="button" :class="SEARCH_CLEAR_CLASSES" :aria-label="SEARCH_CLEAR_LABEL" @click="view.query = ''">×</button>
+          </div>
+          <UiSelect v-model="stateModel" :options="STATE_FILTER_OPTIONS" :label="STATE_FILTER_LABEL" data-testid="artifacts-state" />
+          <UiSegmented v-model="view.layout" :options="LAYOUT_OPTIONS" :label="LAYOUT_LABEL" />
+        </div>
       </div>
 
       <div :class="AREA_CLASSES">
-      <div aria-hidden="true" :class="DOT_GRID_CLASSES" />
-      <div v-if="visiblePlans.length || visibleDocuments.length" :class="GRID_CLASSES">
-        <PlanCard
-          v-for="plan in visiblePlans"
-          :key="plan.item.id"
-          :item="plan.item"
-          :proposal="plan.proposal"
-          :state="plan.state"
-          :stages="plan.stages"
-          @open="opened = { source: PLAN_SOURCE, id: plan.item.id }"
-        />
-        <ArtifactCard
-          v-for="document in visibleDocuments"
-          :key="document.id"
-          :summary="document"
-          :kind-label="kindLabelOf(document.kind)"
-          :progress="artifacts.progress[document.id]"
-          @open="openDocument(document.id)"
-        />
-      </div>
-      <div v-else :class="EMPTY_AREA_CLASSES">
-        <p v-if="artifacts.loading" class="text-small text-muted">{{ ARTIFACTS_LOADING_TEXT }}</p>
-        <UiEmpty v-else :title="ARTIFACTS_EMPTY_TITLE" />
-      </div>
+        <div aria-hidden="true" :class="DOT_GRID_CLASSES" />
+        <div v-if="groups.length" :class="GROUPS_CLASSES">
+          <section v-for="group in groups" :key="group.id" class="flex flex-col gap-2" :aria-label="GROUP_LABEL[group.id]" :data-testid="`artifacts-group-${group.id}`">
+            <button
+              v-if="group.id === CLOSED_GROUP"
+              type="button"
+              :class="GROUP_TOGGLE_CLASSES"
+              :aria-expanded="groupOpen(group.id)"
+              :aria-controls="`artifacts-group-body-${group.id}`"
+              :disabled="filtering"
+              @click="view.doneOpen = !view.doneOpen"
+            >
+              <span aria-hidden="true">{{ groupOpen(group.id) ? '▾' : '▸' }}</span>
+              {{ GROUP_LABEL[group.id] }}
+              <span :class="GROUP_COUNT_CLASSES">{{ group.entries.length }}</span>
+            </button>
+            <h3 v-else-if="showGroupTitles" :class="GROUP_TITLE_CLASSES">
+              {{ GROUP_LABEL[group.id] }}
+              <span :class="GROUP_COUNT_CLASSES">{{ group.entries.length }}</span>
+            </h3>
+            <div v-show="groupOpen(group.id)" :id="`artifacts-group-body-${group.id}`">
+              <div v-if="view.layout === 'lista'" :class="LIST_CLASSES">
+                <ArtifactListRow
+                  v-for="entry in group.entries"
+                  :key="entry.key"
+                  :id="entry.id"
+                  :title="entry.title"
+                  :kind-label="kindOf(entry)"
+                  :chip="chipOf(entry)"
+                  :progress="progressOf(entry)"
+                  :updated-at="entry.updatedAt"
+                  @open="openEntry(entry)"
+                />
+              </div>
+              <div v-else :class="GRID_CLASSES">
+                <template v-for="entry in group.entries" :key="entry.key">
+                  <PlanCard
+                    v-if="entry.plan"
+                    :item="entry.plan.item"
+                    :proposal="entry.plan.proposal"
+                    :state="entry.plan.state"
+                    :stages="entry.plan.stages"
+                    @open="openEntry(entry)"
+                  />
+                  <ArtifactCard
+                    v-else-if="entry.document"
+                    :summary="entry.document"
+                    :kind-label="kindLabelOf(entry.document.kind)"
+                    :progress="artifacts.progress[entry.document.id]"
+                    @open="openEntry(entry)"
+                  />
+                </template>
+              </div>
+            </div>
+          </section>
+        </div>
+        <div v-else :class="EMPTY_AREA_CLASSES">
+          <p v-if="artifacts.loading && total === 0" class="text-small text-muted">{{ ARTIFACTS_LOADING_TEXT }}</p>
+          <UiEmpty v-else-if="total === 0" :title="ARTIFACTS_EMPTY_TITLE" />
+          <UiEmpty v-else :title="NOTHING_FOUND_TITLE">
+            <template #action>
+              <UiButton variant="quiet" size="sm" data-testid="artifacts-clear-filters" @press="clearFilters">{{ CLEAR_FILTERS_LABEL }}</UiButton>
+            </template>
+          </UiEmpty>
+        </div>
       </div>
     </template>
 

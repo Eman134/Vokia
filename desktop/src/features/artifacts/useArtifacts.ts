@@ -32,6 +32,7 @@ function messageOf(error: unknown): string {
 export const useArtifacts = defineStore('artifacts', () => {
   const kinds = ref<ArtifactKindInfo[]>([])
   const documents = ref<ArtifactSummary[]>([])
+  const planUpdatedAt = ref<Record<string, number>>({})
   const current = ref<ArtifactDocument | null>(null)
   const progress = ref<Record<string, CachedProgress>>({})
   const loadedProjectId = ref<number | null>(null)
@@ -48,6 +49,7 @@ export const useArtifacts = defineStore('artifacts', () => {
   function clear(): void {
     loadSeq += 1
     documents.value = []
+    planUpdatedAt.value = {}
     current.value = null
     progress.value = {}
     loadedProjectId.value = null
@@ -67,10 +69,13 @@ export const useArtifacts = defineStore('artifacts', () => {
     conflict.value = isArtifactConflict(message)
   }
 
-  // Os planos continuam vindo do backlog; aqui ficam só os documentos livres.
-  async function readDocuments(projectId: number): Promise<ArtifactSummary[]> {
+  // Os planos continuam vindo do backlog; aqui ficam os documentos livres e só a data de atualização de cada plano.
+  async function readList(projectId: number): Promise<{ documents: ArtifactSummary[]; plans: Record<string, number> }> {
     const summaries = await fetchArtifacts(projectId)
-    return summaries.filter((summary) => summary.kind !== PLAN_KIND)
+    return {
+      documents: summaries.filter((summary) => summary.kind !== PLAN_KIND),
+      plans: Object.fromEntries(summaries.filter((summary) => summary.kind === PLAN_KIND).map((summary) => [summary.id, summary.updatedAt])),
+    }
   }
 
   // O resumo não traz o corpo; o progresso do checklist vem da leitura do documento, refeita só quando ele mudou.
@@ -100,9 +105,10 @@ export const useArtifacts = defineStore('artifacts', () => {
     loading.value = true
     try {
       if (kinds.value.length === 0) kinds.value = await fetchArtifactKinds()
-      const list = await readDocuments(projectId)
+      const list = await readList(projectId)
       if (seq !== loadSeq) return
-      documents.value = list
+      documents.value = list.documents
+      planUpdatedAt.value = list.plans
       loadedProjectId.value = projectId
       await loadProgress(projectId, seq)
     } catch (cause) {
@@ -115,9 +121,10 @@ export const useArtifacts = defineStore('artifacts', () => {
   async function refreshList(projectId: number): Promise<void> {
     const generation = loadSeq
     const order = (refreshSeq += 1)
-    const list = await readDocuments(projectId)
+    const list = await readList(projectId)
     if (generation !== loadSeq || order !== refreshSeq || loadedProjectId.value !== projectId) return
-    documents.value = list
+    documents.value = list.documents
+    planUpdatedAt.value = list.plans
     await loadProgress(projectId, generation)
   }
 
@@ -235,6 +242,7 @@ export const useArtifacts = defineStore('artifacts', () => {
   return {
     kinds,
     documents,
+    planUpdatedAt,
     current,
     progress,
     loading,

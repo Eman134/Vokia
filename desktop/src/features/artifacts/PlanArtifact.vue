@@ -6,7 +6,6 @@ import UiCheckbox from '../../ui/UiCheckbox.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiProgress from '../../ui/UiProgress.vue'
-import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
 import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
 import PlanBreakdown from '../backlog/PlanBreakdown.vue'
 import { breakdownOf, type StageFlow } from '../backlog/planBreakdown'
@@ -38,11 +37,13 @@ import {
   PLAN_RISKS_TITLE,
   PLAN_SAVED_NOTICE,
   PLAN_STAGES_TITLE,
+  STAGE_OPEN_LABEL,
 } from './artifactsCopy'
 import PlanEditorDialog from './PlanEditorDialog.vue'
 import { planFileName, planToMarkdown } from './planMarkdown'
 import PlanStageRow from './PlanStageRow.vue'
-import { planProgress } from './planProgress'
+import { planChip, planProgress } from './planProgress'
+import { useOpenCard } from './useOpenCard'
 import { useArtifacts } from './useArtifacts'
 
 const WRAP_CLASSES = 'wrap-break-word'
@@ -147,6 +148,9 @@ async function download(): Promise<void> {
   }
 }
 
+const openCard = useOpenCard()
+const chip = computed(() => planChip(props.state, props.item.column))
+
 async function remove(): Promise<void> {
   const projectId = projects.selected?.id
   if (projectId === undefined) return
@@ -171,7 +175,8 @@ function saved(fresh: PlanArtifactDetail): void {
       <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
         <h3 :class="['min-w-0 flex-1 text-lead text-ink', WRAP_CLASSES]">{{ item.title }}</h3>
         <div class="flex flex-wrap items-center gap-2">
-          <UiBadge :status="STATE_BADGE[state]" :label="STATE_CHIP[state]" />
+          <UiBadge :status="chip.status" :label="chip.label" />
+          <UiButton variant="quiet" size="sm" data-testid="plan-open-card" @press="openCard(item.id)">{{ STAGE_OPEN_LABEL }}</UiButton>
           <UiButton
             variant="quiet"
             size="sm"
