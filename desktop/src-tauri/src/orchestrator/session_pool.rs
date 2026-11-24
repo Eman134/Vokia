@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::time::MissedTickBehavior;
 
-use crate::agents::{replica_of, Agent, AgentRegistry};
+use crate::agents::{is_agent_or_replica, Agent, AgentRegistry};
 use crate::claude::kill_process_tree;
 use crate::db::{Db, DbError, DbState};
 use crate::providers::{ProviderProtocol, ProviderRegistry};
@@ -106,21 +106,16 @@ impl SessionPool {
     // Instrução extra mudou: a sessão do agente e as das réplicas (<base>-<n>), em todos os projetos,
     // fecham no fim da troca em curso e reabrem com o prompt novo.
     pub(crate) async fn retire_agent(&self, agent: &Agent) {
-        end_slots(self.matching(|key| {
-            key.agent == *agent
-                || replica_of(key.agent.as_str()).is_some_and(|(base, _)| base == agent.as_str())
-        }))
-        .await;
+        end_slots(self.matching(|key| is_agent_or_replica(key.agent.as_str(), agent))).await;
     }
 
-    // Gancho da remoção do agente (O4): ainda sem chamador.
-    #[allow(dead_code)]
-    pub(crate) async fn close_agent(&self, db: &Db, agent: Agent) -> Result<(), DbError> {
+    // Agente excluído: os slots saem do mapa e o --resume gravado some, dele e das réplicas.
+    pub(crate) async fn close_agent(&self, db: &Db, agent: &Agent) -> Result<(), DbError> {
         let removed: Vec<Arc<SessionSlot>> = {
             let mut slots = self.lock();
             let keys: Vec<SessionKey> = slots
                 .keys()
-                .filter(|key| key.agent == agent)
+                .filter(|key| is_agent_or_replica(key.agent.as_str(), agent))
                 .cloned()
                 .collect();
             keys.iter().filter_map(|key| slots.remove(key)).collect()

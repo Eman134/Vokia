@@ -1,6 +1,7 @@
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 
+use crate::agents::is_agent_or_replica;
 use crate::events::Agent;
 use crate::session_key::SessionKey;
 
@@ -49,11 +50,16 @@ impl Db {
     }
 
     pub fn clear_agent_sessions(&self, agent: &Agent) -> Result<(), DbError> {
-        let conn = self.conn()?;
-        conn.execute(
-            "DELETE FROM agent_sessions WHERE agent = ?1",
-            params![agent.as_str()],
-        )?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let stored: Vec<String> = tx
+            .prepare("SELECT DISTINCT agent FROM agent_sessions")?
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        for id in stored.iter().filter(|id| is_agent_or_replica(id, agent)) {
+            tx.execute("DELETE FROM agent_sessions WHERE agent = ?1", params![id])?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

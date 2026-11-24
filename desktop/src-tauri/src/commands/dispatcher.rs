@@ -763,8 +763,8 @@ async fn run(
         "list_agents" => json_result(agents::list_agents_exec(app)),
         "available_providers" => json_ok(agents::available_providers_exec(app)),
         "create_agent" => json_result(agents::create_agent_exec(app, parse_args(arguments)?)),
-        "update_agent" => json_result(agents::update_agent_exec(app, parse_args(arguments)?)),
-        "delete_agent" => json_result(agents::delete_agent_exec(app, parse_args(arguments)?)),
+        "update_agent" => json_result(agents::update_agent_exec(app, parse_args(arguments)?).await),
+        "delete_agent" => json_result(agents::delete_agent_exec(app, parse_args(arguments)?).await),
         "set_agent_instructions" => {
             json_result(agents::set_agent_instructions_exec(app, parse_args(arguments)?).await)
         }

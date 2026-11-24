@@ -590,3 +590,46 @@ fn reap_idle_mantem_sessao_recente_e_sessao_em_uso() {
         busy.session.lock().await.close_live().await;
     });
 }
+
+#[cfg(windows)]
+#[test]
+fn remover_agente_fecha_sessoes_dele_e_das_replicas_e_esquece_o_resume() {
+    tauri::async_runtime::block_on(async {
+        let (_, dir) = test_team();
+        let db = crate::db::Db::open(&dir).expect("banco de teste");
+        let project = db
+            .insert_project(&crate::db::NewProject {
+                name: "p1",
+                symbol: "folder",
+                description: "",
+                path: &dir.to_string_lossy(),
+                origin_kind: "folder",
+                origin_repo: None,
+            })
+            .unwrap();
+        assert_eq!(project.id, PROJECT, "os slots do teste usam o primeiro projeto");
+        let pool = SessionPool::default();
+        let removed = base_agent();
+        let replica = crate::agents::replica_id(&removed, 2);
+        let other = Agent::from_stored("kairo").expect("agente");
+        let key = |agent: &Agent| crate::session_key::SessionKey { project_id: PROJECT, agent: agent.clone() };
+        for agent in [&removed, &replica, &other] {
+            db.save_agent_session(&key(agent), "sessao-anterior").unwrap();
+        }
+        let slots = [live_slot(&pool, &removed, None), live_slot(&pool, &replica, None)];
+        let kept = live_slot(&pool, &other, None);
+
+        pool.close_agent(&db, &removed).await.unwrap();
+
+        for slot in &slots {
+            assert!(slot.session.lock().await.live.is_none());
+        }
+        assert!(kept.session.lock().await.live.is_some(), "outro agente não é afetado");
+        assert_eq!(db.agent_session(&key(&removed)).unwrap(), None);
+        assert_eq!(db.agent_session(&key(&replica)).unwrap(), None);
+        assert_eq!(db.agent_session(&key(&other)).unwrap().as_deref(), Some("sessao-anterior"));
+        kept.session.lock().await.end().await;
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    });
+}

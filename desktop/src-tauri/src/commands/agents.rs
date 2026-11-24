@@ -96,20 +96,24 @@ pub(crate) fn create_agent_exec(
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn update_agent_exec(
+pub(crate) async fn update_agent_exec(
     app: &AppHandle,
     args: UpdateAgentArgs,
 ) -> Result<AgentProfile, String> {
     app.state::<RoleRegistry>()
         .ensure_exists(&args.draft.role)
         .map_err(|error| error.to_string())?;
-    app.state::<AgentRegistry>()
+    let profile = app
+        .state::<AgentRegistry>()
         .update(&args.id, &args.draft, &app.state::<ProviderRegistry>())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    // Papel, permissões e skills entram no prompt de sistema; a sessão viva seguiria com o perfil antigo.
+    app.state::<AppState>().sessions.retire_agent(&args.id).await;
+    Ok(profile)
 }
 
 // O Ember assume os cards do agente excluído; o aviso de cada troca entra no feed do projeto.
-pub(crate) fn delete_agent_exec(app: &AppHandle, args: DeleteAgentArgs) -> Result<(), String> {
+pub(crate) async fn delete_agent_exec(app: &AppHandle, args: DeleteAgentArgs) -> Result<(), String> {
     let id = args.id;
     let registry = app.state::<AgentRegistry>();
     let team = registry.team().map_err(|error| error.to_string())?;
@@ -135,7 +139,11 @@ pub(crate) fn delete_agent_exec(app: &AppHandle, args: DeleteAgentArgs) -> Resul
         );
         let _ = emit_backlog_changed(app, note.project_id);
     }
-    Ok(())
+    app.state::<AppState>()
+        .sessions
+        .close_agent(&db, &id)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) async fn set_agent_instructions_exec(
@@ -304,13 +312,13 @@ pub fn create_agent(app: AppHandle, draft: AgentDraft) -> Result<AgentProfile, S
 }
 
 #[tauri::command]
-pub fn update_agent(app: AppHandle, id: Agent, draft: AgentDraft) -> Result<AgentProfile, String> {
-    update_agent_exec(&app, UpdateAgentArgs { id, draft })
+pub async fn update_agent(app: AppHandle, id: Agent, draft: AgentDraft) -> Result<AgentProfile, String> {
+    update_agent_exec(&app, UpdateAgentArgs { id, draft }).await
 }
 
 #[tauri::command]
-pub fn delete_agent(app: AppHandle, id: Agent) -> Result<(), String> {
-    delete_agent_exec(&app, DeleteAgentArgs { id })
+pub async fn delete_agent(app: AppHandle, id: Agent) -> Result<(), String> {
+    delete_agent_exec(&app, DeleteAgentArgs { id }).await
 }
 
 #[tauri::command]

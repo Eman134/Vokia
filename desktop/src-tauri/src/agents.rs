@@ -332,6 +332,11 @@ pub(crate) fn replica_of(id: &str) -> Option<(&str, u32)> {
     (n >= 2 && is_agent_id(base)).then_some((base, n))
 }
 
+pub(crate) fn is_agent_or_replica(candidate: &str, base: &Agent) -> bool {
+    candidate == base.as_str()
+        || replica_of(candidate).is_some_and(|(of, _)| of == base.as_str())
+}
+
 pub(crate) fn replica_id(base: &Agent, n: u32) -> Agent {
     Agent(format!("{}-{n}", base.as_str()))
 }
