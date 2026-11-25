@@ -33,6 +33,7 @@ fn sample_usage(provider_id: &str, percent: u8, resets_at_secs: u64, updated_at_
         tertiary: None,
         groups: Vec::new(),
         credits_available: None,
+        reset_credits_available: None,
         updated_at_ms,
         read_failed: false,
     }
@@ -146,6 +147,7 @@ fn converte_rate_limits_do_claude_e_trata_estado_usando_creditos() {
             window: UsageWindow::new(88, 1_700_010_000, DAILY_MINS),
         }],
         credits_available: None,
+        reset_credits_available: None,
         updated_at_ms: 1_700_000_000_000,
         read_failed: false,
     };

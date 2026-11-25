@@ -30,6 +30,8 @@ tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"
 rusqlite = { version = "0.41", features = ["bundled"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 axum = "0.8.9"
 getrandom = "0.4"
 

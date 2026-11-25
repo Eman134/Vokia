@@ -46,11 +46,13 @@ impl ProviderReadState {
         if self.invalidated {
             return false;
         }
-        let (Some(usage), Some(fetched_at)) = (&self.last_valid, self.fetched_at_ms) else {
+        let Some(fetched_at) = self.fetched_at_ms else {
             return false;
         };
-        if usage.has_expired_window(now_ms) {
-            return false;
+        if let Some(usage) = &self.last_valid {
+            if usage.has_expired_window(now_ms) {
+                return false;
+            }
         }
         now_ms.saturating_sub(fetched_at) < CACHE_TTL_MS
     }
@@ -94,10 +96,27 @@ impl Drop for InFlightGuard {
 }
 
 impl UsageReadGate {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn read<F, Fut>(&self, provider_id: &str, now_ms: u64, fetch: F) -> ReadOutcome
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<ProviderPlanUsage, String>>,
+    {
+        self.read_optional(provider_id, now_ms, move || async move {
+            fetch().await.map(Some)
+        })
+        .await
+    }
+
+    pub async fn read_optional<F, Fut>(
+        &self,
+        provider_id: &str,
+        now_ms: u64,
+        fetch: F,
+    ) -> ReadOutcome
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<Option<ProviderPlanUsage>, String>>,
     {
         enum Action {
             Immediate(ReadOutcome),
@@ -176,7 +195,7 @@ impl UsageReadGate {
                     cleanup.active = false;
                     let entry = inner.entries.entry(provider_id.to_string()).or_default();
                     match result {
-                        Ok(mut usage) => {
+                        Ok(Some(mut usage)) => {
                             usage.read_failed = false;
                             if usage.updated_at_ms == 0 {
                                 usage.updated_at_ms = now_ms;
@@ -189,6 +208,21 @@ impl UsageReadGate {
                             entry.invalidated = false;
                             ReadOutcome {
                                 usage: Some(usage),
+                                from_cache: false,
+                                in_backoff: false,
+                                backoff_until_ms: None,
+                                error: None,
+                            }
+                        }
+                        Ok(None) => {
+                            entry.last_valid = None;
+                            entry.fetched_at_ms = Some(now_ms);
+                            entry.consecutive_failures = 0;
+                            entry.backoff_until_ms = None;
+                            entry.last_error = None;
+                            entry.invalidated = false;
+                            ReadOutcome {
+                                usage: None,
                                 from_cache: false,
                                 in_backoff: false,
                                 backoff_until_ms: None,

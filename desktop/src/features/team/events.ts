@@ -249,6 +249,7 @@ export interface ProviderPlanUsage {
   tertiary?: ProviderUsageWindow
   groups?: ProviderUsageGroup[]
   creditsAvailable?: boolean
+  resetCreditsAvailable?: number
   updatedAtMs: number
   readFailed: boolean
 }

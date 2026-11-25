@@ -1,6 +1,7 @@
 pub mod limit_gate;
 pub mod model;
 pub mod read_gate;
+pub mod readers;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -15,9 +16,16 @@ pub use model::{
     PlanUsageSnapshot, ProviderPlanUsage, DEFAULT_PAUSE_THRESHOLD, DEFAULT_WARN_THRESHOLD,
 };
 pub use read_gate::{ReadOutcome, UsageReadGate};
+pub use readers::UsageReadError;
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub type ReaderFuture = Pin<Box<dyn Future<Output = Result<ProviderPlanUsage, String>> + Send>>;
+#[cfg_attr(not(test), allow(dead_code))]
 pub type UsageReaderFn = Arc<dyn Fn() -> ReaderFuture + Send + Sync>;
+
+pub type OptionalReaderFuture =
+    Pin<Box<dyn Future<Output = Result<Option<ProviderPlanUsage>, UsageReadError>> + Send>>;
+pub type OptionalUsageReaderFn = Arc<dyn Fn() -> OptionalReaderFuture + Send + Sync>;
 
 pub fn now_millis() -> u64 {
     SystemTime::now()
@@ -29,14 +37,34 @@ pub fn now_millis() -> u64 {
 pub struct UsageEngine {
     read_gate: UsageReadGate,
     limit_gate: Mutex<UsageLimitGate>,
-    readers: Mutex<HashMap<String, UsageReaderFn>>,
+    readers: Mutex<HashMap<String, OptionalUsageReaderFn>>,
 }
 
 impl UsageEngine {
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn register_reader(&self, provider_id: impl Into<String>, reader: UsageReaderFn) {
+        let wrapped: OptionalUsageReaderFn = Arc::new(move || {
+            let fut = (reader)();
+            Box::pin(async move {
+                fut.await
+                    .map(Some)
+                    .map_err(UsageReadError::from)
+            })
+        });
+        self.register_optional_reader(provider_id, wrapped);
+    }
+
+    pub fn register_optional_reader(
+        &self,
+        provider_id: impl Into<String>,
+        reader: OptionalUsageReaderFn,
+    ) {
         let mut readers = self.readers.lock().unwrap_or_else(|e| e.into_inner());
         readers.insert(provider_id.into(), reader);
+    }
+
+    pub fn read_gate(&self) -> UsageReadGate {
+        self.read_gate.clone()
     }
 
     pub fn record_provider_usage(&self, usage: ProviderPlanUsage) {
@@ -57,6 +85,7 @@ impl UsageEngine {
             .is_some_and(|usage| usage.is_using_credits())
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn refresh_provider(&self, provider_id: &str, now_ms: u64) -> ReadOutcome {
         let reader = {
             let readers = self.readers.lock().unwrap_or_else(|e| e.into_inner());
@@ -72,7 +101,9 @@ impl UsageEngine {
             };
         };
         self.read_gate
-            .read(provider_id, now_ms, move || (reader)())
+            .read_optional(provider_id, now_ms, move || async move {
+                (reader)().await.map_err(|err| err.to_string())
+            })
             .await
     }
 
@@ -81,18 +112,47 @@ impl UsageEngine {
         provider_filter: Option<&str>,
         now_ms: u64,
     ) -> Vec<ReadOutcome> {
-        let target_ids: Vec<String> = if let Some(provider_id) = provider_filter {
-            vec![provider_id.to_string()]
-        } else {
+        let targets: Vec<(String, Option<OptionalUsageReaderFn>)> = {
             let readers = self.readers.lock().unwrap_or_else(|e| e.into_inner());
-            let mut ids: Vec<String> = readers.keys().cloned().collect();
-            ids.sort();
-            ids
+            if let Some(provider_id) = provider_filter {
+                vec![(provider_id.to_string(), readers.get(provider_id).cloned())]
+            } else {
+                let mut ids: Vec<String> = readers.keys().cloned().collect();
+                ids.sort();
+                ids.into_iter()
+                    .map(|id| {
+                        let reader = readers.get(&id).cloned();
+                        (id, reader)
+                    })
+                    .collect()
+            }
         };
 
-        let mut outcomes = Vec::with_capacity(target_ids.len());
-        for provider_id in target_ids {
-            outcomes.push(self.refresh_provider(&provider_id, now_ms).await);
+        let mut handles = Vec::with_capacity(targets.len());
+        for (provider_id, reader) in targets {
+            let gate = self.read_gate.clone();
+            handles.push(tokio::spawn(async move {
+                let Some(reader) = reader else {
+                    return ReadOutcome {
+                        usage: gate.get(&provider_id),
+                        from_cache: true,
+                        in_backoff: false,
+                        backoff_until_ms: None,
+                        error: None,
+                    };
+                };
+                gate.read_optional(&provider_id, now_ms, move || async move {
+                    (reader)().await.map_err(|err| err.to_string())
+                })
+                .await
+            }));
+        }
+
+        let mut outcomes = Vec::with_capacity(handles.len());
+        for handle in handles {
+            if let Ok(outcome) = handle.await {
+                outcomes.push(outcome);
+            }
         }
         outcomes
     }

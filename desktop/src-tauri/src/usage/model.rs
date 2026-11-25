@@ -185,6 +185,8 @@ pub struct ProviderPlanUsage {
     pub groups: Vec<ProviderUsageGroup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credits_available: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_credits_available: Option<u32>,
     pub updated_at_ms: u64,
     #[serde(default)]
     pub read_failed: bool,
@@ -206,6 +208,7 @@ impl ProviderPlanUsage {
             tertiary: None,
             groups: Vec::new(),
             credits_available: None,
+            reset_credits_available: None,
             updated_at_ms: now_ms,
             read_failed: false,
         }

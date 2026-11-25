@@ -12,6 +12,16 @@ pub(crate) fn setup(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(roles::RoleRegistry::load(&data_dir, &agents));
     app.manage(providers);
     app.manage(agents);
+    if let Some(state) = app.try_state::<crate::state::AppState>() {
+        let handle = app.handle().clone();
+        let codex_command = std::sync::Arc::new(move || {
+            handle
+                .try_state::<providers::ProviderRegistry>()
+                .and_then(|registry| registry.get("codex").ok())
+                .map(|provider| provider.default_command)
+        });
+        crate::usage::readers::register_default_readers(&state.usage, Some(codex_command));
+    }
     app.manage(DbState::open(&data_dir));
     {
         let team = app
