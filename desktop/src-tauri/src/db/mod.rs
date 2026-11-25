@@ -9,6 +9,7 @@ mod backlog;
 mod channels;
 mod connection;
 mod error;
+pub mod history;
 mod messages;
 mod migrations;
 mod orchestration;

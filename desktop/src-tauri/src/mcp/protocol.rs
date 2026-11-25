@@ -111,7 +111,15 @@ async fn call_tool(
     if let Some(result) = tools::call(app, binding, name, arguments) {
         return success(id, result);
     }
-    match dispatcher::dispatch(app, Some(&binding.agent), name, arguments.clone()).await {
+    match dispatcher::dispatch_for_project(
+        app,
+        Some(&binding.agent),
+        Some(binding.project_id),
+        name,
+        arguments.clone(),
+    )
+    .await
+    {
         Some(outcome) => success(id, command_reply(outcome)),
         None => failure(
             id,
@@ -139,7 +147,15 @@ async fn call_meta_app_command(
         .filter(|value| !value.is_null())
         .cloned()
         .unwrap_or_else(|| json!({}));
-    match dispatcher::dispatch(app, Some(&binding.agent), target_name, target_args).await {
+    match dispatcher::dispatch_for_project(
+        app,
+        Some(&binding.agent),
+        Some(binding.project_id),
+        target_name,
+        target_args,
+    )
+    .await
+    {
         Some(outcome) => success(id, command_reply(outcome)),
         None => success(
             id,
@@ -160,7 +176,15 @@ async fn call_app_command(
     let Some(app) = app else {
         return failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}"));
     };
-    match dispatcher::dispatch(app, Some(&binding.agent), name, arguments.clone()).await {
+    match dispatcher::dispatch_for_project(
+        app,
+        Some(&binding.agent),
+        Some(binding.project_id),
+        name,
+        arguments.clone(),
+    )
+    .await
+    {
         Some(outcome) => success(id, command_reply(outcome)),
         None => failure(id, INVALID_PARAMS, &format!("comando desconhecido: {name}")),
     }

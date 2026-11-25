@@ -143,7 +143,10 @@ pub(crate) fn run() {
             // analytics
             commands::usage_analytics::get_usage_analytics,
             // search
-            commands::search::global_search
+            commands::search::global_search,
+            commands::command_search::command_search,
+            commands::history::history_search,
+            commands::history::history_read
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

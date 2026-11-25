@@ -105,6 +105,8 @@ pub enum DbError {
     PlanFileTooLarge { max: usize },
     PlanFileNotText,
     InvalidUsageQuery(String),
+    CrossProjectAccess(String),
+    MessageNotFound(i64),
 }
 
 impl DbError {
@@ -423,6 +425,10 @@ impl fmt::Display for DbError {
             }
             DbError::PlanFileNotText => write!(f, "O arquivo não é um texto UTF-8 legível."),
             DbError::InvalidUsageQuery(reason) => f.write_str(reason),
+            DbError::CrossProjectAccess(reason) => f.write_str(reason),
+            DbError::MessageNotFound(id) => {
+                write!(f, "A mensagem {id} não existe neste projeto.")
+            }
         }
     }
 }

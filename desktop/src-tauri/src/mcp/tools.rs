@@ -258,6 +258,52 @@ impl ToolScope {
     }
 }
 
+// Teto explícito do payload JSON de `tools/list` (baseline atual: ~10.5 KB Coordinator / ~8.5 KB Worker).
+// Impede inflação acidental de tokens fixos pagos a cada turno; novos comandos devem entrar em `commands/dispatcher.rs`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) const TOOLS_LIST_COORDINATOR_MAX_BYTES: usize = 11_200;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) const TOOLS_LIST_WORKER_MAX_BYTES: usize = 9_200;
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn definitions_for_scope(scope: ToolScope) -> Vec<Value> {
+    definitions()
+        .into_iter()
+        .filter(|definition| {
+            let name = definition
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            scope.allows(name)
+        })
+        .collect()
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn tools_list_payload_bytes(definitions: &[Value]) -> usize {
+    serde_json::to_vec(&json!({ "tools": definitions }))
+        .map(|bytes| bytes.len())
+        .unwrap_or(usize::MAX)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn check_tools_list_budget(
+    scope_label: &str,
+    definitions: &[Value],
+    max_bytes: usize,
+) -> Result<usize, String> {
+    let bytes = tools_list_payload_bytes(definitions);
+    if bytes > max_bytes {
+        Err(format!(
+            "Orçamento de contexto de tools/list ({scope_label}) excedido: {bytes} bytes > teto de {max_bytes} bytes. \
+             Evite adicionar texto excessivo ou novas ferramentas diretas em tools/list (aumenta tokens fixos por sessão); \
+             exponha comandos sob demanda em commands/dispatcher.rs."
+        ))
+    } else {
+        Ok(bytes)
+    }
+}
+
 pub(crate) fn is_tool(name: &str) -> bool {
     definitions()
         .iter()

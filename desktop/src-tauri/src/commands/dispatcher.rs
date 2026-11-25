@@ -9,8 +9,9 @@ use crate::plan_proposal::PLAN_PROTOCOL_HINT;
 use crate::projects::ProjectError;
 
 use super::{
-    agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
-    roles, search, settings, team, turn_plan, usage, usage_analytics,
+    agents, artifacts, attachments, backlog, channels, command_search, execution_mode, history,
+    orchestration, projects, providers, roles, search, settings, team, turn_plan, usage,
+    usage_analytics,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -460,6 +461,55 @@ fn schema_global_search() -> Value {
     )
 }
 
+fn schema_command_search() -> Value {
+    obj_schema(
+        json!({
+            "query": { "type": "string", "description": "Consulta por nome ou palavras-chave do comando (ex.: \"create artifact\")" },
+            "queries": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Lista opcional de consultas alternativas executadas em uma única chamada"
+            },
+            "domain": { "type": "string", "description": "Filtro opcional por domínio do catálogo" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Quantidade de resultados (padrão 5, máximo 10)" },
+        }),
+        &[],
+    )
+}
+
+fn schema_history_search() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id do projeto (obrigatório fora de sessão MCP; no MCP usa o projeto vinculado e recusa outro)" },
+            "query": { "type": "string", "description": "Termo ou frase para buscar no histórico local da conversa" },
+            "agent": { "type": "string", "description": "Filtro opcional por agente remetente ou destinatário" },
+            "channelId": { "type": "integer", "description": "Filtro opcional por canal do projeto" },
+            "cardId": { "type": "string", "description": "Filtro opcional por card do backlog (também aceita itemId)" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Limite de resultados (padrão 5, máximo 10)" },
+        }),
+        &["query"],
+    )
+}
+
+fn schema_history_read() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id do projeto (obrigatório fora de sessão MCP; no MCP usa o projeto vinculado e recusa outro)" },
+            "messageId": { "type": "integer", "description": "Id específico da mensagem a ler (suporta offset/nextOffset para textos longos)" },
+            "beforeMessageId": { "type": "integer", "description": "Lê página anterior a este messageId" },
+            "cursor": { "type": "string", "description": "Cursor devolvido em nextCursor (equivalente a beforeMessageId)" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Quantidade de mensagens por página (padrão 10, máximo 20)" },
+            "offset": { "type": "integer", "minimum": 0, "description": "Deslocamento em caracteres para continuar uma mensagem longa" },
+            "agent": { "type": "string", "description": "Filtro opcional por agente e chave de [work steps]" },
+            "channelId": { "type": "integer", "description": "Filtro opcional por canal do projeto" },
+            "cardId": { "type": "string", "description": "Filtro opcional por card do backlog (também aceita itemId)" },
+            "includeWorkSteps": { "type": "boolean", "description": "Quando true, anexa blocos [work steps] registrados no banco" },
+            "workStepsOffset": { "type": "integer", "minimum": 0, "description": "Offset de paginação de [work steps] devolvido em nextWorkStepsOffset" },
+        }),
+        &[],
+    )
+}
+
 const COMMANDS: &[CommandMeta] = &[
     exposed("team", "cli_problem", "Problema detectado ao localizar a CLI do Claude, se houver.", "Para diagnosticar por que nenhum agente consegue rodar: devolve o problema ao localizar a CLI do Claude, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto.", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
@@ -578,12 +628,19 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("usage", "refresh_plan_usage", "Atualiza e devolve as cotas de uso por provedor respeitando o UsageReadGate (single-flight, cache de 4 min e backoff exponencial em erro). Parâmetro opcional: providerId.", "Para atualizar a leitura de cotas dos provedores sob demanda sem exceder limites de requisição.", schema_plan_usage),
     exposed("analytics", "get_usage_analytics", "Consulta estatísticas desacopladas de uso de tokens, custo USD equivalente à API e tempo por período. Parâmetros opcionais: days (1..367; ex.: 7, 14, 30, 90), from/to (YYYY-MM-DD ou RFC3339, teto 367 dias), timezone (IANA ex.: America/Sao_Paulo ou ±HH:MM), projectId, agentId, providerId. Devolve totais, série diária por (dia, provedor), breakdown por provedor, agente e modelo, e estimativa de economia com cache/tiers leves.", "Para consultar histórico de consumo de tokens, custo equivalente à API e uso por provedor, agente, modelo ou período.", schema_get_usage_analytics),
     exposed("search", "global_search", "Busca global full-text (FTS5) no workspace cobrindo projetos, agentes, cards do backlog, planos, artefatos, memórias e mensagens. Parâmetros: query, projectId (opcional), kinds (opcional: projects|agents|cards|plans|artifacts|memories|messages), limit (opcional, padrão 20, máx 100), cursor/offset (opcional). Devolve resultados agrupados por tipo com snippet destacado, score BM25 + recência e nextCursor.", "Para localizar rapidamente cards, mensagens antigas, planos, artefatos, projetos ou agentes por palavra-chave sem listar tudo.", schema_global_search),
+    exposed("search", "command_search", "Busca sob demanda no catálogo de comandos do Vokia por nome exato ou palavras-chave. Parâmetros: query ou queries (camelCase), domain (opcional), limit (padrão 5, máx 10). Devolve até 3 resultados fortes já com inputSchema, parameters e exampleCall embutidos.", "Para descobrir qual comando chamar e seus parâmetros exatos sem carregar o catálogo inteiro nem gastar um turno extra de inspeção.", schema_command_search),
+    exposed("search", "history_search", "Busca no histórico local de mensagens do projeto atual (FTS5 com fallback LIKE), respeitando o último marcador de reset de contexto. Parâmetros: projectId (no MCP usa o projeto vinculado), query, agent (opcional), channelId (opcional), cardId/itemId (opcional), limit (padrão 5, máx 10). Excertos de até 400 chars e resposta total até 8.000 chars com messageId e timestamp.", "Para recuperar decisões ou detalhes discutidos em turnos antigos da própria conversa ou card após compactação ou troca de provedor.", schema_history_search),
+    exposed("search", "history_read", "Lê mensagens recentes, uma mensagem específica por messageId ou página anterior a um cursor/beforeMessageId dentro do projeto atual. Parâmetros: projectId, messageId, beforeMessageId/cursor, limit (padrão 10, máx 20), offset, agent, channelId, cardId/itemId, includeWorkSteps, workStepsOffset. Respeita teto de 16.000 chars serializados e devolve nextOffset, nextCursor e nextWorkStepsOffset.", "Para ler na íntegra uma mensagem antiga encontrada por history_search, paginar turnos anteriores ou inspecionar blocos [work steps] sob demanda.", schema_history_read),
 ];
 
 #[derive(Deserialize, Default)]
 struct ConfirmArgs {
     #[serde(default)]
     confirm: bool,
+}
+
+pub(super) fn catalog() -> &'static [CommandMeta] {
+    COMMANDS
 }
 
 // Sem chamador interno: o protocolo MCP usa a versão filtrada; mantida como API sem filtro.
@@ -617,9 +674,21 @@ pub fn list_commands_filtered(domain: Option<&str>) -> Vec<Value> {
 }
 
 // `caller` None é a interface do usuário, com permissão global; agentes passam o próprio id.
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn dispatch(
     app: &AppHandle,
     caller: Option<&Agent>,
+    name: &str,
+    arguments: Value,
+) -> Option<Result<Value, String>> {
+    dispatch_for_project(app, caller, None, name, arguments).await
+}
+
+// Variante usada pelo servidor MCP para impor o `project_id` vinculado ao token do agente chamador.
+pub async fn dispatch_for_project(
+    app: &AppHandle,
+    caller: Option<&Agent>,
+    bound_project_id: Option<i64>,
     name: &str,
     arguments: Value,
 ) -> Option<Result<Value, String>> {
@@ -628,7 +697,7 @@ pub async fn dispatch(
     if command.exposure == Exposure::UiOnly {
         return Some(Err(UI_ONLY_ERROR.to_string()));
     }
-    Some(run(app, caller, canonical, arguments).await)
+    Some(run(app, caller, bound_project_id, canonical, arguments).await)
 }
 
 fn parse_args<T: DeserializeOwned>(arguments: Value) -> Result<T, String> {
@@ -655,6 +724,7 @@ fn json_project_result<T: Serialize>(result: Result<T, ProjectError>) -> Result<
 async fn run(
     app: &AppHandle,
     caller: Option<&Agent>,
+    bound_project_id: Option<i64>,
     name: &str,
     arguments: Value,
 ) -> Result<Value, String> {
@@ -927,6 +997,19 @@ async fn run(
         }
 
         "global_search" => json_result(search::global_search_exec(app, parse_args(arguments)?)),
+        "command_search" => json_result(command_search::command_search_exec(parse_args(
+            arguments,
+        )?)),
+        "history_search" => json_result(history::history_search_exec(
+            app,
+            bound_project_id,
+            parse_args(arguments)?,
+        )),
+        "history_read" => json_result(history::history_read_exec(
+            app,
+            bound_project_id,
+            parse_args(arguments)?,
+        )),
 
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }

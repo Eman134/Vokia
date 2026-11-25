@@ -72,7 +72,7 @@ impl Db {
     }
 
     // Devolve do mais recente para o mais antigo para suportar paginação (offset/limit) no history_read.
-    #[allow(dead_code)] // pronto para integração sob demanda em history_read (096)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn list_turn_work_steps(
         &self,
         project_id: i64,
@@ -98,6 +98,58 @@ impl Db {
         )?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(DbError::from)
+    }
+
+    // Lista blocos `[work steps]` válidos de um projeto (opcionalmente filtrados por agente e card)
+    // do mais recente para o mais antigo, ignorando linhas corrompidas para uso seguro no history_read.
+    pub fn list_history_work_steps(
+        &self,
+        project_id: i64,
+        agent: Option<&str>,
+        card_id: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<TurnWorkStepsRecord>, bool), DbError> {
+        if limit == 0 {
+            return Ok((Vec::new(), false));
+        }
+        let normalized_agent = agent.map(str::trim).filter(|value| !value.is_empty());
+        let normalized_card = card_id.map(str::trim).filter(|value| !value.is_empty());
+        let conn = self.conn()?;
+        let table_present: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'turn_work_steps')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !table_present {
+            return Ok((Vec::new(), false));
+        }
+
+        let mut records = Vec::new();
+        let mut has_more = false;
+
+        if let Some(agent_id) = normalized_agent {
+            let session_key = work_steps_session_key(project_id, agent_id, normalized_card);
+            let mut statement = conn.prepare(
+                "SELECT id, project_id, agent, session_key, card_id, provider, block, step_count, omitted_count, created_at \
+                 FROM turn_work_steps \
+                 WHERE project_id = ?1 AND agent = ?2 AND session_key = ?3 \
+                 ORDER BY created_at DESC, id DESC",
+            )?;
+            let rows = statement.query_map(params![project_id, agent_id, session_key], decode_row)?;
+            collect_valid_page(rows, offset, limit, &mut records, &mut has_more);
+        } else {
+            let mut statement = conn.prepare(
+                "SELECT id, project_id, agent, session_key, card_id, provider, block, step_count, omitted_count, created_at \
+                 FROM turn_work_steps \
+                 WHERE project_id = ?1 AND (?2 IS NULL OR card_id = ?2) \
+                 ORDER BY created_at DESC, id DESC",
+            )?;
+            let rows = statement.query_map(params![project_id, normalized_card], decode_row)?;
+            collect_valid_page(rows, offset, limit, &mut records, &mut has_more);
+        }
+
+        Ok((records, has_more))
     }
 
     // Leitura tolerante a corrupção/ausência: pula linhas inválidas e nunca derruba o handoff nem a conversa.
@@ -172,6 +224,36 @@ fn decode_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TurnWorkStepsRecord> 
         omitted_count: usize::try_from(omitted_count).unwrap_or(0),
         created_at: row.get(9)?,
     })
+}
+
+fn collect_valid_page<I>(
+    rows: I,
+    offset: usize,
+    limit: usize,
+    out: &mut Vec<TurnWorkStepsRecord>,
+    has_more: &mut bool,
+) where
+    I: Iterator<Item = rusqlite::Result<TurnWorkStepsRecord>>,
+{
+    let mut valid_seen = 0usize;
+    for row in rows {
+        let Ok(record) = row else {
+            continue;
+        };
+        if !is_valid_work_steps_block(&record.block) {
+            continue;
+        }
+        if valid_seen < offset {
+            valid_seen += 1;
+            continue;
+        }
+        if out.len() < limit {
+            out.push(record);
+        } else {
+            *has_more = true;
+            break;
+        }
+    }
 }
 
 fn is_valid_work_steps_block(block: &str) -> bool {
