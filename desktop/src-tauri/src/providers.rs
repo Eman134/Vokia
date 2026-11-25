@@ -98,6 +98,131 @@ pub struct GenericCliSpec {
     pub sandbox_args: BTreeMap<String, Vec<String>>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EffortMode {
+    #[default]
+    None,
+    Flag,
+    ModelSuffix,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelGroupingMode {
+    #[default]
+    Flat,
+    ByPrefixFreeFirst,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelEffortRule {
+    pub pattern: String,
+    #[serde(default)]
+    pub levels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReasoningEffortSpec {
+    #[serde(default)]
+    pub levels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_level: Option<String>,
+    #[serde(default)]
+    pub mode: EffortMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffix_separator: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flag_args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub value_map: BTreeMap<String, String>,
+    #[serde(default)]
+    pub apply_to_all_models: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_rules: Vec<ModelEffortRule>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderAuthProbe {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_vars: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credential_files: Vec<String>,
+    #[serde(default)]
+    pub free_without_login: bool,
+}
+
+pub const CANONICAL_EFFORT_LEVELS: [&str; 4] = ["low", "medium", "high", "max"];
+const EFFORT_MAX_CHARS: usize = 32;
+
+pub fn normalize_reasoning_effort(raw: Option<&str>) -> Option<String> {
+    let trimmed = raw?.trim().to_ascii_lowercase();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed.as_str() {
+        "xhigh" | "maximum" => Some("max".to_string()),
+        _ => Some(trimmed),
+    }
+}
+
+pub fn validate_reasoning_effort(raw: Option<&str>) -> Result<Option<String>, String> {
+    let Some(normalized) = normalize_reasoning_effort(raw) else {
+        return Ok(None);
+    };
+    if normalized.chars().count() > EFFORT_MAX_CHARS
+        || !normalized
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
+    {
+        return Err(format!("Nível de esforço de raciocínio inválido: {normalized}."));
+    }
+    Ok(Some(normalized))
+}
+
+impl ReasoningEffortSpec {
+    pub fn supported_levels_for(&self, model: &str) -> Vec<String> {
+        let lower = model.trim().to_ascii_lowercase();
+        for rule in &self.model_rules {
+            let pat = rule.pattern.trim().to_ascii_lowercase();
+            if !pat.is_empty() && lower.contains(&pat) {
+                return rule.levels.clone();
+            }
+        }
+        if self.apply_to_all_models {
+            self.levels.clone()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn strip_suffix<'a>(&self, model: &'a str) -> (&'a str, Option<String>) {
+        let sep = self.suffix_separator.as_deref().unwrap_or("-");
+        if let Some((base, suffix)) = model.rsplit_once(sep) {
+            let normalized = normalize_reasoning_effort(Some(suffix));
+            if let Some(level) = normalized {
+                let known = self.levels.iter().any(|l| l == &level)
+                    || CANONICAL_EFFORT_LEVELS.contains(&level.as_str())
+                    || self.value_map.values().any(|v| v.eq_ignore_ascii_case(suffix));
+                if known && !base.is_empty() {
+                    return (base, Some(level));
+                }
+            }
+        }
+        (model, None)
+    }
+
+    pub fn map_cli_value<'a>(&'a self, effort: &'a str) -> &'a str {
+        self.value_map
+            .get(effort)
+            .map(String::as_str)
+            .unwrap_or(effort)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
@@ -108,6 +233,8 @@ pub struct ProviderConfig {
     pub default_model: String,
     #[serde(default)]
     pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub free_models: Vec<String>,
     pub tiers: ModelTiers,
     #[serde(default)]
     pub supports_mcp: bool,
@@ -125,6 +252,20 @@ pub struct ProviderConfig {
     pub discovery: Option<ModelDiscoveryConfig>,
     #[serde(default)]
     pub generic: Option<GenericCliSpec>,
+    #[serde(default)]
+    pub model_grouping: ModelGroupingMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<ReasoningEffortSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_probe: Option<ProviderAuthProbe>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_order: Option<u32>,
     #[serde(default)]
     pub builtin_seed: bool,
 }
@@ -151,18 +292,92 @@ impl ProviderConfig {
         !matches!(self.effective_tool_transport(), ToolTransport::None)
     }
 
+    pub fn supported_efforts_for_model(&self, model: &str) -> Vec<String> {
+        let Some(spec) = &self.effort else {
+            return Vec::new();
+        };
+        let (base, embedded) = spec.strip_suffix(model);
+        let mut levels = spec.supported_levels_for(base);
+        if levels.is_empty() && embedded.is_some() {
+            // Descoberta de variantes explícitas em `self.models`
+            for candidate in &self.models {
+                let (cand_base, cand_effort) = spec.strip_suffix(candidate);
+                if cand_base == base {
+                    if let Some(eff) = cand_effort {
+                        if !levels.contains(&eff) {
+                            levels.push(eff);
+                        }
+                    }
+                }
+            }
+        }
+        levels
+    }
+
+    pub fn resolve_model_with_effort(&self, model: &str, effort: Option<&str>) -> String {
+        let Some(spec) = &self.effort else {
+            return model.to_string();
+        };
+        let Some(normalized) = normalize_reasoning_effort(effort) else {
+            return model.to_string();
+        };
+        if spec.mode != EffortMode::ModelSuffix {
+            return model.to_string();
+        }
+        let (base, existing) = spec.strip_suffix(model);
+        let supported = self.supported_efforts_for_model(model);
+        if !supported.is_empty() && !supported.iter().any(|lvl| lvl == &normalized) {
+            return model.to_string();
+        }
+        if supported.is_empty() && existing.is_none() && !spec.apply_to_all_models {
+            return model.to_string();
+        }
+        let sep = spec.suffix_separator.as_deref().unwrap_or("-");
+        let cli_val = spec.map_cli_value(&normalized);
+        format!("{base}{sep}{cli_val}")
+    }
+
+    pub fn resolve_effort_args(&self, model: &str, effort: Option<&str>) -> Vec<String> {
+        let Some(spec) = &self.effort else {
+            return Vec::new();
+        };
+        if spec.mode != EffortMode::Flag || spec.flag_args.is_empty() {
+            return Vec::new();
+        }
+        let Some(normalized) = normalize_reasoning_effort(effort) else {
+            return Vec::new();
+        };
+        let supported = self.supported_efforts_for_model(model);
+        if !supported.is_empty() && !supported.iter().any(|lvl| lvl == &normalized) {
+            return Vec::new();
+        }
+        if supported.is_empty() && !spec.apply_to_all_models {
+            return Vec::new();
+        }
+        let cli_val = spec.map_cli_value(&normalized);
+        spec.flag_args
+            .iter()
+            .map(|arg| arg.replace("{effort}", cli_val))
+            .collect()
+    }
+
     pub fn into_preset(self) -> CliPreset {
         let tool_transport = self.effective_tool_transport();
         CliPreset {
             id: self.id,
             label: self.label,
             models: self.models,
+            free_models: self.free_models,
             default_model: self.default_model,
             default_command: self.default_command,
             tiers: self.tiers,
             supports_mcp: self.supports_mcp,
             tool_transport,
             supports_sandbox: self.supports_sandbox,
+            model_grouping: self.model_grouping,
+            effort: self.effort,
+            badge_code: self.badge_code,
+            display_order: self.display_order,
             builtin_seed: self.builtin_seed,
         }
     }
@@ -331,6 +546,9 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         "model is not supported",
     ]);
 
+    let mut codex_effort_map = BTreeMap::new();
+    codex_effort_map.insert("max".to_string(), "xhigh".to_string());
+
     vec![
         ProviderConfig {
             id: "claude".to_string(),
@@ -339,6 +557,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             default_command: "claude".to_string(),
             default_model: "haiku".to_string(),
             models: vec_str(&["haiku", "sonnet", "opus"]),
+            free_models: Vec::new(),
             tiers: ModelTiers {
                 basic: "haiku".to_string(),
                 intermediate: "sonnet".to_string(),
@@ -363,6 +582,32 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             model_unavailable_patterns: default_model_unavailable.clone(),
             discovery: None,
             generic: None,
+            model_grouping: ModelGroupingMode::Flat,
+            effort: Some(ReasoningEffortSpec {
+                levels: vec_str(&["low", "medium", "high", "max"]),
+                default_level: Some("medium".to_string()),
+                mode: EffortMode::Flag,
+                suffix_separator: None,
+                flag_args: vec_str(&["--effort", "{effort}"]),
+                value_map: BTreeMap::new(),
+                apply_to_all_models: true,
+                model_rules: vec![ModelEffortRule {
+                    pattern: "haiku".to_string(),
+                    levels: vec_str(&["low", "medium", "high"]),
+                }],
+            }),
+            auth_probe: Some(ProviderAuthProbe {
+                env_vars: vec_str(&["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]),
+                credential_files: vec_str(&[
+                    ".claude/.credentials.json",
+                    ".claude/credentials.json",
+                ]),
+                free_without_login: false,
+            }),
+            install_hint: Some("npm install -g @anthropic-ai/claude-code".to_string()),
+            connect_hint: Some("claude auth login".to_string()),
+            badge_code: Some("CC".to_string()),
+            display_order: Some(1),
             builtin_seed: true,
         },
         ProviderConfig {
@@ -372,6 +617,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             default_command: "codex".to_string(),
             default_model: "gpt-6-luna".to_string(),
             models: vec_str(&["gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"]),
+            free_models: Vec::new(),
             tiers: ModelTiers {
                 basic: "gpt-5.6-luna".to_string(),
                 intermediate: "gpt-5.6-terra".to_string(),
@@ -402,6 +648,26 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 cache_file: Some(".codex/models_cache.json".to_string()),
             }),
             generic: None,
+            model_grouping: ModelGroupingMode::Flat,
+            effort: Some(ReasoningEffortSpec {
+                levels: vec_str(&["low", "medium", "high", "max"]),
+                default_level: Some("medium".to_string()),
+                mode: EffortMode::Flag,
+                suffix_separator: None,
+                flag_args: vec_str(&["-c", "model_reasoning_effort=\"{effort}\""]),
+                value_map: codex_effort_map,
+                apply_to_all_models: true,
+                model_rules: Vec::new(),
+            }),
+            auth_probe: Some(ProviderAuthProbe {
+                env_vars: vec_str(&["OPENAI_API_KEY", "CODEX_API_KEY"]),
+                credential_files: vec_str(&[".codex/auth.json", ".codex/credentials.json"]),
+                free_without_login: false,
+            }),
+            install_hint: Some("npm install -g @openai/codex".to_string()),
+            connect_hint: Some("codex login".to_string()),
+            badge_code: Some("CX".to_string()),
+            display_order: Some(2),
             builtin_seed: true,
         },
         ProviderConfig {
@@ -415,6 +681,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 "openai/gpt-5.6-luna",
                 "openai/gpt-5.4-mini",
             ]),
+            free_models: Vec::new(),
             tiers: ModelTiers {
                 basic: "openai/gpt-5.4-mini".to_string(),
                 intermediate: "openai/gpt-5.6-luna".to_string(),
@@ -443,11 +710,34 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 cache_file: None,
             }),
             generic: None,
+            model_grouping: ModelGroupingMode::ByPrefixFreeFirst,
+            effort: Some(ReasoningEffortSpec {
+                levels: vec_str(&["low", "medium", "high", "max"]),
+                default_level: Some("medium".to_string()),
+                mode: EffortMode::ModelSuffix,
+                suffix_separator: Some("/".to_string()),
+                flag_args: Vec::new(),
+                value_map: BTreeMap::new(),
+                apply_to_all_models: false,
+                model_rules: Vec::new(),
+            }),
+            auth_probe: Some(ProviderAuthProbe {
+                env_vars: vec_str(&["OPENCODE_API_KEY"]),
+                credential_files: vec_str(&[
+                    ".local/share/opencode/auth.json",
+                    ".config/opencode/auth.json",
+                ]),
+                free_without_login: true,
+            }),
+            install_hint: Some("npm install -g opencode-ai".to_string()),
+            connect_hint: Some("opencode auth login".to_string()),
+            badge_code: Some("OC".to_string()),
+            display_order: Some(3),
             builtin_seed: true,
         },
         ProviderConfig {
             id: "antigravity".to_string(),
-            label: "Antigravity".to_string(),
+            label: "Gemini".to_string(),
             protocol: ProviderProtocol::AntigravityStream,
             default_command: "agy".to_string(),
             default_model: "gemini-4-hydrogen-medium".to_string(),
@@ -457,6 +747,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 "gemini-4-argon-medium",
                 "gemini-3.8-flash-medium",
             ]),
+            free_models: Vec::new(),
             tiers: ModelTiers {
                 basic: "gemini-3.8-flash-medium".to_string(),
                 intermediate: "gemini-4-argon-medium".to_string(),
@@ -488,6 +779,30 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 cache_file: None,
             }),
             generic: None,
+            model_grouping: ModelGroupingMode::Flat,
+            effort: Some(ReasoningEffortSpec {
+                levels: vec_str(&["low", "medium", "high", "max"]),
+                default_level: Some("medium".to_string()),
+                mode: EffortMode::ModelSuffix,
+                suffix_separator: Some("-".to_string()),
+                flag_args: Vec::new(),
+                value_map: BTreeMap::new(),
+                apply_to_all_models: true,
+                model_rules: Vec::new(),
+            }),
+            auth_probe: Some(ProviderAuthProbe {
+                env_vars: vec_str(&["GEMINI_API_KEY"]),
+                credential_files: vec_str(&[
+                    ".gemini/antigravity-oauth-token",
+                    ".gemini/antigravity-cli/antigravity-oauth-token",
+                    ".gemini/oauth_creds.json",
+                ]),
+                free_without_login: false,
+            }),
+            install_hint: Some("Instale a CLI oficial do Gemini (agy)".to_string()),
+            connect_hint: Some("agy acp --login".to_string()),
+            badge_code: Some("GM".to_string()),
+            display_order: Some(4),
             builtin_seed: true,
         },
     ]
@@ -522,6 +837,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
     }
     let mut providers = parsed.providers;
     let defaults = default_rate_limit_patterns();
+    let seeds = initial_providers();
     let mut updated = false;
     for provider in &mut providers {
         if !provider.builtin_seed {
@@ -530,6 +846,38 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
         for pattern in &defaults {
             if !provider.rate_limit_patterns.iter().any(|p| p == pattern) {
                 provider.rate_limit_patterns.push(pattern.clone());
+                updated = true;
+            }
+        }
+        if let Some(seed) = seeds.iter().find(|s| s.id == provider.id) {
+            if provider.effort.is_none() && seed.effort.is_some() {
+                provider.effort = seed.effort.clone();
+                updated = true;
+            }
+            if provider.auth_probe.is_none() && seed.auth_probe.is_some() {
+                provider.auth_probe = seed.auth_probe.clone();
+                updated = true;
+            }
+            if provider.install_hint.is_none() && seed.install_hint.is_some() {
+                provider.install_hint = seed.install_hint.clone();
+                updated = true;
+            }
+            if provider.connect_hint.is_none() && seed.connect_hint.is_some() {
+                provider.connect_hint = seed.connect_hint.clone();
+                updated = true;
+            }
+            if provider.badge_code.is_none() && seed.badge_code.is_some() {
+                provider.badge_code = seed.badge_code.clone();
+                updated = true;
+            }
+            if provider.display_order.is_none() && seed.display_order.is_some() {
+                provider.display_order = seed.display_order;
+                updated = true;
+            }
+            if provider.model_grouping == ModelGroupingMode::Flat
+                && seed.model_grouping != ModelGroupingMode::Flat
+            {
+                provider.model_grouping = seed.model_grouping;
                 updated = true;
             }
         }

@@ -4,6 +4,7 @@ import type {
   PlanUsageSnapshot,
   ProviderPlanUsage,
   ProviderUsageWindow,
+  UsageLimitEntry,
   UsageWindow,
   VokiaPlanUsage,
 } from '../team/events'
@@ -38,6 +39,7 @@ export interface CriticalUsageSummary {
 
 export const useUsage = defineStore('usage', () => {
   const providers = ref<Record<string, ProviderPlanUsage>>({})
+  const activeLimits = ref<UsageLimitEntry[]>([])
   const thresholdsByProvider = ref<Record<string, ProviderThresholds>>({})
   const now = ref(Date.now())
   const startupError = ref<string | null>(null)
@@ -175,6 +177,7 @@ export const useUsage = defineStore('usage', () => {
       next[usage.providerId] = usage
     }
     providers.value = next
+    activeLimits.value = Array.isArray(snapshot.activeLimits) ? snapshot.activeLimits : []
   }
 
   function apply(usage: VokiaPlanUsage): void {
@@ -262,6 +265,7 @@ export const useUsage = defineStore('usage', () => {
 
   return {
     providers,
+    activeLimits,
     providerList,
     latestUpdatedAtMs,
     mostCritical,

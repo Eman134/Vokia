@@ -4,6 +4,7 @@ import { useRoster } from '../team/useRoster'
 import {
   autoConfigureProvider,
   buildSetupPrompt,
+  checkProviderStatus,
   deleteProvider,
   discoverProviderModels,
   inspectCli,
@@ -13,6 +14,7 @@ import {
   type DiscoverModelsResult,
   type InspectCliResult,
   type ProviderConfig,
+  type ProviderStatusSummary,
   type ProviderWithStatus,
   type TestProviderResult,
 } from './providersApi'
@@ -23,6 +25,7 @@ export const useProviders = defineStore('providers', () => {
   const providers = ref<ProviderWithStatus[]>([])
   const loading = ref(false)
   const discovering = ref<Record<string, boolean>>({})
+  const checkingStatus = ref<Record<string, boolean>>({})
   const error = ref<string | null>(null)
 
   const discoveredOnce = ref<Record<string, boolean>>({})
@@ -53,6 +56,41 @@ export const useProviders = defineStore('providers', () => {
       throw err
     } finally {
       loading.value = false
+    }
+  }
+
+  async function checkStatus(id?: string): Promise<ProviderStatusSummary[]> {
+    const targetIds = id ? [id] : providers.value.map((p) => p.id)
+    const nextFlags = { ...checkingStatus.value }
+    for (const targetId of targetIds) {
+      nextFlags[targetId] = true
+    }
+    checkingStatus.value = nextFlags
+    try {
+      const summaries = await checkProviderStatus(id)
+      const byId = new Map(summaries.map((item) => [item.id, item]))
+      providers.value = providers.value.map((provider) => {
+        const match = byId.get(provider.id)
+        if (!match) return provider
+        return {
+          ...provider,
+          installed: match.installed,
+          connectionStatus: match.connectionStatus,
+          statusDetail: match.statusDetail ?? null,
+          installHint: match.installHint ?? provider.installHint ?? null,
+          connectHint: match.connectHint ?? provider.connectHint ?? null,
+        }
+      })
+      return summaries
+    } catch (err) {
+      error.value = String(err)
+      throw err
+    } finally {
+      const cleared = { ...checkingStatus.value }
+      for (const targetId of targetIds) {
+        cleared[targetId] = false
+      }
+      checkingStatus.value = cleared
     }
   }
 
@@ -132,6 +170,7 @@ export const useProviders = defineStore('providers', () => {
     providers,
     loading,
     discovering,
+    checkingStatus,
     error,
     discoveredOnce,
     setupOpen,
@@ -140,6 +179,7 @@ export const useProviders = defineStore('providers', () => {
     openAddProvider,
     closeSetup,
     load,
+    checkStatus,
     discover,
     discoverAllInstalled,
     save,

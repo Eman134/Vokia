@@ -579,6 +579,7 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
         default_command: "meu-llm".to_string(),
         default_model: "modelo-base".to_string(),
         models: vec!["modelo-base".to_string(), "modelo-avancado".to_string()],
+        free_models: vec![],
         tiers: crate::providers::ModelTiers {
             basic: "modelo-base".to_string(),
             intermediate: "modelo-base".to_string(),
@@ -605,6 +606,13 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
             cost_usd_json_path: None,
             sandbox_args: std::collections::BTreeMap::new(),
         }),
+        model_grouping: crate::providers::ModelGroupingMode::Flat,
+        effort: None,
+        auth_probe: None,
+        install_hint: None,
+        connect_hint: None,
+        badge_code: None,
+        display_order: None,
         builtin_seed: false,
     };
 
@@ -646,6 +654,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         cli: "claude".to_string(),
         model: "modelo-futuro-2026".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
@@ -661,6 +670,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         cli: "claude".to_string(),
         model: "modelo\ninvalido".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
@@ -678,6 +688,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         cli: "claude".to_string(),
         model: "".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
@@ -1050,11 +1061,13 @@ fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fal
         cli: "claude".to_string(),
         model: "haiku".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: true,
         fallback: vec![crate::orchestrator::fallback::LlmTarget {
             cli: "codex".to_string(),
             model_tier: None,
             model: Some("gpt-6-luna".to_string()),
+            reasoning_effort: None,
         }],
         command: "claude".to_string(),
         builtin: false,
@@ -1065,11 +1078,13 @@ fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fal
         cli: "antigravity".to_string(),
         model_tier: None,
         model: Some("gemini-4-hydrogen-medium".to_string()),
+        reasoning_effort: None,
     };
     let global_fallback = vec![crate::orchestrator::fallback::LlmTarget {
         cli: "opencode".to_string(),
         model_tier: None,
         model: Some("openai/gpt-6-astra".to_string()),
+        reasoning_effort: None,
     }];
 
     // 1. Sem override temporário:
@@ -1097,10 +1112,12 @@ fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fal
         cli: "codex".to_string(),
         model: "gpt-5.6-luna".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         command: "codex".to_string(),
         original_cli: "claude".to_string(),
         original_model: "haiku".to_string(),
         original_tier: None,
+        original_reasoning_effort: None,
         reason: crate::orchestrator::fallback::OverrideReason::UsageLimit,
         applied_at: now,
         expires_at: Some(now + 60_000),
@@ -1130,11 +1147,13 @@ fn mdl1_modelo_especifico_em_active_llm_propaga_para_ember_e_lider_e_faz_fallbac
         cli: "opencode".to_string(),
         model_tier: None,
         model: Some("openai/gpt-5.4-mini".to_string()),
+        reasoning_effort: None,
     };
     let global_fallback = vec![crate::orchestrator::fallback::LlmTarget {
         cli: "antigravity".to_string(),
         model_tier: None,
         model: Some("gemini-4-argon-medium".to_string()),
+        reasoning_effort: None,
     }];
 
     // 1. Ember (follow_default_llm: true) recebe o modelo específico do active_llm como 1º candidato
@@ -1147,6 +1166,7 @@ fn mdl1_modelo_especifico_em_active_llm_propaga_para_ember_e_lider_e_faz_fallbac
         cli: "claude".to_string(),
         model: "haiku".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: true,
         fallback: Vec::new(),
         command: "claude".to_string(),
@@ -1207,17 +1227,20 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         cli: "claude".to_string(),
         model: "haiku".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![
             crate::orchestrator::fallback::LlmTarget {
                 cli: "opencode".to_string(), // supports_mcp: false
                 model_tier: None,
                 model: Some("openai/gpt-6-astra".to_string()),
+                reasoning_effort: None,
             },
             crate::orchestrator::fallback::LlmTarget {
                 cli: "claude".to_string(), // supports_mcp: true
                 model_tier: None,
                 model: Some("sonnet".to_string()),
+                reasoning_effort: None,
             },
         ],
         command: "claude".to_string(),
@@ -1249,11 +1272,13 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         cli: "opencode".to_string(),
         model: "openai/gpt-6-astra".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![crate::orchestrator::fallback::LlmTarget {
             cli: "claude".to_string(),
             model_tier: None,
             model: Some("haiku".to_string()),
+            reasoning_effort: None,
         }],
         command: "opencode".to_string(),
         builtin: false,
@@ -1301,6 +1326,7 @@ fn llm4_expiracao_automatica_vs_clear_temporary_override() {
         cli: "claude".to_string(),
         model: "haiku".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
@@ -1315,10 +1341,12 @@ fn llm4_expiracao_automatica_vs_clear_temporary_override() {
         cli: "codex".to_string(),
         model: "gpt-6-luna".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         command: "codex".to_string(),
         original_cli: "claude".to_string(),
         original_model: "haiku".to_string(),
         original_tier: None,
+        original_reasoning_effort: None,
         reason: crate::orchestrator::fallback::OverrideReason::UsageLimit,
         applied_at: now - 10_000,
         expires_at: Some(now - 1_000), // Expirado há 1s
@@ -1347,10 +1375,12 @@ fn llm4_expiracao_automatica_vs_clear_temporary_override() {
         cli: "codex".to_string(),
         model: "gpt-6-luna".to_string(),
         model_tier: None,
+        reasoning_effort: None,
         command: "codex".to_string(),
         original_cli: "claude".to_string(),
         original_model: "haiku".to_string(),
         original_tier: None,
+        original_reasoning_effort: None,
         reason: crate::orchestrator::fallback::OverrideReason::ManualTemp,
         applied_at: now,
         expires_at: Some(now + 100_000),
@@ -1400,11 +1430,13 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
             Some("claude".to_string()),
             None,
             Some("opus".to_string()),
+            Some("high".to_string()),
             vec![],
             &providers,
         )
         .expect("update_ember_llm com Claude deve ter sucesso");
     assert_eq!(updated.model, "opus");
+    assert_eq!(updated.reasoning_effort.as_deref(), Some("high"));
 
     // 2. Provedor sem ferramentas (ToolTransport::None): recusa explícita
     let no_tools = crate::providers::ProviderConfig {
@@ -1414,6 +1446,7 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
         default_command: "sem-tools".to_string(),
         default_model: "base".to_string(),
         models: vec!["base".to_string()],
+        free_models: vec![],
         tiers: crate::providers::ModelTiers {
             basic: "base".to_string(),
             intermediate: "base".to_string(),
@@ -1427,6 +1460,13 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
         model_unavailable_patterns: vec![],
         discovery: None,
         generic: None,
+        model_grouping: crate::providers::ModelGroupingMode::Flat,
+        effort: None,
+        auth_probe: None,
+        install_hint: None,
+        connect_hint: None,
+        badge_code: None,
+        display_order: None,
         builtin_seed: false,
     };
     providers.save_provider(no_tools).expect("salvar provedor sem tools");
@@ -1435,6 +1475,7 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
             Some("sem-tools".to_string()),
             None,
             Some("base".to_string()),
+            None,
             vec![],
             &providers,
         )
@@ -1452,4 +1493,194 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn req085_declarative_effort_mapping_and_suffix_resolution_across_providers() {
+    let providers = crate::providers::ProviderRegistry::seeded();
+
+    // 1. Flag mode (Claude): sonnet/opus aceitam max, haiku restringe a low/medium/high
+    let claude = providers.get("claude").unwrap();
+    assert_eq!(
+        claude.supported_efforts_for_model("opus"),
+        vec!["low", "medium", "high", "max"]
+    );
+    assert_eq!(
+        claude.supported_efforts_for_model("haiku"),
+        vec!["low", "medium", "high"]
+    );
+    assert_eq!(
+        claude.resolve_effort_args("opus", Some("high")),
+        vec!["--effort", "high"]
+    );
+    assert!(claude.resolve_effort_args("haiku", Some("max")).is_empty());
+
+    // 2. Flag mode com value_map (Codex): max -> xhigh sem hardcoding no adapter
+    let codex = providers.get("codex").unwrap();
+    assert_eq!(
+        codex.resolve_effort_args("gpt-6-luna", Some("max")),
+        vec!["-c", "model_reasoning_effort=\"xhigh\""]
+    );
+    assert_eq!(
+        codex.resolve_effort_args("gpt-6-luna", Some("medium")),
+        vec!["-c", "model_reasoning_effort=\"medium\""]
+    );
+
+    // 3. ModelSuffix mode (Antigravity/Gemini): substitui sufixo de forma idempotente
+    let gemini = providers.get("antigravity").unwrap();
+    assert_eq!(
+        gemini.resolve_model_with_effort("gemini-4-hydrogen-medium", Some("high")),
+        "gemini-4-hydrogen-high"
+    );
+    assert_eq!(
+        gemini.resolve_model_with_effort("gemini-4-hydrogen", Some("low")),
+        "gemini-4-hydrogen-low"
+    );
+    assert!(gemini.resolve_effort_args("gemini-4-hydrogen-high", Some("high")).is_empty());
+
+    // 4. OpenCode: variantes descobertas com '/' colapsam e resolvem sufixo apenas quando presentes
+    let mut opencode = providers.get("opencode").unwrap();
+    opencode.models = vec![
+        "openai/gpt-6-astra/low".to_string(),
+        "openai/gpt-6-astra/high".to_string(),
+        "opencode/big-pickle:free".to_string(),
+    ];
+    assert_eq!(
+        opencode.supported_efforts_for_model("openai/gpt-6-astra/low"),
+        vec!["low", "high"]
+    );
+    assert_eq!(
+        opencode.resolve_model_with_effort("openai/gpt-6-astra/low", Some("high")),
+        "openai/gpt-6-astra/high"
+    );
+    assert!(opencode.supported_efforts_for_model("opencode/big-pickle:free").is_empty());
+    assert_eq!(
+        opencode.resolve_model_with_effort("opencode/big-pickle:free", Some("high")),
+        "opencode/big-pickle:free"
+    );
+}
+
+#[test]
+fn req085_reasoning_effort_persists_in_agent_profile_and_llm_target() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-req085-effort-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let providers = crate::providers::ProviderRegistry::load(&dir);
+    let agents = crate::agents::AgentRegistry::load(&dir);
+
+    let draft = crate::agents::AgentDraft {
+        name: "Planner".to_string(),
+        role: "Tech Lead".to_string(),
+        avatar: "onix".to_string(),
+        cli: "codex".to_string(),
+        model: "gpt-6-luna".to_string(),
+        model_tier: None,
+        reasoning_effort: Some("MAX".to_string()),
+        follow_default_llm: false,
+        fallback: vec![crate::orchestrator::fallback::LlmTarget {
+            cli: "antigravity".to_string(),
+            model_tier: None,
+            model: Some("gemini-4-hydrogen-medium".to_string()),
+            reasoning_effort: Some("high".to_string()),
+        }],
+        command: "codex".to_string(),
+    };
+    let created = agents.create(&draft, &providers).expect("criar agente com effort");
+    assert_eq!(created.reasoning_effort.as_deref(), Some("max"));
+
+    // Recarrega do disco e verifica persistência JSON em camelCase
+    let reloaded = crate::agents::AgentRegistry::load(&dir);
+    let team = reloaded.team().unwrap();
+    let stored = team.profile(&created.id).expect("agente recarregado");
+    assert_eq!(stored.reasoning_effort.as_deref(), Some("max"));
+    assert_eq!(
+        stored.fallback[0].reasoning_effort.as_deref(),
+        Some("high")
+    );
+
+    // LlmTarget serializa reasoningEffort em camelCase e desserializa JSON legado sem o campo
+    let serialized = serde_json::to_string(&stored.fallback[0]).unwrap();
+    assert!(serialized.contains("\"reasoningEffort\":\"high\""));
+    let legacy: crate::orchestrator::fallback::LlmTarget =
+        serde_json::from_str(r#"{"cli":"codex","model":"gpt-6-luna"}"#).unwrap();
+    assert_eq!(legacy.reasoning_effort, None);
+
+    // resolve_candidates propaga reasoning_effort e resolve sufixo no fallback do Gemini
+    let state = crate::state::AppState::new(Ok(std::path::PathBuf::from("codex")));
+    let candidates = crate::orchestrator::fallback::resolve_candidates(
+        &stored.id,
+        stored,
+        &providers,
+        &state,
+        None,
+        &[],
+        None,
+    );
+    assert_eq!(candidates[0].cli, "codex");
+    assert_eq!(candidates[0].reasoning_effort.as_deref(), Some("max"));
+    assert_eq!(candidates[1].cli, "antigravity");
+    assert_eq!(candidates[1].model, "gemini-4-hydrogen-high");
+    assert_eq!(candidates[1].reasoning_effort.as_deref(), Some("high"));
+
+    // Esforço inválido com espaço/caractere proibido é rejeitado
+    let bad_draft = crate::agents::AgentDraft {
+        name: "BadEffort".to_string(),
+        avatar: "ambar".to_string(),
+        reasoning_effort: Some("high; rm -rf".to_string()),
+        ..draft
+    };
+    assert!(matches!(
+        reloaded.create(&bad_draft, &providers),
+        Err(crate::agents::AgentError::InvalidReasoningEffort(_))
+    ));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn req085_evaluate_provider_status_abstract_probe() {
+    let missing = crate::providers::ProviderConfig {
+        id: "inexistente-cli".to_string(),
+        label: "Inexistente".to_string(),
+        protocol: crate::providers::ProviderProtocol::GenericCli,
+        default_command: "vokia-binary-definitely-missing-987654".to_string(),
+        default_model: "m1".to_string(),
+        models: vec!["m1".to_string()],
+        free_models: vec![],
+        tiers: crate::providers::ModelTiers {
+            basic: "m1".to_string(),
+            intermediate: "m1".to_string(),
+            advanced: "m1".to_string(),
+        },
+        supports_mcp: false,
+        tool_transport: Some(crate::providers::ToolTransport::VokiaCli),
+        supports_sandbox: false,
+        reserved_flags: vec![],
+        rate_limit_patterns: vec![],
+        model_unavailable_patterns: vec![],
+        discovery: None,
+        generic: None,
+        model_grouping: crate::providers::ModelGroupingMode::Flat,
+        effort: None,
+        auth_probe: None,
+        install_hint: Some("install custom".to_string()),
+        connect_hint: None,
+        badge_code: Some("IN".to_string()),
+        display_order: None,
+        builtin_seed: false,
+    };
+    let (installed, status, _) = crate::commands::providers::evaluate_provider_status(&missing);
+    assert!(!installed);
+    assert_eq!(
+        status,
+        crate::commands::providers::ProviderConnectionStatus::Missing
+    );
+}
+
 

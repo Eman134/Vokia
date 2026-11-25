@@ -10,8 +10,12 @@ import UiSelect from '../../ui/UiSelect.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import { AVATAR_PROFILES } from '../identities/avatarProfiles'
 import AvatarPicker from '../identities/AvatarPicker.vue'
+import ProviderModelPickerModal, {
+  type ModelSelectionPayload,
+} from '../providers/ProviderModelPickerModal.vue'
+import { EFFORT_LABELS, normalizeReasoningEffort } from '../providers/providerModelCatalog'
 import { useProviders } from '../providers/useProviders'
-import type { AgentDraft, AgentProfile, LlmTarget, ModelTier } from '../team/teamApi'
+import type { AgentDraft, AgentProfile, LlmTarget, ModelTier, ReasoningEffort } from '../team/teamApi'
 import { useRoster } from '../team/useRoster'
 import {
   AVATAR_LABEL,
@@ -66,6 +70,11 @@ const modelMode = ref<'tier' | 'custom'>(
 )
 const modelTier = ref<ModelTier>(props.agent?.modelTier ?? 'intermediate')
 const model = ref(props.agent?.model ?? firstPreset?.defaultModel ?? '')
+const reasoningEffort = ref<ReasoningEffort | null>(
+  normalizeReasoningEffort(props.agent?.reasoningEffort),
+)
+const modelPickerOpen = ref(false)
+const fallbackSectionRef = ref<HTMLElement>()
 const command = ref(props.agent?.command ?? preset.value?.defaultCommand ?? '')
 const fallbackCli = ref(props.agent?.fallback[0]?.cli ?? '')
 const fallbackTier = ref<ModelTier>(props.agent?.fallback[0]?.modelTier ?? 'intermediate')
@@ -121,6 +130,52 @@ const cliOptions = computed(() => {
     : roster.presets
   return candidates.map((candidate) => ({ label: candidate.label, value: candidate.id }))
 })
+const allowedPickerProviderIds = computed(() =>
+  isBuiltin.value ? cliOptions.value.map((option) => option.value) : null,
+)
+const selectedProviderSupportsPerCommandPermissions = computed(
+  () => (preset.value?.toolTransport ?? (preset.value?.supportsMcp ? 'mcp-native' : 'none')) === 'mcp-native',
+)
+const activeEffortSpec = computed(() => {
+  const fromStore = providersStore.providers.find((p) => p.id === cli.value)?.effort
+  return fromStore ?? preset.value?.effort ?? null
+})
+const supportedEffortsForCurrentModel = computed<ReasoningEffort[]>(() => {
+  const spec = activeEffortSpec.value
+  if (!spec) return []
+  const target = effectiveModel.value.toLowerCase()
+  for (const rule of spec.modelRules ?? []) {
+    const pat = rule.pattern.trim().toLowerCase()
+    if (pat && target.includes(pat)) {
+      return rule.levels
+        .map((lvl) => normalizeReasoningEffort(lvl))
+        .filter((lvl): lvl is ReasoningEffort => lvl !== null)
+    }
+  }
+  if (!spec.applyToAllModels) return []
+  return spec.levels
+    .map((lvl) => normalizeReasoningEffort(lvl))
+    .filter((lvl): lvl is ReasoningEffort => lvl !== null)
+})
+const effortSegmentedOptions = computed(() =>
+  supportedEffortsForCurrentModel.value.map((value) => ({
+    label: EFFORT_LABELS[value],
+    value,
+  })),
+)
+const currentReasoningEffortValue = computed<string>({
+  get: () => {
+    const current = reasoningEffort.value
+    const supported = supportedEffortsForCurrentModel.value
+    if (current && supported.includes(current)) return current
+    const def = normalizeReasoningEffort(activeEffortSpec.value?.defaultLevel)
+    if (def && supported.includes(def)) return def
+    return supported[0] ?? ''
+  },
+  set: (val) => {
+    reasoningEffort.value = normalizeReasoningEffort(val)
+  },
+})
 const fallbackCliOptions = computed(() => {
   const compatible = isBuiltin.value
     ? roster.presets.filter((candidate) => (candidate.toolTransport ?? (candidate.supportsMcp ? 'mcp-native' : 'none')) !== 'none')
@@ -146,12 +201,40 @@ const canSave = computed(() => {
   return cli.value !== '' && effectiveModel.value !== '' && command.value.trim() !== ''
 })
 
+let skipCliReset = false
+
 watch(cli, () => {
   discoveredModels.value = []
   discoverError.value = null
+  if (skipCliReset) {
+    skipCliReset = false
+    return
+  }
   model.value = preset.value?.defaultModel ?? ''
   command.value = preset.value?.defaultCommand ?? ''
+  reasoningEffort.value = null
 })
+
+function handlePickerSelect(payload: ModelSelectionPayload): void {
+  const changedCli = payload.cli !== cli.value
+  if (changedCli) {
+    skipCliReset = true
+    cli.value = payload.cli
+    const nextPreset = roster.presets.find((candidate) => candidate.id === payload.cli)
+    command.value = nextPreset?.defaultCommand ?? command.value
+  }
+  modelMode.value = 'custom'
+  model.value = payload.model
+  reasoningEffort.value = payload.reasoningEffort
+  modelPickerOpen.value = false
+}
+
+function handlePickerOpenBackup(): void {
+  modelPickerOpen.value = false
+  void nextTick(() => {
+    fallbackSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
+}
 
 async function refreshModels(): Promise<void> {
   if (!cli.value || discoveringModels.value) return
@@ -209,11 +292,14 @@ async function submit(): Promise<void> {
   const fallback = buildFallbackList()
   try {
     let profile: AgentProfile
+    const effectiveEffort =
+      supportedEffortsForCurrentModel.value.length > 0 ? reasoningEffort.value : null
     if (isBuiltin.value) {
       profile = await roster.updateEmber({
         cli: cli.value,
         modelTier: modelMode.value === 'tier' ? modelTier.value : null,
         model: effectiveModel.value,
+        reasoningEffort: effectiveEffort,
         fallback,
       })
     } else {
@@ -224,6 +310,7 @@ async function submit(): Promise<void> {
         cli: cli.value,
         model: effectiveModel.value,
         modelTier: modelMode.value === 'tier' ? modelTier.value : null,
+        reasoningEffort: effectiveEffort,
         command: command.value.trim(),
         followDefaultLlm: followDefaultLlm.value,
         fallback,
@@ -285,18 +372,31 @@ onMounted(focusName)
         </label>
 
         <template v-if="isBuiltin || !followDefaultLlm">
-          <label class="flex flex-col gap-1.5">
-            <span class="text-label font-medium text-muted">{{ DEFAULT_PROVIDER_LABEL }}</span>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-label font-medium text-muted">{{ DEFAULT_PROVIDER_LABEL }}</span>
+              <button
+                type="button"
+                data-testid="agent-open-model-picker"
+                :class="`cursor-pointer rounded-sm px-1.5 py-0.5 text-small font-medium text-accent hover:bg-hover ${INK_FOCUS_CLASSES}`"
+                @click="modelPickerOpen = true"
+              >
+                Abrir catálogo
+              </button>
+            </div>
             <UiSelect
               v-model="cli"
               data-testid="agent-default-provider"
               :options="cliOptions"
               :label="DEFAULT_PROVIDER_LABEL"
             />
-            <p v-if="isBuiltin && cli !== 'claude'" class="text-small text-muted">
-              Fora do Claude, permissões seguem o nível de sandbox da CLI sem confirmação comando a comando.
+            <p
+              v-if="isBuiltin && !selectedProviderSupportsPerCommandPermissions"
+              class="text-small text-muted"
+            >
+              Este provedor segue o nível de sandbox da CLI sem confirmação comando a comando.
             </p>
-          </label>
+          </div>
 
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between gap-2">
@@ -336,10 +436,23 @@ onMounted(focusName)
               </label>
               <p v-if="discoverError" class="text-small text-warn-text">{{ discoverError }}</p>
             </template>
+
+            <div
+              v-if="effortSegmentedOptions.length > 0"
+              data-testid="agent-reasoning-effort"
+              class="flex items-center justify-between gap-2 pt-1"
+            >
+              <span class="text-label font-medium text-muted">Esforço de raciocínio</span>
+              <UiSegmented
+                v-model="currentReasoningEffortValue"
+                :options="effortSegmentedOptions"
+                label="Esforço de raciocínio"
+              />
+            </div>
           </div>
         </template>
 
-        <div class="flex gap-3">
+        <div ref="fallbackSectionRef" class="flex gap-3">
           <label class="flex min-w-0 flex-1 flex-col gap-1.5">
             <span class="text-label font-medium text-muted">{{ FALLBACK_PROVIDER_LABEL }}</span>
             <UiSelect
@@ -393,5 +506,20 @@ onMounted(focusName)
         </UiButton>
       </div>
     </section>
+
+    <ProviderModelPickerModal
+      :open="modelPickerOpen"
+      title="Selecionar modelo do agente"
+      :selected-provider-id="cli"
+      :selected-model="model"
+      :selected-model-tier="modelMode === 'tier' ? modelTier : null"
+      :selected-effort="reasoningEffort"
+      :allowed-provider-ids="allowedPickerProviderIds"
+      :show-backup-shortcut="true"
+      :show-overrides="false"
+      @close="modelPickerOpen = false"
+      @select="handlePickerSelect"
+      @open-backup="handlePickerOpenBackup()"
+    />
   </div>
 </template>

@@ -195,7 +195,11 @@ async fn run_step(
         } else {
             base
         };
-        let (program, user_args) = resolve_program_for(agent, &candidate.command, cli)?;
+        let (program, mut user_args) = resolve_program_for(agent, &candidate.command, cli)?;
+        user_args.extend(candidate.provider.resolve_effort_args(
+            &candidate.model,
+            candidate.reasoning_effort.as_deref(),
+        ));
         let mut call = AgentCall {
             adapter,
             program,
@@ -372,10 +376,12 @@ async fn run_step(
                         cli: candidate.cli.clone(),
                         model: candidate.model.clone(),
                         model_tier: candidate.model_tier,
+                        reasoning_effort: candidate.reasoning_effort.clone(),
                         command: candidate.command.clone(),
                         original_cli: orig_cli.clone(),
                         original_model: orig_model.clone(),
                         original_tier: orig_tier,
+                        original_reasoning_effort: profile.reasoning_effort.clone(),
                         reason,
                         applied_at: now_millis_u64(),
                         expires_at: fallback_expires_at,

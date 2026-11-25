@@ -159,6 +159,7 @@ fn preload_candidate_aceita_primario_claude_sem_cooldown() {
         cli: "claude".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     };
 
     let candidate = preload_candidate(
@@ -191,11 +192,13 @@ fn preload_candidate_trata_primario_stateless_identificando_protocolo() {
         cli: "codex".into(),
         model_tier: None,
         model: Some("gpt-5-codex".into()),
+        reasoning_effort: None,
     };
     let fallback = vec![LlmTarget {
         cli: "claude".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     }];
 
     let candidate = preload_candidate(
@@ -228,11 +231,13 @@ fn preload_candidate_regras_de_fallback_e_cooldown() {
         cli: "codex".into(),
         model_tier: None,
         model: Some("gpt-5-codex".into()),
+        reasoning_effort: None,
     };
     let fallback_claude = vec![LlmTarget {
         cli: "claude".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     }];
     state
         .cooldowns
@@ -288,6 +293,7 @@ fn preload_candidate_regras_de_fallback_e_cooldown() {
         cli: "claude".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     };
     state2
         .cooldowns
@@ -350,10 +356,12 @@ fn preload_candidate_aceita_override_temporario_e_respeita_cooldown() {
         cli: "claude".into(),
         model: "claude-opus-4-5".into(),
         model_tier: None,
+        reasoning_effort: None,
         command: "claude".into(),
         original_cli: "claude".into(),
         original_model: "claude-sonnet-4-5".into(),
         original_tier: None,
+        original_reasoning_effort: None,
         reason: OverrideReason::ManualTemp,
         applied_at: now,
         expires_at: Some(now + 60_000),
@@ -417,6 +425,7 @@ fn preload_candidate_respeita_has_tools_do_ember_e_sandbox_em_liberado() {
         cli: "claude-no-tools".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     };
 
     let candidate_ember = preload_candidate(
@@ -440,11 +449,13 @@ fn preload_candidate_respeita_has_tools_do_ember_e_sandbox_em_liberado() {
         cli: "opencode".into(),
         model_tier: None,
         model: Some("openai/gpt-6-astra".into()),
+        reasoning_effort: None,
     };
     let fallback_claude = vec![LlmTarget {
         cli: "claude".into(),
         model_tier: None,
         model: Some("claude-sonnet-4-5".into()),
+        reasoning_effort: None,
     }];
 
     let candidate_liberado = preload_candidate(

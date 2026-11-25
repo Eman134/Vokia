@@ -15,6 +15,7 @@ import {
   type CliPreset,
   type LlmTarget,
   type ModelTier,
+  type ReasoningEffort,
 } from './teamApi'
 
 export function normalizeName(text: string): string {
@@ -48,6 +49,7 @@ export const useRoster = defineStore('roster', () => {
     cli?: string | null
     modelTier?: ModelTier | null
     model?: string | null
+    reasoningEffort?: ReasoningEffort | null
     fallback?: LlmTarget[] | null
   }): Promise<AgentProfile> {
     const profile = await updateEmberLlm(params)

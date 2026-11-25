@@ -494,6 +494,7 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
             cli: cli.to_string(),
             model: model.to_string(),
             model_tier: None,
+            reasoning_effort: None,
             command: cmd.to_string(),
             follow_default_llm: false,
             fallback: Vec::new(),

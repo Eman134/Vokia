@@ -8,7 +8,7 @@ use crate::orchestrator::fallback::{
     emit_overrides_changed, now_millis_u64, LlmTarget, OverrideReason, TemporaryOverride,
 };
 use crate::orchestrator::{emit_backlog_changed, emit_feed_note, now_millis};
-use crate::providers::{ModelTier, ProviderRegistry};
+use crate::providers::{validate_reasoning_effort, ModelTier, ProviderRegistry};
 use crate::roles::RoleRegistry;
 use crate::state::AppState;
 
@@ -45,6 +45,7 @@ pub(crate) struct SetTemporaryOverrideArgs {
     pub cli: String,
     pub model_tier: Option<ModelTier>,
     pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub reason: Option<OverrideReason>,
     pub expires_in_ms: Option<u64>,
 }
@@ -61,6 +62,7 @@ pub(crate) struct UpdateEmberLlmArgs {
     pub cli: Option<String>,
     pub model_tier: Option<ModelTier>,
     pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
     pub fallback: Option<Vec<LlmTarget>>,
 }
 
@@ -182,9 +184,11 @@ pub(crate) async fn set_temporary_override_exec(
         cli,
         model_tier,
         model,
+        reasoning_effort,
         reason,
         expires_in_ms,
     } = args;
+    let normalized_effort = validate_reasoning_effort(reasoning_effort.as_deref())?;
     let team = app
         .state::<AgentRegistry>()
         .team()
@@ -202,23 +206,27 @@ pub(crate) async fn set_temporary_override_exec(
                 .to_string(),
         );
     }
-    let resolved_model = match model {
+    let base_model = match model {
         Some(m) if !m.trim().is_empty() => m.trim().to_string(),
         _ => model_tier
             .map(|tier| provider.tiers.get(tier).trim().to_string())
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| provider.default_model.clone()),
     };
+    let resolved_model =
+        provider.resolve_model_with_effort(&base_model, normalized_effort.as_deref());
     let now = now_millis_u64();
     let ov = TemporaryOverride {
         agent: agent.clone(),
         cli,
         model: resolved_model,
         model_tier,
+        reasoning_effort: normalized_effort,
         command: provider.default_command.clone(),
         original_cli: profile.cli.clone(),
         original_model: profile.model.clone(),
         original_tier: profile.model_tier,
+        original_reasoning_effort: profile.reasoning_effort.clone(),
         reason: reason.unwrap_or(OverrideReason::ManualTemp),
         applied_at: now,
         expires_at: expires_in_ms.map(|ms| now.saturating_add(ms)),
@@ -287,6 +295,7 @@ pub(crate) async fn update_ember_llm_exec(
             args.cli,
             args.model_tier,
             args.model,
+            args.reasoning_effort,
             args.fallback.unwrap_or_default(),
             &app.state::<ProviderRegistry>(),
         )
@@ -344,6 +353,7 @@ pub async fn set_temporary_override(
     cli: String,
     model_tier: Option<ModelTier>,
     model: Option<String>,
+    reasoning_effort: Option<String>,
     reason: Option<OverrideReason>,
     expires_in_ms: Option<u64>,
 ) -> Result<TemporaryOverride, String> {
@@ -354,6 +364,7 @@ pub async fn set_temporary_override(
             cli,
             model_tier,
             model,
+            reasoning_effort,
             reason,
             expires_in_ms,
         },
@@ -377,6 +388,7 @@ pub async fn update_ember_llm(
     cli: Option<String>,
     model_tier: Option<ModelTier>,
     model: Option<String>,
+    reasoning_effort: Option<String>,
     fallback: Option<Vec<LlmTarget>>,
 ) -> Result<AgentProfile, String> {
     update_ember_llm_exec(
@@ -385,6 +397,7 @@ pub async fn update_ember_llm(
             cli,
             model_tier,
             model,
+            reasoning_effort,
             fallback,
         },
     )

@@ -31,6 +31,8 @@ pub struct LlmTarget {
     pub model_tier: Option<ModelTier>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -71,11 +73,15 @@ pub struct TemporaryOverride {
     pub model: String,
     #[serde(default)]
     pub model_tier: Option<ModelTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     pub command: String,
     pub original_cli: String,
     pub original_model: String,
     #[serde(default)]
     pub original_tier: Option<ModelTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_reasoning_effort: Option<String>,
     pub reason: OverrideReason,
     pub applied_at: u64,
     #[serde(default)]
@@ -107,6 +113,7 @@ pub struct ResolvedCandidate {
     pub cli: String,
     pub model: String,
     pub model_tier: Option<ModelTier>,
+    pub reasoning_effort: Option<String>,
     pub command: String,
     pub provider: ProviderConfig,
 }
@@ -202,10 +209,22 @@ pub fn resolve_candidates(
         overrides.get(agent).cloned()
     };
 
-    let mut raw_targets: Vec<(String, Option<ModelTier>, String, Option<String>)> = Vec::new();
+    let mut raw_targets: Vec<(
+        String,
+        Option<ModelTier>,
+        String,
+        Option<String>,
+        Option<String>,
+    )> = Vec::new();
 
     if let Some(ov) = active_override {
-        raw_targets.push((ov.cli, ov.model_tier, ov.model, Some(ov.command)));
+        raw_targets.push((
+            ov.cli,
+            ov.model_tier,
+            ov.model,
+            ov.reasoning_effort,
+            Some(ov.command),
+        ));
     }
 
     if profile.follow_default_llm {
@@ -214,6 +233,7 @@ pub fn resolve_candidates(
                 global.cli.clone(),
                 global.model_tier,
                 global.model.clone().unwrap_or_default(),
+                global.reasoning_effort.clone(),
                 None,
             ));
         }
@@ -223,6 +243,7 @@ pub fn resolve_candidates(
         profile.cli.clone(),
         profile.model_tier,
         profile.model.clone(),
+        profile.reasoning_effort.clone(),
         Some(profile.command.clone()),
     ));
 
@@ -231,6 +252,7 @@ pub fn resolve_candidates(
             target.cli.clone(),
             target.model_tier,
             target.model.clone().unwrap_or_default(),
+            target.reasoning_effort.clone(),
             None,
         ));
     }
@@ -239,6 +261,7 @@ pub fn resolve_candidates(
             target.cli.clone(),
             target.model_tier,
             target.model.clone().unwrap_or_default(),
+            target.reasoning_effort.clone(),
             None,
         ));
     }
@@ -249,7 +272,7 @@ pub fn resolve_candidates(
     let mut seen: HashSet<(String, String)> = HashSet::new();
     let mut result = Vec::new();
 
-    for (cli, tier, model_raw, custom_cmd) in raw_targets {
+    for (cli, tier, model_raw, reasoning_effort, custom_cmd) in raw_targets {
         let Ok(provider) = providers.get(&cli) else {
             continue;
         };
@@ -259,7 +282,8 @@ pub fn resolve_candidates(
         if requires_sandbox && !provider.supports_sandbox {
             continue;
         }
-        let model = resolve_model_for_provider(&provider, tier, &model_raw);
+        let base_model = resolve_model_for_provider(&provider, tier, &model_raw);
+        let model = provider.resolve_model_with_effort(&base_model, reasoning_effort.as_deref());
         if !seen.insert((cli.clone(), model.clone())) {
             continue;
         }
@@ -278,6 +302,7 @@ pub fn resolve_candidates(
             cli,
             model,
             model_tier: tier,
+            reasoning_effort,
             command,
             provider,
         });
@@ -443,8 +468,12 @@ pub(crate) async fn ask_with_fallback(
                     .map_err(FlowError::Claude)
             }
             _ => {
-                let (program, user_args) =
+                let (program, mut user_args) =
                     resolve_program_for(agent, &candidate.command, default_cli)?;
+                user_args.extend(candidate.provider.resolve_effort_args(
+                    &candidate.model,
+                    candidate.reasoning_effort.as_deref(),
+                ));
                 let adapter = ProviderAdapter::from_config(candidate.provider.clone());
                 let broker = PermissionBroker::default();
                 let granted = std::sync::Arc::new(std::sync::Mutex::new(HashSet::new()));

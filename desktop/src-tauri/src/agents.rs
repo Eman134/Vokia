@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use crate::claude::DEFAULT_MODEL;
 use crate::db::DbError;
 use crate::orchestrator::fallback::LlmTarget;
-use crate::providers::{ModelTier, ModelTiers, ProviderConfig, ProviderRegistry, ToolTransport};
+use crate::providers::{
+    validate_reasoning_effort, ModelGroupingMode, ModelTier, ModelTiers, ProviderConfig,
+    ProviderRegistry, ReasoningEffortSpec, ToolTransport,
+};
 
 const NAME_MIN_CHARS: usize = 2;
 const NAME_MAX_CHARS: usize = 20;
@@ -116,6 +119,8 @@ pub struct AgentProfile {
     pub model: String,
     #[serde(default)]
     pub model_tier: Option<ModelTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub follow_default_llm: bool,
     #[serde(default)]
@@ -140,6 +145,8 @@ pub struct AgentDraft {
     #[serde(default)]
     pub model_tier: Option<ModelTier>,
     #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
     pub follow_default_llm: bool,
     #[serde(default)]
     pub fallback: Vec<LlmTarget>,
@@ -155,6 +162,8 @@ pub struct EmberOverride {
     pub model: Option<String>,
     #[serde(default)]
     pub model_tier: Option<ModelTier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub fallback: Vec<LlmTarget>,
 }
@@ -165,12 +174,21 @@ pub struct CliPreset {
     pub id: String,
     pub label: String,
     pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub free_models: Vec<String>,
     pub default_model: String,
     pub default_command: String,
     pub tiers: ModelTiers,
     pub supports_mcp: bool,
     pub tool_transport: ToolTransport,
     pub supports_sandbox: bool,
+    pub model_grouping: ModelGroupingMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<ReasoningEffortSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_order: Option<u32>,
     pub builtin_seed: bool,
 }
 
@@ -197,6 +215,7 @@ pub enum AgentError {
     AvatarInUse(String),
     UnknownCli(String),
     InvalidModel(String),
+    InvalidReasoningEffort(String),
     InvalidCommand,
     ReservedCommandFlag(String),
     UnknownAgent(String),
@@ -237,6 +256,7 @@ impl Display for AgentError {
             AgentError::AvatarInUse(name) => write!(f, "Esse avatar já é usado por {name}."),
             AgentError::UnknownCli(cli) => write!(f, "CLI desconhecida: {cli}."),
             AgentError::InvalidModel(model) => write!(f, "Modelo inválido: {model}."),
+            AgentError::InvalidReasoningEffort(detail) => f.write_str(detail),
             AgentError::InvalidCommand => write!(
                 f,
                 "Comando inválido: informe um comando válido e com aspas fechadas."
@@ -273,6 +293,7 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         cli: CLAUDE_CLI.to_string(),
         model: DEFAULT_MODEL.to_string(),
         model_tier: None,
+        reasoning_effort: None,
         follow_default_llm: true,
         fallback: Vec::new(),
         command: CLAUDE_CLI.to_string(),
@@ -296,6 +317,7 @@ fn initial_agents() -> Vec<AgentProfile> {
             cli: CLAUDE_CLI.to_string(),
             model: DEFAULT_MODEL.to_string(),
             model_tier: None,
+            reasoning_effort: None,
             follow_default_llm: true,
             fallback: Vec::new(),
             command: CLAUDE_CLI.to_string(),
@@ -463,6 +485,8 @@ fn validate(
     }
     let reserved = provider.map_or(&[][..], |item| item.reserved_flags.as_slice());
     validate_command(reserved, &draft.command)?;
+    let reasoning_effort = validate_reasoning_effort(draft.reasoning_effort.as_deref())
+        .map_err(AgentError::InvalidReasoningEffort)?;
 
     Ok(AgentProfile {
         id: editing.cloned().unwrap_or(Agent(key)),
@@ -472,6 +496,7 @@ fn validate(
         cli: draft.cli.clone(),
         model: resolved_model,
         model_tier: draft.model_tier,
+        reasoning_effort,
         follow_default_llm: draft.follow_default_llm,
         fallback: draft.fallback.clone(),
         command: draft.command.trim().to_string(),
@@ -493,6 +518,7 @@ fn team_of(stored: &[AgentProfile], ember_override: Option<&EmberOverride>) -> V
                         profile.model = model.clone();
                     }
                     profile.model_tier = override_cfg.model_tier;
+                    profile.reasoning_effort = override_cfg.reasoning_effort.clone();
                     profile.fallback = override_cfg.fallback.clone();
                 }
             }
@@ -700,10 +726,18 @@ impl AgentRegistry {
         cli: Option<String>,
         model_tier: Option<ModelTier>,
         model: Option<String>,
+        reasoning_effort: Option<String>,
         fallback: Vec<LlmTarget>,
         providers: &ProviderRegistry,
     ) -> Result<AgentProfile, AgentError> {
-        let cli_id = cli.unwrap_or_else(|| CLAUDE_CLI.to_string());
+        let cli_id = match cli.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            Some(id) => id.to_string(),
+            None => providers
+                .list()
+                .ok()
+                .and_then(|list| list.into_iter().find(|p| p.has_tools()).map(|p| p.id))
+                .unwrap_or_else(|| CLAUDE_CLI.to_string()),
+        };
         let provider = providers
             .get(&cli_id)
             .map_err(|_| AgentError::UnknownCli(cli_id.clone()))?;
@@ -713,6 +747,8 @@ impl AgentRegistry {
                     .to_string(),
             ));
         }
+        let normalized_effort = validate_reasoning_effort(reasoning_effort.as_deref())
+            .map_err(AgentError::InvalidReasoningEffort)?;
         let resolved_model = crate::orchestrator::fallback::resolve_model_for_provider(
             &provider,
             model_tier,
@@ -726,6 +762,7 @@ impl AgentRegistry {
             cli: Some(cli_id),
             model: Some(resolved_model),
             model_tier,
+            reasoning_effort: normalized_effort,
             fallback,
         };
         let mut state = self.lock();
@@ -862,6 +899,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             cli: profile.cli.clone(),
             model: profile.model.clone(),
             model_tier: profile.model_tier,
+            reasoning_effort: profile.reasoning_effort.clone(),
             follow_default_llm: profile.follow_default_llm,
             fallback: profile.fallback.clone(),
             command,
@@ -916,6 +954,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
                 cli: CLAUDE_CLI.to_string(),
                 model: DEFAULT_MODEL.to_string(),
                 model_tier: None,
+                reasoning_effort: None,
                 follow_default_llm: true,
                 fallback: Vec::new(),
                 command: CLAUDE_CLI.to_string(),

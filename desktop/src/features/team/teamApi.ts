@@ -69,6 +69,25 @@ export interface InterruptedRun {
 
 export type ModelTier = 'basic' | 'intermediate' | 'advanced'
 export type ToolTransport = 'none' | 'mcp-native' | 'vokia-cli'
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'max'
+export type EffortMode = 'none' | 'flag' | 'model-suffix'
+export type ModelGroupingMode = 'flat' | 'by-prefix-free-first'
+
+export interface ModelEffortRule {
+  pattern: string
+  levels: string[]
+}
+
+export interface ReasoningEffortSpec {
+  levels: string[]
+  defaultLevel?: string | null
+  mode?: EffortMode
+  suffixSeparator?: string | null
+  flagArgs?: string[]
+  valueMap?: Record<string, string>
+  applyToAllModels?: boolean
+  modelRules?: ModelEffortRule[]
+}
 
 export interface ModelTiers {
   basic: string
@@ -80,6 +99,7 @@ export interface LlmTarget {
   cli: string
   modelTier?: ModelTier | null
   model?: string | null
+  reasoningEffort?: ReasoningEffort | null
 }
 
 export interface AgentProfile {
@@ -90,6 +110,7 @@ export interface AgentProfile {
   cli: string
   model: string
   modelTier?: ModelTier | null
+  reasoningEffort?: ReasoningEffort | null
   command: string
   builtin: boolean
   extraInstructions: string
@@ -101,12 +122,17 @@ export interface CliPreset {
   id: string
   label: string
   models: string[]
+  freeModels?: string[]
   defaultModel: string
   defaultCommand: string
   tiers: ModelTiers
   supportsMcp: boolean
   toolTransport?: ToolTransport
   supportsSandbox: boolean
+  modelGrouping?: ModelGroupingMode
+  effort?: ReasoningEffortSpec | null
+  badgeCode?: string | null
+  displayOrder?: number | null
   builtinSeed: boolean
 }
 
@@ -122,6 +148,7 @@ export interface AgentDraft {
   cli: string
   model: string
   modelTier?: ModelTier | null
+  reasoningEffort?: ReasoningEffort | null
   command: string
   followDefaultLlm: boolean
   fallback: LlmTarget[]
@@ -249,6 +276,7 @@ export function setTemporaryOverride(params: {
   cli: string
   modelTier?: ModelTier | null
   model?: string | null
+  reasoningEffort?: ReasoningEffort | null
   reason?: OverrideReason | null
   expiresInMs?: number | null
 }): Promise<TemporaryOverride> {
@@ -257,6 +285,7 @@ export function setTemporaryOverride(params: {
     cli: params.cli,
     modelTier: params.modelTier ?? null,
     model: params.model ?? null,
+    reasoningEffort: params.reasoningEffort ?? null,
     reason: params.reason ?? null,
     expiresInMs: params.expiresInMs ?? null,
   })
@@ -274,12 +303,14 @@ export function updateEmberLlm(params: {
   cli?: string | null
   modelTier?: ModelTier | null
   model?: string | null
+  reasoningEffort?: ReasoningEffort | null
   fallback?: LlmTarget[] | null
 }): Promise<AgentProfile> {
   return invoke<AgentProfile>(UPDATE_EMBER_LLM_COMMAND, {
     cli: params.cli ?? null,
     modelTier: params.modelTier ?? null,
     model: params.model ?? null,
+    reasoningEffort: params.reasoningEffort ?? null,
     fallback: params.fallback ?? null,
   })
 }

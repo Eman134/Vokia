@@ -11,10 +11,13 @@ use crate::agents::{Agent, AgentRegistry};
 use crate::claude::{
     ask as claude_ask, base_command, classify_provider_error, kill_process_tree, ClaudeError,
 };
-use crate::orchestrator::fallback::ask_with_fallback;
+use crate::db::{DbState, SETTING_ACTIVE_LLM};
+use crate::orchestrator::fallback::{
+    ask_with_fallback, load_global_active_llm, resolve_model_for_provider, LlmTarget,
+};
 use crate::providers::{
-    parse_codex_models_cache, parse_json_models, parse_models_lines, ProviderConfig,
-    ProviderProtocol, ProviderRegistry,
+    parse_codex_models_cache, parse_json_models, parse_models_lines, validate_reasoning_effort,
+    ModelTier, ProviderConfig, ProviderProtocol, ProviderRegistry,
 };
 use crate::state::AppState;
 
@@ -23,12 +26,59 @@ const DISCOVER_TIMEOUT_SECS: u64 = 5;
 const TEST_TIMEOUT_SECS: u64 = 20;
 const MAX_HELP_BYTES: usize = 8192;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProviderConnectionStatus {
+    Connected,
+    SignedOut,
+    Missing,
+    Error,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderWithStatus {
     #[serde(flatten)]
     pub config: ProviderConfig,
     pub installed: bool,
+    pub connection_status: ProviderConnectionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_detail: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderStatusSummary {
+    pub id: String,
+    pub label: String,
+    pub installed: bool,
+    pub connection_status: ProviderConnectionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_hint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connect_hint: Option<String>,
+    pub supports_free_without_login: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OptionalProviderIdArgs {
+    #[serde(default)]
+    pub id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetActiveLlmArgs {
+    pub cli: String,
+    #[serde(default, alias = "tier")]
+    pub model_tier: Option<ModelTier>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -96,6 +146,39 @@ pub fn list_providers(app: AppHandle) -> Result<Vec<ProviderWithStatus>, String>
 }
 
 #[tauri::command]
+pub fn check_provider_status(
+    app: AppHandle,
+    id: Option<String>,
+) -> Result<Vec<ProviderStatusSummary>, String> {
+    check_provider_status_exec(&app, OptionalProviderIdArgs { id })
+}
+
+#[tauri::command]
+pub fn get_active_llm(app: AppHandle) -> Result<Option<LlmTarget>, String> {
+    get_active_llm_exec(&app)
+}
+
+#[tauri::command]
+pub async fn set_active_llm(
+    app: AppHandle,
+    cli: String,
+    model_tier: Option<ModelTier>,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+) -> Result<LlmTarget, String> {
+    set_active_llm_exec(
+        &app,
+        SetActiveLlmArgs {
+            cli,
+            model_tier,
+            model,
+            reasoning_effort,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
 pub fn save_provider(app: AppHandle, config: ProviderConfig) -> Result<ProviderConfig, String> {
     save_provider_exec(&app, SaveProviderArgs { config })
 }
@@ -157,6 +240,47 @@ pub async fn auto_configure_provider(
     .await
 }
 
+pub(crate) fn evaluate_provider_status(
+    config: &ProviderConfig,
+) -> (bool, ProviderConnectionStatus, Option<String>) {
+    if resolve_program(&config.default_command).is_err() {
+        return (
+            false,
+            ProviderConnectionStatus::Missing,
+            Some("CLI não encontrada no PATH.".to_string()),
+        );
+    }
+    let Some(probe) = &config.auth_probe else {
+        return (true, ProviderConnectionStatus::Connected, None);
+    };
+    let has_env = probe.env_vars.iter().any(|name| {
+        std::env::var(name)
+            .ok()
+            .is_some_and(|value| !value.trim().is_empty())
+    });
+    let has_cred_file = probe.credential_files.iter().any(|rel| {
+        resolve_user_path(rel)
+            .ok()
+            .and_then(|path| std::fs::metadata(path).ok())
+            .is_some_and(|meta| meta.is_file() && meta.len() > 0)
+    });
+    if has_env || has_cred_file {
+        return (true, ProviderConnectionStatus::Connected, None);
+    }
+    if probe.free_without_login {
+        return (
+            true,
+            ProviderConnectionStatus::Connected,
+            Some("Modo gratuito disponível sem login.".to_string()),
+        );
+    }
+    (
+        true,
+        ProviderConnectionStatus::SignedOut,
+        Some("CLI instalada, mas sem autenticação detectada.".to_string()),
+    )
+}
+
 pub(crate) fn list_providers_exec(app: &AppHandle) -> Result<Vec<ProviderWithStatus>, String> {
     let list = app
         .state::<ProviderRegistry>()
@@ -165,10 +289,94 @@ pub(crate) fn list_providers_exec(app: &AppHandle) -> Result<Vec<ProviderWithSta
     Ok(list
         .into_iter()
         .map(|config| {
-            let installed = resolve_program(&config.default_command).is_ok();
-            ProviderWithStatus { config, installed }
+            let (installed, connection_status, status_detail) = evaluate_provider_status(&config);
+            ProviderWithStatus {
+                config,
+                installed,
+                connection_status,
+                status_detail,
+            }
         })
         .collect())
+}
+
+pub(crate) fn check_provider_status_exec(
+    app: &AppHandle,
+    args: OptionalProviderIdArgs,
+) -> Result<Vec<ProviderStatusSummary>, String> {
+    let registry = app.state::<ProviderRegistry>();
+    let configs = match args.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => vec![registry.get(id).map_err(|error| error.to_string())?],
+        None => registry.list().map_err(|error| error.to_string())?,
+    };
+    Ok(configs
+        .into_iter()
+        .map(|config| {
+            let (installed, connection_status, status_detail) = evaluate_provider_status(&config);
+            let supports_free_without_login = config
+                .auth_probe
+                .as_ref()
+                .is_some_and(|probe| probe.free_without_login);
+            ProviderStatusSummary {
+                id: config.id,
+                label: config.label,
+                installed,
+                connection_status,
+                status_detail,
+                install_hint: config.install_hint,
+                connect_hint: config.connect_hint,
+                supports_free_without_login,
+            }
+        })
+        .collect())
+}
+
+pub(crate) fn get_active_llm_exec(app: &AppHandle) -> Result<Option<LlmTarget>, String> {
+    Ok(load_global_active_llm(app))
+}
+
+pub(crate) async fn set_active_llm_exec(
+    app: &AppHandle,
+    args: SetActiveLlmArgs,
+) -> Result<LlmTarget, String> {
+    let cli = args.cli.trim().to_string();
+    if cli.is_empty() {
+        return Err("Informe o identificador do provedor em 'cli'.".to_string());
+    }
+    let provider = app
+        .state::<ProviderRegistry>()
+        .get(&cli)
+        .map_err(|error| error.to_string())?;
+    let normalized_effort = validate_reasoning_effort(args.reasoning_effort.as_deref())?;
+    let resolved_model = match args.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
+        Some(explicit) => Some(provider.resolve_model_with_effort(explicit, normalized_effort.as_deref())),
+        None if args.model_tier.is_some() => None,
+        None => {
+            let fallback_model = resolve_model_for_provider(&provider, None, "");
+            Some(provider.resolve_model_with_effort(&fallback_model, normalized_effort.as_deref()))
+        }
+    };
+    let target = LlmTarget {
+        cli,
+        model_tier: args.model_tier,
+        model: resolved_model,
+        reasoning_effort: normalized_effort,
+    };
+    let serialized = serde_json::to_string(&target).map_err(|error| error.to_string())?;
+    let db_state = app.state::<DbState>();
+    let db = db_state.require().map_err(|error| error.to_string())?;
+    db.save_setting(SETTING_ACTIVE_LLM, &serialized)
+        .map_err(|error| error.to_string())?;
+
+    if let Ok(team) = app.state::<AgentRegistry>().team() {
+        let state = app.state::<AppState>();
+        for profile in team.profiles() {
+            if profile.follow_default_llm {
+                state.sessions.retire_agent(&profile.id).await;
+            }
+        }
+    }
+    Ok(target)
 }
 
 pub(crate) fn save_provider_exec(

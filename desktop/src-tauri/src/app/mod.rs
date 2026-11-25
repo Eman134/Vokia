@@ -125,6 +125,9 @@ pub(crate) fn run() {
             commands::turn_plan::get_turn_plan,
             // providers
             commands::providers::list_providers,
+            commands::providers::check_provider_status,
+            commands::providers::get_active_llm,
+            commands::providers::set_active_llm,
             commands::providers::save_provider,
             commands::providers::delete_provider,
             commands::providers::discover_provider_models,

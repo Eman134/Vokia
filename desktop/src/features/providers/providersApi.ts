@@ -1,9 +1,32 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ModelTier, ModelTiers, ToolTransport } from '../team/teamApi'
+import type {
+  EffortMode,
+  LlmTarget,
+  ModelEffortRule,
+  ModelGroupingMode,
+  ModelTier,
+  ModelTiers,
+  ReasoningEffort,
+  ReasoningEffortSpec,
+  ToolTransport,
+} from '../team/teamApi'
 
-export type { ModelTier, ModelTiers, ToolTransport }
+export type {
+  EffortMode,
+  LlmTarget,
+  ModelEffortRule,
+  ModelGroupingMode,
+  ModelTier,
+  ModelTiers,
+  ReasoningEffort,
+  ReasoningEffortSpec,
+  ToolTransport,
+}
 
 const LIST_PROVIDERS_COMMAND = 'list_providers'
+const CHECK_PROVIDER_STATUS_COMMAND = 'check_provider_status'
+const GET_ACTIVE_LLM_COMMAND = 'get_active_llm'
+const SET_ACTIVE_LLM_COMMAND = 'set_active_llm'
 const SAVE_PROVIDER_COMMAND = 'save_provider'
 const DELETE_PROVIDER_COMMAND = 'delete_provider'
 const DISCOVER_PROVIDER_MODELS_COMMAND = 'discover_provider_models'
@@ -11,6 +34,25 @@ const INSPECT_CLI_COMMAND = 'inspect_cli'
 const BUILD_SETUP_PROMPT_COMMAND = 'build_setup_prompt'
 const TEST_PROVIDER_CONFIG_COMMAND = 'test_provider_config'
 const AUTO_CONFIGURE_PROVIDER_COMMAND = 'auto_configure_provider'
+
+export type ProviderConnectionStatus = 'connected' | 'signed-out' | 'missing' | 'error'
+
+export interface ProviderAuthProbe {
+  envVars?: string[]
+  credentialFiles?: string[]
+  freeWithoutLogin?: boolean
+}
+
+export interface ProviderStatusSummary {
+  id: string
+  label: string
+  installed: boolean
+  connectionStatus: ProviderConnectionStatus
+  statusDetail?: string | null
+  installHint?: string | null
+  connectHint?: string | null
+  supportsFreeWithoutLogin: boolean
+}
 
 export type ProviderProtocol =
   | 'claude-live'
@@ -60,11 +102,20 @@ export interface ProviderConfig {
   modelUnavailablePatterns: string[]
   discovery?: ModelDiscoveryConfig | null
   generic?: GenericCliSpec | null
+  modelGrouping?: ModelGroupingMode
+  effort?: ReasoningEffortSpec | null
+  authProbe?: ProviderAuthProbe | null
+  installHint?: string | null
+  connectHint?: string | null
+  badgeCode?: string | null
+  displayOrder?: number | null
   builtinSeed: boolean
 }
 
 export interface ProviderWithStatus extends ProviderConfig {
   installed: boolean
+  connectionStatus?: ProviderConnectionStatus
+  statusDetail?: string | null
 }
 
 export interface DiscoverModelsResult {
@@ -89,6 +140,30 @@ export interface TestProviderResult {
 
 export function listProviders(): Promise<ProviderWithStatus[]> {
   return invoke<ProviderWithStatus[]>(LIST_PROVIDERS_COMMAND)
+}
+
+export function checkProviderStatus(id?: string): Promise<ProviderStatusSummary[]> {
+  return invoke<ProviderStatusSummary[]>(CHECK_PROVIDER_STATUS_COMMAND, {
+    id: id ?? null,
+  })
+}
+
+export function getActiveLlm(): Promise<LlmTarget | null> {
+  return invoke<LlmTarget | null>(GET_ACTIVE_LLM_COMMAND)
+}
+
+export function setActiveLlm(params: {
+  cli: string
+  modelTier?: ModelTier | null
+  model?: string | null
+  reasoningEffort?: ReasoningEffort | null
+}): Promise<LlmTarget> {
+  return invoke<LlmTarget>(SET_ACTIVE_LLM_COMMAND, {
+    cli: params.cli,
+    modelTier: params.modelTier ?? null,
+    model: params.model ?? null,
+    reasoningEffort: params.reasoningEffort ?? null,
+  })
 }
 
 export function saveProvider(config: ProviderConfig): Promise<ProviderConfig> {

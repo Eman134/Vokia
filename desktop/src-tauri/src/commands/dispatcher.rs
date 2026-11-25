@@ -168,6 +168,7 @@ fn schema_set_temporary_override() -> Value {
             "cli": { "type": "string" },
             "modelTier": { "type": "string" },
             "model": { "type": "string" },
+            "reasoningEffort": { "type": "string", "description": "Esforço de raciocínio (low, medium, high, max)" },
             "reason": { "type": "string" },
             "expiresInMs": { "type": "integer" },
         }),
@@ -181,9 +182,26 @@ fn schema_update_ember_llm() -> Value {
             "cli": { "type": "string" },
             "modelTier": { "type": "string" },
             "model": { "type": "string" },
+            "reasoningEffort": { "type": "string", "description": "Esforço de raciocínio (low, medium, high, max)" },
             "fallback": { "type": "array" },
         }),
         &[],
+    )
+}
+
+fn schema_optional_id() -> Value {
+    obj_schema(json!({ "id": { "type": "string" } }), &[])
+}
+
+fn schema_set_active_llm() -> Value {
+    obj_schema(
+        json!({
+            "cli": { "type": "string", "description": "ID do provedor registrado" },
+            "modelTier": { "type": "string", "description": "basic | intermediate | advanced (opcional)" },
+            "model": { "type": "string", "description": "ID explícito do modelo (opcional)" },
+            "reasoningEffort": { "type": "string", "description": "Esforço de raciocínio (low, medium, high, max)" },
+        }),
+        &["cli"],
     )
 }
 
@@ -584,8 +602,8 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("attachments", "read_attachment_preview", "Lê uma imagem da pasta de anexos do Vokia e devolve como data URL (base64). Parâmetro: path.", "Para carregar a miniatura de uma imagem anexada validando que o caminho pertence à pasta de anexos.", schema_read_attachment_preview),
     exposed("agents", "list_agents", "Lista o elenco de agentes.", "Para ver o elenco completo de agentes com papel, provedor e modelo.", empty_object_schema),
     exposed("agents", "available_providers", "Lista os provedores instalados na máquina.", "Para saber quais provedores têm a CLI instalada na máquina antes de configurar um agente.", empty_object_schema),
-    exposed("agents", "create_agent", "Cria um agente.", "Para criar um agente novo; o papel precisa existir (veja role_list) e o provedor, estar configurado.", schema_draft),
-    exposed("agents", "update_agent", "Edita um agente.", "Para alterar nome, papel, provedor ou modelo de um agente existente.", schema_id_draft),
+    exposed("agents", "create_agent", "Cria um agente.", "Para criar um agente novo (draft aceita cli, model, modelTier, reasoningEffort, followDefaultLlm, fallback); o papel precisa existir (veja role_list) e o provedor, estar configurado.", schema_draft),
+    exposed("agents", "update_agent", "Edita um agente.", "Para alterar nome, papel, provedor, modelo ou esforço de raciocínio (reasoningEffort) de um agente existente.", schema_id_draft),
     exposed("agents", "delete_agent", "Exclui um agente.", "Para excluir um agente; os cards dele passam ao Ember. Confirme com o usuário.", schema_id),
     exposed("agents", "set_agent_instructions", "Define as instruções de um agente.", "Para trocar as instruções extras de um agente; a sessão dele é reiniciada.", schema_set_agent_instructions),
     exposed("agents", "list_temporary_overrides", "Lista as trocas temporárias de LLM.", "Para ver as trocas temporárias de LLM em vigor.", empty_object_schema),
@@ -612,7 +630,10 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("orchestration", "list_agent_activity", "Lista as execuções em andamento por agente.", "Para ver o que cada agente está executando agora em todos os projetos.", empty_object_schema),
     exposed("orchestration", "list_agent_copies", "Lista as réplicas de agentes em execução em um projeto.", "Para ver as réplicas de agentes em execução em um projeto e os cards delas.", schema_project_id),
     exposed("orchestration", "get_turn_plan", "Devolve o plano vivo de etapas do turno atual (ou mais recente) de um agente. Parâmetros: agent (obrigatório), projectId (opcional), cardId (opcional).", "Para consultar o checklist de etapas em execução de um agente ou o último plano registrado para um card.", schema_get_turn_plan),
-    exposed("providers", "list_providers", "Lista os provedores configurados.", "Para ver os provedores configurados e se a CLI de cada um está instalada.", empty_object_schema),
+    exposed("providers", "list_providers", "Lista os provedores configurados.", "Para ver os provedores configurados, capacidades de esforço, instalação e estado de conexão de cada um.", empty_object_schema),
+    exposed("providers", "check_provider_status", "Verifica instalação e autenticação de provedores.", "Para consultar o estado de conexão (connected, signed-out, missing, error) de todos os provedores ou de um id específico.", schema_optional_id),
+    exposed("providers", "get_active_llm", "Lê o LLM ativo global.", "Para consultar o provedor, modelo, tier e reasoningEffort ativos globalmente.", empty_object_schema),
+    exposed("providers", "set_active_llm", "Define o LLM ativo global.", "Para alterar provedor (cli), modelo, modelTier e reasoningEffort ativos globalmente.", schema_set_active_llm),
     exposed("providers", "save_provider", "Grava a configuração de um provedor.", "Para criar ou atualizar a configuração de um provedor; o id usa letras, números, hífen ou sublinhado.", schema_save_provider),
     exposed("providers", "delete_provider", "Remove um provedor.", "Para remover um provedor; recusado para o claude e para provedores em uso por agentes.", schema_id),
     exposed("providers", "discover_provider_models", "Descobre os modelos disponíveis de um provedor.", "Para descobrir os modelos de um provedor antes de escolher um modelo para um agente.", schema_id),
@@ -961,6 +982,13 @@ async fn run(
         "get_turn_plan" => json_result(turn_plan::get_turn_plan_exec(app, parse_args(arguments)?)),
 
         "list_providers" => json_result(providers::list_providers_exec(app)),
+        "check_provider_status" => {
+            json_result(providers::check_provider_status_exec(app, parse_args(arguments)?))
+        }
+        "get_active_llm" => json_result(providers::get_active_llm_exec(app)),
+        "set_active_llm" => {
+            json_result(providers::set_active_llm_exec(app, parse_args(arguments)?).await)
+        }
         "save_provider" => json_result(providers::save_provider_exec(app, parse_args(arguments)?)),
         "delete_provider" => {
             json_result(providers::delete_provider_exec(app, parse_args(arguments)?))
