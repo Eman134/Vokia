@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
+import AgentPicker from '../agents/AgentPicker.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
 import { splitThreads, type ThreadStatus } from './threadStatus'
 import { useRoster } from './useRoster'
@@ -111,6 +112,27 @@ function copiesLabel(count: number): string {
 
 function isShown(agent: Agent): boolean {
   return feed.screen.kind === 'agent' && feed.screen.agent === agent
+}
+
+const activeAgentId = computed<Agent | null>(() =>
+  feed.screen.kind === 'agent' ? feed.screen.agent : null,
+)
+
+const queuedCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const entry of requests.queue) {
+    counts[entry.to] = (counts[entry.to] ?? 0) + 1
+  }
+  return counts
+})
+
+function queueCountLabel(count: number): string {
+  return `${count} na fila`
+}
+
+function onJumpToAgent(agentId: Agent | null): void {
+  if (!agentId) return
+  feed.showScreen({ kind: 'agent', agent: agentId })
 }
 
 function isCopyShown(copyId: string): boolean {
@@ -341,7 +363,40 @@ function closeChannelDialog(): void {
       </template>
       <UiNotice v-if="channelError" class="mb-2" :text="channelError" @close="channelError = null" />
       <UiHandLine class="my-1.5 h-1.5 w-full text-line" />
-      <h2 class="mb-1 text-small font-semibold text-muted">Agentes</h2>
+      <div class="mb-1 flex items-center justify-between gap-1.5">
+        <h2 class="text-small font-semibold text-muted">Agentes</h2>
+        <AgentPicker
+          v-if="roster.agents.length > 0"
+          :model-value="activeAgentId"
+          :counts="queuedCounts"
+          :count-label="queueCountLabel"
+          busy-first
+          floating="fixed"
+          trigger-variant="ghost"
+          trigger-class="h-6 px-1.5 text-tiny"
+          label="Ir rapidamente para um agente"
+          title="Buscar e alternar agente"
+          test-id="agent-list-picker"
+          @select="onJumpToAgent"
+        >
+          <template #trigger>
+            <svg
+              class="size-3 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span>Buscar</span>
+          </template>
+        </AgentPicker>
+      </div>
       <ul class="flex flex-col gap-0.5">
         <li v-for="agent in roster.agents" :key="agent.id">
           <div class="relative">

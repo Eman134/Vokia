@@ -281,6 +281,13 @@ export const useBacklog = defineStore('backlog', () => {
     saveItem(id)
   }
 
+  function assignOwner(id: string, agent: string): void {
+    const item = editable(id)
+    if (!item || item.who === agent) return
+    item.who = agent
+    saveItem(id)
+  }
+
   function addTags(id: string, raws: string[]): void {
     const item = editable(id)
     if (!item) return
@@ -371,6 +378,7 @@ export const useBacklog = defineStore('backlog', () => {
     archive,
     remove,
     setPlanNote,
+    assignOwner,
     addTags,
     removeTag,
     addActivity,

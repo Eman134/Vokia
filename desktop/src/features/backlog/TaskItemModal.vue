@@ -66,6 +66,8 @@ import { useNavigation } from '../../shell/useNavigation'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
 import MarkdownText from '../team/MarkdownText.vue'
+import AgentPicker from '../agents/AgentPicker.vue'
+import type { Agent } from '../team/events'
 import { activityTime } from './activityTime'
 
 const OVERLAY_CLASSES = 'fixed inset-0 z-50 flex items-center justify-center bg-paper/70 p-4'
@@ -153,11 +155,35 @@ function responsibleLabel(current: BacklogItem): string {
   return triage.isWithoutLeader(current.id) ? NO_LEADER_TEXT : UNASSIGNED_TEXT
 }
 
+const openTasksCountByAgent = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const current of backlog.items) {
+    if ((current.column ?? DEFAULT_COLUMN) === DONE_COLUMN_NAME) continue
+    if (!isUnassigned(current)) {
+      counts[current.who] = (counts[current.who] ?? 0) + 1
+    }
+  }
+  return counts
+})
+
+function openTasksLabel(count: number): string {
+  return `${count} ${count === 1 ? 'task aberta' : 'tasks abertas'}`
+}
+
+function onAssignOwner(agentId: Agent | null): void {
+  if (!item.value || !agentId) return
+  backlog.assignOwner(item.value.id, agentId)
+}
+
+function onDelegateTo(agentId: Agent | null): void {
+  if (!item.value || !agentId) return
+  void runItem.run(item.value.id, agentId)
+}
+
 const details = computed(() => {
   const current = item.value
   if (!current) return []
   const rows: [string, string | undefined][] = [
-    ['Responsável', responsibleLabel(current)],
     ['Tipo', current.type === 'feature' ? 'Feature' : 'Tarefa'],
     ['Aberto por', current.by],
     ['Origem', ORIGIN_LABEL[current.origin]],
@@ -420,8 +446,25 @@ watch(
 
         <aside class="flex min-w-0 flex-col gap-4 bg-bg px-5.5 py-5">
           <section>
-            <h3 class="mb-1 text-label font-semibold text-ink">Detalhes</h3>
-            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-caption">
+            <h3 class="mb-1.5 text-label font-semibold text-ink">Detalhes</h3>
+            <dl class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-caption">
+              <dt class="text-muted">Responsável</dt>
+              <dd class="min-w-0">
+                <AgentPicker
+                  :model-value="isUnassigned(item) ? null : item.who"
+                  :placeholder="responsibleLabel(item)"
+                  :counts="openTasksCountByAgent"
+                  :count-label="openTasksLabel"
+                  :disabled="runItem.isRunning(item.id) || roster.agents.length === 0"
+                  busy-first
+                  floating="fixed"
+                  trigger-variant="compact"
+                  trigger-class="w-full"
+                  label="Alterar responsável do card"
+                  test-id="task-owner-picker"
+                  @select="onAssignOwner"
+                />
+              </dd>
               <template v-for="[label, value] in details" :key="label">
                 <dt class="text-muted">{{ label }}</dt>
                 <dd class="wrap-break-word text-ink">{{ value }}</dd>
@@ -467,16 +510,23 @@ watch(
           <span v-if="readyBlocked && moveTargets.includes(READY_COLUMN)" class="text-caption text-muted">{{ READY_BLOCKED_HINT }}</span>
         </div>
         <div class="ml-auto flex min-w-0 flex-wrap justify-end gap-2">
-          <template v-if="planState === 'vinculado' && column === READY_COLUMN">
-            <span class="self-center text-label text-muted">{{ DELEGATE_LABEL }}</span>
-            <UiChip
-              v-for="profile in delegateTargets"
-              :key="profile.id"
-              :label="profile.name"
-              :disabled="!runItem.canRun(item.id)"
-              @press="void runItem.run(item.id, profile.id)"
-            />
-          </template>
+          <AgentPicker
+            v-if="planState === 'vinculado' && column === READY_COLUMN && delegateTargets.length > 0"
+            :agents="delegateTargets"
+            :counts="openTasksCountByAgent"
+            :count-label="openTasksLabel"
+            :disabled="!runItem.canRun(item.id)"
+            busy-first
+            placement="top"
+            align="end"
+            floating="fixed"
+            trigger-variant="compact"
+            :placeholder="`${DELEGATE_LABEL}…`"
+            :label="DELEGATE_LABEL"
+            :show-check="false"
+            test-id="task-delegate-picker"
+            @select="onDelegateTo"
+          />
           <template v-if="autoClosed">
             <input
               v-if="reopening"

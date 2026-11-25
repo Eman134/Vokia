@@ -196,7 +196,27 @@ function isFocused(): boolean {
   return document.activeElement === inputRef.value
 }
 
-defineExpose({ isFocused })
+function selectRecipient(agentId: Agent): void {
+  const target = roster.agents.find((agent) => agent.id === agentId)
+  if (target === undefined) return
+  const firstSpan = spans.value[0]
+  if (firstSpan !== undefined) {
+    const replacement = `${MENTION_TRIGGER}${target.name}`
+    const nextText = `${draft.value.slice(0, firstSpan.start)}${replacement}${draft.value.slice(firstSpan.end)}`
+    const nextConfirmed = new Set(confirmed.value)
+    nextConfirmed.delete(firstSpan.agent)
+    nextConfirmed.add(target.id)
+    draft.value = nextText
+    confirmed.value = nextConfirmed
+    const endPos = firstSpan.start + replacement.length
+    const caretPos = nextText.slice(endPos).startsWith(' ') ? endPos + 1 : endPos
+    void placeCaret(caretPos)
+    return
+  }
+  insertAtCaret(target)
+}
+
+defineExpose({ isFocused, selectRecipient })
 </script>
 
 <template>
