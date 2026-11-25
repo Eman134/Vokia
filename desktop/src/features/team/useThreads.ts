@@ -2,7 +2,10 @@ import { computed } from 'vue'
 import { defineStore } from 'pinia'
 import { useBacklog } from '../backlog/useBacklog'
 import type { BacklogColumn } from '../backlog/backlogTypes'
+import { useDecisions } from '../decisions/useDecisions'
+import { useProjects } from '../projects/useProjects'
 import type { Agent } from './events'
+import { showsAsThread, threadStatus, type ThreadStatus } from './threadStatus'
 import { useFeed } from './useFeed'
 
 export interface TaskThread {
@@ -14,20 +17,17 @@ export interface TaskThread {
   lastActivity: number
   messageCount: number
   isTriaging?: boolean
+  status: ThreadStatus
 }
-
-const ACTIVE_THREAD_COLUMNS: ReadonlySet<BacklogColumn> = new Set(['In progress', 'In review'])
 
 export const useThreads = defineStore('threads', () => {
   const backlog = useBacklog()
   const feed = useFeed()
 
-  const threads = computed<TaskThread[]>(() => {
-    const activeItems = backlog.items.filter(
-      (item) => (item.column !== undefined && ACTIVE_THREAD_COLUMNS.has(item.column)) || backlog.triagingIds.has(item.id),
-    )
-    if (activeItems.length === 0) return []
+  const decisions = useDecisions()
+  const projects = useProjects()
 
+  const threads = computed<TaskThread[]>(() => {
     const byItem = new Map<string, { participants: Set<Agent>; lastActivity: number; messageCount: number }>()
     const ensureBucket = (itemId: string) => {
       let bucket = byItem.get(itemId)
@@ -56,20 +56,37 @@ export const useThreads = defineStore('threads', () => {
       ensureBucket(itemId).participants.add(agent)
     }
 
-    return activeItems
-      .map((item) => {
+    const waitingOnYou = new Set(feed.permissions.map((permission) => permission.agent))
+    const projectId = projects.selected?.id
+
+    return backlog.items
+      .flatMap((item): TaskThread[] => {
+        const column = item.column ?? 'Backlog'
         const bucket = byItem.get(item.id)
+        const isTriaging = backlog.triagingIds.has(item.id)
+        if (!showsAsThread({ column, isTriaging, messageCount: bucket?.messageCount ?? 0 })) return []
         const participants = [...(bucket?.participants ?? [])]
-        return {
-          itemId: item.id,
-          title: item.title,
-          column: item.column ?? 'Backlog',
-          assignee: participants.at(-1) ?? null,
-          participants,
-          lastActivity: bucket?.lastActivity ?? 0,
-          messageCount: bucket?.messageCount ?? 0,
-          isTriaging: backlog.triagingIds.has(item.id),
-        }
+        const working = feed.activeAgentsForItems(new Set([item.id]))
+        const status = threadStatus({
+          column,
+          isTriaging,
+          hasOpenQuestion: decisions.pending.some((decision) => decision.itemId === item.id && decision.projectId === projectId),
+          hasPendingPermission: [...working].some((agent) => waitingOnYou.has(agent)),
+          hasWorkingAgent: working.size > 0,
+        })
+        return [
+          {
+            itemId: item.id,
+            title: item.title,
+            column,
+            assignee: participants.at(-1) ?? null,
+            participants,
+            lastActivity: bucket?.lastActivity ?? 0,
+            messageCount: bucket?.messageCount ?? 0,
+            isTriaging,
+            status,
+          },
+        ]
       })
       .sort((a, b) => b.lastActivity - a.lastActivity)
   })

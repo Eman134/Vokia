@@ -46,6 +46,7 @@ import {
 import AcceptanceCriteria from './AcceptanceCriteria.vue'
 import LinkedTo from './LinkedTo.vue'
 import PlanBreakdown from './PlanBreakdown.vue'
+import { firstPendingStepId } from './breakdownAccordion'
 import PlanPanel from './PlanPanel.vue'
 import PlanSummaryCard from './PlanSummaryCard.vue'
 import { stagesOf } from '../artifacts/planProgress'
@@ -280,8 +281,8 @@ watch(
       previousFocus = null
       return
     }
-    const firstStep = breakdown.value?.steps[0]
-    expandedMicro.value = new Set(firstStep ? [firstStep.id] : [])
+    const firstPending = breakdown.value ? firstPendingStepId(breakdown.value.steps) : undefined
+    expandedMicro.value = new Set(firstPending ? [firstPending] : [])
     answerDrafts.value = {}
     previousFocus ??= document.activeElement instanceof HTMLElement ? document.activeElement : null
     await nextTick()

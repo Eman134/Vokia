@@ -115,7 +115,7 @@ watch(
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="TASKS_TITLE" :project-name="projectName">
+    <UiPageHeader :title="TASKS_TITLE">
       <template #actions>
         <UiCreateButton :disabled="!projectsStore.selected" @press="backlog.startRequest()">
           {{ NEW_REQUEST_LABEL }}

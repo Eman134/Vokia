@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
-import { useProjects } from '../projects/useProjects'
 import MemoryList from './MemoryList.vue'
 import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 
@@ -14,14 +12,11 @@ const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-md border
 const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
 const GRAPH_SECTION_CLASSES = `${SECTION_CLASSES} flex-[999_1_560px]`
 const SECTION_HEADER_CLASSES = 'flex flex-wrap items-baseline gap-2 px-4.5 py-4'
-
-const projectsStore = useProjects()
-const projectName = computed(() => projectsStore.selected?.name ?? '')
 </script>
 
 <template>
   <main :class="PAGE_CLASSES">
-    <UiPageHeader :title="PAGE_TITLE" :project-name="projectName" />
+    <UiPageHeader :title="PAGE_TITLE" />
     <div :class="SECTIONS_CLASSES">
       <section aria-label="Memória" :class="MEMORY_SECTION_CLASSES">
         <MemoryList />

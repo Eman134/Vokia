@@ -81,7 +81,6 @@ const itemPlan = useItemPlan()
 const artifacts = useArtifacts()
 const projectsStore = useProjects()
 const navigation = useNavigation()
-const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 // Planos ainda sendo escritos (inclusive os importados) entram na grade para não sumirem até o agente responder.
 const plans = computed(() =>
@@ -284,7 +283,7 @@ function saved(document: ArtifactDocument): void {
 
 <template>
   <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="PAGE_LABELS.canvas" :project-name="projectName">
+    <UiPageHeader :title="PAGE_LABELS.canvas">
       <template #actions>
         <UiButton
           v-if="!opened"

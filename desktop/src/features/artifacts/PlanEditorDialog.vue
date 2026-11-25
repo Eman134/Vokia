@@ -30,14 +30,12 @@ import {
   PLAN_EDITOR_CONTEXT_LABEL,
   PLAN_EDITOR_DISCARD_MESSAGE,
   PLAN_EDITOR_DONE_LABEL,
-  PLAN_EDITOR_EMPTY_STAGE_ERROR,
   PLAN_EDITOR_ESTIMATE_LABEL,
   PLAN_EDITOR_ESTIMATE_PLACEHOLDER,
   PLAN_EDITOR_FILES_LABEL,
   PLAN_EDITOR_LIMITS_LABEL,
   PLAN_EDITOR_MOVE_DOWN_LABEL,
   PLAN_EDITOR_MOVE_UP_LABEL,
-  PLAN_EDITOR_NO_STAGES_ERROR,
   PLAN_EDITOR_REMOVE_STAGE_LABEL,
   PLAN_EDITOR_RISK_LABEL,
   PLAN_EDITOR_SCRIPT_LABEL,
@@ -189,7 +187,8 @@ const askingDiscard = ref(false)
 function proposalOf(): ParsedProposal {
   return {
     estimate: estimate.value.trim(),
-    lots: drafts.value.map(lotOf),
+    // Etapa sem título não vira #lote: salvar nunca depende de o plano ter etapas ou de todas estarem preenchidas.
+    lots: drafts.value.filter((stage) => stage.title.trim() !== '').map(lotOf),
     risk: risk.value.trim(),
     tags: textToTags(tagsText.value),
     summary: summary.value.trim(),
@@ -271,19 +270,11 @@ function requestClose(): void {
   emit('close')
 }
 
-function validationError(): string | null {
-  if (drafts.value.length === 0) return PLAN_EDITOR_NO_STAGES_ERROR
-  if (drafts.value.some((stage) => stage.title.trim() === '')) return PLAN_EDITOR_EMPTY_STAGE_ERROR
-  return null
-}
-
 async function submit(): Promise<void> {
   if (saving.value) return
-  const invalid = validationError()
-  error.value = invalid
+  error.value = null
   conflict.value = false
   startedId.value = null
-  if (invalid) return
   saving.value = true
   try {
     const fresh = await itemPlan.edit(props.item.id, serializeProposal(proposalOf()), baseline.value.updatedAt)

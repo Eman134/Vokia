@@ -395,6 +395,7 @@ export const useFeed = defineStore('feed', () => {
     stateItem,
     stateOf,
     itemOf,
+    activeAgentsForItems,
     sinceOf,
     thinkingAgent,
     pendingAgent,

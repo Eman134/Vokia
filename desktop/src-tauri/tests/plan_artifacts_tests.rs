@@ -714,7 +714,7 @@ fn editar_com_updated_at_antigo_e_recusado_por_conflito_sem_gravar() {
 }
 
 #[test]
-fn editar_plano_inexistente_de_outro_item_ou_sem_lote_e_recusado() {
+fn editar_plano_inexistente_ou_de_outro_item_e_recusado() {
     let dir = TempDir::new();
     let db = dir.open();
     let project_id = project(&db, "a");
@@ -728,9 +728,21 @@ fn editar_plano_inexistente_de_outro_item_ou_sem_lote_e_recusado() {
     assert!(matches!(none, DbError::PlanNotFound), "{none:?}");
     let foreign = db.update_item_plan(project_id, &borrower, PROPOSAL, None).unwrap_err();
     assert!(matches!(foreign, DbError::PlanNotFound), "{foreign:?}");
-    let no_lots = db.update_item_plan(project_id, &item_id, NO_LOTS_PROPOSAL, None).unwrap_err();
-    assert!(matches!(no_lots, DbError::PlanWithoutStages), "{no_lots:?}");
     assert_eq!(stored_plan_text(&dir, project_id, &item_id), PROPOSAL);
+}
+
+#[test]
+fn editar_plano_para_texto_sem_lote_e_aceito() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    db.save_item_plan(project_id, &item_id, &proposed(PROPOSAL)).unwrap();
+
+    db.update_item_plan(project_id, &item_id, NO_LOTS_PROPOSAL, None).unwrap();
+
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), NO_LOTS_PROPOSAL);
+    assert!(db.list_artifacts(project_id).unwrap()[0].points.is_empty());
 }
 
 #[test]
@@ -758,18 +770,16 @@ fn importar_plano_cria_card_com_plano_proposto_sem_etapas() {
 }
 
 #[test]
-fn importar_plano_sem_lote_ou_em_projeto_inexistente_nao_deixa_card_orfao() {
+fn importar_plano_vazio_ou_em_projeto_inexistente_nao_deixa_card_orfao() {
     let dir = TempDir::new();
     let db = dir.open();
     let project_id = project(&db, "a");
     let before = items(&db, project_id).len();
 
-    let no_lots = db.import_plan(project_id, "Livre", NO_LOTS_PROPOSAL, None).unwrap_err();
-    assert!(matches!(no_lots, DbError::PlanWithoutStages), "{no_lots:?}");
     let blank = db.import_plan(project_id, "Vazio", "   \n ", None).unwrap_err();
     assert!(matches!(blank, DbError::InvalidBacklogPlan(_)), "{blank:?}");
     let missing_project = db.import_plan(project_id + 99, "Outro", PROPOSAL, None).unwrap_err();
-    assert!(!matches!(missing_project, DbError::PlanWithoutStages), "{missing_project:?}");
+    assert!(!matches!(missing_project, DbError::InvalidBacklogPlan(_)), "{missing_project:?}");
 
     assert_eq!(items(&db, project_id).len(), before);
     let orphans: i64 = dir
@@ -942,26 +952,63 @@ fn salvar_plano_promove_card_em_backlog_para_ready_sem_alterar_outras_colunas() 
 }
 
 #[test]
-fn save_item_plan_exige_ao_menos_um_lote_em_proposto_e_vinculado_com_proposta() {
+fn importar_texto_livre_sem_lote_cria_card_com_plano_sem_etapas() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+
+    let imported = db.import_plan(project_id, "Livre", NO_LOTS_PROPOSAL, None).unwrap();
+
+    assert_eq!(stored_plan_text(&dir, project_id, &imported.id), NO_LOTS_PROPOSAL);
+    assert!(db.list_artifacts(project_id).unwrap()[0].points.is_empty());
+    assert!(plan_card_ids(&db, project_id, &imported.id).is_empty());
+}
+
+#[test]
+fn save_item_plan_aceita_proposto_e_vinculado_sem_nenhum_lote() {
     let dir = TempDir::new();
     let db = dir.open();
     let project_id = project(&db, "a");
     let item_id = card(&db, project_id, "Login");
 
-    let proposed_err = db
-        .save_item_plan(project_id, &item_id, &proposed(NO_LOTS_PROPOSAL))
-        .unwrap_err();
-    assert!(matches!(proposed_err, DbError::PlanWithoutStages), "{proposed_err:?}");
-
-    let linked_err = db
-        .save_item_plan(
-            project_id,
-            &item_id,
-            &linked(&item_id, &item_id, Some(NO_LOTS_PROPOSAL)),
-        )
-        .unwrap_err();
-    assert!(matches!(linked_err, DbError::PlanWithoutStages), "{linked_err:?}");
-
-    db.save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, None))
+    db.save_item_plan(project_id, &item_id, &proposed(NO_LOTS_PROPOSAL)).unwrap();
+    let approved = db
+        .save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, Some(NO_LOTS_PROPOSAL)))
         .unwrap();
+
+    assert!(approved);
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), NO_LOTS_PROPOSAL);
+    assert!(plan_card_ids(&db, project_id, &item_id).is_empty());
+}
+
+#[test]
+fn vincular_plano_sem_resumo_e_aceito() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    let mut plan = linked(&item_id, "plano-externo", None);
+    plan.plan.as_mut().unwrap().meta = String::new();
+
+    db.save_item_plan(project_id, &item_id, &plan).unwrap();
+}
+
+#[test]
+fn roteiro_fora_de_ordem_vincula_o_plano_sem_criar_etapas_e_avisa_no_card() {
+    let dir = TempDir::new();
+    let db = dir.open();
+    let project_id = project(&db, "a");
+    let item_id = card(&db, project_id, "Login");
+    let cyclic = "Resumo
+#lote 1|A|a|x
+#lote 2|B|b|x
+#roteiro 1|apos:2";
+
+    db.save_item_plan(project_id, &item_id, &proposed(cyclic)).unwrap();
+    db.save_item_plan(project_id, &item_id, &linked(&item_id, &item_id, Some(cyclic))).unwrap();
+
+    assert_eq!(stored_plan_text(&dir, project_id, &item_id), cyclic);
+    assert!(plan_card_ids(&db, project_id, &item_id).is_empty());
+    let note = item(&db, project_id, &item_id).activity.last().unwrap().text.clone();
+    assert!(note.contains("sem criar as etapas"), "{note}");
 }

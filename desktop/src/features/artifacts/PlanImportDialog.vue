@@ -40,6 +40,7 @@ import {
   IMPORT_PASTE_PLACEHOLDER,
   IMPORT_PICK_LABEL,
   IMPORT_RECOGNIZED_TEXT,
+  IMPORT_SAVE_AS_IS_LABEL,
   IMPORT_SAVE_LABEL,
   IMPORT_SOURCE_FILE,
   IMPORT_SOURCE_LABEL,
@@ -191,6 +192,13 @@ function saveExact(): Promise<void> {
   if (protocol === undefined) return Promise.resolve()
   return run(async () => {
     const item = await itemPlan.importExact(title.value.trim(), protocol)
+    emit('done', item.id)
+  })
+}
+
+function saveAsIs(): Promise<void> {
+  return run(async () => {
+    const item = await itemPlan.importExact(title.value.trim(), text.value)
     emit('done', item.id)
   })
 }
@@ -396,8 +404,11 @@ function requestClose(): void {
           </UiButton>
           <UiButton variant="approve" size="lg" data-testid="plan-import-accept" @press="accept">{{ IMPORT_ACCEPT_LABEL }}</UiButton>
         </template>
+        <template v-else-if="createdId === null">
+        <UiButton variant="quiet" size="lg" data-testid="plan-import-save-as-is" :disabled="busy" @press="saveAsIs">
+          {{ IMPORT_SAVE_AS_IS_LABEL }}
+        </UiButton>
         <UiButton
-          v-else-if="createdId === null"
           variant="primary"
           size="lg"
           data-testid="plan-import-triage"
@@ -406,6 +417,7 @@ function requestClose(): void {
         >
           {{ IMPORT_TRIAGE_LABEL(chosenAgentName) }}
         </UiButton>
+        </template>
       </div>
     </section>
     </div>

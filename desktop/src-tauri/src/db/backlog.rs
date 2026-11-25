@@ -32,7 +32,8 @@ const EMPTY_PLAN: &str = "vazio";
 const PROPOSED_PLAN: &str = "proposto";
 const LINKED_PLAN: &str = "vinculado";
 const PROPOSAL_REQUIRED: &str = "A proposta do plano não pode ser vazia.";
-const LINKED_PLAN_REQUIRED: &str = "O plano vinculado precisa de id, nome e resumo.";
+const LINKED_PLAN_REQUIRED: &str = "O plano vinculado precisa de id e nome.";
+const ROTEIRO_REFUSED_NOTE: &str = "Plano vinculado sem criar as etapas";
 const LINKED_PLAN_INCOMPLETE: &str = "os dados do plano vinculado estão incompletos.";
 const CHILDREN_INCOMPLETE: &str = "o total e os feitos dos filhos precisam vir juntos.";
 const ITEM_WITH_ERROR: &str = "o item tem erro de leitura e não pode ser gravado de novo.";
@@ -619,17 +620,7 @@ impl Db {
     pub fn add_card_activity(&self, project_id: i64, id: &str, text: &str) -> Result<(), DbError> {
         let conn = self.conn()?;
         ensure_project(&conn, project_id)?;
-        let mut card = find_card(&conn, project_id, id)?;
-        card.activity.push(activity_entry(
-            &card.id,
-            card.activity.len() + 1,
-            text.to_string(),
-        ));
-        conn.execute(
-            "UPDATE backlog_items SET activity = ?3 WHERE project_id = ?1 AND id = ?2",
-            params![project_id, id, to_json(id, "activity", &card.activity)?],
-        )?;
-        Ok(())
+        push_card_activity(&conn, project_id, id, text.to_string())
     }
 
     pub fn add_backlog_label(&self, project_id: i64, item_id: &str, label: &str) -> Result<(), DbError> {
@@ -1044,9 +1035,6 @@ impl Db {
             return Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED));
         }
         let draft = parse_proposal(proposal);
-        if draft.lots.is_empty() {
-            return Err(DbError::PlanWithoutStages);
-        }
         let plan_id = artifact_id(item_id);
         if let (Some(expected), Some(current)) =
             (expected_updated_at, artifact_updated_at(&tx, project_id, &plan_id)?)
@@ -1082,9 +1070,6 @@ impl Db {
         if is_blank(proposal) {
             return Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED));
         }
-        if parse_proposal(proposal).lots.is_empty() {
-            return Err(DbError::PlanWithoutStages);
-        }
         let plan = ItemPlanInput {
             state: PROPOSED_PLAN.to_string(),
             proposal: Some(proposal.to_string()),
@@ -1111,6 +1096,16 @@ impl Db {
         tx.commit()?;
         Ok(stored)
     }
+}
+
+fn push_card_activity(conn: &Connection, project_id: i64, id: &str, text: String) -> Result<(), DbError> {
+    let mut card = find_card(conn, project_id, id)?;
+    card.activity.push(activity_entry(&card.id, card.activity.len() + 1, text));
+    conn.execute(
+        "UPDATE backlog_items SET activity = ?3 WHERE project_id = ?1 AND id = ?2",
+        params![project_id, id, to_json(id, "activity", &card.activity)?],
+    )?;
+    Ok(())
 }
 
 fn write_item_plan(
@@ -1142,9 +1137,10 @@ fn write_item_plan(
     let own_plan = linked.is_none_or(|linked| linked.id == item_id);
     let proposal = plan.proposal.as_deref().filter(|text| !is_blank(text));
     let draft = proposal.filter(|_| own_plan).map(parse_proposal);
-    if let Some(draft) = &draft {
-        validate_plan_roteiro(conn, &item, draft)?;
-    }
+    let refusal = match &draft {
+        Some(draft) if plan.state == LINKED_PLAN => roteiro_refusal(conn, &item, draft)?,
+        _ => None,
+    };
     conn.execute(
         UPSERT_PLAN_SQL,
         params![
@@ -1167,7 +1163,10 @@ fn write_item_plan(
             if !artifact_exists(conn, project_id, item_id)? {
                 replace_artifact(conn, project_id, item_id, &item.title, text, author, draft)?;
             }
-            create_plan_cards(conn, project_id, &item, author, draft)?;
+            match refusal {
+                Some(motive) => push_card_activity(conn, project_id, item_id, format!("{ROTEIRO_REFUSED_NOTE}: {motive}"))?,
+                None => create_plan_cards(conn, project_id, &item, author, draft)?,
+            }
         }
     }
     if item.column.as_deref().unwrap_or(DEFAULT_COLUMN) == DEFAULT_COLUMN {
@@ -1184,8 +1183,9 @@ fn is_blank(text: &str) -> bool {
     text.trim().is_empty()
 }
 
+// O resumo (meta) é opcional: vincular não depende de como o plano foi escrito.
 fn is_complete_plan(plan: &LinkedPlan) -> bool {
-    !is_blank(&plan.id) && !is_blank(&plan.name) && !is_blank(&plan.meta)
+    !is_blank(&plan.id) && !is_blank(&plan.name)
 }
 
 fn validate_item(item: &BacklogItem) -> Result<(), DbError> {
@@ -1232,24 +1232,11 @@ fn validate_plan(plan: &ItemPlanInput) -> Result<(), DbError> {
         PROPOSED_PLAN if plan.proposal.as_deref().is_none_or(is_blank) => {
             Err(DbError::InvalidBacklogPlan(PROPOSAL_REQUIRED))
         }
-        PROPOSED_PLAN => {
-            let proposal = plan.proposal.as_deref().unwrap_or_default();
-            if parse_proposal(proposal).lots.is_empty() {
-                return Err(DbError::PlanWithoutStages);
-            }
-            Ok(())
-        }
+        PROPOSED_PLAN => Ok(()),
         LINKED_PLAN if !plan.plan.as_ref().is_some_and(is_complete_plan) => {
             Err(DbError::InvalidBacklogPlan(LINKED_PLAN_REQUIRED))
         }
-        LINKED_PLAN => {
-            if let Some(proposal) = plan.proposal.as_deref().filter(|text| !is_blank(text)) {
-                if parse_proposal(proposal).lots.is_empty() {
-                    return Err(DbError::PlanWithoutStages);
-                }
-            }
-            Ok(())
-        }
+        LINKED_PLAN => Ok(()),
         _ => Err(DbError::InvalidPlanState(plan.state.clone())),
     }
 }
@@ -1547,9 +1534,10 @@ fn insert_card(
 
 // Ids derivados do plano tornam a criação idempotente: aceitar de novo não duplica nem altera etapas.
 // Plano de card com time: quem de cada etapa precisa ser do time e a ordem não pode pular camada obrigatória.
-fn validate_plan_roteiro(conn: &Connection, item: &BacklogItem, draft: &PlanDraft) -> Result<(), DbError> {
+// O roteiro fora da ordem do fluxo não impede de vincular: o plano fica gravado, só as etapas não são criadas.
+fn roteiro_refusal(conn: &Connection, item: &BacklogItem, draft: &PlanDraft) -> Result<Option<String>, DbError> {
     if let Some(motive) = draft.dependency_refusal() {
-        return Err(DbError::PlanRoteiroRefused(motive));
+        return Ok(Some(motive));
     }
     let snapshot = read_snapshot(conn)?;
     let Some(team) = snapshot
@@ -1557,17 +1545,14 @@ fn validate_plan_roteiro(conn: &Connection, item: &BacklogItem, draft: &PlanDraf
         .iter()
         .find(|team| team.leader_agent.as_deref() == Some(item.who.as_str()))
     else {
-        return Ok(());
+        return Ok(None);
     };
     let lots: Vec<(u32, Option<&str>)> = draft
         .lots
         .iter()
         .map(|lot| (lot.n, lot.who.as_deref()))
         .collect();
-    match plan_script_refusal(&snapshot, team, &lots) {
-        Some(motive) => Err(DbError::PlanRoteiroRefused(motive)),
-        None => Ok(()),
-    }
+    Ok(plan_script_refusal(&snapshot, team, &lots))
 }
 
 // Quem do lote vira o responsável da etapa; sem roteiro, segue o responsável do card.

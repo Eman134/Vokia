@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue'
 import UiBadge from '../../ui/UiBadge.vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import MarkdownText from '../team/MarkdownText.vue'
+import { useRoster } from '../team/useRoster'
+import { showsStepStatus, toggleStep } from './breakdownAccordion'
 import { FLOW_STATE_LABEL, MICRO_STATUS_BADGE } from './backlogLabels'
 import { MICRO_EXPLANATION, MICRO_SUMMARY } from './backlogTypes'
 import MicroTaskScript, { isScriptValid } from './MicroTaskScript.vue'
@@ -18,6 +21,7 @@ const emit = defineEmits<{
 
 const expanded = defineModel<Set<string>>('expanded', { required: true })
 const listRoot = ref<HTMLElement>()
+const roster = useRoster()
 
 const MICRO_PORTRAIT_SIZE = 20
 const HEADER_TITLE_CLASSES = 'text-label font-semibold text-muted'
@@ -37,9 +41,11 @@ function panelId(stepId: string): string {
 }
 
 function toggle(stepId: string): void {
-  const next = new Set(expanded.value)
-  if (!next.delete(stepId)) next.add(stepId)
-  expanded.value = next
+  expanded.value = toggleStep(expanded.value, stepId)
+}
+
+function tasksMarkdown(tasks: readonly string[]): string {
+  return tasks.map((task) => `- ${task}`).join('\n')
 }
 
 function onRowKeydown(event: KeyboardEvent): void {
@@ -102,9 +108,11 @@ function onRowKeydown(event: KeyboardEvent): void {
           <span class="min-w-0 flex-1 wrap-break-word font-medium">{{ step.title }}</span>
           <span :class="BADGES_WRAP_CLASSES">
             <AgentPortrait v-if="step.who" :who="step.who" :size="MICRO_PORTRAIT_SIZE" />
+            <span v-if="step.who" class="text-tiny text-muted" data-testid="breakdown-who">{{ roster.nameOf(step.who) }}</span>
             <span v-if="step.layer" class="text-tiny text-muted" data-testid="breakdown-layer">{{ step.layer }}</span>
             <span v-if="step.edge" class="text-tiny text-muted" data-testid="breakdown-edge">{{ step.edge }}</span>
             <UiBadge
+              v-if="showsStepStatus(step)"
               :status="MICRO_STATUS_BADGE[step.status]"
               :label="step.flowState ? FLOW_STATE_LABEL[step.flowState] : step.status"
             />
@@ -122,13 +130,11 @@ function onRowKeydown(event: KeyboardEvent): void {
         <div v-else :class="FALLBACK_PANEL_CLASSES">
           <div v-if="step.tasks.length" class="flex flex-col gap-1">
             <h4 class="font-semibold text-ink">Tarefas</h4>
-            <ul class="list-disc pl-4 text-muted">
-              <li v-for="task in step.tasks" :key="task">{{ task }}</li>
-            </ul>
+            <MarkdownText :text="tasksMarkdown(step.tasks)" class="text-caption text-muted" />
           </div>
           <div v-if="step.goal" class="flex flex-col gap-1">
             <h4 class="font-semibold text-ink">Pronto quando</h4>
-            <p class="text-muted">{{ step.goal }}</p>
+            <MarkdownText :text="step.goal" class="text-caption text-muted" />
           </div>
         </div>
       </div>

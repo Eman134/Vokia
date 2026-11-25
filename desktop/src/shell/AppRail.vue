@@ -47,6 +47,8 @@ const PANEL_ICON = 'M2 2.5h12v11H2zM6 2.5v11'
 const PANEL_COLLAPSE_ARROW = 'M11 6L9 8l2 2'
 const PANEL_EXPAND_ARROW = 'M9 6l2 2-2 2'
 const LABEL = 'overflow-hidden text-ellipsis text-label'
+// O nome do projeto saiu do cabeçalho das páginas e vive aqui, no estilo manuscrito.
+const PROJECT_LABEL = 'overflow-hidden text-ellipsis font-hand text-annotation'
 const RAIL_MOTION = 'duration-180 ease-[ease]'
 const SUBLIST = `grid transition-[grid-template-rows,opacity] ${RAIL_MOTION}`
 const SUBLIST_OPEN = 'grid-rows-[1fr] opacity-100'
@@ -169,7 +171,7 @@ function toggleProject(project: Project) {
           <span :class="ICON_BOX">
             <ProjectIcon :icon="project.symbol" :color="projectColorOf(project)" :class="PROJECT_BADGE" />
           </span>
-          <span v-if="expanded" :class="LABEL">{{ project.name }}</span>
+          <span v-if="expanded" :class="PROJECT_LABEL">{{ project.name }}</span>
         </button>
         <div
           :id="groupId(project.name)"

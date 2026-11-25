@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
+import { splitThreads, type ThreadStatus } from './threadStatus'
 import { useRoster } from './useRoster'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
@@ -64,6 +65,13 @@ const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-1.5 rounded-md 
 const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
 const COPY_CONNECTOR_PATH = 'M5 3 C4.6 10 4.8 16 5.6 19.2 C8.5 20 13 19.7 17 19.4'
 const COPY_THINKING_DOT_CLASSES = 'size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none'
+const THREADS_LABEL = 'Threads'
+const DONE_THREADS_LABEL = 'Concluídas'
+const THREAD_PORTRAIT_SIZE = 16
+const THREAD_DOT: Partial<Record<ThreadStatus, { classes: string; label: string }>> = {
+  working: { classes: 'bg-ok motion-safe:animate-pulse', label: 'trabalhando' },
+  'needs-you': { classes: 'bg-danger motion-safe:animate-pulse', label: 'precisa de você' },
+}
 const COPIES_LIST_LABEL = 'Cópias'
 const COPY_MARK_TEXT = 'Cópia'
 const COPY_NOUN_SINGULAR = 'cópia'
@@ -128,6 +136,12 @@ function isCopyThinking(copyId: string): boolean {
 
 const threads = useThreads()
 const unread = useUnread()
+const doneThreadsOpen = ref(false)
+const splitList = computed(() => splitThreads(threads.threads))
+// A thread aberta nunca fica escondida atrás do grupo recolhido.
+const showsDoneThreads = computed(
+  () => doneThreadsOpen.value || splitList.value.done.some((thread) => threadShown(thread.itemId)),
+)
 
 // O item aberto já está à vista: a bolinha só aparece nos outros.
 function indicatorOf(screen: ConversationScreen, shown: boolean): UnreadState {
@@ -244,9 +258,9 @@ function closeChannelDialog(): void {
         </li>
       </ul>
       <template v-if="threads.threads.length > 0">
-        <h2 class="mb-1 mt-0.5 text-small font-semibold text-muted">Threads</h2>
+        <h2 class="mb-1 mt-0.5 text-small font-semibold text-muted">{{ THREADS_LABEL }}</h2>
         <ul class="mb-1.5 flex flex-col gap-0.5">
-          <li v-for="thread in threads.threads" :key="thread.itemId" class="group relative">
+          <li v-for="thread in splitList.active" :key="thread.itemId" class="group relative">
             <button
               type="button"
               :class="[CHANNEL_CLASSES, 'flex items-center gap-1.5', threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
@@ -255,11 +269,24 @@ function closeChannelDialog(): void {
               @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
             >
               <UiIcon
+                v-if="thread.isTriaging || !thread.assignee"
                 :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
                 :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
               />
+              <AgentPortrait v-else :who="thread.assignee" :size="THREAD_PORTRAIT_SIZE" class="shrink-0" />
               <span class="min-w-0 truncate">{{ thread.title }}</span>
-              <UnreadDot :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))" class="ml-auto" />
+              <span
+                v-if="THREAD_DOT[thread.status]"
+                class="ml-auto size-1.5 shrink-0 rounded-full"
+                :class="THREAD_DOT[thread.status]?.classes"
+                :title="THREAD_DOT[thread.status]?.label"
+                role="img"
+                :aria-label="THREAD_DOT[thread.status]?.label"
+              />
+              <UnreadDot
+                :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))"
+                :class="THREAD_DOT[thread.status] ? '' : 'ml-auto'"
+              />
               <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
             </button>
             <button
@@ -273,6 +300,44 @@ function closeChannelDialog(): void {
             </button>
           </li>
         </ul>
+        <template v-if="splitList.done.length > 0">
+          <button
+            type="button"
+            class="mb-1 flex w-fit cursor-pointer items-center gap-1 text-small font-semibold text-muted hover:text-ink"
+            :class="INK_FOCUS_CLASSES"
+            :aria-expanded="showsDoneThreads"
+            aria-controls="done-threads"
+            data-testid="done-threads-toggle"
+            @click="doneThreadsOpen = !doneThreadsOpen"
+          >
+            <span aria-hidden="true">{{ showsDoneThreads ? '▾' : '▸' }}</span>
+            {{ DONE_THREADS_LABEL }} ({{ splitList.done.length }})
+          </button>
+          <ul v-show="showsDoneThreads" id="done-threads" class="mb-1.5 flex flex-col gap-0.5">
+            <li v-for="thread in splitList.done" :key="thread.itemId" class="group relative">
+              <button
+                type="button"
+                :class="[CHANNEL_CLASSES, 'flex items-center gap-1.5 text-muted', threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+                :aria-label="`Abrir thread ${thread.title}`"
+                :aria-pressed="threadShown(thread.itemId)"
+                @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
+              >
+                <UiIcon :path="THREAD_ICON_PATH" class="h-3.5 w-3.5 shrink-0" />
+                <span class="min-w-0 truncate">{{ thread.title }}</span>
+                <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
+              </button>
+              <button
+                type="button"
+                :class="THREAD_CARD_BUTTON_CLASSES"
+                :title="`${OPEN_CARD_LABEL}: ${thread.title}`"
+                :aria-label="`${OPEN_CARD_LABEL}: ${thread.title}`"
+                @click="openThreadCard(thread.itemId)"
+              >
+                <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
+              </button>
+            </li>
+          </ul>
+        </template>
       </template>
       <UiNotice v-if="channelError" class="mb-2" :text="channelError" @close="channelError = null" />
       <UiHandLine class="my-1.5 h-1.5 w-full text-line" />
