@@ -13,6 +13,7 @@ use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
 use crate::session_key::SessionKey;
 use crate::task::{Cache, TaskRecord};
+use crate::usage::UsageEngine;
 
 pub struct AppState {
     pub cli: Result<PathBuf, CliProblem>,
@@ -26,6 +27,7 @@ pub struct AppState {
     pub console: ConsoleLog,
     pub cooldowns: Mutex<CooldownTracker>,
     pub temporary_overrides: Mutex<HashMap<Agent, TemporaryOverride>>,
+    pub usage: UsageEngine,
 }
 
 impl AppState {
@@ -42,6 +44,7 @@ impl AppState {
             console: ConsoleLog::default(),
             cooldowns: Mutex::new(CooldownTracker::default()),
             temporary_overrides: Mutex::new(HashMap::new()),
+            usage: UsageEngine::default(),
         }
     }
 }

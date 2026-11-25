@@ -135,7 +135,10 @@ pub(crate) fn run() {
             commands::settings::db_problem,
             commands::settings::erase_all_data,
             commands::settings::get_settings,
-            commands::settings::set_setting
+            commands::settings::set_setting,
+            // usage
+            commands::usage::get_plan_usage,
+            commands::usage::refresh_plan_usage
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

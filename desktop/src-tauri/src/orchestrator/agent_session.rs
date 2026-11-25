@@ -20,9 +20,10 @@ use crate::mcp::{
 use crate::orchestration::instances::display_name;
 use crate::orchestration::snapshot::{agent_prompt, leader_of};
 use crate::permissions::{PermissionGate, PermissionLevel};
-use crate::providers::{ProviderProtocol, ProviderRegistry};
+use crate::providers::{ModelTier, ProviderProtocol, ProviderRegistry};
 use crate::session_key::SessionKey;
 use crate::state::AppState;
+use crate::usage::{UsageLimitGate, UsageLimitReturn};
 
 use super::adapters::ProviderAdapter;
 use super::console::ConsoleSink;
@@ -30,8 +31,8 @@ use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::fallback::{
     emit_overrides_changed, load_global_active_llm, load_global_fallback, mark_cooldown,
-    now_millis_u64, resolve_candidates, resolve_program_for, LlmTarget, OverrideReason,
-    ResolvedCandidate, TemporaryOverride, DEFAULT_COOLDOWN_SECS,
+    now_millis_u64, resolve_candidates, resolve_program_for, schedule_limit_return, LlmTarget,
+    OverrideReason, ResolvedCandidate, TemporaryOverride, DEFAULT_COOLDOWN_SECS,
 };
 use super::flow::profile_of;
 use super::project_context::project_choices;
@@ -127,7 +128,9 @@ async fn run_step(
     };
     let mut fallback_reason: Option<OverrideReason> = None;
     let mut fallback_expires_at: Option<u64> = None;
+    let mut original_limited: Option<(String, String, Option<ModelTier>, u64)> = None;
     for (idx, candidate) in candidates.iter().enumerate() {
+        console.reset_acted();
         let adapter = ProviderAdapter::from_cli(&candidate.cli, &providers)?;
         if agent == &Agent::ember() && !adapter.has_tools() {
             continue;
@@ -319,15 +322,21 @@ async fn run_step(
         match attempt {
             Ok(reply) => {
                 if let Some(reason) = fallback_reason {
+                    let (orig_cli, orig_model, orig_tier) = original_limited
+                        .as_ref()
+                        .map(|(cli, model, tier, _)| (cli.clone(), model.clone(), *tier))
+                        .unwrap_or_else(|| {
+                            (profile.cli.clone(), profile.model.clone(), profile.model_tier)
+                        });
                     let ov = TemporaryOverride {
                         agent: agent.clone(),
                         cli: candidate.cli.clone(),
                         model: candidate.model.clone(),
                         model_tier: candidate.model_tier,
                         command: candidate.command.clone(),
-                        original_cli: profile.cli.clone(),
-                        original_model: profile.model.clone(),
-                        original_tier: profile.model_tier,
+                        original_cli: orig_cli.clone(),
+                        original_model: orig_model.clone(),
+                        original_tier: orig_tier,
                         reason,
                         applied_at: now_millis_u64(),
                         expires_at: fallback_expires_at,
@@ -337,6 +346,20 @@ async fn run_step(
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .insert(agent.clone(), ov);
+                    if reason == OverrideReason::UsageLimit {
+                        if let Some((_, _, _, release_at_ms)) = original_limited {
+                            state.usage.register_limit_return(UsageLimitReturn {
+                                agent: agent.clone(),
+                                original_provider_id: orig_cli,
+                                original_model: orig_model,
+                                original_tier: orig_tier,
+                                fallback_provider_id: candidate.cli.clone(),
+                                fallback_model: candidate.model.clone(),
+                                release_at_ms,
+                            });
+                            schedule_limit_return((*app).clone(), release_at_ms);
+                        }
+                    }
                     emit_overrides_changed(app, state);
                 }
                 if !per_step && !call.adapter.supports_live_session() {
@@ -378,23 +401,40 @@ async fn run_step(
             Err(err) => {
                 let is_limit = err.is_limit();
                 let is_unavail = err.is_model_unavailable();
-                if (is_limit || is_unavail) && idx + 1 < candidates.len() {
+                let acted = console.has_acted() || call.has_collected_actions();
+                let has_backup = idx + 1 < candidates.len();
+                let now_ms = now_millis_u64();
+
+                if is_limit {
+                    let resets_at = err.usage_limit().map(|l| l.resets_at).filter(|&r| r > 0);
+                    let limit_entry = state.usage.mark_limit_reached(
+                        &candidate.cli,
+                        &candidate.model,
+                        resets_at,
+                        now_ms,
+                    );
+                    schedule_limit_return((*app).clone(), limit_entry.release_at_ms);
+                    if UsageLimitGate::can_failover(acted, has_backup) {
+                        mark_cooldown(state, &candidate.cli, &candidate.model);
+                        held.guard.degrade().await;
+                        fallback_expires_at = Some(limit_entry.release_at_ms);
+                        fallback_reason = Some(OverrideReason::UsageLimit);
+                        if original_limited.is_none() {
+                            original_limited = Some((
+                                candidate.cli.clone(),
+                                candidate.model.clone(),
+                                candidate.model_tier,
+                                limit_entry.release_at_ms,
+                            ));
+                        }
+                        continue;
+                    }
+                } else if is_unavail && UsageLimitGate::can_failover(acted, has_backup) {
                     mark_cooldown(state, &candidate.cli, &candidate.model);
                     held.guard.degrade().await;
-                    let now_ms = now_millis_u64();
-                    let default_exp = now_ms.saturating_add(DEFAULT_COOLDOWN_SECS * 1000);
-                    fallback_expires_at = Some(match &err {
-                        FlowError::Claude(ClaudeError::UsageLimit(limit)) if limit.resets_at > 0 => {
-                            let reset_ms = limit.resets_at.saturating_mul(1000);
-                            if reset_ms > now_ms { reset_ms } else { default_exp }
-                        }
-                        _ => default_exp,
-                    });
-                    fallback_reason = Some(if is_limit {
-                        OverrideReason::UsageLimit
-                    } else {
-                        OverrideReason::ModelUnavailable
-                    });
+                    fallback_expires_at =
+                        Some(now_ms.saturating_add(DEFAULT_COOLDOWN_SECS * 1000));
+                    fallback_reason = Some(OverrideReason::ModelUnavailable);
                     continue;
                 }
                 if let FlowError::Claude(ClaudeError::ModelUnavailable {
@@ -1032,6 +1072,16 @@ impl AgentCall {
 
     pub(super) fn has_mcp(&self) -> bool {
         self.mcp.is_some()
+    }
+
+    pub(super) fn has_collected_actions(&self) -> bool {
+        self.collected.lock().is_ok_and(|outcome| {
+            !outcome.confirmations.is_empty()
+                || outcome.decision.is_some()
+                || outcome.proposal.is_some()
+                || !outcome.delegations.is_empty()
+                || !outcome.variables.accepted.is_empty()
+        })
     }
 
     pub(super) fn begin_mcp_slot(&self, session: &McpSession) {

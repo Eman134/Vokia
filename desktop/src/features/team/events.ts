@@ -25,6 +25,7 @@ export type CommandDomain =
   | 'orchestration'
   | 'providers'
   | 'settings'
+  | 'usage'
 
 export type ToolDetail =
   | { kind: 'read'; from: number; to: number }
@@ -185,6 +186,75 @@ export interface VokiaPlanUsage {
   type: 'plan-usage'
   fiveHour: UsageWindow
   sevenDay: UsageWindow
+}
+
+export type UsageWindowKind =
+  | 'five-hour'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | { custom: number }
+
+export type PaceStatus = 'sustainable' | 'above-pace'
+
+export interface ProviderUsageWindow {
+  percent: number
+  resetsAt: number
+  durationMins: number
+  kind: UsageWindowKind
+  label?: string
+  rejected?: boolean
+}
+
+export interface ProviderUsageGroup {
+  id: string
+  label: string
+  models?: string[]
+  window: ProviderUsageWindow
+}
+
+export interface ProviderPlanUsage {
+  providerId: string
+  label?: string
+  primary?: ProviderUsageWindow
+  secondary?: ProviderUsageWindow
+  tertiary?: ProviderUsageWindow
+  groups?: ProviderUsageGroup[]
+  creditsAvailable?: boolean
+  updatedAtMs: number
+  readFailed: boolean
+}
+
+export interface UsageLimitEntry {
+  providerId: string
+  model: string
+  resetsAt?: number
+  releaseAtMs: number
+  markedAtMs: number
+}
+
+export interface UsageLimitReturn {
+  agent: Agent
+  originalProviderId: string
+  originalModel: string
+  originalTier?: string | null
+  fallbackProviderId: string
+  fallbackModel: string
+  releaseAtMs: number
+}
+
+export interface PlanUsageSnapshot {
+  providers: ProviderPlanUsage[]
+  activeLimits: UsageLimitEntry[]
+  pendingReturns: UsageLimitReturn[]
+  warnThreshold: number
+  pauseThreshold: number
+  fetchedAtMs: number
+}
+
+export interface VokiaProviderUsageUpdated {
+  type: 'provider-usage-updated'
+  usage: ProviderPlanUsage
 }
 
 export interface VokiaRequestSettled {
@@ -352,6 +422,7 @@ export type VokiaEvent =
   | VokiaExecutionModeChanged
   | VokiaDecision
   | VokiaPlanUsage
+  | VokiaProviderUsageUpdated
   | VokiaUsageLimit
   | VokiaUsageLimitFailed
   | VokiaAgentPausesChanged

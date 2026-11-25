@@ -177,11 +177,21 @@ pub fn resolve_candidates(
     permission_level: Option<PermissionLevel>,
 ) -> Vec<ResolvedCandidate> {
     let now_ms = now_millis_u64();
+    let released = state.usage.release_expired_limits(now_ms);
     let active_override = {
         let mut overrides = state
             .temporary_overrides
             .lock()
             .unwrap_or_else(|e| e.into_inner());
+        for ret in &released.returns {
+            let should_remove = overrides.get(&ret.agent).is_some_and(|ov| {
+                ov.reason == OverrideReason::UsageLimit
+                    && ov.original_cli == ret.original_provider_id
+            });
+            if should_remove {
+                overrides.remove(&ret.agent);
+            }
+        }
         let expired = overrides
             .get(agent)
             .and_then(|ov| ov.expires_at)
@@ -256,6 +266,11 @@ pub fn resolve_candidates(
         if cooldowns.is_cooling(&cli, &model) {
             continue;
         }
+        if state.usage.is_model_limited(&cli, &model, now_ms)
+            && !state.usage.is_provider_using_credits(&cli)
+        {
+            continue;
+        }
         let command = custom_cmd
             .filter(|cmd| !cmd.trim().is_empty())
             .unwrap_or_else(|| provider.default_command.clone());
@@ -316,6 +331,56 @@ pub fn emit_overrides_changed(app: &AppHandle, state: &AppState) {
         .cloned()
         .collect();
     let _ = emit(app, VokiaEvent::TemporaryOverridesChanged { overrides });
+}
+
+/// Releases expired `(provider_id, model)` limits and restores any agents whose
+/// `UsageLimit` temporary overrides were waiting for quota renewal.
+pub async fn apply_released_limit_returns(app: &AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let now_ms = now_millis_u64();
+    let released = state.usage.release_expired_limits(now_ms);
+    for (provider_id, _) in &released.released_keys {
+        state.usage.invalidate_provider(provider_id);
+    }
+    let mut restored_agents: Vec<Agent> = Vec::new();
+    if !released.returns.is_empty() {
+        let mut overrides = state
+            .temporary_overrides
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for ret in released.returns {
+            state.usage.invalidate_provider(&ret.original_provider_id);
+            let should_remove = overrides.get(&ret.agent).is_some_and(|ov| {
+                ov.reason == OverrideReason::UsageLimit
+                    && ov.original_cli == ret.original_provider_id
+            });
+            if should_remove {
+                overrides.remove(&ret.agent);
+                restored_agents.push(ret.agent);
+            }
+        }
+    }
+    for agent in &restored_agents {
+        state.sessions.retire_agent(agent).await;
+    }
+    if !restored_agents.is_empty() {
+        emit_overrides_changed(app, &state);
+    }
+}
+
+/// Schedules an automatic timer to fire at `release_at_ms` (`resetsAt + 30s` or 15 min recheck)
+/// so agents return to their original model once the quota window renews.
+pub fn schedule_limit_return(app: AppHandle, release_at_ms: u64) {
+    let now_ms = now_millis_u64();
+    let wait_ms = release_at_ms.saturating_sub(now_ms);
+    tauri::async_runtime::spawn(async move {
+        if wait_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+        }
+        apply_released_limit_returns(&app).await;
+    });
 }
 
 pub fn resolve_program_for(
@@ -417,7 +482,19 @@ pub(crate) async fn ask_with_fallback(
 
         match res {
             Ok(reply) => return Ok(reply),
-            Err(error) if error.is_limit() || error.is_model_unavailable() => {
+            Err(error) if error.is_limit() => {
+                let resets_at = error.usage_limit().map(|l| l.resets_at).filter(|&r| r > 0);
+                let entry = state.usage.mark_limit_reached(
+                    &candidate.cli,
+                    &candidate.model,
+                    resets_at,
+                    now_millis_u64(),
+                );
+                schedule_limit_return(app.clone(), entry.release_at_ms);
+                mark_cooldown(state, &candidate.cli, &candidate.model);
+                last_error = Some(error);
+            }
+            Err(error) if error.is_model_unavailable() => {
                 mark_cooldown(state, &candidate.cli, &candidate.model);
                 last_error = Some(error);
             }

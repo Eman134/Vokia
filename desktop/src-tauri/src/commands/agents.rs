@@ -248,6 +248,7 @@ pub(crate) async fn clear_temporary_override_exec(
             .unwrap_or_else(|e| e.into_inner());
         map.remove(&args.agent).is_some()
     };
+    app_state.usage.clear_limit_return(&args.agent);
     if removed {
         app_state.sessions.retire_agent(&args.agent).await;
         emit_overrides_changed(app, &app_state);
@@ -267,6 +268,7 @@ pub(crate) async fn clear_all_temporary_overrides_exec(app: &AppHandle) -> Resul
         keys
     };
     for agent in &agents {
+        app_state.usage.clear_limit_return(agent);
         app_state.sessions.retire_agent(agent).await;
     }
     if !agents.is_empty() {

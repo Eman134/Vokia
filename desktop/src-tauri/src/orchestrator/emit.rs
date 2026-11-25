@@ -25,6 +25,41 @@ pub(super) fn report_limits(app: &AppHandle, limits: Option<RateLimits>) -> Resu
     let Some(limits) = limits else {
         return Ok(());
     };
+    let updated_at_ms = now_millis()?;
+    let provider_usage = crate::usage::ProviderPlanUsage::from_claude_rate_limits(limits, updated_at_ms);
+    if let Some(state) = app.try_state::<AppState>() {
+        state.usage.record_provider_usage(provider_usage.clone());
+        if !provider_usage.is_exhausted(crate::usage::DEFAULT_PAUSE_THRESHOLD) {
+            let released = state.usage.confirm_provider_renewed("claude", None);
+            if !released.returns.is_empty() {
+                let mut overrides = state
+                    .temporary_overrides
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let mut changed = false;
+                for ret in released.returns {
+                    let should_remove = overrides.get(&ret.agent).is_some_and(|ov| {
+                        ov.reason == crate::orchestrator::fallback::OverrideReason::UsageLimit
+                            && ov.original_cli == ret.original_provider_id
+                    });
+                    if should_remove {
+                        overrides.remove(&ret.agent);
+                        changed = true;
+                    }
+                }
+                drop(overrides);
+                if changed {
+                    crate::orchestrator::fallback::emit_overrides_changed(app, &state);
+                }
+            }
+        }
+    }
+    emit(
+        app,
+        VokiaEvent::ProviderUsageUpdated {
+            usage: provider_usage,
+        },
+    )?;
     emit(
         app,
         VokiaEvent::PlanUsage {

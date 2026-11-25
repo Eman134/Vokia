@@ -246,6 +246,10 @@ pub enum VokiaEvent {
         seven_day: UsageWindow,
     },
     #[serde(rename_all = "camelCase")]
+    ProviderUsageUpdated {
+        usage: crate::usage::ProviderPlanUsage,
+    },
+    #[serde(rename_all = "camelCase")]
     RequestSettled {
         run_id: u64,
         project_id: i64,

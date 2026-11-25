@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::{AppHandle, Manager};
 
 use crate::claude::{ConsoleKind, ConsoleLine, TurnActivity};
@@ -17,20 +19,40 @@ pub(super) struct ConsoleSink<'a> {
     app: &'a AppHandle,
     key: SessionKey,
     item_id: Option<String>,
+    acted: AtomicBool,
 }
 
 impl<'a> ConsoleSink<'a> {
     pub(super) fn new(app: &'a AppHandle, key: SessionKey, item_id: Option<String>) -> Self {
-        Self { app, key, item_id }
+        Self {
+            app,
+            key,
+            item_id,
+            acted: AtomicBool::new(false),
+        }
+    }
+
+    pub(super) fn reset_acted(&self) {
+        self.acted.store(false, Ordering::SeqCst);
+    }
+
+    pub(super) fn has_acted(&self) -> bool {
+        self.acted.load(Ordering::SeqCst)
     }
 
     // O console é auxiliar: falha ao registrar ou emitir não pode derrubar o turno do agente.
     pub(super) fn record(&self, line: ConsoleLine) {
+        if matches!(line.kind, ConsoleKind::Text | ConsoleKind::Tool) {
+            self.acted.store(true, Ordering::SeqCst);
+        }
         let _ = self.try_record(line);
     }
 
     // Só visual: não grava no banco, e a atividade final segue na mensagem do agente.
     pub(super) fn live_activity(&self, activity: TurnActivity) {
+        if !activity.tools.is_empty() {
+            self.acted.store(true, Ordering::SeqCst);
+        }
         let _ = emit(
             self.app,
             VokiaEvent::AgentActivity {

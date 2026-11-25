@@ -259,6 +259,7 @@ export const useFeed = defineStore('feed', () => {
         useOrchestration().applyTaskStage(event.stage)
         break
       case 'plan-usage':
+      case 'provider-usage-updated':
         break
       case 'usage-limit':
         useUsageLimit().apply(event)

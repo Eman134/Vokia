@@ -21,6 +21,7 @@ mod session_key;
 mod shell;
 mod state;
 mod task;
+mod usage;
 
 fn main() {
     app::run();

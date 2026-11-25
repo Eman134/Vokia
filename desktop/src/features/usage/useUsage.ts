@@ -1,60 +1,245 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { UsageWindow, VokiaPlanUsage } from '../team/events'
-import { MS_PER_SECOND, WARN_THRESHOLD } from './usagePlans'
-import { listenPlanUsage, type UnlistenFn } from './usageApi'
+import type {
+  PlanUsageSnapshot,
+  ProviderPlanUsage,
+  ProviderUsageWindow,
+  UsageWindow,
+  VokiaPlanUsage,
+} from '../team/events'
+import {
+  DEFAULT_THRESHOLDS,
+  FIVE_HOUR_MINS,
+  MS_PER_SECOND,
+  WEEKLY_MINS,
+  allWindowsOf,
+  isUsingCredits,
+  mostRestrictiveWindow,
+  providerShortName,
+  type ProviderThresholds,
+} from './usagePlans'
+import { getPlanUsage, listenUsageUpdates, refreshPlanUsage, type UnlistenFn } from './usageApi'
 
-const CLOCK_INTERVAL_MS = 60000
+const CLOCK_INTERVAL_MS = 60_000
+const POLL_INTERVAL_MS = 5 * 60_000
 
-interface ClaudeUsage {
+interface LegacyClaudeUsage {
   fiveHour: UsageWindow
   sevenDay: UsageWindow
   updatedAt: number
 }
 
+export interface CriticalUsageSummary {
+  provider: ProviderPlanUsage
+  window: ProviderUsageWindow
+  usingCredits: boolean
+  thresholds: ProviderThresholds
+}
+
 export const useUsage = defineStore('usage', () => {
-  const claude = ref<ClaudeUsage | null>(null)
+  const providers = ref<Record<string, ProviderPlanUsage>>({})
+  const thresholdsByProvider = ref<Record<string, ProviderThresholds>>({})
   const now = ref(Date.now())
   const startupError = ref<string | null>(null)
+  const refreshing = ref(false)
+
   let running = false
   let unlisten: UnlistenFn | null = null
   let clockTimer: ReturnType<typeof setInterval> | null = null
+  let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  const visible = computed(
-    () => claude.value !== null && now.value < claude.value.fiveHour.resetsAt * MS_PER_SECOND,
+  function thresholdsOf(providerId: string): ProviderThresholds {
+    return thresholdsByProvider.value[providerId] ?? DEFAULT_THRESHOLDS
+  }
+
+  function setProviderThresholds(providerId: string, thresholds: Partial<ProviderThresholds>): void {
+    const current = thresholdsOf(providerId)
+    thresholdsByProvider.value = {
+      ...thresholdsByProvider.value,
+      [providerId]: {
+        warn: thresholds.warn ?? current.warn,
+        pause: thresholds.pause ?? current.pause,
+      },
+    }
+  }
+
+  const providerList = computed<ProviderPlanUsage[]>(() =>
+    Object.values(providers.value)
+      .filter((entry) => allWindowsOf(entry).length > 0)
+      .sort((a, b) => a.providerId.localeCompare(b.providerId)),
   )
-  const fiveHour = computed(() =>
-    claude.value !== null && visible.value ? claude.value.fiveHour.percent : null,
+
+  const latestUpdatedAtMs = computed<number | null>(() => {
+    let latest: number | null = null
+    for (const entry of providerList.value) {
+      if (latest === null || entry.updatedAtMs > latest) {
+        latest = entry.updatedAtMs
+      }
+    }
+    return latest
+  })
+
+  const mostCritical = computed<CriticalUsageSummary | null>(() => {
+    const candidates: CriticalUsageSummary[] = []
+    for (const provider of providerList.value) {
+      const window = mostRestrictiveWindow(provider, now.value)
+      if (!window) continue
+      candidates.push({
+        provider,
+        window,
+        usingCredits: isUsingCredits(provider),
+        thresholds: thresholdsOf(provider.providerId),
+      })
+    }
+    if (candidates.length === 0) return null
+    const blocking = candidates.filter((item) => !item.usingCredits)
+    const pool = blocking.length > 0 ? blocking : candidates
+    return pool.reduce((worst, current) =>
+      current.window.percent > worst.window.percent ? current : worst,
+    )
+  })
+
+  // Compatibilidade com assinantes legados (useLimitNotices)
+  const claude = computed<LegacyClaudeUsage | null>(() => {
+    const entry = providers.value.claude
+    if (!entry?.primary) return null
+    return {
+      fiveHour: { percent: entry.primary.percent, resetsAt: entry.primary.resetsAt },
+      sevenDay: {
+        percent: entry.secondary?.percent ?? 0,
+        resetsAt: entry.secondary?.resetsAt ?? 0,
+      },
+      updatedAt: entry.updatedAtMs,
+    }
+  })
+
+  const visible = computed(() => providerList.value.length > 0)
+
+  const fiveHour = computed<number | null>(() => {
+    const critical = mostCritical.value
+    if (!critical || critical.usingCredits) return null
+    if (
+      critical.window.resetsAt > 0 &&
+      now.value >= critical.window.resetsAt * MS_PER_SECOND
+    ) {
+      return null
+    }
+    return critical.window.percent
+  })
+
+  const alert = computed(() =>
+    providerList.value.some((provider) => {
+      if (isUsingCredits(provider)) return false
+      const window = mostRestrictiveWindow(provider, now.value)
+      if (!window) return false
+      return window.percent >= thresholdsOf(provider.providerId).warn
+    }),
   )
-  const alert = computed(() => fiveHour.value !== null && fiveHour.value >= WARN_THRESHOLD)
+
   const openable = computed(() => visible.value || startupError.value !== null)
-  const ariaLabel = computed(() =>
-    fiveHour.value === null
-      ? 'Uso dos planos: sem dados'
-      : `Uso dos planos: Claude ${fiveHour.value}% da janela de 5 h`,
-  )
+
+  const ariaLabel = computed(() => {
+    if (providerList.value.length === 0) {
+      return 'Uso dos planos: sem dados'
+    }
+    const parts = providerList.value
+      .map((provider) => {
+        const window = mostRestrictiveWindow(provider, now.value)
+        if (!window) return null
+        const label = providerShortName(provider)
+        if (isUsingCredits(provider)) {
+          return `${label} usando créditos`
+        }
+        return `${label} ${window.percent}%`
+      })
+      .filter((item): item is string => item !== null)
+    return parts.length > 0 ? `Uso dos planos: ${parts.join(', ')}` : 'Uso dos planos: sem dados'
+  })
 
   function refreshClock(): void {
     now.value = Date.now()
   }
 
+  function applyProviderUsage(usage: ProviderPlanUsage): void {
+    refreshClock()
+    providers.value = {
+      ...providers.value,
+      [usage.providerId]: usage,
+    }
+  }
+
+  function applySnapshot(snapshot: PlanUsageSnapshot): void {
+    refreshClock()
+    const next: Record<string, ProviderPlanUsage> = { ...providers.value }
+    for (const usage of snapshot.providers) {
+      next[usage.providerId] = usage
+    }
+    providers.value = next
+  }
+
   function apply(usage: VokiaPlanUsage): void {
     refreshClock()
-    claude.value = { fiveHour: usage.fiveHour, sevenDay: usage.sevenDay, updatedAt: now.value }
+    // Evita sobrescrever se já recebemos atualização rica recente do mesmo provedor
+    const existing = providers.value.claude
+    if (existing && now.value - existing.updatedAtMs < 2_000) {
+      return
+    }
+    applyProviderUsage({
+      providerId: 'claude',
+      label: 'Claude Code',
+      primary: {
+        percent: usage.fiveHour.percent,
+        resetsAt: usage.fiveHour.resetsAt,
+        durationMins: FIVE_HOUR_MINS,
+        kind: 'five-hour',
+      },
+      secondary: {
+        percent: usage.sevenDay.percent,
+        resetsAt: usage.sevenDay.resetsAt,
+        durationMins: WEEKLY_MINS,
+        kind: 'weekly',
+      },
+      updatedAtMs: now.value,
+      readFailed: false,
+    })
+  }
+
+  async function refresh(providerId?: string): Promise<void> {
+    if (refreshing.value) return
+    refreshing.value = true
+    try {
+      const snapshot = await refreshPlanUsage(providerId)
+      applySnapshot(snapshot)
+    } catch {
+      // O backend mantém a última leitura válida em backoff; falhas silenciosas não derrubam o painel.
+    } finally {
+      refreshing.value = false
+    }
   }
 
   async function start(): Promise<void> {
     if (running) return
     running = true
     try {
-      const stopListening = await listenPlanUsage(apply)
-      // stop() or a concurrent start() may have run while listen was pending
+      const stopListening = await listenUsageUpdates({
+        onProviderUsage: applyProviderUsage,
+        onLegacyPlanUsage: apply,
+      })
       if (!running || unlisten !== null) {
         stopListening()
         return
       }
       unlisten = stopListening
       clockTimer = setInterval(refreshClock, CLOCK_INTERVAL_MS)
+      pollTimer = setInterval(() => {
+        void refresh()
+      }, POLL_INTERVAL_MS)
+      try {
+        const initial = await getPlanUsage()
+        applySnapshot(initial)
+      } catch {
+        // Sem leituras iniciais disponíveis ainda
+      }
     } catch (error) {
       running = false
       startupError.value = `Não foi possível iniciar o uso dos planos: ${String(error)}`
@@ -69,9 +254,18 @@ export const useUsage = defineStore('usage', () => {
       clearInterval(clockTimer)
       clockTimer = null
     }
+    if (pollTimer !== null) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
   }
 
   return {
+    providers,
+    providerList,
+    latestUpdatedAtMs,
+    mostCritical,
+    thresholdsByProvider,
     claude,
     now,
     visible,
@@ -80,7 +274,13 @@ export const useUsage = defineStore('usage', () => {
     ariaLabel,
     openable,
     startupError,
+    refreshing,
+    thresholdsOf,
+    setProviderThresholds,
     apply,
+    applyProviderUsage,
+    applySnapshot,
+    refresh,
     refreshClock,
     start,
     stop,

@@ -136,6 +136,7 @@ const DOMAIN_ICON: Record<CommandDomain, RowIconKind> = {
   orchestration: 'flow',
   providers: 'provider',
   settings: 'settings',
+  usage: 'provider',
 }
 
 const FILE_CATEGORIES: readonly ToolCategory[] = ['read', 'edit']

@@ -10,4 +10,5 @@ pub(crate) mod providers;
 pub(crate) mod roles;
 pub(crate) mod settings;
 pub(crate) mod team;
+pub(crate) mod usage;
 pub(crate) mod dispatcher;

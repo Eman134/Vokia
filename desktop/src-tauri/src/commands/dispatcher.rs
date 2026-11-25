@@ -10,7 +10,7 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
-    roles, settings, team,
+    roles, settings, team, usage,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -401,6 +401,18 @@ fn schema_erase_all_data() -> Value {
     obj_schema(json!({ "confirm": { "type": "boolean" } }), &["confirm"])
 }
 
+fn schema_plan_usage() -> Value {
+    obj_schema(
+        json!({
+            "providerId": {
+                "type": "string",
+                "description": "Id opcional do provedor (ex.: claude, codex, opencode, gemini) para filtrar o snapshot."
+            }
+        }),
+        &[],
+    )
+}
+
 const COMMANDS: &[CommandMeta] = &[
     exposed("team", "cli_problem", "Problema detectado ao localizar a CLI do Claude, se houver.", "Para diagnosticar por que nenhum agente consegue rodar: devolve o problema ao localizar a CLI do Claude, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto.", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
@@ -514,6 +526,8 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("settings", "erase_all_data", "Apaga todos os dados; exige { \"confirm\": true }.", "Para apagar todos os dados do Vokia; ação irreversível que só roda com confirm true, e só depois de o usuário pedir.", schema_erase_all_data),
     exposed("settings", "get_settings", "Devolve as configurações.", "Para ler as configurações gravadas antes de alterar alguma.", empty_object_schema),
     exposed("settings", "set_setting", "Grava uma configuração.", "Para gravar uma configuração por chave e valor; a chave active_llm troca o LLM padrão.", schema_set_setting),
+    exposed("usage", "get_plan_usage", "Devolve o snapshot unificado de cotas de uso por provedor (janelas 5h, diária, semanal, mensal, grupos de modelos, limites ativos e retornos pendentes). Parâmetro opcional: providerId.", "Para consultar a cota atual de uso dos planos conectados, limites ativos por modelo e quando cada janela renova.", schema_plan_usage),
+    exposed("usage", "refresh_plan_usage", "Atualiza e devolve as cotas de uso por provedor respeitando o UsageReadGate (single-flight, cache de 4 min e backoff exponencial em erro). Parâmetro opcional: providerId.", "Para atualizar a leitura de cotas dos provedores sob demanda sem exceder limites de requisição.", schema_plan_usage),
 ];
 
 #[derive(Deserialize, Default)]
@@ -849,6 +863,13 @@ async fn run(
         }
         "get_settings" => json_result(settings::get_settings_exec(app)),
         "set_setting" => json_result(settings::set_setting_exec(app, parse_args(arguments)?).await),
+
+        "get_plan_usage" => {
+            json_result(usage::get_plan_usage_exec(app, parse_args(arguments)?).await)
+        }
+        "refresh_plan_usage" => {
+            json_result(usage::refresh_plan_usage_exec(app, parse_args(arguments)?).await)
+        }
 
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }

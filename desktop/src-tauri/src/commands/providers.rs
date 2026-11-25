@@ -176,9 +176,14 @@ pub(crate) fn save_provider_exec(
     args: SaveProviderArgs,
 ) -> Result<ProviderConfig, String> {
     validate_provider_config(&args.config)?;
-    app.state::<ProviderRegistry>()
+    let saved = app
+        .state::<ProviderRegistry>()
         .save_provider(args.config)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    if let Some(state) = app.try_state::<AppState>() {
+        state.usage.invalidate_provider(&saved.id);
+    }
+    Ok(saved)
 }
 
 pub(crate) fn delete_provider_exec(app: &AppHandle, args: ProviderIdArgs) -> Result<(), String> {
@@ -186,7 +191,11 @@ pub(crate) fn delete_provider_exec(app: &AppHandle, args: ProviderIdArgs) -> Res
         &app.state::<ProviderRegistry>(),
         &app.state::<AgentRegistry>(),
         &args.id,
-    )
+    )?;
+    if let Some(state) = app.try_state::<AppState>() {
+        state.usage.remove_provider(&args.id);
+    }
+    Ok(())
 }
 
 fn delete_provider_impl(
