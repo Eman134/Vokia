@@ -7,6 +7,8 @@ type SettingsControl =
   | { kind: 'permission-grant' }
   | { kind: 'execution-mode' }
   | { kind: 'auto-pause-on-limit' }
+  | { kind: 'continuation-enabled' }
+  | { kind: 'continuation-max-count' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
   | { kind: 'select'; options: readonly string[] }
@@ -186,6 +188,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         label: 'Pausar automaticamente ao atingir limite',
         hint: 'pausa o time e agenda retomada automática; desligado, avisa na conversa',
         control: { kind: 'auto-pause-on-limit' },
+      },
+      {
+        kind: 'row',
+        label: 'Continuação automática de turnos',
+        hint: 'retoma turnos encerrados com etapas pendentes no plano, anúncio sem execução ou queda da CLI',
+        control: { kind: 'continuation-enabled' },
+      },
+      {
+        kind: 'row',
+        label: 'Limite de continuações por pedido',
+        hint: 'teto de retomadas automáticas antes de devolver o controle a você (padrão 5)',
+        control: { kind: 'continuation-max-count' },
       },
       {
         kind: 'group',

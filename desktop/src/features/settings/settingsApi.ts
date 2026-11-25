@@ -11,6 +11,8 @@ export const USER_AVATAR_SETTING_KEY = 'user_avatar'
 export const ACTIVE_LLM_SETTING_KEY = 'active_llm'
 export const LLM_FALLBACK_SETTING_KEY = 'llm_fallback'
 export const AUTO_PAUSE_ON_LIMIT_SETTING_KEY = 'auto_pause_on_limit'
+export const CONTINUATION_ENABLED_SETTING_KEY = 'continuationEnabled'
+export const CONTINUATION_MAX_COUNT_SETTING_KEY = 'continuationMaxCount'
 
 export function fetchSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>(GET_SETTINGS_COMMAND)

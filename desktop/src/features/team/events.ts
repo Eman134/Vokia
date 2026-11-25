@@ -421,6 +421,21 @@ export interface VokiaTurnPlanUpdated {
   plan: TurnPlan
 }
 
+export type ContinuationTrigger = 'plan' | 'next_step' | 'finish_check' | 'compaction' | 'provider_exit'
+
+export interface VokiaTurnContinuation {
+  type: 'turn-continuation'
+  projectId: number
+  agent: Agent
+  trigger: ContinuationTrigger
+  attempt: number
+  maxAttempts: number
+  marker: string
+  time: number
+  channelId?: number
+  itemId?: string
+}
+
 export type OverrideReason = 'usage-limit' | 'model-unavailable' | 'manual-temp'
 
 export interface TemporaryOverride {
@@ -455,6 +470,7 @@ export type VokiaEvent =
   | VokiaAgentState
   | VokiaAgentActivity
   | VokiaTurnPlanUpdated
+  | VokiaTurnContinuation
   | VokiaError
   | VokiaPermission
   | VokiaPermissionClosed

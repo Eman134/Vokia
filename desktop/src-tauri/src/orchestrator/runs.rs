@@ -193,6 +193,9 @@ pub(super) fn pause_run(
     item_id: Option<&str>,
 ) -> Result<(), FlowError> {
     interrupt_in_db(app, id)?;
+    if let Some(app_state) = app.try_state::<AppState>() {
+        app_state.continuations.cancel_project(key.project_id);
+    }
     let agents = project_team_agents(app);
     if let Some(db) = app.state::<DbState>().db() {
         if let Err(error) = db.pause_project_agents(key.project_id, &agents) {

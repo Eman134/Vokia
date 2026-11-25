@@ -12,7 +12,14 @@ import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import TurnPlanCard from './TurnPlanCard.vue'
 import { statusOfTurnPlan, useTurnPlans } from './useTurnPlans'
-import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStartedRow, type ActivityRowModel } from './activitySummary'
+import {
+  continuationRow,
+  protocolMessageRow,
+  splitVokiaConfirmations,
+  taskResultRow,
+  taskStartedRow,
+  type ActivityRowModel,
+} from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatThinkingDuration, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
@@ -373,6 +380,13 @@ function profile(speaker: Speaker): AgentProfile | undefined {
     class="flex min-w-0 flex-col gap-1 text-caption text-muted"
   >
     <ActivityRow :row="taskResultLine(entry)" />
+  </ul>
+  <ul
+    v-else-if="entry.type === 'turn-continuation'"
+    data-testid="turn-continuation"
+    class="flex min-w-0 flex-col gap-1 text-caption text-muted"
+  >
+    <ActivityRow :row="continuationRow(entry, agentName(entry.agent))" />
   </ul>
   <ul
     v-else-if="entry.type === 'permission-result'"

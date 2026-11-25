@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
 use crate::events::{Agent, AgentState};
+use crate::orchestrator::continuation::ContinuationRegistry;
 use crate::orchestrator::fallback::{CooldownTracker, TemporaryOverride};
 use crate::orchestrator::turn_plan::TurnPlanStore;
 use crate::orchestrator::SessionPool;
@@ -30,6 +31,7 @@ pub struct AppState {
     pub temporary_overrides: Mutex<HashMap<Agent, TemporaryOverride>>,
     pub usage: UsageEngine,
     pub turn_plans: TurnPlanStore,
+    pub continuations: ContinuationRegistry,
 }
 
 impl AppState {
@@ -48,6 +50,7 @@ impl AppState {
             temporary_overrides: Mutex::new(HashMap::new()),
             usage: UsageEngine::default(),
             turn_plans: TurnPlanStore::default(),
+            continuations: ContinuationRegistry::default(),
         }
     }
 }

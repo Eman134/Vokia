@@ -1,5 +1,13 @@
 import { commandPhrase, friendlyCommand } from './appCommandLabel'
-import type { CommandDomain, ToolActivity, ToolCategory, ToolChange, ToolDetail, ToolStatus } from './events'
+import type {
+  CommandDomain,
+  ToolActivity,
+  ToolCategory,
+  ToolChange,
+  ToolDetail,
+  ToolStatus,
+  VokiaTurnContinuation,
+} from './events'
 import { fileIconOf, type FileIconKind } from './fileIcon'
 import { isFinalReply, parseProposal } from '../backlog/planProposal'
 
@@ -369,6 +377,21 @@ function startedRow(tool: ToolActivity, detail: StartedDetail, titleOf: CardTitl
 
 const TASK_CONCLUDED_VERB = 'Tarefa concluída'
 const TASK_INTERRUPTED_VERB = 'Tarefa interrompida'
+const CONTINUATION_VERB = 'Continuação automática'
+
+export function continuationRow(entry: VokiaTurnContinuation, speakerName: string): ActivityRowModel {
+  const detail = entry.marker.startsWith(CONTINUATION_VERB)
+    ? entry.marker.slice(CONTINUATION_VERB.length).trim()
+    : `${entry.attempt}/${entry.maxAttempts}`
+  return {
+    id: `turn-continuation-${entry.time}-${entry.attempt}`,
+    icon: 'flow',
+    verb: CONTINUATION_VERB,
+    text: detail,
+    meta: `· ${speakerName}`,
+    failed: false,
+  }
+}
 
 // Resultado da tarefa em uma linha; o detalhe (turnos, agentes, hora) fica no tooltip do objetivo.
 export function taskResultRow(id: string, objective: string, concluded: boolean, detail: string): ActivityRowModel {

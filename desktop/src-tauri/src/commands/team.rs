@@ -217,10 +217,15 @@ pub(crate) fn set_agent_paused_exec(
     ensure_agent_exists(&app.state::<AgentRegistry>(), &args.agent)?;
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
-    db.set_agent_paused(args.project_id, args.agent, args.paused)
+    let agent = args.agent;
+    db.set_agent_paused(args.project_id, agent.clone(), args.paused)
         .map_err(|error| error.to_string())?;
     orchestrator::emit_agent_pauses_changed(app).map_err(|error| error.to_string())?;
-    if !args.paused {
+    if args.paused {
+        app.state::<AppState>()
+            .continuations
+            .cancel_agent(args.project_id, &agent);
+    } else {
         orchestrator::drain_waiting_for_project(app, &app.state::<AppState>(), args.project_id);
     }
     Ok(())

@@ -6,8 +6,8 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, ToolCategory, TurnActivity, TurnUsage};
 use crate::db::{
-    work_steps_session_key, DbState, HandoffDraft, NewTurnWorkSteps, NewUsageRecord,
-    OrchestrationSnapshot, StoredTaskResult,
+    load_recent_work_steps_safe, work_steps_session_key, DbState, HandoffDraft, NewTurnWorkSteps,
+    NewUsageRecord, OrchestrationSnapshot, StoredTaskResult,
 };
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{Delegation, DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
@@ -21,6 +21,11 @@ use crate::state::{AppState, Batch, PendingDecision, RequestContext};
 use crate::task::{Cache, Change, TaskDefinition, TaskKind, TaskOutcome};
 
 use super::agent_session::{ask_step, StepReply};
+use super::continuation::{
+    classify_turn_failure, executed_action_tool, has_verification_evidence,
+    load_continuation_config, ContinuationDecision, ContinuationGuard, ContinuationTrigger,
+    PlanContinuation, TurnEndInput, TurnFailureKind,
+};
 use super::emit::{
     emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
     reconcile_waiting, MessageScope,
@@ -131,6 +136,9 @@ pub(super) async fn run_turns(
         ..
     } = exchange;
     let waiters_guard = TurnWaitersGuard { state, key };
+    let continuation_guard = ContinuationGuard::register(&state.continuations, key);
+    let mut continuation = PlanContinuation::new(load_continuation_config(app));
+    let mut chain_verified = false;
     let scope = exchange.scope();
     let project_id = key.project_id;
     let origin = key.agent.clone();
@@ -208,6 +216,68 @@ pub(super) async fn run_turns(
         } = match ask_step(exchange, sessions, &turn.speaker, &prompts).await {
             Ok(step) => step,
             Err(error) => {
+                let failure_kind = classify_turn_failure(&error);
+                if matches!(
+                    failure_kind,
+                    TurnFailureKind::Compaction | TurnFailureKind::ProviderExit
+                ) {
+                    let recovery_input = TurnEndInput {
+                        reply_text: String::new(),
+                        turn_plan: state
+                            .turn_plans
+                            .get(&turn.speaker, Some(project_id), *item_id)
+                            .map(|snap| snap.plan),
+                        executed_action_tool: false,
+                        has_pending_human_decision: has_pending_decision_for(
+                            state,
+                            project_id,
+                            &turn.speaker,
+                        ),
+                        usage_limit_paused: speaker_usage_limit_paused(
+                            exchange,
+                            &turn.speaker,
+                            None,
+                            None,
+                        ),
+                        cancelled: continuation_guard.is_cancelled()
+                            || super::runs::is_agent_paused(app, project_id, &turn.speaker)
+                            || has_pending_queued_job(state, key),
+                        pending_verification_items: Vec::new(),
+                        has_verification_evidence: chain_verified,
+                        compaction_failed: failure_kind == TurnFailureKind::Compaction,
+                        provider_exited_abruptly: failure_kind == TurnFailureKind::ProviderExit,
+                        work_steps_blocks: load_recent_work_steps_for(
+                            app,
+                            project_id,
+                            &turn.speaker,
+                            *item_id,
+                        ),
+                    };
+                    if let ContinuationDecision::Continue {
+                        trigger,
+                        attempt,
+                        max_attempts,
+                        prompt,
+                        marker,
+                    } = continuation.consider(&recovery_input)
+                    {
+                        emit_turn_continuation(
+                            exchange,
+                            &turn.speaker,
+                            trigger,
+                            attempt,
+                            max_attempts,
+                            &marker,
+                        )?;
+                        turn = Turn::new(
+                            turn.speaker.clone(),
+                            &prompt,
+                            &prompt,
+                            turn.requesters.clone(),
+                        );
+                        continue;
+                    }
+                }
                 if error.is_limit() || error.is_cli_failure() {
                     let _ = super::emit::emit_error_message(
                         app,
@@ -235,6 +305,13 @@ pub(super) async fn run_turns(
             activity.as_ref(),
             usage.as_ref().and_then(|u| u.provider.as_deref()),
         );
+        let turn_executed_action = executed_action_tool(activity.as_ref());
+        if has_verification_evidence(activity.as_ref()) {
+            chain_verified = true;
+        }
+        let turn_activity_plan = activity.as_ref().and_then(|act| act.plan.clone());
+        let turn_provider = usage.as_ref().and_then(|u| u.provider.clone());
+        let turn_model = usage.as_ref().and_then(|u| u.model.clone());
         counters.task.register_turn(&turn.speaker);
         counters.act(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
@@ -701,6 +778,60 @@ pub(super) async fn run_turns(
             emit_backlog_changed(app, project_id)?;
         }
         let Some(next) = next else {
+            let turn_plan = turn_activity_plan.or_else(|| {
+                state
+                    .turn_plans
+                    .get(&turn.speaker, Some(project_id), *item_id)
+                    .map(|snap| snap.plan)
+            });
+            let continuation_input = TurnEndInput {
+                reply_text: visible.clone(),
+                turn_plan,
+                executed_action_tool: turn_executed_action,
+                has_pending_human_decision: has_pending_decision_for(
+                    state,
+                    project_id,
+                    &turn.speaker,
+                ),
+                usage_limit_paused: speaker_usage_limit_paused(
+                    exchange,
+                    &turn.speaker,
+                    turn_provider.as_deref(),
+                    turn_model.as_deref(),
+                ),
+                cancelled: continuation_guard.is_cancelled()
+                    || super::runs::is_agent_paused(app, project_id, &turn.speaker)
+                    || has_pending_queued_job(state, key),
+                pending_verification_items: load_pending_verification_items(exchange),
+                has_verification_evidence: chain_verified,
+                compaction_failed: false,
+                provider_exited_abruptly: false,
+                work_steps_blocks: Vec::new(),
+            };
+            if let ContinuationDecision::Continue {
+                trigger,
+                attempt,
+                max_attempts,
+                prompt,
+                marker,
+            } = continuation.consider(&continuation_input)
+            {
+                emit_turn_continuation(
+                    exchange,
+                    &turn.speaker,
+                    trigger,
+                    attempt,
+                    max_attempts,
+                    &marker,
+                )?;
+                turn = Turn::new(
+                    turn.speaker.clone(),
+                    &prompt,
+                    &prompt,
+                    turn.requesters.clone(),
+                );
+                continue;
+            }
             let lote_delivered = std::mem::take(&mut lote_open);
             // Chegar ao fim do fluxo com card vai para a validação final (quando o último ramo termina); a revisão
             // de lote só vale para o que não tem card.
@@ -1661,6 +1792,127 @@ fn usage_origin_for(exchange: &Exchange<'_>, speaker: &Agent) -> &'static str {
         return "triage";
     }
     "quick"
+}
+
+fn emit_turn_continuation(
+    exchange: &Exchange<'_>,
+    speaker: &Agent,
+    trigger: ContinuationTrigger,
+    attempt: u32,
+    max_attempts: u32,
+    marker: &str,
+) -> Result<(), FlowError> {
+    let project_id = exchange.key.project_id;
+    let time = now_millis()?;
+    if let Some(item_id) = exchange.item_id {
+        if let Some(db) = exchange.app.state::<DbState>().db() {
+            if db.add_card_activity(project_id, item_id, marker).is_ok() {
+                let _ = emit_backlog_changed(exchange.app, project_id);
+            }
+        }
+    }
+    emit(
+        exchange.app,
+        VokiaEvent::TurnContinuation {
+            project_id,
+            agent: speaker.clone(),
+            trigger,
+            attempt,
+            max_attempts,
+            marker: marker.to_string(),
+            time,
+            channel_id: exchange.channel_id,
+            item_id: exchange.item_id.map(str::to_string),
+        },
+    )
+}
+
+fn speaker_usage_limit_paused(
+    exchange: &Exchange<'_>,
+    speaker: &Agent,
+    turn_provider: Option<&str>,
+    turn_model: Option<&str>,
+) -> bool {
+    let now_ms = crate::usage::now_millis();
+    if let Some(provider) = turn_provider.filter(|p| !p.trim().is_empty()) {
+        return exchange
+            .state
+            .usage
+            .is_provider_paused_by_limit(provider, turn_model, now_ms);
+    }
+    let Some(profile) = exchange.team.profile(speaker) else {
+        return false;
+    };
+    let providers = exchange.app.state::<crate::providers::ProviderRegistry>();
+    let global_active = super::fallback::load_global_active_llm(exchange.app);
+    let global_fallback = super::fallback::load_global_fallback(exchange.app);
+    let candidates = super::fallback::resolve_candidates(
+        speaker,
+        profile,
+        &providers,
+        exchange.state,
+        global_active.as_ref(),
+        &global_fallback,
+        Some(exchange.project.level),
+    );
+    if let Some(first) = candidates.first() {
+        return exchange.state.usage.is_provider_paused_by_limit(
+            &first.cli,
+            Some(&first.model),
+            now_ms,
+        );
+    }
+    exchange
+        .state
+        .usage
+        .is_provider_paused_by_limit(&profile.cli, Some(&profile.model), now_ms)
+}
+
+fn has_pending_decision_for(state: &AppState, project_id: i64, speaker: &Agent) -> bool {
+    state.decisions.lock().is_ok_and(|decisions| {
+        decisions
+            .values()
+            .any(|decision| decision.project_id == project_id && &decision.agent == speaker)
+    })
+}
+
+fn has_pending_queued_job(state: &AppState, key: &SessionKey) -> bool {
+    state
+        .flow
+        .lock()
+        .is_ok_and(|flow| flow.pending.get(key).is_some_and(|queue| !queue.is_empty()))
+}
+
+fn load_pending_verification_items(exchange: &Exchange<'_>) -> Vec<String> {
+    let mut items = Vec::new();
+    if let (Some(item_id), Some(db)) = (exchange.item_id, exchange.app.state::<DbState>().db()) {
+        if let Ok(criteria) = db.plan_criteria(exchange.key.project_id, item_id) {
+            for criterion in criteria.into_iter().filter(|c| !c.done) {
+                items.push(format!("{}: {}", criterion.id, criterion.text));
+            }
+        }
+    }
+    if items.is_empty()
+        && exchange.definition.verify
+        && !exchange.definition.criterion.trim().is_empty()
+    {
+        items.push(exchange.definition.criterion.trim().to_string());
+    }
+    items
+}
+
+fn load_recent_work_steps_for(
+    app: &AppHandle,
+    project_id: i64,
+    speaker: &Agent,
+    item_id: Option<&str>,
+) -> Vec<String> {
+    let db_state = app.state::<DbState>();
+    let session_key = work_steps_session_key(project_id, speaker.as_str(), item_id);
+    load_recent_work_steps_safe(db_state.db(), project_id, speaker.as_str(), &session_key, 10)
+        .into_iter()
+        .map(|record| record.block)
+        .collect()
 }
 
 pub(crate) fn with_cache<T>(

@@ -283,6 +283,20 @@ pub enum VokiaEvent {
         plan: crate::orchestrator::turn_plan::TurnPlan,
     },
     #[serde(rename_all = "camelCase")]
+    TurnContinuation {
+        project_id: i64,
+        agent: Agent,
+        trigger: crate::orchestrator::continuation::ContinuationTrigger,
+        attempt: u32,
+        max_attempts: u32,
+        marker: String,
+        time: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_id: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item_id: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
     GoalState {
         project_id: i64,
         state: Option<GoalState>,

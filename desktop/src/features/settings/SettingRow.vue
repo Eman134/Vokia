@@ -17,9 +17,16 @@ import UiProgress from '../../ui/UiProgress.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
-import { HAND_SELECTED_CLASSES } from '../../ui/handDrawn'
+import { HAND_SELECTED_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import type { SettingsActionId, SettingsItem } from './configuracoesSample'
-import { AUTO_PAUSE_ON_LIMIT_SETTING_KEY, eraseAllData, fetchSettings, saveSetting } from './settingsApi'
+import {
+  AUTO_PAUSE_ON_LIMIT_SETTING_KEY,
+  CONTINUATION_ENABLED_SETTING_KEY,
+  CONTINUATION_MAX_COUNT_SETTING_KEY,
+  eraseAllData,
+  fetchSettings,
+  saveSetting,
+} from './settingsApi'
 
 const props = defineProps<{ item: SettingsItem }>()
 const projects = useProjects()
@@ -55,6 +62,14 @@ const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
 const autoPauseOnLimit = ref(false)
 const autoPauseError = ref<string | null>(null)
+const DEFAULT_CONTINUATION_ENABLED = true
+const DEFAULT_CONTINUATION_MAX_COUNT = 5
+const MIN_CONTINUATION_MAX_COUNT = 0
+const MAX_CONTINUATION_MAX_COUNT = 50
+const continuationEnabled = ref(DEFAULT_CONTINUATION_ENABLED)
+const continuationEnabledError = ref<string | null>(null)
+const continuationMaxCount = ref(DEFAULT_CONTINUATION_MAX_COUNT)
+const continuationMaxCountError = ref<string | null>(null)
 const erasing = ref(false)
 const eraseError = ref<string | null>(null)
 
@@ -127,12 +142,71 @@ async function toggleAutoPauseOnLimit(next: boolean): Promise<void> {
   }
 }
 
+async function loadContinuationEnabled(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[CONTINUATION_ENABLED_SETTING_KEY]
+    continuationEnabled.value = stored === undefined ? DEFAULT_CONTINUATION_ENABLED : stored === 'true'
+  } catch (error) {
+    continuationEnabledError.value = `Não foi possível ler a continuação automática: ${String(error)}`
+  }
+}
+
+async function toggleContinuationEnabled(next: boolean): Promise<void> {
+  continuationEnabled.value = next
+  try {
+    await saveSetting(CONTINUATION_ENABLED_SETTING_KEY, next ? 'true' : 'false')
+    continuationEnabledError.value = null
+  } catch (error) {
+    continuationEnabled.value = !next
+    continuationEnabledError.value = `Não foi possível salvar a continuação automática: ${String(error)}`
+  }
+}
+
+async function loadContinuationMaxCount(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[CONTINUATION_MAX_COUNT_SETTING_KEY]
+    const parsed = stored !== undefined ? Number.parseInt(stored, 10) : DEFAULT_CONTINUATION_MAX_COUNT
+    if (!Number.isNaN(parsed) && parsed >= MIN_CONTINUATION_MAX_COUNT && parsed <= MAX_CONTINUATION_MAX_COUNT) {
+      continuationMaxCount.value = parsed
+    }
+  } catch (error) {
+    continuationMaxCountError.value = `Não foi possível ler o limite de continuações: ${String(error)}`
+  }
+}
+
+async function commitContinuationMaxCount(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const raw = Number.parseInt(input.value, 10)
+  if (Number.isNaN(raw)) {
+    input.value = String(continuationMaxCount.value)
+    return
+  }
+  const clamped = Math.min(MAX_CONTINUATION_MAX_COUNT, Math.max(MIN_CONTINUATION_MAX_COUNT, raw))
+  const previous = continuationMaxCount.value
+  continuationMaxCount.value = clamped
+  input.value = String(clamped)
+  try {
+    await saveSetting(CONTINUATION_MAX_COUNT_SETTING_KEY, String(clamped))
+    continuationMaxCountError.value = null
+  } catch (error) {
+    continuationMaxCount.value = previous
+    input.value = String(previous)
+    continuationMaxCountError.value = `Não foi possível salvar o limite de continuações: ${String(error)}`
+  }
+}
+
 onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
     void loadGrant()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'auto-pause-on-limit') {
     void loadAutoPauseOnLimit()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'continuation-enabled') {
+    void loadContinuationEnabled()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'continuation-max-count') {
+    void loadContinuationMaxCount()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'execution-mode' && modeProjectId.value !== null) {
     void executionMode.load(modeProjectId.value)
@@ -247,6 +321,31 @@ function toOptions(labels: readonly string[]) {
           @update:model-value="toggleAutoPauseOnLimit"
         />
         <p v-if="autoPauseError" role="alert" :class="ERROR_CLASSES">{{ autoPauseError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'continuation-enabled'" :class="STACK_CLASSES">
+        <UiSwitch
+          :model-value="continuationEnabled"
+          label="Continuação automática de turnos"
+          data-testid="continuation-enabled-switch"
+          @update:model-value="toggleContinuationEnabled"
+        />
+        <p v-if="continuationEnabledError" role="alert" :class="ERROR_CLASSES">{{ continuationEnabledError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'continuation-max-count'" :class="STACK_CLASSES">
+        <div class="flex items-center gap-2">
+          <input
+            :value="continuationMaxCount"
+            type="number"
+            :min="MIN_CONTINUATION_MAX_COUNT"
+            :max="MAX_CONTINUATION_MAX_COUNT"
+            :aria-label="item.label"
+            data-testid="continuation-max-count-input"
+            :class="[INPUT_CLASSES, INK_FOCUS_CLASSES]"
+            @change="commitContinuationMaxCount"
+          />
+          <span class="text-caption text-muted">turnos</span>
+        </div>
+        <p v-if="continuationMaxCountError" role="alert" :class="ERROR_CLASSES">{{ continuationMaxCountError }}</p>
       </div>
       <div v-else-if="item.control.kind === 'erase-data'" :class="ERASE_CLASSES">
         <UiConfirm

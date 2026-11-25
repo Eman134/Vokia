@@ -4,7 +4,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 use crate::agents::AgentRegistry;
-use crate::db::{DbProblem, DbState, SETTING_ACTIVE_LLM};
+use crate::db::{DbProblem, DbState, SETTING_ACTIVE_LLM, SETTING_CONTINUATION_ENABLED};
 use crate::orchestrator;
 use crate::state::AppState;
 
@@ -65,6 +65,9 @@ pub(crate) async fn set_setting_exec(app: &AppHandle, args: SetSettingArgs) -> R
                 }
             }
         }
+    }
+    if args.key == SETTING_CONTINUATION_ENABLED && args.value == "false" {
+        app.state::<AppState>().continuations.cancel_all();
     }
     Ok(())
 }

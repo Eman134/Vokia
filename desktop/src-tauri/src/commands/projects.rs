@@ -231,6 +231,7 @@ pub(crate) fn load_history_exec(
 }
 
 pub(super) async fn stop_project_work(state: &AppState, project_id: i64) {
+    state.continuations.cancel_project(project_id);
     state.permissions.deny_project(project_id);
     state.sessions.close_project(project_id).await;
 }

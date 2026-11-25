@@ -187,6 +187,37 @@ impl UsageEngine {
         gate.is_limited(provider_id, model, now_ms)
     }
 
+    /// Verifica de forma agnóstica a provedor se o provedor/modelo está pausado por
+    /// limite de uso (janela >= 90% em 083 ou bloqueio ativo no `UsageLimitGate`),
+    /// respeitando créditos extras ativos.
+    pub fn is_provider_paused_by_limit(
+        &self,
+        provider_id: &str,
+        model: Option<&str>,
+        now_ms: u64,
+    ) -> bool {
+        if self.is_provider_using_credits(provider_id) {
+            return false;
+        }
+        if let Some(model) = model.filter(|m| !m.trim().is_empty()) {
+            if self.is_model_limited(provider_id, model, now_ms) {
+                return true;
+            }
+        } else {
+            let gate = self.limit_gate.lock().unwrap_or_else(|e| e.into_inner());
+            if gate
+                .active_limits(now_ms)
+                .iter()
+                .any(|entry| entry.provider_id == provider_id)
+            {
+                return true;
+            }
+        }
+        self.read_gate
+            .get(provider_id)
+            .is_some_and(|usage| usage.is_exhausted(DEFAULT_PAUSE_THRESHOLD))
+    }
+
     pub fn mark_limit_reached(
         &self,
         provider_id: &str,

@@ -106,6 +106,10 @@ pub(super) async fn handle_request_from(
         .team()
         .map_err(FlowError::Team)?;
     project_dir(app, project_id)?;
+    // Nova mensagem do usuário cancela imediatamente qualquer continuação automática em curso.
+    if from == Speaker::User {
+        state.continuations.cancel_agent(project_id, &recipient);
+    }
     // Retomada não repete o pedido no feed: o pedido original já está gravado; só avisa quem continua.
     if context.resumed_run.is_some() {
         emit_message(
@@ -2317,6 +2321,7 @@ pub(crate) fn forget_project(state: &AppState, project_id: i64) {
         .retain(|key, _| key.project_id != project_id);
     state.console.forget_project(project_id);
     state.turn_plans.forget_project(project_id);
+    state.continuations.cancel_project(project_id);
 }
 
 pub fn report_failure(

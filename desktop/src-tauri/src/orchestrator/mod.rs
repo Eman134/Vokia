@@ -2,6 +2,7 @@ mod adapters;
 mod agent_session;
 mod archive;
 mod console;
+pub(crate) mod continuation;
 mod emit;
 mod error;
 pub(crate) mod fallback;

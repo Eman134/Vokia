@@ -196,6 +196,11 @@ export const useFeed = defineStore('feed', () => {
       case 'turn-plan-updated':
         useTurnPlans().apply(event)
         break
+      case 'turn-continuation':
+        if (event.projectId === projects.selected?.id) {
+          feed.value.push(event)
+        }
+        break
       case 'agent-state':
         recordState(event)
         recordActivity(event)

@@ -56,8 +56,8 @@ pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use queued_requests::{PersistedFlowJob, QueuedRequestRecord};
 pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
 pub use settings::{
-    GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_LLM_FALLBACK,
-    SETTING_PERMISSION_GRANT,
+    GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_CONTINUATION_ENABLED,
+    SETTING_CONTINUATION_MAX_COUNT, SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT,
 };
 pub use usage_analytics::{
     NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,

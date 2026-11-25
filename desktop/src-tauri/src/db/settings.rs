@@ -13,6 +13,10 @@ pub const SETTING_AUTO_TRIAGE: &str = "auto_triage";
 pub const SETTING_ACTIVE_LLM: &str = "active_llm";
 pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
 pub const SETTING_AUTO_PAUSE_ON_LIMIT: &str = "auto_pause_on_limit";
+pub const SETTING_CONTINUATION_ENABLED: &str = "continuationEnabled";
+pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
+const CONTINUATION_MAX_COUNT_MIN: u32 = 0;
+const CONTINUATION_MAX_COUNT_MAX: u32 = 50;
 const BOOL_VALUES: &[&str] = &["true", "false"];
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
@@ -31,6 +35,8 @@ enum SettingRule {
     Json,
     // Conta caracteres (não bytes) do texto sem as pontas e recusa quebra de linha.
     Text { min: usize, max: usize },
+    // Inteiro não negativo dentro do intervalo fechado [min, max].
+    Uint { min: u32, max: u32 },
 }
 
 const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
@@ -52,12 +58,25 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
     (SETTING_ACTIVE_LLM, SettingRule::Json),
     (SETTING_LLM_FALLBACK, SettingRule::Json),
     (SETTING_AUTO_PAUSE_ON_LIMIT, SettingRule::OneOf(BOOL_VALUES)),
+    (
+        SETTING_CONTINUATION_ENABLED,
+        SettingRule::OneOf(BOOL_VALUES),
+    ),
+    (
+        SETTING_CONTINUATION_MAX_COUNT,
+        SettingRule::Uint {
+            min: CONTINUATION_MAX_COUNT_MIN,
+            max: CONTINUATION_MAX_COUNT_MAX,
+        },
+    ),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
 const SETTING_DEFAULTS: &[(&str, &str)] = &[
     (SETTING_PERMISSION_GRANT, GRANT_SESSION),
     (SETTING_AUTO_PAUSE_ON_LIMIT, "false"),
+    (SETTING_CONTINUATION_ENABLED, "true"),
+    (SETTING_CONTINUATION_MAX_COUNT, "5"),
 ];
 
 impl Db {
@@ -101,6 +120,23 @@ impl Db {
             .get(SETTING_AUTO_PAUSE_ON_LIMIT)
             .is_some_and(|value| value == "true"))
     }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuation_enabled(&self) -> Result<bool, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_CONTINUATION_ENABLED)
+            .map_or(true, |value| value == "true"))
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn continuation_max_count(&self) -> Result<u32, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_CONTINUATION_MAX_COUNT)
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(5))
+    }
 }
 
 impl SettingRule {
@@ -111,6 +147,9 @@ impl SettingRule {
             SettingRule::Text { min, max } => {
                 !value.contains(['\n', '\r'])
                     && (*min..=*max).contains(&value.trim().chars().count())
+            }
+            SettingRule::Uint { min, max } => {
+                value.parse::<u32>().is_ok_and(|n| (*min..=*max).contains(&n))
             }
         }
     }
