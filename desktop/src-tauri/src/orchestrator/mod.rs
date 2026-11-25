@@ -21,6 +21,7 @@ mod text_fallback;
 pub(crate) mod turn_plan;
 mod turns;
 mod validation;
+pub(crate) mod web_search;
 pub(crate) mod work_steps;
 
 pub(crate) use adapters::{cli_has_tools, test_persistent_provider};

@@ -59,6 +59,8 @@ const TOOLS_RULE_VOKIA_CLI: &str = "Use `vokia-cli` no terminal para backlog/dec
 const DELEGATION_TOOL_RULE_VOKIA_CLI: &str = "Para delegar: `vokia-cli delegate --agent <nome> --request \"<pedido>\"` (`--item-id <id>` em card). Delegue só o que não souber ou se pedido pelo nome; nunca para confirmar resposta. Antes de delegar a implementação de um card em triagem, leia o código, pergunte via `vokia-cli request-decision` se necessário e grave o plano via `save_item_plan`. Após delegar ou `vokia-cli request-decision`, encerre.";
 const STAGE_REPORT_RULE: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com artifact_set_criterion (artifact_id e criterion_id conforme a linha Critério desta etapa do card, que já vem na mensagem ou sai de read_card; done true) e grave o progresso com set_variable. Quem lidera acompanha por read_card.";
 const STAGE_REPORT_RULE_VOKIA_CLI: &str = "Ao concluir cada etapa do card, registre a conclusão logo, sem esperar a task inteira: marque o critério dela com `vokia-cli set-criterion --artifact-id <id> --criterion-id <c> --done true` (os ids aparecem em `vokia-cli read-card --id <card>`, na linha Critério desta etapa) e grave o progresso com `vokia-cli set-variable`. Quem lidera acompanha por `vokia-cli read-card`.";
+const WEB_SEARCH_HINT_MCP: &str = " Para pesquisar na web, chame `web_search` (query).";
+const WEB_SEARCH_HINT_VOKIA_CLI: &str = " Para pesquisar na web, execute `vokia-cli cmd web_search --json '{\"query\":\"...\"}'`.";
 const INSTRUCTION_FILES_RULE: &str = "O CLAUDE.md/AGENTS.md da raiz do projeto, quando vier no contexto abaixo, já vale: não o releia. Antes de editar arquivo numa subpasta, leia o CLAUDE.md/AGENTS.md dela até a raiz (mais próximo vence). Se contradizer o pedido, responda BLOQUEADO.";
 pub(super) const REJECTION_PREFIX: &str = "Sua resposta anterior foi rejeitada: ";
 pub(super) const ALTERNATE_INSTRUCTION: &str =
@@ -417,6 +419,52 @@ fn command_line(tool: &Value) -> Option<String> {
         tool.get("name")?.as_str()?,
         tool.get("description")?.as_str()?
     ))
+}
+
+pub(super) fn web_search_prompt_hint(
+    tool_mode: ToolPromptMode,
+    has_native_web_search: bool,
+    web_search_configured: bool,
+) -> &'static str {
+    if has_native_web_search || !web_search_configured {
+        return "";
+    }
+    match tool_mode {
+        ToolPromptMode::Mcp => WEB_SEARCH_HINT_MCP,
+        ToolPromptMode::VokiaCli => WEB_SEARCH_HINT_VOKIA_CLI,
+        ToolPromptMode::None => "",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn role_with_options(
+    profile: &AgentProfile,
+    registered_role: Option<&Role>,
+    roster: &str,
+    layer: Option<&LayerContext>,
+    project_context: &str,
+    tool_mode: ToolPromptMode,
+    scope: ToolScope,
+    global_instructions: Option<&str>,
+    has_native_web_search: bool,
+    web_search_configured: bool,
+) -> String {
+    let base = role(
+        profile,
+        registered_role,
+        roster,
+        layer,
+        project_context,
+        tool_mode,
+        scope,
+        global_instructions,
+    );
+    let hint = web_search_prompt_hint(tool_mode, has_native_web_search, web_search_configured);
+    if hint.is_empty() {
+        base
+    } else {
+        format!("{base}{hint}")
+    }
 }
 
 pub(super) fn role(

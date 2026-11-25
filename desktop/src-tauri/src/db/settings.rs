@@ -12,6 +12,7 @@ pub const SETTING_PERMISSION_GRANT: &str = "permission_grant";
 pub const SETTING_AUTO_TRIAGE: &str = "auto_triage";
 pub const SETTING_ACTIVE_LLM: &str = "active_llm";
 pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
+pub const SETTING_WEB_SEARCH: &str = "web_search";
 pub const SETTING_AUTO_PAUSE_ON_LIMIT: &str = "auto_pause_on_limit";
 pub const SETTING_CONTINUATION_ENABLED: &str = "continuationEnabled";
 pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
@@ -57,6 +58,7 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
     (SETTING_USER_AVATAR, SettingRule::Json),
     (SETTING_ACTIVE_LLM, SettingRule::Json),
     (SETTING_LLM_FALLBACK, SettingRule::Json),
+    (SETTING_WEB_SEARCH, SettingRule::Json),
     (SETTING_AUTO_PAUSE_ON_LIMIT, SettingRule::OneOf(BOOL_VALUES)),
     (
         SETTING_CONTINUATION_ENABLED,

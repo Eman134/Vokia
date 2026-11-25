@@ -58,6 +58,7 @@ pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
 pub use settings::{
     GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_CONTINUATION_ENABLED,
     SETTING_CONTINUATION_MAX_COUNT, SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT,
+    SETTING_WEB_SEARCH,
 };
 pub use usage_analytics::{
     NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,

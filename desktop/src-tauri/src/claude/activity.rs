@@ -555,7 +555,10 @@ fn subject_in(object: &Value) -> Option<String> {
 }
 
 fn category_of(name: &str, input: &Value) -> ToolCategory {
-    if app_command(name, input).is_some() {
+    if let Some((command, _)) = app_command(name, input) {
+        if command == "web_search" {
+            return ToolCategory::Web;
+        }
         return ToolCategory::App;
     }
     let lower = name.to_ascii_lowercase();
@@ -576,7 +579,12 @@ fn category_of(name: &str, input: &Value) -> ToolCategory {
 }
 
 fn target_of<'a>(name: &str, input: &'a Value) -> Cow<'a, str> {
-    if let Some((command, _)) = app_command(name, input) {
+    if let Some((command, args)) = app_command(name, input) {
+        if command == "web_search" {
+            if let Some(query) = args.get("query").and_then(Value::as_str) {
+                return Cow::Owned(query.to_string());
+            }
+        }
         return Cow::Owned(command);
     }
     let field = match name.to_ascii_lowercase().as_str() {

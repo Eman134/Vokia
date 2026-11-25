@@ -99,6 +99,7 @@ export interface ProviderConfig {
   tiers: ModelTiers
   supportsMcp: boolean
   toolTransport?: ToolTransport | null
+  hasNativeWebSearch?: boolean
   supportsSandbox: boolean
   reservedFlags: string[]
   rateLimitPatterns: string[]

@@ -130,6 +130,7 @@ export interface CliPreset {
   tiers: ModelTiers
   supportsMcp: boolean
   toolTransport?: ToolTransport
+  hasNativeWebSearch?: boolean
   supportsSandbox: boolean
   modelGrouping?: ModelGroupingMode
   effort?: ReasoningEffortSpec | null

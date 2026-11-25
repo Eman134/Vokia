@@ -37,7 +37,7 @@ use super::fallback::{
 };
 use super::flow::profile_of;
 use super::project_context::project_choices;
-use super::prompts::{maestro_role, role, StepPrompts, ToolPromptMode};
+use super::prompts::{maestro_role, role_with_options, StepPrompts, ToolPromptMode};
 use crate::roles::RoleRegistry;
 use super::session_policy::{
     call_mode, CallMode, SESSION_CLOSE_TIMEOUT_SECS, SESSION_IDLE_LIMIT_SECS,
@@ -171,7 +171,8 @@ async fn run_step(
             .state::<RoleRegistry>()
             .find(&profile.role)
             .map_err(FlowError::Roles)?;
-        let base = role(
+        let web_search_configured = super::web_search::is_web_search_configured_for_app(app);
+        let base = role_with_options(
             profile,
             registered_role.as_ref(),
             &prompt.roster,
@@ -180,6 +181,8 @@ async fn run_step(
             tool_mode,
             scope,
             global_instructions(app, adapter.is_claude()).as_deref(),
+            candidate.provider.has_native_web_search,
+            web_search_configured,
         );
         let role = if agent == &Agent::ember() {
             let paused = paused_agents(app, key.project_id)?;
@@ -1287,7 +1290,8 @@ pub(super) fn open_preloaded_session(
         .state::<RoleRegistry>()
         .find(&profile.role)
         .map_err(FlowError::Roles)?;
-    let base = role(
+    let web_search_configured = super::web_search::is_web_search_configured_for_app(app);
+    let base = role_with_options(
         profile,
         registered_role.as_ref(),
         &prompt.roster,
@@ -1297,6 +1301,8 @@ pub(super) fn open_preloaded_session(
         scope,
         global_instructions(app, candidate.provider.protocol == ProviderProtocol::ClaudeLive)
             .as_deref(),
+        candidate.provider.has_native_web_search,
+        web_search_configured,
     );
     let role_text = if agent == &Agent::ember() {
         maestro_role(

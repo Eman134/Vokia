@@ -16,4 +16,5 @@ pub(crate) mod team;
 pub(crate) mod turn_plan;
 pub(crate) mod usage;
 pub(crate) mod usage_analytics;
+pub(crate) mod web_search;
 pub(crate) mod dispatcher;

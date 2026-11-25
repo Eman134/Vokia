@@ -150,7 +150,8 @@ pub(crate) fn run() {
             commands::search::global_search,
             commands::command_search::command_search,
             commands::history::history_search,
-            commands::history::history_read
+            commands::history::history_read,
+            commands::web_search::web_search
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

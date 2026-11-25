@@ -252,7 +252,23 @@ fn label_for_tool_with_home(name: &str, input: &Value, home: Option<&str>) -> Op
     if lower.is_empty() {
         return None;
     }
-    match lower.as_str() {
+    if lower == "app_command_call" || lower == "mcp__vokia__app_command_call" {
+        if input.get("name").and_then(Value::as_str) == Some("web_search") {
+            let args = parse_maybe_json_string(input.get("arguments"));
+            let args_ref = args.as_ref().unwrap_or(&Value::Null);
+            let query = first_str(&[
+                args_ref.get("query"),
+                args_ref.get("q"),
+                args_ref.get("search_query"),
+                args_ref.get("term"),
+            ]);
+            return label_for_action_with_home(StepAction::WebSearch { query }, home);
+        }
+    }
+    let normalized_name = lower
+        .strip_prefix("mcp__vokia__")
+        .unwrap_or(lower.as_str());
+    match normalized_name {
         "read" | "read_file" | "view_file" | "file_read" => {
             let path = first_str(&[
                 input.get("file_path"),

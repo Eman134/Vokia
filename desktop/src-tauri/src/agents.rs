@@ -184,6 +184,7 @@ pub struct CliPreset {
     pub tiers: ModelTiers,
     pub supports_mcp: bool,
     pub tool_transport: ToolTransport,
+    pub has_native_web_search: bool,
     pub supports_sandbox: bool,
     pub model_grouping: ModelGroupingMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]

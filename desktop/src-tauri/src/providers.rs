@@ -249,6 +249,8 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub tool_transport: Option<ToolTransport>,
     #[serde(default)]
+    pub has_native_web_search: bool,
+    #[serde(default)]
     pub supports_sandbox: bool,
     #[serde(default)]
     pub reserved_flags: Vec<String>,
@@ -383,6 +385,7 @@ impl ProviderConfig {
             tiers: self.tiers,
             supports_mcp: self.supports_mcp,
             tool_transport,
+            has_native_web_search: self.has_native_web_search,
             supports_sandbox: self.supports_sandbox,
             model_grouping: self.model_grouping,
             effort: self.effort,
@@ -610,6 +613,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             },
             supports_mcp: true,
             tool_transport: Some(ToolTransport::McpNative),
+            has_native_web_search: true,
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "-p",
@@ -672,6 +676,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             },
             supports_mcp: true,
             tool_transport: Some(ToolTransport::McpNative),
+            has_native_web_search: true,
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "--json",
@@ -738,6 +743,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             },
             supports_mcp: false,
             tool_transport: Some(ToolTransport::VokiaCli),
+            has_native_web_search: false,
             supports_sandbox: false,
             reserved_flags: vec_str(&[
                 "--pure",
@@ -806,6 +812,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             },
             supports_mcp: false,
             tool_transport: Some(ToolTransport::VokiaCli),
+            has_native_web_search: true,
             supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "-p",
@@ -878,6 +885,7 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
         return Ok(seeds);
     }
     let text = fs::read_to_string(file).map_err(|error| load_failed(file, error))?;
+    let raw_json: Option<serde_json::Value> = serde_json::from_str(&text).ok();
     let parsed: ProvidersFile =
         serde_json::from_str(&text).map_err(|error| load_failed(file, error))?;
     if parsed.version != FILE_VERSION {
@@ -894,6 +902,15 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
         if !provider.builtin_seed {
             continue;
         }
+        let has_native_field = raw_json
+            .as_ref()
+            .and_then(|v| v.get("providers"))
+            .and_then(|v| v.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|item| item.get("id").and_then(|id| id.as_str()) == Some(provider.id.as_str()))
+            })
+            .is_some_and(|item| item.get("hasNativeWebSearch").is_some());
         for pattern in &defaults {
             if !provider.rate_limit_patterns.iter().any(|p| p == pattern) {
                 provider.rate_limit_patterns.push(pattern.clone());
@@ -901,6 +918,10 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
             }
         }
         if let Some(seed) = seeds.iter().find(|s| s.id == provider.id) {
+            if !has_native_field && provider.has_native_web_search != seed.has_native_web_search {
+                provider.has_native_web_search = seed.has_native_web_search;
+                updated = true;
+            }
             if provider.effort.is_none() && seed.effort.is_some() {
                 provider.effort = seed.effort.clone();
                 updated = true;

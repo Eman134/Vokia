@@ -42,6 +42,7 @@ interface SettingsSectionData {
 
 export const GENERAL_SECTION_TITLE = 'Geral'
 export const AGENTS_SECTION_TITLE = 'Agentes e conexões'
+export const SEARCH_SECTION_TITLE = 'Pesquisa'
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
   {
@@ -494,6 +495,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         control: { kind: 'actions', actions: [{ label: 'Ver notas', variant: 'quiet' }] },
       },
     ],
+  },
+  {
+    title: SEARCH_SECTION_TITLE,
+    description: 'pesquisa web unificada para provedores sem busca nativa',
+    items: [],
   },
   {
     title: 'Privacidade e dados',

@@ -11,7 +11,7 @@ use crate::projects::ProjectError;
 use super::{
     agents, artifacts, attachments, backlog, channels, command_search, execution_mode, history,
     orchestration, projects, providers, roles, search, settings, team, turn_plan, usage,
-    usage_analytics,
+    usage_analytics, web_search,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -376,6 +376,16 @@ fn schema_set_artifact_criterion() -> Value {
     )
 }
 
+fn schema_web_search() -> Value {
+    obj_schema(
+        json!({
+            "query": { "type": "string", "description": "Termo ou pergunta de pesquisa na web" },
+            "projectId": { "type": "integer", "description": "ID do projeto (opcional; no MCP usa o projeto vinculado)" },
+        }),
+        &["query"],
+    )
+}
+
 fn schema_save_item_plan() -> Value {
     obj_schema(
         json!({
@@ -664,6 +674,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("search", "command_search", "Busca sob demanda no catálogo de comandos do Vokia por nome exato ou palavras-chave. Parâmetros: query ou queries (camelCase), domain (opcional), limit (padrão 5, máx 10). Devolve até 3 resultados fortes já com inputSchema, parameters e exampleCall embutidos.", "Para descobrir qual comando chamar e seus parâmetros exatos sem carregar o catálogo inteiro nem gastar um turno extra de inspeção.", schema_command_search),
     exposed("search", "history_search", "Busca no histórico local de mensagens do projeto atual (FTS5 com fallback LIKE), respeitando o último marcador de reset de contexto. Parâmetros: projectId (no MCP usa o projeto vinculado), query, agent (opcional), channelId (opcional), cardId/itemId (opcional), limit (padrão 5, máx 10). Excertos de até 400 chars e resposta total até 8.000 chars com messageId e timestamp.", "Para recuperar decisões ou detalhes discutidos em turnos antigos da própria conversa ou card após compactação ou troca de provedor.", schema_history_search),
     exposed("search", "history_read", "Lê mensagens recentes, uma mensagem específica por messageId ou página anterior a um cursor/beforeMessageId dentro do projeto atual. Parâmetros: projectId, messageId, beforeMessageId/cursor, limit (padrão 10, máx 20), offset, agent, channelId, cardId/itemId, includeWorkSteps, workStepsOffset. Respeita teto de 16.000 chars serializados e devolve nextOffset, nextCursor e nextWorkStepsOffset.", "Para ler na íntegra uma mensagem antiga encontrada por history_search, paginar turnos anteriores ou inspecionar blocos [work steps] sob demanda.", schema_history_read),
+    exposed("search", "web_search", "Pesquisa na web via provedor auxiliar com busca nativa ou conector MCP configurado em Configurações › Pesquisa. Parâmetros: query (obrigatório), projectId (opcional). Devolve summary conciso, lista de sources com URLs verificáveis, backend utilizado e stepLabel.", "Para provedores sem busca web nativa (ex.: OpenCode ou CLI customizada) pesquisarem documentação e referências atualizadas na web.", schema_web_search),
 ];
 
 #[derive(Deserialize, Default)]
@@ -1053,6 +1064,9 @@ async fn run(
             bound_project_id,
             parse_args(arguments)?,
         )),
+        "web_search" => json_result(
+            web_search::web_search_exec(app, bound_project_id, parse_args(arguments)?).await,
+        ),
 
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }

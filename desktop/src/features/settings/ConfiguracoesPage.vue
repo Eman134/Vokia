@@ -20,7 +20,8 @@ import { useProviders } from '../providers/useProviders'
 import type { ModelTier } from '../team/teamApi'
 import SettingRow from './SettingRow.vue'
 import SettingsSection from './SettingsSection.vue'
-import { AGENTS_SECTION_TITLE, GENERAL_SECTION_TITLE, SETTINGS_SECTIONS } from './configuracoesSample'
+import WebSearchSettingsSection from './WebSearchSettingsSection.vue'
+import { AGENTS_SECTION_TITLE, GENERAL_SECTION_TITLE, SEARCH_SECTION_TITLE, SETTINGS_SECTIONS } from './configuracoesSample'
 
 
 const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col overflow-y-auto ${PAGE_INSET_CLASSES}`
@@ -316,9 +317,11 @@ async function saveFallbackConfig(): Promise<void> {
           <p v-if="fallbackSavedMsg" class="text-small text-ok">{{ fallbackSavedMsg }}</p>
         </section>
 
+        <WebSearchSettingsSection v-if="activeSection === SEARCH_SECTION_TITLE" />
+
         <template v-for="section in SETTINGS_SECTIONS" :key="section.title">
           <SettingsSection
-            v-if="section.title === activeSection"
+            v-if="section.title === activeSection && section.title !== SEARCH_SECTION_TITLE"
             :title="section.title"
             :description="section.description"
             :action="section.action"
