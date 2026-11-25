@@ -225,6 +225,8 @@ pub(crate) fn parse_output(
             input_tokens,
             output_tokens,
             cached_input_tokens: None,
+            cache_write_tokens: None,
+            thought_tokens: None,
             cost_usd,
             is_fallback: None,
         })

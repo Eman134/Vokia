@@ -165,6 +165,10 @@ pub(crate) fn parse_jsonl_output_with_provider(
                     .pointer("/usage/cached_input_tokens")
                     .and_then(Json::as_u64);
                 let output_tokens = value.pointer("/usage/output_tokens").and_then(Json::as_u64);
+                let thought_tokens = value
+                    .pointer("/usage/reasoning_output_tokens")
+                    .or_else(|| value.pointer("/usage/output_tokens_details/reasoning_tokens"))
+                    .and_then(Json::as_u64);
                 let cost_usd = value
                     .get("cost_usd")
                     .or_else(|| value.pointer("/usage/cost_usd"))
@@ -179,6 +183,7 @@ pub(crate) fn parse_jsonl_output_with_provider(
                 if input_tokens.is_some()
                     || output_tokens.is_some()
                     || cached_input_tokens.is_some()
+                    || thought_tokens.is_some()
                     || cost_usd.is_some()
                 {
                     usage = Some(TurnUsage {
@@ -187,8 +192,10 @@ pub(crate) fn parse_jsonl_output_with_provider(
                         input_tokens,
                         output_tokens,
                         cached_input_tokens,
+                        cache_write_tokens: None,
+                        thought_tokens,
                         cost_usd,
-            is_fallback: None,
+                        is_fallback: None,
                     });
                 }
             }

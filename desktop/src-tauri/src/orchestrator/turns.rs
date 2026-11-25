@@ -5,7 +5,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, ToolCategory, TurnActivity, TurnUsage};
-use crate::db::{DbState, HandoffDraft, OrchestrationSnapshot, StoredTaskResult};
+use crate::db::{DbState, HandoffDraft, NewUsageRecord, OrchestrationSnapshot, StoredTaskResult};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{Delegation, DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
@@ -196,6 +196,7 @@ pub(super) async fn run_turns(
                 card.as_deref(),
             ))
         })?;
+        let turn_started = std::time::Instant::now();
         let StepReply {
             text: reply,
             activity,
@@ -216,6 +217,15 @@ pub(super) async fn run_turns(
                 return Err(error);
             }
         };
+        let turn_duration_ms = turn_started.elapsed().as_millis() as u64;
+        if let Some(ref mut turn_usage) = usage {
+            record_turn_usage(
+                exchange,
+                &turn.speaker,
+                turn_usage,
+                turn_duration_ms,
+            );
+        }
         counters.task.register_turn(&turn.speaker);
         counters.act(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
@@ -1556,6 +1566,53 @@ fn say(
         crate::orchestration::instances::display_name(team, from)
     ));
     Ok(())
+}
+
+// Persiste métricas de uso desacopladas das mensagens; nunca grava texto de prompt nem resposta.
+fn record_turn_usage(
+    exchange: &Exchange<'_>,
+    speaker: &Agent,
+    usage: &mut TurnUsage,
+    duration_ms: u64,
+) {
+    let occurred_at = match now_millis() {
+        Ok(ms) => ms as i64,
+        Err(_) => return,
+    };
+    let origin = usage_origin_for(exchange, speaker);
+    let record = NewUsageRecord::from_turn_usage(
+        occurred_at,
+        Some(exchange.key.project_id),
+        exchange.item_id.map(str::to_string),
+        speaker.as_str(),
+        origin,
+        usage,
+        duration_ms,
+    );
+    if usage.cost_usd.is_none() {
+        usage.cost_usd = record.cost_usd_estimated;
+    }
+    if let Some(db) = exchange.app.state::<DbState>().db() {
+        let _ = db.record_usage(&record);
+    }
+}
+
+fn usage_origin_for(exchange: &Exchange<'_>, speaker: &Agent) -> &'static str {
+    let is_review_layer = exchange.orchestration.is_some_and(|snapshot| {
+        placement_of(snapshot, speaker)
+            .and_then(|placement| snapshot.layers.iter().find(|l| l.id == placement.layer_id))
+            .is_some_and(|layer| layer.kind == "revisar")
+    });
+    if is_review_layer {
+        return "review";
+    }
+    if exchange.item_id.is_some() {
+        return "card";
+    }
+    if speaker == &Agent::ember() && exchange.definition.kind == TaskKind::Demanda {
+        return "triage";
+    }
+    "quick"
 }
 
 pub(crate) fn with_cache<T>(

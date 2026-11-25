@@ -104,6 +104,7 @@ pub enum DbError {
     PlanStageStarted(String),
     PlanFileTooLarge { max: usize },
     PlanFileNotText,
+    InvalidUsageQuery(String),
 }
 
 impl DbError {
@@ -421,6 +422,7 @@ impl fmt::Display for DbError {
                 write!(f, "O arquivo passa de {max} bytes; escolha um arquivo menor.")
             }
             DbError::PlanFileNotText => write!(f, "O arquivo não é um texto UTF-8 legível."),
+            DbError::InvalidUsageQuery(reason) => f.write_str(reason),
         }
     }
 }

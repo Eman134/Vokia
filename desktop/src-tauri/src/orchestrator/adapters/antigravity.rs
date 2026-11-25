@@ -228,10 +228,23 @@ pub(crate) fn parse_stream_output_with_provider(
                         result.pointer("/usage/output_tokens").and_then(Json::as_u64);
                     let cached_input_tokens = result
                         .pointer("/usage/cache_read_tokens")
+                        .or_else(|| result.pointer("/usage/cache_read_input_tokens"))
+                        .and_then(Json::as_u64);
+                    let cache_write_tokens = result
+                        .pointer("/usage/cache_write_tokens")
+                        .or_else(|| result.pointer("/usage/cache_creation_input_tokens"))
+                        .and_then(Json::as_u64);
+                    let thought_tokens = result
+                        .pointer("/usage/thought_tokens")
+                        .or_else(|| result.pointer("/usage/thoughts_tokens"))
+                        .or_else(|| result.pointer("/usage/thoughtsTokenCount"))
+                        .or_else(|| result.pointer("/usage/reasoning_tokens"))
                         .and_then(Json::as_u64);
                     if input_tokens.is_some()
                         || output_tokens.is_some()
                         || cached_input_tokens.is_some()
+                        || cache_write_tokens.is_some()
+                        || thought_tokens.is_some()
                     {
                         let resolved_model = (!model.trim().is_empty()).then(|| model.to_string());
                         let resolved_cost = estimate_antigravity_cost_usd(
@@ -239,6 +252,8 @@ pub(crate) fn parse_stream_output_with_provider(
                             input_tokens,
                             output_tokens,
                             cached_input_tokens,
+                            cache_write_tokens,
+                            thought_tokens,
                         );
                         usage = Some(TurnUsage {
                             provider: provider.map(|p| p.id.clone()),
@@ -246,6 +261,8 @@ pub(crate) fn parse_stream_output_with_provider(
                             input_tokens,
                             output_tokens,
                             cached_input_tokens,
+                            cache_write_tokens,
+                            thought_tokens,
                             cost_usd: resolved_cost,
                             is_fallback: None,
                         });
@@ -306,6 +323,16 @@ pub(crate) fn parse_stream_output_with_provider(
                     .pointer("/usage/cache_read_input_tokens")
                     .or_else(|| value.pointer("/usage/cachedContentTokenCount"))
                     .and_then(Json::as_u64);
+                let cache_write_tokens = value
+                    .pointer("/usage/cache_write_tokens")
+                    .or_else(|| value.pointer("/usage/cache_creation_input_tokens"))
+                    .and_then(Json::as_u64);
+                let thought_tokens = value
+                    .pointer("/usage/thought_tokens")
+                    .or_else(|| value.pointer("/usage/thoughts_tokens"))
+                    .or_else(|| value.pointer("/usage/thoughtsTokenCount"))
+                    .or_else(|| value.pointer("/usage/reasoning_tokens"))
+                    .and_then(Json::as_u64);
                 let cost_usd = value
                     .get("total_cost_usd")
                     .or_else(|| value.get("cost_usd"))
@@ -319,12 +346,16 @@ pub(crate) fn parse_stream_output_with_provider(
                         input_tokens,
                         output_tokens,
                         cached_input_tokens,
+                        cache_write_tokens,
+                        thought_tokens,
                     )
                 });
                 if resolved_model.is_some()
                     || input_tokens.is_some()
                     || output_tokens.is_some()
                     || cached_input_tokens.is_some()
+                    || cache_write_tokens.is_some()
+                    || thought_tokens.is_some()
                     || resolved_cost.is_some()
                 {
                     usage = Some(TurnUsage {
@@ -334,6 +365,8 @@ pub(crate) fn parse_stream_output_with_provider(
                         input_tokens,
                         output_tokens,
                         cached_input_tokens,
+                        cache_write_tokens,
+                        thought_tokens,
                         cost_usd: resolved_cost,
                     });
                 }
@@ -438,20 +471,19 @@ fn estimate_antigravity_cost_usd(
     input: Option<u64>,
     output: Option<u64>,
     cached: Option<u64>,
+    cache_write: Option<u64>,
+    thought: Option<u64>,
 ) -> Option<f64> {
-    let inp = input.unwrap_or(0) as f64;
-    let out = output.unwrap_or(0) as f64;
-    let cac = cached.unwrap_or(0) as f64;
-    if inp <= 0.0 && out <= 0.0 && cac <= 0.0 {
+    let counts = crate::db::usage_pricing::TokenCounts {
+        input_tokens: input.unwrap_or(0),
+        cached_input_tokens: cached.unwrap_or(0),
+        cache_write_tokens: cache_write.unwrap_or(0),
+        output_tokens: output.unwrap_or(0),
+        thought_tokens: thought.unwrap_or(0),
+    };
+    if counts.total() == 0 {
         return None;
     }
-    let is_flash = model
-        .map(|m| m.to_ascii_lowercase().contains("flash"))
-        .unwrap_or(false);
-    let (in_rate, out_rate, cache_rate) = if is_flash {
-        (0.15 / 1_000_000.0, 0.60 / 1_000_000.0, 0.0375 / 1_000_000.0)
-    } else {
-        (1.25 / 1_000_000.0, 5.00 / 1_000_000.0, 0.3125 / 1_000_000.0)
-    };
-    Some(inp * in_rate + out * out_rate + cac * cache_rate)
+    let model = model?;
+    crate::db::usage_pricing::estimate_usage_price(model, counts).map(|est| est.cost_usd)
 }

@@ -133,6 +133,8 @@ pub(crate) fn parse_json_output_with_provider(
     let mut acc_input: Option<u64> = None;
     let mut acc_output: Option<u64> = None;
     let mut acc_cached: Option<u64> = None;
+    let mut acc_cache_write: Option<u64> = None;
+    let mut acc_thought: Option<u64> = None;
     let mut acc_cost: Option<f64> = None;
     let mut found_model: Option<String> = None;
     let mut found_session_id: Option<String> = None;
@@ -204,6 +206,20 @@ pub(crate) fn parse_json_output_with_provider(
                 {
                     acc_cached = Some(acc_cached.unwrap_or(0) + n);
                 }
+                if let Some(n) = value
+                    .pointer("/part/tokens/cache/write")
+                    .or_else(|| value.pointer("/usage/cache_creation_input_tokens"))
+                    .and_then(Json::as_u64)
+                {
+                    acc_cache_write = Some(acc_cache_write.unwrap_or(0) + n);
+                }
+                if let Some(n) = value
+                    .pointer("/part/tokens/reasoning")
+                    .or_else(|| value.pointer("/usage/reasoning_tokens"))
+                    .and_then(Json::as_u64)
+                {
+                    acc_thought = Some(acc_thought.unwrap_or(0) + n);
+                }
                 if let Some(c) = value
                     .pointer("/part/cost")
                     .or_else(|| value.get("total_cost_usd"))
@@ -247,6 +263,8 @@ pub(crate) fn parse_json_output_with_provider(
     let usage = if acc_input.is_some()
         || acc_output.is_some()
         || acc_cached.is_some()
+        || acc_cache_write.is_some()
+        || acc_thought.is_some()
         || acc_cost.is_some()
         || found_model.is_some()
     {
@@ -256,6 +274,8 @@ pub(crate) fn parse_json_output_with_provider(
             input_tokens: acc_input,
             output_tokens: acc_output,
             cached_input_tokens: acc_cached,
+            cache_write_tokens: acc_cache_write,
+            thought_tokens: acc_thought,
             cost_usd: acc_cost,
             is_fallback: None,
         })

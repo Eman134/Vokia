@@ -26,6 +26,7 @@ export type CommandDomain =
   | 'providers'
   | 'settings'
   | 'usage'
+  | 'analytics'
 
 export type ToolDetail =
   | { kind: 'read'; from: number; to: number }
@@ -73,6 +74,8 @@ export interface TurnUsage {
   inputTokens?: number
   outputTokens?: number
   cachedInputTokens?: number
+  cacheWriteTokens?: number
+  thoughtTokens?: number
   costUsd?: number
   isFallback?: boolean
 }

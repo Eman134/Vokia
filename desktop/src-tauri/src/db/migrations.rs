@@ -55,6 +55,7 @@ fn rename_agent_sql(old: &str, new: &str) -> String {
     UPDATE channels SET members = (
         SELECT json_group_array(CASE WHEN value = '{old}' THEN '{new}' ELSE value END) FROM json_each(channels.members)
     ) WHERE EXISTS (SELECT 1 FROM json_each(channels.members) WHERE value = '{old}');
+    UPDATE usage_records SET agent_id = '{new}' WHERE agent_id = '{old}';
 "
     )
 }
@@ -184,6 +185,35 @@ const QUEUED_REQUESTS_SCHEMA: &str = "
         created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
     );
     CREATE INDEX IF NOT EXISTS flow_queue_by_session ON flow_queue(project_id, agent, id);
+";
+
+// Métricas de uso desacopladas das conversas: sem FK para messages (ou projects), sobrevive a clear_messages e arquivamentos.
+const USAGE_RECORDS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS usage_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at INTEGER NOT NULL,
+        project_id INTEGER,
+        card_id TEXT,
+        agent_id TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        origin TEXT NOT NULL CHECK (origin IN ('card','quick','triage','review','background')),
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        thought_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd_estimated REAL,
+        price_basis TEXT,
+        is_fallback INTEGER NOT NULL DEFAULT 0 CHECK (is_fallback IN (0,1)),
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        prompt_id TEXT
+    );
+    CREATE INDEX IF NOT EXISTS usage_records_by_occurred_at ON usage_records(occurred_at);
+    CREATE INDEX IF NOT EXISTS usage_records_by_provider ON usage_records(provider_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS usage_records_by_agent ON usage_records(agent_id, occurred_at);
+    CREATE INDEX IF NOT EXISTS usage_records_by_project ON usage_records(project_id, occurred_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS usage_records_by_prompt_id ON usage_records(prompt_id) WHERE prompt_id IS NOT NULL;
 ";
 
 // Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
@@ -724,6 +754,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(ARTIFACT_DOCUMENTS_SCHEMA)?;
     tx.execute_batch(ATTACHMENTS_SCHEMA)?;
     tx.execute_batch(QUEUED_REQUESTS_SCHEMA)?;
+    tx.execute_batch(USAGE_RECORDS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

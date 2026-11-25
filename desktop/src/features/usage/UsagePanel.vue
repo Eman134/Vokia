@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import { useNavigation } from '../../shell/useNavigation'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
 import type { ProviderPlanUsage, ProviderUsageWindow } from '../team/events'
 import { useUsage } from './useUsage'
@@ -27,8 +28,14 @@ const READ_FAILED_LABEL = 'última leitura falhou'
 const ABOVE_PACE_LABEL = 'ritmo alto'
 const REFRESH_LABEL = 'Atualizar'
 
+const navigation = useNavigation()
 const store = useUsage()
 const { providerList, latestUpdatedAtMs, now, openable, startupError, refreshing } = storeToRefs(store)
+
+function openAnalytics(): void {
+  navigation.goTo('estatisticas')
+  emit('close')
+}
 
 function providerStatus(provider: ProviderPlanUsage) {
   const worst = mostRestrictiveWindow(provider, now.value)
@@ -188,6 +195,16 @@ function isAbovePace(window: ProviderUsageWindow): boolean {
             </span>
           </div>
         </div>
+      </div>
+
+      <div class="flex gap-1.5 border-t border-line pt-2.5">
+        <button
+          type="button"
+          class="grid h-8 flex-1 cursor-pointer place-items-center rounded-md bg-ink text-caption font-semibold text-bg"
+          @click="openAnalytics"
+        >
+          Ver em Estatísticas
+        </button>
       </div>
     </template>
     <span v-else class="text-meta" :class="TONE_TEXT.danger">{{ startupError }}</span>

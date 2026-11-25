@@ -10,7 +10,7 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
-    roles, settings, team, usage,
+    roles, settings, team, usage, usage_analytics,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -413,6 +413,21 @@ fn schema_plan_usage() -> Value {
     )
 }
 
+fn schema_get_usage_analytics() -> Value {
+    obj_schema(
+        json!({
+            "days": { "type": "integer", "minimum": 1, "maximum": 367, "description": "Janela em dias (ex.: 7, 14, 30, 90; máximo 367)" },
+            "from": { "type": "string", "description": "Data inicial YYYY-MM-DD ou RFC3339 (máximo 367 dias até to)" },
+            "to": { "type": "string", "description": "Data final YYYY-MM-DD ou RFC3339" },
+            "timezone": { "type": "string", "description": "Fuso IANA (ex.: America/Sao_Paulo), UTC ou deslocamento (±HH:MM)" },
+            "projectId": { "type": "integer", "description": "Filtrar por projeto" },
+            "agentId": { "type": "string", "description": "Filtrar por agente" },
+            "providerId": { "type": "string", "description": "Filtrar por provedor" },
+        }),
+        &[],
+    )
+}
+
 const COMMANDS: &[CommandMeta] = &[
     exposed("team", "cli_problem", "Problema detectado ao localizar a CLI do Claude, se houver.", "Para diagnosticar por que nenhum agente consegue rodar: devolve o problema ao localizar a CLI do Claude, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto.", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
@@ -528,6 +543,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("settings", "set_setting", "Grava uma configuração.", "Para gravar uma configuração por chave e valor; a chave active_llm troca o LLM padrão.", schema_set_setting),
     exposed("usage", "get_plan_usage", "Devolve o snapshot unificado de cotas de uso por provedor (janelas 5h, diária, semanal, mensal, grupos de modelos, limites ativos e retornos pendentes). Parâmetro opcional: providerId.", "Para consultar a cota atual de uso dos planos conectados, limites ativos por modelo e quando cada janela renova.", schema_plan_usage),
     exposed("usage", "refresh_plan_usage", "Atualiza e devolve as cotas de uso por provedor respeitando o UsageReadGate (single-flight, cache de 4 min e backoff exponencial em erro). Parâmetro opcional: providerId.", "Para atualizar a leitura de cotas dos provedores sob demanda sem exceder limites de requisição.", schema_plan_usage),
+    exposed("analytics", "get_usage_analytics", "Consulta estatísticas desacopladas de uso de tokens, custo USD equivalente à API e tempo por período. Parâmetros opcionais: days (1..367; ex.: 7, 14, 30, 90), from/to (YYYY-MM-DD ou RFC3339, teto 367 dias), timezone (IANA ex.: America/Sao_Paulo ou ±HH:MM), projectId, agentId, providerId. Devolve totais, série diária por (dia, provedor), breakdown por provedor, agente e modelo, e estimativa de economia com cache/tiers leves.", "Para consultar histórico de consumo de tokens, custo equivalente à API e uso por provedor, agente, modelo ou período.", schema_get_usage_analytics),
 ];
 
 #[derive(Deserialize, Default)]
@@ -863,6 +879,10 @@ async fn run(
         }
         "get_settings" => json_result(settings::get_settings_exec(app)),
         "set_setting" => json_result(settings::set_setting_exec(app, parse_args(arguments)?).await),
+        "get_usage_analytics" => json_result(usage_analytics::get_usage_analytics_exec(
+            app,
+            parse_args(arguments)?,
+        )),
 
         "get_plan_usage" => {
             json_result(usage::get_plan_usage_exec(app, parse_args(arguments)?).await)

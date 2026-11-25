@@ -10,11 +10,13 @@ import ProjetosPage from '../features/projects/ProjetosPage.vue'
 import NovoProjetoPage from '../features/projects/NovoProjetoPage.vue'
 import TasksPage from '../features/backlog/TasksPage.vue'
 import MapaPage from '../features/teammap/MapaPage.vue'
+import EstatisticasPage from '../features/usage/EstatisticasPage.vue'
 import type { AppPage } from './railNav'
 
 export const PAGE_VIEWS: Partial<Record<AppPage, readonly Component[]>> = {
   conversas: [ConversasPage],
   agentes: [AgentesPage],
+  estatisticas: [EstatisticasPage],
   skills: [SkillsPage],
   canvas: [ArtefatosPage],
   config: [ConfiguracoesPage],

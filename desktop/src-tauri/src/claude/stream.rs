@@ -27,6 +27,10 @@ pub struct TurnUsage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
     #[serde(default, rename = "isFallback", skip_serializing_if = "Option::is_none")]
     pub is_fallback: Option<bool>,
@@ -186,12 +190,18 @@ impl CliResponse {
             .as_ref()
             .and_then(|u| u.get("cache_read_input_tokens"))
             .and_then(Json::as_u64);
+        let cache_write_tokens = self
+            .usage
+            .as_ref()
+            .and_then(|u| u.get("cache_creation_input_tokens"))
+            .and_then(Json::as_u64);
         let cost_usd = self.total_cost_usd.or(self.cost_usd);
 
         if model.is_none()
             && input_tokens.is_none()
             && output_tokens.is_none()
             && cached_input_tokens.is_none()
+            && cache_write_tokens.is_none()
             && cost_usd.is_none()
         {
             return None;
@@ -202,6 +212,8 @@ impl CliResponse {
             input_tokens,
             output_tokens,
             cached_input_tokens,
+            cache_write_tokens,
+            thought_tokens: None,
             cost_usd,
             is_fallback: None,
         })

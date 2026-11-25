@@ -98,6 +98,12 @@ export function formatUsageDetails(usage?: TurnUsage): UsageDetail[] {
   if (usage.cachedInputTokens != null && usage.cachedInputTokens > 0) {
     details.push({ label: 'Cache (leitura)', value: `${INT_FORMAT.format(usage.cachedInputTokens)} tokens` })
   }
+  if (usage.cacheWriteTokens != null && usage.cacheWriteTokens > 0) {
+    details.push({ label: 'Cache (escrita)', value: `${INT_FORMAT.format(usage.cacheWriteTokens)} tokens` })
+  }
+  if (usage.thoughtTokens != null && usage.thoughtTokens > 0) {
+    details.push({ label: 'Pensamento', value: `${INT_FORMAT.format(usage.thoughtTokens)} tokens` })
+  }
   if (usage.inputTokens != null || usage.outputTokens != null) {
     const total = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
     details.push({ label: 'Total', value: `${INT_FORMAT.format(total)} tokens` })

@@ -17,6 +17,8 @@ mod projects;
 mod queued_requests;
 mod runs;
 mod settings;
+pub mod usage_analytics;
+pub mod usage_pricing;
 
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
@@ -53,6 +55,9 @@ pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
 pub use settings::{
     GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_LLM_FALLBACK,
     SETTING_PERMISSION_GRANT,
+};
+pub use usage_analytics::{
+    NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,
 };
 #[cfg(test)]
 pub use settings::SETTING_AUTO_PAUSE_ON_LIMIT;
