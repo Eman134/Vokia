@@ -187,6 +187,7 @@ Itens da [pesquisa de orquestradores e OpenBot](pesquisa-orquestradores-e-openbo
 | 096 | Busca sob demanda de comandos (`command_search`) e histórico (`history_search` / `history_read`) | Mantém `tools/list` enxuto com busca de comandos e permite que agentes consultem histórico antigo e `[work steps]` sem gastar LLM para resumir. | [096](backlog/096.md) |
 | 097 | Pesquisa web unificada para provedores sem busca nativa | Preserva busca nativa em Claude/Codex/Gemini (mantendo *prompt cache*) e oferece `web_search` via provedor auxiliar ou MCP para OpenCode e CLIs genéricas. | [097](backlog/097.md) |
 | 098 | Revisão assíncrona de memórias e sugestão de skills em background | Extrai memórias duráveis e sugestões de `SKILL.md` em segundo plano usando modelo `Basic`, com aprovação humana na barra de ação. | [098](backlog/098.md) |
+| 099 | Painel de configurações do agente no formato OpenBot | Reorganiza a ficha do agente em seções claras (Identidade, Cérebro, Sabe, Faz, Regras e Me notificar) com linhas clicáveis, resumos e sub-painéis focados. | [099](backlog/099.md) |
 
 ## Pendências do diagrama
 
