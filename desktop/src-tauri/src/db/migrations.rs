@@ -734,6 +734,271 @@ fn migrate_plan_artifacts(tx: &Transaction) -> rusqlite::Result<()> {
     Ok(())
 }
 
+// Índice full-text FTS5 sincronizado por triggers para a paleta de busca global (095).
+const SEARCH_PROJECTS_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_projects_fts USING fts5(
+        name,
+        description,
+        path,
+        origin_repo,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_projects_ai AFTER INSERT ON projects BEGIN
+        INSERT INTO search_projects_fts(rowid, name, description, path, origin_repo)
+        VALUES (NEW.id, COALESCE(NEW.name, ''), COALESCE(NEW.description, ''), COALESCE(NEW.path, ''), COALESCE(NEW.origin_repo, ''));
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_projects_au AFTER UPDATE ON projects BEGIN
+        DELETE FROM search_projects_fts WHERE rowid = OLD.id;
+        INSERT INTO search_projects_fts(rowid, name, description, path, origin_repo)
+        VALUES (NEW.id, COALESCE(NEW.name, ''), COALESCE(NEW.description, ''), COALESCE(NEW.path, ''), COALESCE(NEW.origin_repo, ''));
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_projects_ad AFTER DELETE ON projects BEGIN
+        DELETE FROM search_projects_fts WHERE rowid = OLD.id;
+    END;
+";
+
+const SEARCH_PROJECTS_BACKFILL_SQL: &str = "
+    INSERT INTO search_projects_fts(rowid, name, description, path, origin_repo)
+    SELECT id, COALESCE(name, ''), COALESCE(description, ''), COALESCE(path, ''), COALESCE(origin_repo, '')
+    FROM projects;
+";
+
+const SEARCH_CARDS_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_cards_fts USING fts5(
+        code,
+        title,
+        description,
+        tags,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_cards_ai AFTER INSERT ON backlog_items BEGIN
+        INSERT INTO search_cards_fts(rowid, code, title, description, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.id, ''),
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.description, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_cards_au AFTER UPDATE ON backlog_items BEGIN
+        DELETE FROM search_cards_fts WHERE rowid = OLD.rowid;
+        INSERT INTO search_cards_fts(rowid, code, title, description, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.id, ''),
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.description, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_cards_ad AFTER DELETE ON backlog_items BEGIN
+        DELETE FROM search_cards_fts WHERE rowid = OLD.rowid;
+    END;
+";
+
+const SEARCH_CARDS_BACKFILL_SQL: &str = "
+    INSERT INTO search_cards_fts(rowid, code, title, description, tags)
+    SELECT
+        rowid,
+        COALESCE(id, ''),
+        COALESCE(title, ''),
+        COALESCE(description, ''),
+        trim(replace(replace(replace(replace(COALESCE(tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+    FROM backlog_items;
+";
+
+const SEARCH_MESSAGES_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_messages_fts USING fts5(
+        text,
+        from_agent,
+        to_agent,
+        item_id,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO search_messages_fts(rowid, text, from_agent, to_agent, item_id)
+        VALUES (
+            NEW.id,
+            CASE
+                WHEN trim(COALESCE(NEW.text, '')) <> '' THEN NEW.text
+                WHEN NEW.task_result IS NOT NULL AND json_valid(NEW.task_result) THEN COALESCE(json_extract(NEW.task_result, '$.objective'), '')
+                ELSE ''
+            END,
+            COALESCE(NEW.from_agent, ''),
+            COALESCE(NEW.to_agent, ''),
+            ''
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_messages_au AFTER UPDATE OF text, from_agent, to_agent, task_result ON messages BEGIN
+        UPDATE search_messages_fts
+        SET text = CASE
+                WHEN trim(COALESCE(NEW.text, '')) <> '' THEN NEW.text
+                WHEN NEW.task_result IS NOT NULL AND json_valid(NEW.task_result) THEN COALESCE(json_extract(NEW.task_result, '$.objective'), '')
+                ELSE ''
+            END,
+            from_agent = COALESCE(NEW.from_agent, ''),
+            to_agent = COALESCE(NEW.to_agent, '')
+        WHERE rowid = NEW.id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM search_messages_fts WHERE rowid = OLD.id;
+    END;
+";
+
+const SEARCH_MESSAGES_BACKFILL_SQL: &str = "
+    INSERT INTO search_messages_fts(rowid, text, from_agent, to_agent, item_id)
+    SELECT
+        id,
+        CASE
+            WHEN trim(COALESCE(text, '')) <> '' THEN text
+            WHEN task_result IS NOT NULL AND json_valid(task_result) THEN COALESCE(json_extract(task_result, '$.objective'), '')
+            ELSE ''
+        END,
+        COALESCE(from_agent, ''),
+        COALESCE(to_agent, ''),
+        COALESCE(item_id, '')
+    FROM messages;
+";
+
+const SEARCH_PLANS_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_plans_fts USING fts5(
+        title,
+        summary,
+        detail,
+        tags,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_plans_ai AFTER INSERT ON artifacts BEGIN
+        INSERT INTO search_plans_fts(rowid, title, summary, detail, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.summary, ''),
+            COALESCE(NEW.detail, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_plans_au AFTER UPDATE ON artifacts BEGIN
+        DELETE FROM search_plans_fts WHERE rowid = OLD.rowid;
+        INSERT INTO search_plans_fts(rowid, title, summary, detail, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.summary, ''),
+            COALESCE(NEW.detail, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_plans_ad AFTER DELETE ON artifacts BEGIN
+        DELETE FROM search_plans_fts WHERE rowid = OLD.rowid;
+    END;
+";
+
+const SEARCH_PLANS_BACKFILL_SQL: &str = "
+    INSERT INTO search_plans_fts(rowid, title, summary, detail, tags)
+    SELECT
+        rowid,
+        COALESCE(title, ''),
+        COALESCE(summary, ''),
+        COALESCE(detail, ''),
+        trim(replace(replace(replace(replace(COALESCE(tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+    FROM artifacts;
+";
+
+const SEARCH_ARTIFACTS_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_artifacts_fts USING fts5(
+        title,
+        summary,
+        body,
+        tags,
+        tokenize = 'unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_artifacts_ai AFTER INSERT ON artifact_documents BEGIN
+        INSERT INTO search_artifacts_fts(rowid, title, summary, body, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.summary, ''),
+            COALESCE(NEW.body, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_artifacts_au AFTER UPDATE ON artifact_documents BEGIN
+        DELETE FROM search_artifacts_fts WHERE rowid = OLD.rowid;
+        INSERT INTO search_artifacts_fts(rowid, title, summary, body, tags)
+        VALUES (
+            NEW.rowid,
+            COALESCE(NEW.title, ''),
+            COALESCE(NEW.summary, ''),
+            COALESCE(NEW.body, ''),
+            trim(replace(replace(replace(replace(COALESCE(NEW.tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+        );
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_artifacts_ad AFTER DELETE ON artifact_documents BEGIN
+        DELETE FROM search_artifacts_fts WHERE rowid = OLD.rowid;
+    END;
+";
+
+const SEARCH_ARTIFACTS_BACKFILL_SQL: &str = "
+    INSERT INTO search_artifacts_fts(rowid, title, summary, body, tags)
+    SELECT
+        rowid,
+        COALESCE(title, ''),
+        COALESCE(summary, ''),
+        COALESCE(body, ''),
+        trim(replace(replace(replace(replace(COALESCE(tags, ''), '[', ' '), ']', ' '), '\"', ' '), ',', ' '))
+    FROM artifact_documents;
+";
+
+fn ensure_fts_index(
+    tx: &Transaction,
+    table_name: &str,
+    schema_and_triggers: &str,
+    backfill_sql: &str,
+) -> rusqlite::Result<()> {
+    let existed = table_exists(tx, table_name)?;
+    tx.execute_batch(schema_and_triggers)?;
+    if !existed {
+        tx.execute_batch(backfill_sql)?;
+    }
+    Ok(())
+}
+
+fn migrate_search_fts(tx: &Transaction) -> rusqlite::Result<()> {
+    ensure_fts_index(
+        tx,
+        "search_projects_fts",
+        SEARCH_PROJECTS_FTS_SQL,
+        SEARCH_PROJECTS_BACKFILL_SQL,
+    )?;
+    ensure_fts_index(
+        tx,
+        "search_cards_fts",
+        SEARCH_CARDS_FTS_SQL,
+        SEARCH_CARDS_BACKFILL_SQL,
+    )?;
+    ensure_fts_index(
+        tx,
+        "search_messages_fts",
+        SEARCH_MESSAGES_FTS_SQL,
+        SEARCH_MESSAGES_BACKFILL_SQL,
+    )?;
+    ensure_fts_index(
+        tx,
+        "search_plans_fts",
+        SEARCH_PLANS_FTS_SQL,
+        SEARCH_PLANS_BACKFILL_SQL,
+    )?;
+    ensure_fts_index(
+        tx,
+        "search_artifacts_fts",
+        SEARCH_ARTIFACTS_FTS_SQL,
+        SEARCH_ARTIFACTS_BACKFILL_SQL,
+    )?;
+    Ok(())
+}
+
 // Micro-tarefa vira card filho do item (D10); id derivado e lista esvaziada tornam a migração repetível.
 fn migrate_micro_tasks(tx: &Transaction) -> rusqlite::Result<()> {
     let parents = {
@@ -799,5 +1064,6 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(&legacy_agent_sql())?;
     migrate_plan_artifacts(&tx)?;
     migrate_micro_tasks(&tx)?;
+    migrate_search_fts(&tx)?;
     tx.commit()
 }

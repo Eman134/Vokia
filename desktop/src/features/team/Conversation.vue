@@ -7,12 +7,13 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useNavigation, type PendingMessageTarget } from '../../shell/useNavigation'
 import type { TurnActivity } from './events'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
-import { ALL_SCREEN_LABEL } from './timeline'
+import { ALL_SCREEN, ALL_SCREEN_LABEL, type FeedEntry } from './timeline'
 import { useFeed } from './useFeed'
 import type { AgentProfile } from './teamApi'
 import {
@@ -75,8 +76,11 @@ const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
 const CLEAR_BUTTON_CLASSES = `flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink ${INK_FOCUS_CLASSES}`
 const CLEAR_POPUP_CLASSES =
   'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-paper'
+const HIGHLIGHT_MESSAGE_CLASSES = 'rounded-md bg-accent-soft/70 ring-1 ring-accent transition-colors'
+const HIGHLIGHT_DURATION_MS = 2200
 
 const feed = useFeed()
+const navigation = useNavigation()
 
 const roster = useRoster()
 const channels = useChannels()
@@ -180,6 +184,60 @@ const { onScroll, followEnd } = useFollowEnd(scroller)
 const clearFailure = ref<string | null>(null)
 const confirmingClear = ref(false)
 const clearWrap = ref<HTMLElement | null>(null)
+const highlightedMessageKey = ref<string | null>(null)
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
+
+function messageKeyOf(entry: FeedEntry): string | undefined {
+  if (entry.type !== 'message') return undefined
+  return `${entry.time}:${entry.from}`
+}
+
+function focusMessageTarget(target: PendingMessageTarget): boolean {
+  const key = `${target.time}:${target.from}`
+  const exists = feed.feed.some((entry) => entry.type === 'message' && messageKeyOf(entry) === key)
+  if (!exists) return false
+
+  if (target.itemId) {
+    feed.showScreen({ kind: 'thread', itemId: target.itemId })
+  } else if (target.channelId != null) {
+    feed.showScreen({ kind: 'channel', channel: target.channelId })
+  } else {
+    feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })
+  }
+
+  void nextTick(() => {
+    let element = scroller.value?.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(key)}"]`)
+    if (!element) {
+      feed.showScreen(ALL_SCREEN)
+      void nextTick(() => {
+        const fallbackEl = scroller.value?.querySelector<HTMLElement>(`[data-message-key="${CSS.escape(key)}"]`)
+        fallbackEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    } else {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  })
+
+  highlightedMessageKey.value = key
+  if (highlightTimer !== null) clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    highlightedMessageKey.value = null
+    highlightTimer = null
+  }, HIGHLIGHT_DURATION_MS)
+  return true
+}
+
+function tryConsumePendingMessage(): void {
+  const target = navigation.pendingMessageTarget
+  if (!target) return
+  if (focusMessageTarget(target)) {
+    navigation.takePendingMessageTarget()
+  }
+}
+
+watch([() => navigation.pendingMessageTarget, () => feed.feed.length], tryConsumePendingMessage, {
+  immediate: true,
+})
 
 function onClearKeydown(event: KeyboardEvent): void {
   if (confirmingClear.value && event.key === 'Escape' && !event.defaultPrevented) {
@@ -230,6 +288,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', onClearPointerDown)
 })
 onUnmounted(() => {
+  if (highlightTimer !== null) clearTimeout(highlightTimer)
   window.removeEventListener('keydown', onClearKeydown)
   document.removeEventListener('pointerdown', onClearPointerDown)
 })
@@ -353,10 +412,23 @@ watch(
       <ol class="flex w-full min-w-0 flex-col gap-2">
         <li v-for="item in feed.timeline" :key="item.start">
           <div v-if="item.type === 'group'" class="flex flex-col gap-2">
-            <MessageEntry v-for="(message, index) in item.messages" :key="index" :entry="message" />
+            <div
+              v-for="(message, index) in item.messages"
+              :key="index"
+              :data-message-key="messageKeyOf(message)"
+              :class="highlightedMessageKey === messageKeyOf(message) ? HIGHLIGHT_MESSAGE_CLASSES : undefined"
+            >
+              <MessageEntry :entry="message" />
+            </div>
           </div>
           <AutoPermissionGroup v-else-if="item.type === 'permissions'" :agent="item.agent" :results="item.results" />
-          <MessageEntry v-else :entry="item.entry" />
+          <div
+            v-else
+            :data-message-key="messageKeyOf(item.entry)"
+            :class="highlightedMessageKey === messageKeyOf(item.entry) ? HIGHLIGHT_MESSAGE_CLASSES : undefined"
+          >
+            <MessageEntry :entry="item.entry" />
+          </div>
         </li>
         <li v-if="feed.permissions[0]" :key="feed.permissions[0].id">
           <PermissionRow :permission="feed.permissions[0]" :pending-count="feed.permissions.length" />

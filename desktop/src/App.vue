@@ -9,6 +9,8 @@ import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
 import ProviderSetupDialog from './features/providers/ProviderSetupDialog.vue'
+import GlobalSearchDialog from './features/search/GlobalSearchDialog.vue'
+import { useGlobalSearch } from './features/search/useGlobalSearch'
 import { useBacklog } from './features/backlog/useBacklog'
 import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
@@ -25,6 +27,7 @@ const connection = useConnection()
 const navigation = useNavigation()
 const rail = useRail()
 const backlog = useBacklog()
+const globalSearch = useGlobalSearch()
 const updater = useUpdater()
 const usage = useUsage()
 const limitNotices = useLimitNotices()
@@ -36,14 +39,26 @@ const railWidth = computed(() => {
   return rail.expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH
 })
 
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (event.altKey || !(event.ctrlKey || event.metaKey)) return
+  if (event.key.toLowerCase() !== 'k') return
+  if (!connection.cliChecked || connection.cliProblem || connection.startupError || navigation.page === 'onboarding') {
+    return
+  }
+  event.preventDefault()
+  globalSearch.toggle()
+}
+
 onMounted(connection.start)
 onMounted(updater.check)
 onMounted(usage.start)
 onMounted(limitNotices.start)
 onMounted(interruptedRuns.start)
+onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(connection.stop)
 onUnmounted(usage.stop)
 onUnmounted(limitNotices.stop)
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
 <template>
@@ -74,5 +89,6 @@ onUnmounted(limitNotices.stop)
   <SplashScreen v-else />
   <NewRequestDialog />
   <ProviderSetupDialog />
+  <GlobalSearchDialog />
   <UpdatePrompt />
 </template>

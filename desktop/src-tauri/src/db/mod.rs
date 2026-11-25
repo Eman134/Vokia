@@ -16,6 +16,7 @@ mod permission_rules;
 mod projects;
 mod queued_requests;
 mod runs;
+pub mod search;
 mod settings;
 pub mod usage_analytics;
 pub mod usage_pricing;

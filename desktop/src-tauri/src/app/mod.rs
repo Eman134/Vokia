@@ -141,7 +141,9 @@ pub(crate) fn run() {
             commands::usage::get_plan_usage,
             commands::usage::refresh_plan_usage,
             // analytics
-            commands::usage_analytics::get_usage_analytics
+            commands::usage_analytics::get_usage_analytics,
+            // search
+            commands::search::global_search
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

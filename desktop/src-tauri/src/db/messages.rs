@@ -70,8 +70,9 @@ impl Db {
             .map(serde_json::to_string)
             .transpose()
             .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
-        let conn = self.conn()?;
-        let inserted = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let inserted = tx.execute(
             "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, item_id, activity, request_proposal, usage) \
              SELECT id, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 FROM projects WHERE id = ?1",
             params![
@@ -90,6 +91,14 @@ impl Db {
         if inserted == 0 {
             return Err(DbError::ProjectNotFound(project_id));
         }
+        if let Some(card_id) = item_id {
+            let row_id = tx.last_insert_rowid();
+            tx.execute(
+                "UPDATE search_messages_fts SET item_id = ?2 WHERE rowid = ?1",
+                params![row_id, card_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -104,8 +113,9 @@ impl Db {
     ) -> Result<(), DbError> {
         let json = serde_json::to_string(result)
             .map_err(|error| DbError::MessageActivityData(error.to_string()))?;
-        let conn = self.conn()?;
-        let inserted = conn.execute(
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let inserted = tx.execute(
             "INSERT INTO messages(project_id, from_agent, to_agent, text, created_at, channel_id, item_id, task_result) \
              SELECT id, ?2, ?3, '', ?4, ?5, ?6, ?7 FROM projects WHERE id = ?1",
             params![project_id, from.as_str(), Speaker::User.as_str(), time as i64, channel_id, item_id, json],
@@ -113,6 +123,14 @@ impl Db {
         if inserted == 0 {
             return Err(DbError::ProjectNotFound(project_id));
         }
+        if let Some(card_id) = item_id {
+            let row_id = tx.last_insert_rowid();
+            tx.execute(
+                "UPDATE search_messages_fts SET item_id = ?2 WHERE rowid = ?1",
+                params![row_id, card_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

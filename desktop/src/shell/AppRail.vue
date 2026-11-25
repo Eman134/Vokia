@@ -23,6 +23,7 @@ import ProjectIcon from '../features/projects/ProjectIcon.vue'
 import { projectColorOf } from '../features/projects/projectColors'
 import type { Project } from '../features/projects/projectsApi'
 import { useProjects } from '../features/projects/useProjects'
+import { useGlobalSearch } from '../features/search/useGlobalSearch'
 import { useFeed } from '../features/team/useFeed'
 
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
@@ -40,6 +41,10 @@ const TOGGLE = 'cursor-pointer bg-transparent text-ink'
 const GROUP = 'flex flex-col gap-0.5'
 const GROUP_LABEL = 'pl-1.25 text-caption text-muted'
 const ICON_SIZE = 17
+const SEARCH_ICON = 'M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M10.8 10.8 14 14'
+const SEARCH_LABEL = 'Buscar'
+const SEARCH_SHORTCUT = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
+const SEARCH_KBD = 'ml-auto rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-tiny text-faint'
 const NEW_PROJECT_ICON = 'M8 3v10M3 8h10'
 const SETTINGS_ICON =
   'M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 1 0 0-4.4z M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z'
@@ -62,6 +67,7 @@ const railPage = computed<AppPage>(() =>
 const rail = useRail()
 const { expanded } = storeToRefs(rail)
 const projectsStore = useProjects()
+const globalSearch = useGlobalSearch()
 const feed = useFeed()
 const openProject = ref<string | null>(projectsStore.selected?.name ?? null)
 watch(
@@ -131,6 +137,21 @@ function toggleProject(project: Project) {
       </button>
       <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
     </div>
+
+    <button
+      type="button"
+      data-testid="rail-global-search"
+      :class="[itemSize, ITEM_OFF, expanded && 'w-full']"
+      :aria-label="`${SEARCH_LABEL} (${SEARCH_SHORTCUT})`"
+      :title="`${SEARCH_LABEL} (${SEARCH_SHORTCUT})`"
+      @click="globalSearch.openDialog()"
+    >
+      <span :class="ICON_BOX">
+        <UiIcon class="flex-none" :path="SEARCH_ICON" :size="ICON_SIZE" />
+      </span>
+      <span v-if="expanded" :class="LABEL">{{ SEARCH_LABEL }}</span>
+      <kbd v-if="expanded" :class="SEARCH_KBD">{{ SEARCH_SHORTCUT }}</kbd>
+    </button>
 
     <p v-if="expanded" :class="GROUP_LABEL" aria-hidden="true">workspace</p>
     <nav aria-label="Workspace" :class="[GROUP, 'shrink-0', expanded && 'w-full']">

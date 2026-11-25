@@ -10,7 +10,7 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
-    roles, settings, team, turn_plan, usage, usage_analytics,
+    roles, search, settings, team, turn_plan, usage, usage_analytics,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -439,6 +439,27 @@ fn schema_get_usage_analytics() -> Value {
     )
 }
 
+fn schema_global_search() -> Value {
+    obj_schema(
+        json!({
+            "query": { "type": "string", "description": "Termo ou frase para busca full-text (FTS5)" },
+            "projectId": { "type": "integer", "description": "Filtrar resultados para um projeto específico" },
+            "kinds": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": ["projects", "agents", "cards", "plans", "artifacts", "memories", "messages"]
+                },
+                "description": "Tipos de entidade a incluir na busca"
+            },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Limite de resultados por grupo (padrão 20)" },
+            "cursor": { "type": "string", "description": "Cursor de paginação devolvido em nextCursor" },
+            "offset": { "type": "integer", "minimum": 0, "description": "Deslocamento opcional quando cursor não é informado" },
+        }),
+        &["query"],
+    )
+}
+
 const COMMANDS: &[CommandMeta] = &[
     exposed("team", "cli_problem", "Problema detectado ao localizar a CLI do Claude, se houver.", "Para diagnosticar por que nenhum agente consegue rodar: devolve o problema ao localizar a CLI do Claude, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto.", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
@@ -556,6 +577,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("usage", "get_plan_usage", "Devolve o snapshot unificado de cotas de uso por provedor (janelas 5h, diária, semanal, mensal, grupos de modelos, limites ativos e retornos pendentes). Parâmetro opcional: providerId.", "Para consultar a cota atual de uso dos planos conectados, limites ativos por modelo e quando cada janela renova.", schema_plan_usage),
     exposed("usage", "refresh_plan_usage", "Atualiza e devolve as cotas de uso por provedor respeitando o UsageReadGate (single-flight, cache de 4 min e backoff exponencial em erro). Parâmetro opcional: providerId.", "Para atualizar a leitura de cotas dos provedores sob demanda sem exceder limites de requisição.", schema_plan_usage),
     exposed("analytics", "get_usage_analytics", "Consulta estatísticas desacopladas de uso de tokens, custo USD equivalente à API e tempo por período. Parâmetros opcionais: days (1..367; ex.: 7, 14, 30, 90), from/to (YYYY-MM-DD ou RFC3339, teto 367 dias), timezone (IANA ex.: America/Sao_Paulo ou ±HH:MM), projectId, agentId, providerId. Devolve totais, série diária por (dia, provedor), breakdown por provedor, agente e modelo, e estimativa de economia com cache/tiers leves.", "Para consultar histórico de consumo de tokens, custo equivalente à API e uso por provedor, agente, modelo ou período.", schema_get_usage_analytics),
+    exposed("search", "global_search", "Busca global full-text (FTS5) no workspace cobrindo projetos, agentes, cards do backlog, planos, artefatos, memórias e mensagens. Parâmetros: query, projectId (opcional), kinds (opcional: projects|agents|cards|plans|artifacts|memories|messages), limit (opcional, padrão 20, máx 100), cursor/offset (opcional). Devolve resultados agrupados por tipo com snippet destacado, score BM25 + recência e nextCursor.", "Para localizar rapidamente cards, mensagens antigas, planos, artefatos, projetos ou agentes por palavra-chave sem listar tudo.", schema_global_search),
 ];
 
 #[derive(Deserialize, Default)]
@@ -903,6 +925,8 @@ async fn run(
         "refresh_plan_usage" => {
             json_result(usage::refresh_plan_usage_exec(app, parse_args(arguments)?).await)
         }
+
+        "global_search" => json_result(search::global_search_exec(app, parse_args(arguments)?)),
 
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }

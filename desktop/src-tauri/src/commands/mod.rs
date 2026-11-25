@@ -8,6 +8,7 @@ pub(crate) mod orchestration;
 pub(crate) mod projects;
 pub(crate) mod providers;
 pub(crate) mod roles;
+pub(crate) mod search;
 pub(crate) mod settings;
 pub(crate) mod team;
 pub(crate) mod turn_plan;

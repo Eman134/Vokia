@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { PAGE_LABELS } from '../../shell/railNav'
+import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
@@ -44,9 +45,25 @@ const profile = useUserProfile()
 const draft = useProfileDraft()
 const providersStore = useProviders()
 const activeLlm = useActiveLlm()
+const navigation = useNavigation()
 const editing = ref(false)
 
-const activeSection = ref(GENERAL_SECTION_TITLE)
+const initialSection = navigation.takePendingSettingsSection()
+const activeSection = ref(
+  initialSection && SETTINGS_SECTIONS.some((section) => section.title === initialSection)
+    ? initialSection
+    : GENERAL_SECTION_TITLE,
+)
+watch(
+  () => navigation.pendingSettingsSection,
+  (nextSection) => {
+    if (nextSection === null) return
+    const section = navigation.takePendingSettingsSection()
+    if (section && SETTINGS_SECTIONS.some((entry) => entry.title === section)) {
+      activeSection.value = section
+    }
+  },
+)
 const fallbackEnabled = ref(true)
 const fallbackCooldown = ref(300)
 const fallbackChain = ref<FallbackChainItem[]>([])

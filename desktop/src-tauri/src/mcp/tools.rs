@@ -60,7 +60,7 @@ const LIST_MOVEMENTS: &str = "list_movements";
 const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
 const APP_COMMANDS_LIST: &str = "app_commands_list";
 pub(super) const APP_COMMAND_CALL: &str = "app_command_call";
-const COMMAND_DOMAINS: [&str; 11] = [
+const COMMAND_DOMAINS: [&str; 12] = [
     "team",
     "projects",
     "channels",
@@ -72,6 +72,7 @@ const COMMAND_DOMAINS: [&str; 11] = [
     "orchestration",
     "providers",
     "settings",
+    "search",
 ];
 // Administração do Vokia e manutenção do mapa ficam com quem coordena: cada definição a menos sai do contexto
 // de toda chamada à API dos demais agentes.

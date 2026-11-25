@@ -7,6 +7,7 @@ import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
+import { useNavigation } from '../../shell/useNavigation'
 import { useProjects } from '../projects/useProjects'
 import TaskCard from './TaskCard.vue'
 import TaskItemModal from './TaskItemModal.vue'
@@ -61,8 +62,21 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
 const runItem = useRunItem()
+const navigation = useNavigation()
 const projectsStore = useProjects()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
+
+function tryOpenPendingCard(): void {
+  const cardId = navigation.pendingCardId
+  if (!cardId || backlog.loading) return
+  if (!backlog.items.some((item) => item.id === cardId)) return
+  navigation.takePendingCardId()
+  onOpenCard(cardId)
+}
+
+watch([() => navigation.pendingCardId, () => backlog.items, () => backlog.loading], tryOpenPendingCard, {
+  immediate: true,
+})
 
 function columnOf(item: BacklogItem): BacklogColumn {
   return item.column ?? (item.stage ? STAGE_COLUMN[item.stage] : DEFAULT_COLUMN)

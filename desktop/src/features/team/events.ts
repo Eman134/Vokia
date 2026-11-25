@@ -27,6 +27,7 @@ export type CommandDomain =
   | 'settings'
   | 'usage'
   | 'analytics'
+  | 'search'
 
 export type ToolDetail =
   | { kind: 'read'; from: number; to: number }

@@ -216,13 +216,39 @@ function openEntry(entry: CatalogEntry): void {
 }
 
 const pendingPlanId = navigation.takePendingPlanId()
-const opened = ref<Opened | null>(pendingPlanId === null ? null : { source: PLAN_SOURCE, id: pendingPlanId })
+const pendingDocId = navigation.takePendingArtifactDocumentId()
+const opened = ref<Opened | null>(
+  pendingPlanId !== null
+    ? { source: PLAN_SOURCE, id: pendingPlanId }
+    : pendingDocId !== null
+      ? { source: DOCUMENT_SOURCE, id: pendingDocId }
+      : null,
+)
+if (pendingDocId !== null && artifacts.loadedProjectId !== null) {
+  void artifacts.openDocument(pendingDocId)
+}
 watch(
   () => navigation.pendingArtifactPlanId,
   (nextId) => {
     if (nextId === null) return
     const id = navigation.takePendingPlanId()
     opened.value = id === null ? null : { source: PLAN_SOURCE, id }
+  },
+)
+watch(
+  () => navigation.pendingArtifactDocumentId,
+  (nextId) => {
+    if (nextId === null) return
+    const id = navigation.takePendingArtifactDocumentId()
+    if (id !== null) openDocument(id)
+  },
+)
+watch(
+  () => artifacts.loadedProjectId,
+  (projectId) => {
+    if (projectId !== null && opened.value?.source === DOCUMENT_SOURCE && artifacts.current?.id !== opened.value.id) {
+      void artifacts.openDocument(opened.value.id)
+    }
   },
 )
 const openedPlan = computed(() =>

@@ -49,6 +49,11 @@ const COMMAND_OVERRIDES: Readonly<Record<string, Phrases>> = {
     done: 'Reordenou as camadas',
     failed: 'Tentou reordenar as camadas',
   },
+  global_search: {
+    running: 'Buscando no workspace',
+    done: 'Buscou no workspace',
+    failed: 'Tentou buscar no workspace',
+  },
 }
 
 // Ação e entidade valem em qualquer ordem dos tokens (create_agent e role_create); sem as duas, não há regra.
