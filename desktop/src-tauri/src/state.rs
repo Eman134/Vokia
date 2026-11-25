@@ -83,6 +83,9 @@ pub struct RequestContext {
     pub ping_seconds: Option<u64>,
     // Orquestrador que delegou e seguiu atendendo: a resposta final do fluxo vai para ele como mensagem, sem abrir turno.
     pub reply_to: Option<crate::events::Agent>,
+    // Correção de rumo (steering) enviada durante um turno ativo, sem esperar o término completo.
+    #[serde(default)]
+    pub steer: bool,
 }
 
 impl RequestContext {
@@ -100,6 +103,7 @@ impl RequestContext {
             resumed_run: None,
             ping_seconds: None,
             reply_to: None,
+            steer: false,
         }
     }
 }

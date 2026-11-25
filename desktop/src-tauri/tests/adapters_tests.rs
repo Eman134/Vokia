@@ -41,9 +41,15 @@ fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconheci
     let antigravity = ProviderAdapter::from_cli("antigravity", &providers).unwrap();
 
     assert!(matches!(claude, ProviderAdapter::Claude(_)));
-    assert!(matches!(codex, ProviderAdapter::Codex(_)));
+    assert!(matches!(codex, ProviderAdapter::CodexAppServer(_)));
     assert!(matches!(opencode, ProviderAdapter::OpenCode(_)));
     assert!(matches!(antigravity, ProviderAdapter::Antigravity(_)));
+
+    let mut codex_jsonl_cfg = providers.get("codex").unwrap();
+    codex_jsonl_cfg.protocol = crate::providers::ProviderProtocol::CodexJsonl;
+    let codex_jsonl = ProviderAdapter::from_config(codex_jsonl_cfg);
+    assert!(matches!(codex_jsonl, ProviderAdapter::Codex(_)));
+    assert!(!codex_jsonl.supports_live_session());
 
     let err = ProviderAdapter::from_cli("desconhecido", &providers).unwrap_err();
     assert!(
@@ -57,7 +63,7 @@ fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconheci
     assert!(!antigravity.supports_mcp());
 
     assert!(claude.supports_live_session());
-    assert!(!codex.supports_live_session());
+    assert!(codex.supports_live_session());
     assert!(!opencode.supports_live_session());
     assert!(!antigravity.supports_live_session());
 }

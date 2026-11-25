@@ -92,6 +92,7 @@ fn metricas_permanecem_intactas_apos_limpar_conversa() {
             thought_tokens: Some(if provider == "antigravity" { 300 } else { 0 }),
             cost_usd: None,
             is_fallback: Some(false),
+            ..Default::default()
         };
         let record = NewUsageRecord::from_turn_usage(
             occurred_at,
@@ -215,6 +216,7 @@ fn thought_tokens_e_cache_write_sao_separados_sem_inflar_input_tokens() {
         thought_tokens: Some(2_500),
         cost_usd: None,
         is_fallback: None,
+        ..Default::default()
     };
     let record =
         NewUsageRecord::from_turn_usage(ts, Some(1), None, "gemini", "card", &usage, 1_500);
@@ -406,6 +408,7 @@ fn agregacao_por_provedor_agente_modelo_filtros_e_economia() {
             thought_tokens: None,
             cost_usd: None,
             is_fallback: Some(false),
+            ..Default::default()
         },
         1_000,
     );

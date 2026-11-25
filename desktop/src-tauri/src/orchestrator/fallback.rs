@@ -474,7 +474,15 @@ pub(crate) async fn ask_with_fallback(
                     candidate.model.clone(),
                 );
                 adapter
-                    .run_fresh(Access::TextOnly, gate, &pid, &call, message, &console)
+                    .run_fresh(
+                        Access::TextOnly,
+                        gate,
+                        &pid,
+                        &call,
+                        message,
+                        &console,
+                        state.sessions.adapters(),
+                    )
                     .await
                     .map_err(FlowError::Claude)
             }

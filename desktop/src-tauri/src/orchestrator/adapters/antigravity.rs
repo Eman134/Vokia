@@ -362,6 +362,7 @@ pub(crate) fn parse_stream_output_with_provider(
                             thought_tokens,
                             cost_usd: resolved_cost,
                             is_fallback: None,
+                            ..Default::default()
                         });
                     }
                 }
@@ -465,6 +466,7 @@ pub(crate) fn parse_stream_output_with_provider(
                         cache_write_tokens,
                         thought_tokens,
                         cost_usd: resolved_cost,
+                        ..Default::default()
                     });
                 }
             }

@@ -51,6 +51,7 @@ impl ModelTiers {
 #[serde(rename_all = "kebab-case")]
 pub enum ProviderProtocol {
     ClaudeLive,
+    CodexAppServer,
     CodexJsonl,
     OpenCodeJson,
     AntigravityStream,
@@ -137,9 +138,9 @@ impl ProviderConfig {
             return ToolTransport::McpNative;
         }
         match self.protocol {
-            ProviderProtocol::ClaudeLive | ProviderProtocol::CodexJsonl => {
-                ToolTransport::McpNative
-            }
+            ProviderProtocol::ClaudeLive
+            | ProviderProtocol::CodexAppServer
+            | ProviderProtocol::CodexJsonl => ToolTransport::McpNative,
             ProviderProtocol::OpenCodeJson
             | ProviderProtocol::AntigravityStream
             | ProviderProtocol::GenericCli => ToolTransport::VokiaCli,
@@ -367,7 +368,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         ProviderConfig {
             id: "codex".to_string(),
             label: "Codex".to_string(),
-            protocol: ProviderProtocol::CodexJsonl,
+            protocol: ProviderProtocol::CodexAppServer,
             default_command: "codex".to_string(),
             default_model: "gpt-6-luna".to_string(),
             models: vec_str(&["gpt-6-luna", "gpt-5.6-terra", "gpt-5.6-luna"]),

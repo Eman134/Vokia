@@ -30,6 +30,8 @@ pub(crate) struct SendRequestArgs {
     pub item_id: Option<String>,
     pub channel_id: Option<i64>,
     pub attachments: Option<Vec<String>>,
+    #[serde(default)]
+    pub steer: bool,
 }
 
 #[derive(Deserialize)]
@@ -128,6 +130,7 @@ pub(crate) async fn send_request_exec(
     };
     let mut context = RequestContext::new(args.run_id, args.item_id, args.channel_id);
     context.attachments = attachment_ids;
+    context.steer = args.steer;
     match orchestrator::handle_request(app, &state, &text, args.to, args.project_id, context).await
     {
         Ok(outcome) => Ok(outcome),
@@ -312,6 +315,7 @@ pub async fn send_request(
     item_id: Option<String>,
     channel_id: Option<i64>,
     attachments: Option<Vec<String>>,
+    steer: Option<bool>,
 ) -> Result<RequestOutcome, String> {
     send_request_exec(
         &app,
@@ -323,6 +327,7 @@ pub async fn send_request(
             item_id,
             channel_id,
             attachments,
+            steer: steer.unwrap_or(false),
         },
     )
     .await

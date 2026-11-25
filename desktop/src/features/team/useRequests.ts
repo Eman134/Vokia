@@ -20,8 +20,8 @@ import { ASK_PROJECT_NOTICE, NO_PROJECT_NOTICE, resolveProject } from './project
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
 
-// 'queued' não é desfecho: o término do pedido enfileirado chega depois pelo evento request-settled.
-export type RunResult = Exclude<RequestOutcome, 'queued'> | 'cancelled'
+// 'queued' e 'steered' não são desfechos finais: o pedido segue no turno ou aguarda o evento request-settled.
+export type RunResult = Exclude<RequestOutcome, 'queued' | 'steered'> | 'cancelled'
 
 export interface QueuedRequest {
   id: number
@@ -106,6 +106,10 @@ export const useRequests = defineStore('requests', () => {
         if (request.onSettled === undefined || waiting.has(request.id)) {
           runCallback(() => request.onQueued?.(request.id))
         }
+        return
+      }
+      if (outcome === 'steered') {
+        waiting.delete(request.id)
         return
       }
       result = outcome

@@ -14,6 +14,7 @@ const AUTO_CONFIGURE_PROVIDER_COMMAND = 'auto_configure_provider'
 
 export type ProviderProtocol =
   | 'claude-live'
+  | 'codex-app-server'
   | 'codex-jsonl'
   | 'open-code-json'
   | 'antigravity-stream'

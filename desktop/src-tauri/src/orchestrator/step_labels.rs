@@ -155,7 +155,7 @@ pub fn label_for_antigravity_step(step: &Value) -> Option<String> {
 fn label_for_codex_item_with_home(item: &Value, home: Option<&str>) -> Option<String> {
     let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
     match item_type {
-        "command_execution" => {
+        "command_execution" | "commandExecution" => {
             if let Some(actions) = item
                 .get("commandActions")
                 .or_else(|| item.get("command_actions"))
@@ -169,11 +169,12 @@ fn label_for_codex_item_with_home(item: &Value, home: Option<&str>) -> Option<St
             }
             let cmd = item
                 .get("command")
+                .or_else(|| item.get("aggregatedCommand"))
                 .or_else(|| item.get("aggregated_command"))
                 .and_then(Value::as_str)?;
             label_for_command_with_home(cmd, home)
         }
-        "file_change" | "patch_apply" => {
+        "file_change" | "fileChange" | "patch_apply" | "patchApply" => {
             let path = item
                 .get("changes")
                 .and_then(Value::as_array)
@@ -185,14 +186,15 @@ fn label_for_codex_item_with_home(item: &Value, home: Option<&str>) -> Option<St
                 .unwrap_or("");
             label_for_action_with_home(StepAction::Edit { path }, home)
         }
-        "web_search" => {
+        "web_search" | "webSearch" => {
             let query = item
                 .get("query")
                 .or_else(|| item.pointer("/action/query"))
                 .and_then(Value::as_str);
             label_for_action_with_home(StepAction::WebSearch { query }, home)
         }
-        "mcp_tool_call" | "function_call" | "tool_use" => {
+        "mcp_tool_call" | "mcpToolCall" | "function_call" | "functionCall" | "tool_use"
+        | "toolUse" => {
             let name = first_str(&[
                 item.get("tool"),
                 item.get("name"),

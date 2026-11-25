@@ -23,7 +23,7 @@ mod turns;
 mod validation;
 pub(crate) mod work_steps;
 
-pub(crate) use adapters::cli_has_tools;
+pub(crate) use adapters::{cli_has_tools, test_persistent_provider};
 pub(crate) use archive::remove_archive;
 pub(crate) use emit::{
     emit_artifacts_changed, emit_backlog_changed, emit_feed_note, emit_message, reconcile_waiting,

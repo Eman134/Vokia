@@ -155,6 +155,11 @@ pub(super) async fn handle_request_from(
     if context.resumed_run.is_none() && is_agent_paused(app, project_id, &key.agent) {
         return Ok(RequestOutcome::Paused);
     }
+    if context.steer {
+        if let Ok(true) = state.sessions.steer_active_turn(&key, request).await {
+            return Ok(RequestOutcome::Steered);
+        }
+    }
     if !start_or_enqueue(app, state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
     }
@@ -1840,6 +1845,21 @@ async fn done_cleanup(
         &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
         project_id,
     );
+    let safe_dir_name: String = item_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let worktree_path = root.join(safe_dir_name);
+    app.state::<AppState>()
+        .sessions
+        .release_worktree(project_id, item_id, Some(&worktree_path))
+        .await;
     worktree::cleanup_done(Path::new(&project.path), &root, item_id)
         .await
         .map_err(FlowError::Worktree)

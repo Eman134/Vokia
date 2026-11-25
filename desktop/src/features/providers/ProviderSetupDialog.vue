@@ -23,6 +23,7 @@ import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const PROTOCOL_OPTIONS: readonly { label: string; value: ProviderProtocol }[] = [
   { label: 'Generic CLI', value: 'generic-cli' },
   { label: 'Claude Live', value: 'claude-live' },
+  { label: 'Codex App Server', value: 'codex-app-server' },
   { label: 'Codex JSONL', value: 'codex-jsonl' },
   { label: 'OpenCode JSON', value: 'open-code-json' },
   { label: 'Antigravity Stream', value: 'antigravity-stream' },
@@ -615,6 +616,10 @@ async function saveAddWithoutTest(): Promise<void> {
               :options="editingDraft.models"
               placeholder="Modelo avançado"
             />
+          </label>
+          <label class="flex flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">Protocolo</span>
+            <UiSelect v-model="editingDraft.protocol" :options="PROTOCOL_OPTIONS" label="Protocolo" />
           </label>
           <label class="flex flex-col gap-1.5">
             <span class="text-label font-medium text-muted">Transporte de ferramentas</span>

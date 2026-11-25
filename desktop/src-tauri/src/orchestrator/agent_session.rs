@@ -299,6 +299,7 @@ async fn run_step(
                                 effective_prompts,
                                 first,
                                 console,
+                                state.sessions.adapters(),
                             )
                             .await?
                     }
@@ -327,6 +328,7 @@ async fn run_step(
                         &call,
                         message,
                         console,
+                        state.sessions.adapters(),
                     )
                     .await
                     .map_err(FlowError::Claude)
@@ -345,6 +347,7 @@ async fn run_step(
                                 &call,
                                 &effective_prompts.opening,
                                 console,
+                                state.sessions.adapters(),
                             )
                             .await
                             .map_err(FlowError::Claude)
@@ -555,13 +558,14 @@ async fn fresh_reply(
     call: &AgentCall,
     message: &str,
     console: &ConsoleSink<'_>,
+    runtimes: &super::adapters::AdapterRuntimePool,
 ) -> Result<Reply, ClaudeError> {
     call.adapter
-        .run_fresh(access, gate, pid, call, message, console)
+        .run_fresh(access, gate, pid, call, message, console, runtimes)
         .await
 }
 
-fn encode_provider_session(
+pub(super) fn encode_provider_session(
     cli: &str,
     model: &str,
     item_id: Option<&str>,
@@ -570,7 +574,7 @@ fn encode_provider_session(
     format!("{}:{}:{}:{session_id}", cli, model, item_id.unwrap_or(""))
 }
 
-fn decode_provider_session(
+pub(super) fn decode_provider_session(
     stored: &str,
     cli: &str,
     model: &str,
@@ -817,7 +821,7 @@ pub(super) struct SessionStore<'a> {
 }
 
 impl SessionStore<'_> {
-    fn load(&self) -> Result<Option<String>, FlowError> {
+    pub(super) fn load(&self) -> Result<Option<String>, FlowError> {
         let state = self.app.state::<DbState>();
         let Some(db) = state.db() else {
             return Ok(None);
@@ -825,11 +829,11 @@ impl SessionStore<'_> {
         db.agent_session(&self.key).map_err(FlowError::SessionStore)
     }
 
-    fn save(&self, session_id: &str) -> Result<(), FlowError> {
+    pub(super) fn save(&self, session_id: &str) -> Result<(), FlowError> {
         self.write(|db| db.save_agent_session(&self.key, session_id))
     }
 
-    fn clear(&self) -> Result<(), FlowError> {
+    pub(super) fn clear(&self) -> Result<(), FlowError> {
         self.write(|db| db.clear_agent_session(&self.key))
     }
 
@@ -1351,6 +1355,10 @@ impl AgentCall {
             has_variables: false,
             collected: StdMutex::default(),
         }
+    }
+
+    pub(super) fn item_id(&self) -> Option<&str> {
+        self.item_id.as_deref()
     }
 
     pub(super) fn has_mcp(&self) -> bool {

@@ -1,6 +1,7 @@
 mod antigravity;
 mod claude;
 mod codex;
+pub(crate) mod codex_app_server;
 mod generic;
 mod opencode;
 
@@ -8,11 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::agents::Agent;
 use crate::claude::{
     classify_provider_error, cli_message, kill_process_tree, timeout_for, Access, ClaudeError,
     Reply,
@@ -20,16 +23,133 @@ use crate::claude::{
 use crate::mcp::McpSession;
 use crate::permissions::{PermissionGate, PermissionLevel};
 use crate::providers::{ProviderConfig, ProviderProtocol, ProviderRegistry, ToolTransport};
+use crate::session_key::SessionKey;
+use crate::usage::model::ProviderPlanUsage;
 
-use super::agent_session::{AgentCall, AgentSession, SessionStore};
+use super::agent_session::{
+    decode_provider_session, encode_provider_session, AgentCall, AgentSession, SessionStore,
+};
 use super::console::ConsoleSink;
 use super::error::FlowError;
 use super::prompts::StepPrompts;
 use super::session_pool::NO_PID;
 
+/// Pool genérico de runtimes persistentes dos adaptadores de provedores.
+/// Mantém detalhes específicos de cada protocolo encapsulados atrás da camada de adaptadores.
+#[derive(Default)]
+pub(crate) struct AdapterRuntimePool {
+    codex: codex_app_server::CodexIdleSessions,
+}
+
+impl AdapterRuntimePool {
+    pub(crate) async fn reap_idle(&self, is_externally_busy: impl Fn(&SessionKey) -> bool) {
+        let _ = self
+            .codex
+            .reap_idle(Instant::now(), is_externally_busy)
+            .await;
+    }
+
+    pub(crate) async fn archive_project(&self, project_id: i64) {
+        let _ = self.codex.archive_project(project_id).await;
+    }
+
+    pub(crate) async fn archive_agent(&self, agent: &Agent) {
+        let _ = self.codex.archive_agent(agent).await;
+    }
+
+    pub(crate) async fn archive_worktree(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        worktree_path: Option<&Path>,
+    ) {
+        let _ = self
+            .codex
+            .archive_worktree(project_id, item_id, worktree_path)
+            .await;
+    }
+
+    pub(crate) async fn archive_all(&self) {
+        let _ = self.codex.archive_all().await;
+    }
+
+    pub(crate) fn shutdown_all(&self) {
+        self.codex.shutdown_all_sync();
+    }
+
+    pub(crate) async fn steer_turn(
+        &self,
+        key: &SessionKey,
+        message: &str,
+    ) -> Result<bool, FlowError> {
+        self.codex
+            .steer_turn(key, message)
+            .await
+            .map_err(FlowError::Claude)
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn interrupt_turn(&self, key: &SessionKey) -> Result<bool, FlowError> {
+        self.codex
+            .interrupt_turn(key)
+            .await
+            .map_err(FlowError::Claude)
+    }
+
+    pub(crate) async fn discover_models(
+        &self,
+        protocol: ProviderProtocol,
+        program: &Path,
+        user_args: &[String],
+    ) -> Result<Option<Vec<String>>, String> {
+        match protocol {
+            ProviderProtocol::CodexAppServer => self
+                .codex
+                .list_models(program, user_args)
+                .await
+                .map(Some)
+                .map_err(|err| err.to_string()),
+            _ => Ok(None),
+        }
+    }
+
+    pub(crate) async fn read_rate_limits(
+        &self,
+        protocol: ProviderProtocol,
+        program: &Path,
+        user_args: &[String],
+        now_ms: u64,
+    ) -> Result<Option<ProviderPlanUsage>, String> {
+        match protocol {
+            ProviderProtocol::CodexAppServer => self
+                .codex
+                .read_rate_limits(program, user_args, now_ms)
+                .await
+                .map_err(|err| err.to_string()),
+            _ => Ok(None),
+        }
+    }
+}
+
+pub(crate) async fn test_persistent_provider(
+    config: &ProviderConfig,
+    program: &Path,
+    user_args: &[String],
+    model: &str,
+    limit: std::time::Duration,
+) -> Option<Result<String, ClaudeError>> {
+    match config.protocol {
+        ProviderProtocol::CodexAppServer => Some(
+            codex_app_server::test_connection(program, user_args, model, config, limit).await,
+        ),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::orchestrator) enum ProviderAdapter {
     Claude(ProviderConfig),
+    CodexAppServer(ProviderConfig),
     Codex(ProviderConfig),
     OpenCode(ProviderConfig),
     Antigravity(ProviderConfig),
@@ -40,6 +160,7 @@ impl ProviderAdapter {
     pub(in crate::orchestrator) fn from_config(config: ProviderConfig) -> Self {
         match config.protocol {
             ProviderProtocol::ClaudeLive => Self::Claude(config),
+            ProviderProtocol::CodexAppServer => Self::CodexAppServer(config),
             ProviderProtocol::CodexJsonl => Self::Codex(config),
             ProviderProtocol::OpenCodeJson => Self::OpenCode(config),
             ProviderProtocol::AntigravityStream => Self::Antigravity(config),
@@ -60,6 +181,7 @@ impl ProviderAdapter {
     pub(in crate::orchestrator) fn config(&self) -> &ProviderConfig {
         match self {
             Self::Claude(config)
+            | Self::CodexAppServer(config)
             | Self::Codex(config)
             | Self::OpenCode(config)
             | Self::Antigravity(config) => config,
@@ -85,7 +207,7 @@ impl ProviderAdapter {
     }
 
     pub(in crate::orchestrator) fn supports_live_session(&self) -> bool {
-        matches!(self, Self::Claude(_))
+        matches!(self, Self::Claude(_) | Self::CodexAppServer(_))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -99,16 +221,63 @@ impl ProviderAdapter {
         prompts: &StepPrompts,
         first: bool,
         console: &ConsoleSink<'_>,
+        runtimes: &AdapterRuntimePool,
     ) -> Result<Option<Reply>, FlowError> {
         match (self, access) {
             (Self::Claude(_), Access::Project(project)) => {
                 held.reply(project, gate, store, call, prompts, first, console)
                     .await
             }
+            (Self::CodexAppServer(provider), _) => {
+                let stored = store.load().ok().flatten();
+                let persisted_thread_id = stored.as_deref().and_then(|raw| {
+                    decode_provider_session(raw, &provider.id, &call.model, call.item_id())
+                });
+                let mcp_session = super::agent_session::open_mcp_headless(call)
+                    .map_err(|err| FlowError::Claude(err.with_cli(&provider.id)))?;
+                if let Some(session) = &mcp_session {
+                    call.begin_mcp_slot(session);
+                }
+                let result = runtimes
+                    .codex
+                    .run_persistent_turn(
+                        console.session_key().clone(),
+                        call.item_id().map(str::to_string),
+                        &call.program,
+                        &call.user_args,
+                        &call.role,
+                        &call.model,
+                        access,
+                        &prompts.opening,
+                        &prompts.follow_up,
+                        persisted_thread_id.as_deref(),
+                        Some(provider),
+                        mcp_session.as_ref(),
+                        Some(&gate),
+                        &held.pid,
+                        Some(console),
+                    )
+                    .await;
+                if let Some(session) = &mcp_session {
+                    call.finish_mcp_slot(session);
+                }
+                let reply = result.map_err(|err| FlowError::Claude(err.with_cli(&provider.id)))?;
+                if let Some(thread_id) = reply.session_id.as_deref() {
+                    store.save(&encode_provider_session(
+                        &provider.id,
+                        &call.model,
+                        call.item_id(),
+                        thread_id,
+                    ))?;
+                }
+                held.provider_key = Some((provider.id.clone(), call.model.clone()));
+                Ok(Some(reply))
+            }
             _ => Ok(None),
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::orchestrator) async fn run_fresh(
         &self,
         access: Access<'_>,
@@ -117,9 +286,36 @@ impl ProviderAdapter {
         call: &AgentCall,
         message: &str,
         console: &ConsoleSink<'_>,
+        runtimes: &AdapterRuntimePool,
     ) -> Result<Reply, ClaudeError> {
         match self {
             Self::Claude(_) => claude::run_fresh(access, gate, pid, call, message, console).await,
+            Self::CodexAppServer(provider) => {
+                let mcp_session = super::agent_session::open_mcp_headless(call)?;
+                if let Some(session) = &mcp_session {
+                    call.begin_mcp_slot(session);
+                }
+                let result = runtimes
+                    .codex
+                    .run_ephemeral_turn(
+                        &call.program,
+                        &call.user_args,
+                        &call.role,
+                        &call.model,
+                        access,
+                        message,
+                        Some(provider),
+                        mcp_session.as_ref(),
+                        Some(&gate),
+                        pid,
+                        Some(console),
+                    )
+                    .await;
+                if let Some(session) = &mcp_session {
+                    call.finish_mcp_slot(session);
+                }
+                result.map_err(|err| err.with_cli(&provider.id))
+            }
             Self::Codex(provider) => {
                 let mcp_session = super::agent_session::open_mcp_headless(call)?;
                 if let Some(session) = &mcp_session {

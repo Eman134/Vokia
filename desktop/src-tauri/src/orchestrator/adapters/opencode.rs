@@ -325,6 +325,7 @@ pub(crate) fn parse_json_output_with_provider(
             thought_tokens: acc_thought,
             cost_usd: acc_cost,
             is_fallback: None,
+            ..Default::default()
         })
     } else {
         None

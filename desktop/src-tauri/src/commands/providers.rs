@@ -227,29 +227,67 @@ pub(crate) async fn discover_provider_models_exec(
     let provider = providers.get(&id).map_err(|error| error.to_string())?;
     let cached = provider.models.clone();
 
-    let Some(discovery) = provider.discovery.as_ref() else {
-        return Ok(DiscoverModelsResult {
-            models: cached,
-            source: "cache".to_string(),
-            warning: None,
-        });
-    };
-
-    let live_result: Result<Vec<String>, String> = if let Some(cache_file) = discovery
-        .cache_file
-        .as_deref()
-        .filter(|path| !path.trim().is_empty())
+    let live_result: Result<Vec<String>, String> = if provider.protocol
+        == ProviderProtocol::CodexAppServer
     {
-        discover_from_cache_file(cache_file, discovery.json_path.as_deref())
-    } else if !discovery.args.is_empty() {
-        discover_from_command(
-            &provider.default_command,
-            &discovery.args,
-            discovery.json_path.as_deref(),
-        )
-        .await
+        let rpc_models = match resolve_program(&provider.default_command) {
+            Ok((program_path, base_args)) => {
+                if let Some(state) = app.try_state::<AppState>() {
+                    state
+                        .sessions
+                        .adapters()
+                        .discover_models(provider.protocol, &program_path, &base_args)
+                        .await
+                        .transpose()
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        };
+        match rpc_models {
+            Some(Ok(models)) if !models.is_empty() => Ok(models),
+            rpc_fallback => {
+                if let Some(cache_file) = provider
+                    .discovery
+                    .as_ref()
+                    .and_then(|d| d.cache_file.as_deref())
+                    .filter(|path| !path.trim().is_empty())
+                {
+                    let json_path = provider
+                        .discovery
+                        .as_ref()
+                        .and_then(|d| d.json_path.as_deref());
+                    discover_from_cache_file(cache_file, json_path)
+                } else {
+                    rpc_fallback.unwrap_or_else(|| Ok(Vec::new()))
+                }
+            }
+        }
     } else {
-        Ok(Vec::new())
+        let Some(discovery) = provider.discovery.as_ref() else {
+            return Ok(DiscoverModelsResult {
+                models: cached,
+                source: "cache".to_string(),
+                warning: None,
+            });
+        };
+        if let Some(cache_file) = discovery
+            .cache_file
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+        {
+            discover_from_cache_file(cache_file, discovery.json_path.as_deref())
+        } else if !discovery.args.is_empty() {
+            discover_from_command(
+                &provider.default_command,
+                &discovery.args,
+                discovery.json_path.as_deref(),
+            )
+            .await
+        } else {
+            Ok(Vec::new())
+        }
     };
 
     match live_result {
@@ -324,7 +362,7 @@ pub(crate) fn build_setup_prompt_exec(args: BuildSetupPromptArgs) -> String {
 
 Regras obrigatórias:
 - Nunca use shell (`sh -c`, `cmd /C`) nem pipe. Todas as flags devem ser explícitas em arrays.
-- Use `"protocol": "generic-cli"` para novas CLIs (ou `"claude-live"`, `"codex-jsonl"`, `"open-code-json"`, `"antigravity-stream"` se for compatível).
+- Use `"protocol": "generic-cli"` para novas CLIs (ou `"claude-live"`, `"codex-app-server"`, `"codex-jsonl"`, `"open-code-json"`, `"antigravity-stream"` se for compatível).
 - Defina `"toolTransport"`: `"mcp-native"` (se a CLI aceitar MCP por flag de sessão), `"vokia-cli"` (padrão para novas CLIs sem flag MCP por sessão) ou `"none"`.
 - Preencha `tiers` (`basic`, `intermediate`, `advanced`) com modelos válidos sugeridos ou compatíveis com a CLI.
 - Preencha `rateLimitPatterns` e `modelUnavailablePatterns` com trechos de erro esperados.
@@ -401,61 +439,73 @@ pub(crate) async fn test_provider_config_exec(
     let started = Instant::now();
     let ping_prompt = "Responda apenas OK.";
 
-    let result = match config.protocol {
-        ProviderProtocol::ClaudeLive => timeout(
-            Duration::from_secs(TEST_TIMEOUT_SECS),
-            claude_ask(&program_path, ping_prompt, "", &target_model),
-        )
-        .await
-        .map_err(|_| ClaudeError::Timeout(Duration::from_secs(TEST_TIMEOUT_SECS)))
-        .and_then(|inner| inner)
-        .map(|reply| reply.text),
-        _ => {
-            let args = build_test_args(&config, &base_args, &target_model, ping_prompt);
-            let stdin_prompt = match (&config.protocol, &config.generic) {
-                (ProviderProtocol::GenericCli, Some(spec)) if spec.prompt_via_stdin => {
-                    Some(ping_prompt)
-                }
-                _ => None,
-            };
-            let output = run_bounded_process_with_stdin(
-                &program_path,
-                &args,
-                stdin_prompt,
+    let result = if let Some(persistent_result) = crate::orchestrator::test_persistent_provider(
+        &config,
+        &program_path,
+        &base_args,
+        &target_model,
+        Duration::from_secs(TEST_TIMEOUT_SECS),
+    )
+    .await
+    {
+        persistent_result
+    } else {
+        match config.protocol {
+            ProviderProtocol::ClaudeLive => timeout(
                 Duration::from_secs(TEST_TIMEOUT_SECS),
+                claude_ask(&program_path, ping_prompt, "", &target_model),
             )
-            .await;
-
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-                    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-                    let combined = if stderr.trim().is_empty() {
-                        stdout.clone()
-                    } else if stdout.trim().is_empty() {
-                        stderr.clone()
-                    } else {
-                        format!("{stdout}\n{stderr}")
-                    };
-
-                    if let Some(classified) = classify_provider_error(
-                        &config.id,
-                        &target_model,
-                        &combined,
-                        &config.rate_limit_patterns,
-                        &config.model_unavailable_patterns,
-                    ) {
-                        Err(classified)
-                    } else if !out.status.success() {
-                        Err(ClaudeError::Exit {
-                            code: out.status.code(),
-                            message: combined,
-                        })
-                    } else {
-                        Ok(stdout.trim().to_string())
+            .await
+            .map_err(|_| ClaudeError::Timeout(Duration::from_secs(TEST_TIMEOUT_SECS)))
+            .and_then(|inner| inner)
+            .map(|reply| reply.text),
+            _ => {
+                let args = build_test_args(&config, &base_args, &target_model, ping_prompt);
+                let stdin_prompt = match (&config.protocol, &config.generic) {
+                    (ProviderProtocol::GenericCli, Some(spec)) if spec.prompt_via_stdin => {
+                        Some(ping_prompt)
                     }
+                    _ => None,
+                };
+                let output = run_bounded_process_with_stdin(
+                    &program_path,
+                    &args,
+                    stdin_prompt,
+                    Duration::from_secs(TEST_TIMEOUT_SECS),
+                )
+                .await;
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+                        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+                        let combined = if stderr.trim().is_empty() {
+                            stdout.clone()
+                        } else if stdout.trim().is_empty() {
+                            stderr.clone()
+                        } else {
+                            format!("{stdout}\n{stderr}")
+                        };
+
+                        if let Some(classified) = classify_provider_error(
+                            &config.id,
+                            &target_model,
+                            &combined,
+                            &config.rate_limit_patterns,
+                            &config.model_unavailable_patterns,
+                        ) {
+                            Err(classified)
+                        } else if !out.status.success() {
+                            Err(ClaudeError::Exit {
+                                code: out.status.code(),
+                                message: combined,
+                            })
+                        } else {
+                            Ok(stdout.trim().to_string())
+                        }
+                    }
+                    Err(message) => Err(ClaudeError::Reported(message)),
                 }
-                Err(message) => Err(ClaudeError::Reported(message)),
             }
         }
     };
@@ -695,7 +745,7 @@ fn build_test_args(
                 args.extend(["-p".to_string(), prompt.to_string()]);
             }
         }
-        ProviderProtocol::ClaudeLive => {}
+        ProviderProtocol::ClaudeLive | ProviderProtocol::CodexAppServer => {}
     }
     args
 }

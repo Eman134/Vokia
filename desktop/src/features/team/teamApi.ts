@@ -131,7 +131,7 @@ export function fetchCliProblem(): Promise<CliProblem | null> {
   return invoke<CliProblem | null>(CLI_PROBLEM_COMMAND)
 }
 
-export type RequestOutcome = 'finished' | 'failed' | 'queued' | 'paused'
+export type RequestOutcome = 'finished' | 'failed' | 'queued' | 'paused' | 'steered'
 
 export function sendRequest(
   text: string,
@@ -141,8 +141,18 @@ export function sendRequest(
   itemId?: string,
   channelId?: number,
   attachments?: string[],
+  steer?: boolean,
 ): Promise<RequestOutcome> {
-  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, { text, to, projectId, runId, itemId, channelId, attachments })
+  return invoke<RequestOutcome>(SEND_REQUEST_COMMAND, {
+    text,
+    to,
+    projectId,
+    runId,
+    itemId,
+    channelId,
+    attachments,
+    steer,
+  })
 }
 
 export function answerPermission(

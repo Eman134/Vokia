@@ -210,7 +210,7 @@ fn preload_candidate_trata_primario_stateless_identificando_protocolo() {
 
     let candidate = candidate.expect("deve resolver o primário configurado");
     assert_eq!(candidate.cli, "codex");
-    assert_eq!(candidate.provider.protocol, ProviderProtocol::CodexJsonl);
+    assert_eq!(candidate.provider.protocol, ProviderProtocol::CodexAppServer);
 
     let _ = std::fs::remove_dir_all(dir);
 }

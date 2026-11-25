@@ -17,6 +17,7 @@ pub enum RequestOutcome {
     Failed,
     Queued,
     Paused,
+    Steered,
 }
 
 #[derive(Debug)]

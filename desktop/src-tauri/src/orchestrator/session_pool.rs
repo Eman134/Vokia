@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -14,9 +15,11 @@ use crate::providers::{ProviderProtocol, ProviderRegistry};
 use crate::session_key::SessionKey;
 use crate::state::AppState;
 
+use super::adapters::AdapterRuntimePool;
 use super::agent_session::{
     open_preloaded_session, preload_candidate, preload_targets, AgentSession, SESSION_IDLE_LIMIT,
 };
+use super::error::FlowError;
 use super::fallback::{load_global_active_llm, load_global_fallback, resolve_program_for};
 use super::flow::{load_orchestration, profile_of};
 use super::project_context::{
@@ -58,9 +61,13 @@ impl SessionSlot {
 pub(crate) struct SessionPool {
     slots: StdMutex<HashMap<SessionKey, Arc<SessionSlot>>>,
     tasks: StdMutex<HashMap<i64, Arc<Mutex<()>>>>,
+    adapters: AdapterRuntimePool,
 }
 
 impl SessionPool {
+    pub(crate) fn adapters(&self) -> &AdapterRuntimePool {
+        &self.adapters
+    }
     // A tarefa do projeto é uma só (Cache guarda uma tarefa ativa): trocas de líder rodam uma de cada vez.
     pub(super) fn task_lock(&self, project_id: i64) -> Arc<Mutex<()>> {
         let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
@@ -95,17 +102,20 @@ impl SessionPool {
     // A mensagem em andamento termina e quem a roda fecha a sessão (ExchangeSessions::release);
     // se nenhuma roda, o lock livre fecha aqui. A marca nunca reabre a sessão.
     pub(crate) async fn close_project(&self, project_id: i64) {
+        self.adapters.archive_project(project_id).await;
         end_slots(self.matching(|key| key.project_id == project_id)).await;
     }
 
     // O mapa da orquestração é global: qualquer sessão, de qualquer projeto, guarda o prompt antigo.
     pub(crate) async fn close_everything(&self) {
+        self.adapters.archive_all().await;
         end_slots(self.matching(|_| true)).await;
     }
 
     // Instrução extra mudou: a sessão do agente e as das réplicas (<base>-<n>), em todos os projetos,
     // fecham no fim da troca em curso e reabrem com o prompt novo.
     pub(crate) async fn retire_agent(&self, agent: &Agent) {
+        self.adapters.archive_agent(agent).await;
         end_slots(self.matching(|key| is_agent_or_replica(key.agent.as_str(), agent))).await;
     }
 
@@ -120,12 +130,35 @@ impl SessionPool {
                 .collect();
             keys.iter().filter_map(|key| slots.remove(key)).collect()
         };
+        self.adapters.archive_agent(agent).await;
         end_slots(removed).await;
         db.clear_agent_sessions(&agent)
     }
 
+    // Libera threads persistentes associadas a um worktree antes de apagar a pasta (evita lock no Windows).
+    pub(crate) async fn release_worktree(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        worktree_path: Option<&Path>,
+    ) {
+        self.adapters
+            .archive_worktree(project_id, item_id, worktree_path)
+            .await;
+    }
+
+    // Entrega correção de rumo (steering) diretamente ao turno ativo quando o provedor suporta.
+    pub(crate) async fn steer_active_turn(
+        &self,
+        key: &SessionKey,
+        message: &str,
+    ) -> Result<bool, FlowError> {
+        self.adapters.steer_turn(key, message).await
+    }
+
     // Na saída do app o processo é encerrado pelo pid, sem esperar o lock de um passo em andamento.
     pub(crate) fn close_all(&self) {
+        self.adapters.shutdown_all();
         for slot in self.matching(|_| true) {
             let pid = slot.pid.swap(NO_PID, Ordering::SeqCst);
             if pid != NO_PID {
@@ -283,6 +316,7 @@ impl SessionPool {
                     }
                 }
                 ProviderProtocol::ClaudeLive
+                | ProviderProtocol::CodexAppServer
                 | ProviderProtocol::CodexJsonl
                 | ProviderProtocol::AntigravityStream
                 | ProviderProtocol::OpenCodeJson
@@ -296,7 +330,16 @@ impl SessionPool {
     }
 
     // Sessão com mensagem em andamento (lock tomado) fica; close_live mantém o session_id para o --resume.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) async fn reap_idle(&self, limit: Duration) {
+        self.reap_idle_with_guard(limit, |_| false).await;
+    }
+
+    pub(super) async fn reap_idle_with_guard(
+        &self,
+        limit: Duration,
+        is_externally_busy: impl Fn(&SessionKey) -> bool,
+    ) {
         for slot in self.matching(|_| true) {
             let Ok(mut guard) = Arc::clone(&slot.session).try_lock_owned() else {
                 continue;
@@ -305,6 +348,7 @@ impl SessionPool {
                 guard.close_live().await;
             }
         }
+        self.adapters.reap_idle(is_externally_busy).await;
     }
 }
 
@@ -316,9 +360,18 @@ pub(crate) fn spawn_idle_reaper(app: AppHandle) {
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
-            app.state::<AppState>()
+            let state = app.state::<AppState>();
+            state
                 .sessions
-                .reap_idle(SESSION_IDLE_LIMIT)
+                .reap_idle_with_guard(SESSION_IDLE_LIMIT, |key| {
+                    let has_permission = state.permissions.has_pending(key.project_id, &key.agent);
+                    let has_decision = state.decisions.lock().is_ok_and(|decisions| {
+                        decisions.values().any(|decision| {
+                            decision.project_id == key.project_id && decision.agent == key.agent
+                        })
+                    });
+                    has_permission || has_decision
+                })
                 .await;
         }
     });

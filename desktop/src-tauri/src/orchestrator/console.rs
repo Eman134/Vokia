@@ -127,6 +127,41 @@ impl<'a> ConsoleSink<'a> {
         );
     }
 
+    pub(super) fn session_key(&self) -> &SessionKey {
+        &self.key
+    }
+
+    pub(super) fn provider_usage(&self, usage: crate::usage::ProviderPlanUsage) {
+        if let Some(state) = self.app.try_state::<AppState>() {
+            state.usage.record_provider_usage(usage.clone());
+            if !usage.is_exhausted(crate::usage::DEFAULT_PAUSE_THRESHOLD) {
+                let released = state.usage.confirm_provider_renewed(&usage.provider_id, None);
+                if !released.returns.is_empty() {
+                    let mut overrides = state
+                        .temporary_overrides
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    let mut changed = false;
+                    for ret in released.returns {
+                        let should_remove = overrides.get(&ret.agent).is_some_and(|ov| {
+                            ov.reason == crate::orchestrator::fallback::OverrideReason::UsageLimit
+                                && ov.original_cli == ret.original_provider_id
+                        });
+                        if should_remove {
+                            overrides.remove(&ret.agent);
+                            changed = true;
+                        }
+                    }
+                    drop(overrides);
+                    if changed {
+                        crate::orchestrator::fallback::emit_overrides_changed(self.app, &state);
+                    }
+                }
+            }
+        }
+        let _ = emit(self.app, VokiaEvent::ProviderUsageUpdated { usage });
+    }
+
     pub(super) fn started(&self) {
         self.record(ConsoleLine::new(ConsoleKind::Start, TURN_STARTED_TEXT));
     }

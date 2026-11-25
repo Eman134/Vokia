@@ -229,6 +229,7 @@ pub(crate) fn parse_output(
             thought_tokens: None,
             cost_usd,
             is_fallback: None,
+            ..Default::default()
         })
     } else {
         None

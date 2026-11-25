@@ -21,6 +21,44 @@ pub(crate) fn setup(app: &mut App) -> Result<(), Box<dyn Error>> {
                 .map(|provider| provider.default_command)
         });
         crate::usage::readers::register_default_readers(&state.usage, Some(codex_command));
+        // Sobrescreve o leitor do Codex para reaproveitar o codex app-server compartilhado quando ativo.
+        let handle_rpc = app.handle().clone();
+        let shared_codex_reader: crate::usage::OptionalUsageReaderFn =
+            std::sync::Arc::new(move || {
+                let handle = handle_rpc.clone();
+                Box::pin(async move {
+                    let now_ms = crate::usage::now_millis();
+                    let provider_cfg = handle
+                        .try_state::<providers::ProviderRegistry>()
+                        .and_then(|registry| registry.get("codex").ok());
+                    if let (Some(cfg), Some(app_state)) =
+                        (provider_cfg.as_ref(), handle.try_state::<crate::state::AppState>())
+                    {
+                        if let Some(tokens) = shlex::split(cfg.default_command.trim()) {
+                            if let Some((bin, args)) = tokens.split_first() {
+                                if let Ok(program) = which::which(bin) {
+                                    if let Ok(Some(usage)) = app_state
+                                        .sessions
+                                        .adapters()
+                                        .read_rate_limits(cfg.protocol, &program, args, now_ms)
+                                        .await
+                                    {
+                                        return Ok(Some(usage));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let config = crate::usage::readers::codex::CodexReaderConfig {
+                        command: provider_cfg.map(|p| p.default_command),
+                        ..crate::usage::readers::codex::CodexReaderConfig::default()
+                    };
+                    crate::usage::readers::codex::read_codex_usage(&config, now_ms).await
+                })
+            });
+        state
+            .usage
+            .register_optional_reader("codex", shared_codex_reader);
     }
     app.manage(DbState::open(&data_dir));
     {

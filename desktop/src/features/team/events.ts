@@ -104,6 +104,8 @@ export interface TurnUsage {
   thoughtTokens?: number
   costUsd?: number
   isFallback?: boolean
+  contextTokens?: number
+  contextWindow?: number
 }
 
 export interface VokiaMessage {

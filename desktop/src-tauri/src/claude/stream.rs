@@ -34,6 +34,10 @@ pub struct TurnUsage {
     pub cost_usd: Option<f64>,
     #[serde(default, rename = "isFallback", skip_serializing_if = "Option::is_none")]
     pub is_fallback: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }
 
 pub struct Reply {
@@ -216,6 +220,7 @@ impl CliResponse {
             thought_tokens: None,
             cost_usd,
             is_fallback: None,
+            ..Default::default()
         })
     }
 }
