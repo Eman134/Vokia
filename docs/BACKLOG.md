@@ -165,6 +165,29 @@ Itens do [plano de UI/UX](plano-ui-ux.md) de 2026-11-24 (UX-01 a UX-21, nesta or
 | 081 | Visão em lista dos artefatos | Alterna a grade de folhas por uma lista compacta, uma linha por artefato, para consulta. | [081](backlog/081.md) |
 | 082 | Plano leva ao card ligado | O plano mostra o card ligado e a coluna dele, com um link que abre o card no quadro. | [082](backlog/082.md) |
 
+## I · Provedores, cotas, rastreamento e busca
+
+Itens da [pesquisa de orquestradores e OpenBot](pesquisa-orquestradores-e-openbot.md) de 2026-11-25, cobrindo os quatro provedores iniciais (Claude, Codex, OpenCode e Gemini), seletores, cotas (5 h / semanal / ritmo), estatísticas, rastreamento de etapas, anti-abandono e busca. A priorização por ondas (A a D) está na seção 4.6 da pesquisa.
+
+| ID | Nome | O que faz | Documento |
+| --- | --- | --- | --- |
+| 083 | Motor unificado de cotas multi-provedor com janelas e ritmo | Unifica limites de plano (5 h, semanal, mensal e grupos) para todos os provedores com `UsageReadGate` contra 429, indicador de ritmo (*pace*) e failover com retorno automático. | [083](backlog/083.md) |
+| 084 | Leitores de cota para Claude, Codex, OpenCode Go e Gemini | Implementa a leitura real de cotas de cada um dos quatro provedores para alimentar o motor unificado. | [084](backlog/084.md) |
+| 085 | Seletor de provedor, modelo e esforço estilo OpenBot | Evolui o seletor de LLM para abas/trilho dos quatro provedores com status vivo, busca, badge Grátis, esforço de raciocínio e aviso inline de limite. | [085](backlog/085.md) |
+| 086 | Seletor pesquisável de agentes reutilizável (`AgentPicker`) | Cria um popover pesquisável de agentes com avatar, papel, provedor ativo e contador de fila para a Barra de Ação, Backlog, Estatísticas e Conversas. | [086](backlog/086.md) |
+| 087 | Banco de estatísticas de uso desacoplado e consultas por período | Persiste tokens, `cache_write`, `thought_tokens` e custo equivalente em tabela SQLite independente das conversas, com consultas de 7/14/30/90 dias. | [087](backlog/087.md) |
+| 088 | Plano vivo de etapas por turno multi-provedor | Normaliza o checklist interno do turno (Claude, Codex, OpenCode e Gemini) em um card vivo único na Conversa e no painel "Acontecendo agora". | [088](backlog/088.md) |
+| 089 | Motor anti-abandono e continuação automática de turnos | Impede que agentes parem no meio com etapas abertas, anúncios sem ação (PT-BR/EN) ou após queda/compactação, com proteção contra loop e respeito a limites. | [089](backlog/089.md) |
+| 090 | Rótulos humanos de passos em tempo real (`step_labels`) | Traduz chamadas de ferramentas e comandos de terminal em frases legíveis em PT-BR com segredos redigidos. | [090](backlog/090.md) |
+| 091 | Captura compacta de etapas de trabalho (`[work steps]`) para handoff | Registra resumo compacto de comandos, arquivos e ferramentas por turno para o pacote de handoff de 32 KB na troca de provedor ou rotação de sessão. | [091](backlog/091.md) |
+| 092 | Adaptador Codex persistente via `codex app-server` | Migra o Codex de `codex exec` efêmero para JSON-RPC persistente com pool ocioso, cache MCP de 30 min, resume, steering e cotas nativas. | [092](backlog/092.md) |
+| 093 | Cliente ACP em Rust para OpenCode e Gemini com relay MCP local | Unifica OpenCode (`opencode acp`) e Gemini (`antigravity acp` + opção `gemini`) sobre ACP com relay HTTP local para MCP e rótulo unificado Gemini. | [093](backlog/093.md) |
+| 094 | Fluxo assistido de conexão, verificação e variáveis de provedores | Diferencia instalação de autenticação, oferece login nativo assistido das CLIs sem guardar senhas e suporta variáveis/gateways opcionais por provedor. | [094](backlog/094.md) |
+| 095 | Paleta de busca global (`⌘K` / `Ctrl+K`) com índice FTS5 | Busca transversal ao workspace (projetos, cards, agentes, planos, artefatos, memórias, mensagens e ações) com SQLite FTS5. | [095](backlog/095.md) |
+| 096 | Busca sob demanda de comandos (`command_search`) e histórico (`history_search` / `history_read`) | Mantém `tools/list` enxuto com busca de comandos e permite que agentes consultem histórico antigo e `[work steps]` sem gastar LLM para resumir. | [096](backlog/096.md) |
+| 097 | Pesquisa web unificada para provedores sem busca nativa | Preserva busca nativa em Claude/Codex/Gemini (mantendo *prompt cache*) e oferece `web_search` via provedor auxiliar ou MCP para OpenCode e CLIs genéricas. | [097](backlog/097.md) |
+| 098 | Revisão assíncrona de memórias e sugestão de skills em background | Extrai memórias duráveis e sugestões de `SKILL.md` em segundo plano usando modelo `Basic`, com aprovação humana na barra de ação. | [098](backlog/098.md) |
+
 ## Pendências do diagrama
 
 Sete pendências foram levantadas no diagrama; a 7 foi removida porque o modo "desligada" não existe. As decisões já aceitas e as pendências abertas (PEN) estão em [PENDENCIAS.md](PENDENCIAS.md). Os requisitos abaixo citam cada ponto como `Pendência do diagrama (n)`.
