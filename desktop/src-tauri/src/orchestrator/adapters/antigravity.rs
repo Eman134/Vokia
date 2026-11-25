@@ -127,9 +127,27 @@ pub(super) async fn run_turn(
                         }
                     }
                     activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                    activity.current_step_label = None;
                     console.live_activity(activity.clone());
-                } else if matches!(step_type, "tool_use" | "tool_call") {
+                } else if matches!(step_type, "tool_use" | "tool_call" | "command" | "web_search") {
+                    activity.current_step_label =
+                        crate::orchestrator::step_labels::label_for_antigravity_step(step);
                     console.live_activity(activity.clone());
+                }
+            } else if value.get("type").and_then(Json::as_str) == Some("assistant") {
+                if let Some(blocks) = value.pointer("/message/content").and_then(Json::as_array) {
+                    let mut updated = false;
+                    for block in blocks {
+                        if block.get("type").and_then(Json::as_str) == Some("tool_use") {
+                            let name = block.get("name").and_then(Json::as_str).unwrap_or("");
+                            activity.current_step_label =
+                                crate::orchestrator::step_labels::label_for_tool(name, &block["input"]);
+                            updated = true;
+                        }
+                    }
+                    if updated {
+                        console.live_activity(activity.clone());
+                    }
                 }
             }
         },

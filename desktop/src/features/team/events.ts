@@ -58,6 +58,7 @@ export interface TurnActivity {
   thinkingMs?: number
   thinkingText?: string
   tools: ToolActivity[]
+  currentStepLabel?: string
 }
 
 export interface RequestProposal {

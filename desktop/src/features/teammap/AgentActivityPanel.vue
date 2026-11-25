@@ -58,6 +58,10 @@ function projectNames(runs: readonly AgentRun[]): string[] {
 function runSummary(run: AgentRun): string {
   return run.itemId === null ? run.projectName : `${run.projectName} · ${run.itemId}${run.itemTitle ? ` ${run.itemTitle}` : ''}`
 }
+
+function runStepLabel(run: AgentRun): string | undefined {
+  return feed.stepLabelOf(run.instanceId, run.projectId)
+}
 </script>
 
 <template>
@@ -86,13 +90,30 @@ function runSummary(run: AgentRun): string {
             <li
               v-for="run in activity.runsOf(agent)"
               :key="run.instanceId + run.projectId"
-              class="truncate text-small text-ink"
-              :title="runSummary(run)"
+              class="flex min-w-0 flex-col"
             >
-              {{ runSummary(run) }}
+              <span class="truncate text-small text-ink" :title="runSummary(run)">
+                {{ runSummary(run) }}
+              </span>
+              <span
+                v-if="runStepLabel(run)"
+                class="truncate text-tiny text-muted"
+                :title="runStepLabel(run)"
+                data-testid="teammap-step-label"
+              >
+                {{ runStepLabel(run) }}
+              </span>
             </li>
           </ul>
         </template>
+        <p
+          v-else-if="feed.stepLabelOf(agent)"
+          class="truncate text-tiny text-muted"
+          :title="feed.stepLabelOf(agent)"
+          data-testid="teammap-step-label"
+        >
+          {{ feed.stepLabelOf(agent) }}
+        </p>
       </li>
     </ul>
   </section>

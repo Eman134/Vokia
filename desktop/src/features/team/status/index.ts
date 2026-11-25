@@ -64,18 +64,18 @@ export function needsYouCopy(): StatusCopy {
   }
 }
 
-export function workingCopy(agents: readonly AgentProfile[]): StatusCopy {
+export function workingCopy(agents: readonly AgentProfile[], stepLabel?: string): StatusCopy {
   if (agents.length > 1) {
     return {
       status: `${agents.length} em paralelo`,
-      detail: '',
+      detail: stepLabel ?? '',
       placeholder: 'Peça algo e escolha o projeto',
     }
   }
   const [agent] = agents
   return {
-    status: `${agent.name} trabalhando`,
-    detail: 'um agente',
+    status: stepLabel ? agent.name : `${agent.name} trabalhando`,
+    detail: stepLabel ?? 'um agente',
     placeholder: `Mensagem para @${agent.name}`,
   }
 }

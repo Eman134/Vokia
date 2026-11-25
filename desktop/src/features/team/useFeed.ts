@@ -340,6 +340,13 @@ export const useFeed = defineStore('feed', () => {
     return liveActivity.value[key]
   }
 
+  function stepLabelOf(agent: Agent, projectId?: number): string | undefined {
+    const resolvedProjectId = projectId ?? projects.selected?.id ?? lastProject.value[agent] ?? null
+    if (resolvedProjectId === null) return undefined
+    const label = liveActivity.value[projectAgentKey(resolvedProjectId, agent)]?.currentStepLabel?.trim()
+    return label ? label : undefined
+  }
+
   function projectsOf(agent: Agent): number[] {
     return Object.entries(activity.value)
       .filter(([key, state]) => state !== 'idle' && key.endsWith(`:${agent}`))
@@ -402,6 +409,7 @@ export const useFeed = defineStore('feed', () => {
     pendingSince,
     pendingAgents,
     liveActivityOf,
+    stepLabelOf,
     activeAgents,
     timeline,
     screen,

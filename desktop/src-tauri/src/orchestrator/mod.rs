@@ -15,6 +15,7 @@ mod prompts;
 mod runs;
 mod session_policy;
 mod session_pool;
+pub(crate) mod step_labels;
 mod text_fallback;
 mod turns;
 mod validation;

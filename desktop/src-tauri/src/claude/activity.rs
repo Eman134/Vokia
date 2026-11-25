@@ -136,6 +136,8 @@ pub struct TurnActivity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_text: Option<String>,
     pub tools: Vec<ToolActivity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_step_label: Option<String>,
 }
 
 struct OpenTool {
@@ -149,6 +151,7 @@ pub(super) struct ActivityParser {
     thinking_ms: Option<u64>,
     thinking_text: Option<String>,
     tools: Vec<ToolActivity>,
+    current_step_label: Option<String>,
     open: HashMap<String, OpenTool>,
 }
 
@@ -159,6 +162,7 @@ impl ActivityParser {
             thinking_ms: None,
             thinking_text: None,
             tools: Vec::new(),
+            current_step_label: None,
             open: HashMap::new(),
         }
     }
@@ -187,6 +191,7 @@ impl ActivityParser {
             thinking_ms: self.thinking_ms,
             thinking_text: self.thinking_text.clone(),
             tools: self.tools.clone(),
+            current_step_label: self.current_step_label.clone(),
         }
     }
 
@@ -195,6 +200,7 @@ impl ActivityParser {
             thinking_ms: self.thinking_ms,
             thinking_text: self.thinking_text,
             tools: self.tools,
+            current_step_label: None,
         }
     }
 
@@ -221,6 +227,9 @@ impl ActivityParser {
                 .as_u64()
                 .unwrap_or_else(|| since_last_line_ms.max(MIN_CLOCK_THINKING_MS));
             self.thinking_ms = Some(self.thinking_ms.unwrap_or(0).saturating_add(spent));
+            if !opened && self.open.is_empty() {
+                self.current_step_label = None;
+            }
             changed = true;
         }
         if !thinking_texts.is_empty() {
@@ -252,6 +261,7 @@ impl ActivityParser {
         let category = category_of(name, input);
         let (added, removed) = written_lines(name, input);
         let change = change_of(name, input);
+        self.current_step_label = crate::orchestrator::step_labels::label_for_tool(name, input);
         self.open.insert(
             call_id.to_string(),
             OpenTool {

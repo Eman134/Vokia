@@ -832,3 +832,37 @@ fn descricao_passa_pelo_mesmo_filtro_do_alvo() {
     let long = run_tool("Bash", json!({ "command": "ls", "description": "x".repeat(TEXT_MAX_CHARS + 100) }));
     assert_eq!(long.description.unwrap().chars().count(), TEXT_MAX_CHARS);
 }
+
+#[test]
+fn snapshot_acompanha_current_step_label_ao_vivo_e_finish_limpa() {
+    let mut feed = Feed::new();
+    feed.push(assistant(vec![tool_use(
+        "t1",
+        "Read",
+        json!({ "file_path": r"C:\Users\Kayke\Vokia\desktop\src-tauri\src\providers.rs" }),
+    )]));
+    let snap_read = feed.parser.snapshot();
+    assert_eq!(snap_read.current_step_label.as_deref(), Some("Lendo providers.rs"));
+    let serialized = serde_json::to_value(&snap_read).unwrap();
+    assert_eq!(serialized["currentStepLabel"], "Lendo providers.rs");
+
+    feed.push(user(vec![result_block("t1", false)]));
+    feed.push(assistant(vec![tool_use(
+        "t2",
+        "Bash",
+        json!({ "command": r#"bash -lc "cd desktop && rg rate_limit src/""# }),
+    )]));
+    assert_eq!(
+        feed.parser.snapshot().current_step_label.as_deref(),
+        Some("Buscando texto nos arquivos")
+    );
+
+    feed.push(user(vec![result_block("t2", false)]));
+    feed.push(assistant(vec![json!({ "type": "thinking", "thinking": "analisando" })]));
+    assert_eq!(feed.parser.snapshot().current_step_label, None);
+
+    let done = feed.finish();
+    assert_eq!(done.current_step_label, None);
+    let done_json = serde_json::to_value(&done).unwrap();
+    assert!(done_json.get("currentStepLabel").is_none());
+}

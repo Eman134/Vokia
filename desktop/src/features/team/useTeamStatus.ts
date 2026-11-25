@@ -54,7 +54,10 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   )
   const copy = computed(() => {
     if (status.value === 'working') {
-      return workingCopy(feed.activeAgents)
+      const stepLabel = feed.activeAgents
+        .map((agent) => feed.stepLabelOf(agent.id))
+        .find((label): label is string => label !== undefined)
+      return workingCopy(feed.activeAgents, stepLabel)
     }
     if (status.value === 'error') {
       const last = lastOutcome.value

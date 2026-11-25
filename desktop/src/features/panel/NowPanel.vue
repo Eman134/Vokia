@@ -92,12 +92,12 @@ watch(workingRows, (active) => {
             <UiBadge :status="BADGE_BY_STATUS[row.activity.status]" :label="row.activity.status" />
           </span>
           <span class="wrap-break-word line-clamp-1 text-caption text-muted">{{ row.activity.task ?? NO_TASK_TEXT }}</span>
-          <span class="flex items-center gap-1.5 text-caption text-ink">
+          <span class="flex min-w-0 items-center gap-1.5 text-caption text-ink">
             <span
-              class="size-1.75 rounded-full"
+              class="size-1.75 shrink-0 rounded-full"
               :class="presenceOf(feed.stateOf(row.agent.id), control.isPaused(row.agent.id)).dot"
             />
-            {{ row.activity.step }}
+            <span class="min-w-0 truncate" :title="row.activity.step">{{ row.activity.step }}</span>
           </span>
         </span>
         <UiButton variant="quiet" size="sm" @press="feed.togglePause(row.agent.id)">

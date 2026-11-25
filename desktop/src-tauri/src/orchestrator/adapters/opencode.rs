@@ -104,8 +104,11 @@ pub(super) async fn run_turn(
                     }
                 }
                 activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                activity.current_step_label = None;
                 console.live_activity(activity.clone());
-            } else if kind == "tool_use" || part_type == "tool_use" {
+            } else if kind == "tool_use" || part_type == "tool_use" || part_type == "tool" {
+                activity.current_step_label =
+                    crate::orchestrator::step_labels::label_for_opencode_event(&value);
                 console.live_activity(activity.clone());
             }
         },

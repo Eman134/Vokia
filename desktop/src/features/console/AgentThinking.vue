@@ -42,22 +42,29 @@ const written = computed(() => {
 const preview = computed(() =>
   props.state === 'thinking' ? props.activity?.thinkingText?.trim() || written.value : undefined,
 )
+const stepLabel = computed(() =>
+  props.state === 'thinking' ? props.activity?.currentStepLabel?.trim() || undefined : undefined,
+)
 const label = computed(() => {
   if (props.state !== 'thinking') {
     return SENDING_LABEL
   }
+  const base = stepLabel.value ?? THINKING_LABEL
   if (props.since === undefined) {
-    return THINKING_LABEL
+    return base
   }
-  return `${THINKING_LABEL} ${formatClock(Math.max(0, now.value - props.since))}`
+  const clock = formatClock(Math.max(0, now.value - props.since))
+  return stepLabel.value ? `${base} · ${clock}` : `${base} ${clock}`
 })
 </script>
 
 <template>
   <div class="flex min-w-0 max-w-xl flex-col gap-1">
-    <span class="flex items-center gap-2 text-caption text-muted">
-      {{ agent.name }} · {{ label }}
-      <span class="flex items-center gap-1" aria-hidden="true">
+    <span class="flex min-w-0 items-center gap-2 text-caption text-muted">
+      <span class="min-w-0 truncate" :title="`${agent.name} · ${label}`" data-testid="agent-thinking-label">
+        {{ agent.name }} · {{ label }}
+      </span>
+      <span class="flex shrink-0 items-center gap-1" aria-hidden="true">
         <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
       </span>
     </span>

@@ -80,7 +80,7 @@ async function submit(): Promise<void> {
     <section :aria-label="NOW_TITLE">
       <p class="text-caption text-muted">{{ NOW_TITLE }}</p>
       <p class="wrap-break-word line-clamp-3 text-label text-ink">{{ task ?? NO_TASK_TEXT }}</p>
-      <p class="text-caption text-muted" data-testid="agent-now-step">{{ step }}</p>
+      <p class="truncate text-caption text-muted" :title="step" data-testid="agent-now-step">{{ step }}</p>
     </section>
     <section :aria-label="RECENT_TITLE">
       <p class="text-caption text-muted">{{ RECENT_TITLE }}</p>

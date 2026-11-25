@@ -66,7 +66,19 @@ export function useAgentActivity(agent: Agent) {
     }
     return feed.stateOf(agent) === 'idle' ? 'livre' : 'trabalhando'
   })
-  const step = computed(() => (status.value === 'pausado' ? PAUSED_STEP : STATE_LABELS[feed.stateOf(agent)]))
+  const step = computed(() => {
+    if (status.value === 'pausado') {
+      return PAUSED_STEP
+    }
+    const state = feed.stateOf(agent)
+    if (state === 'thinking' || state === 'sending') {
+      const liveStep = feed.stepLabelOf(agent)
+      if (liveStep !== undefined) {
+        return liveStep
+      }
+    }
+    return STATE_LABELS[state]
+  })
 
   return { task, since, recent, queue, doneToday, status, step }
 }

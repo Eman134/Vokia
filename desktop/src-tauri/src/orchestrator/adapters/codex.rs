@@ -98,8 +98,20 @@ pub(super) async fn run_turn(
                         }
                     }
                     activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                    activity.current_step_label = None;
                     console.live_activity(activity.clone());
-                } else if matches!(item_type, "command_execution" | "mcp_tool_call" | "function_call" | "tool_use") {
+                } else if matches!(
+                    item_type,
+                    "command_execution"
+                        | "mcp_tool_call"
+                        | "function_call"
+                        | "tool_use"
+                        | "file_change"
+                        | "patch_apply"
+                        | "web_search"
+                ) {
+                    activity.current_step_label =
+                        crate::orchestrator::step_labels::label_for_codex_item(item);
                     console.live_activity(activity.clone());
                 }
             }
