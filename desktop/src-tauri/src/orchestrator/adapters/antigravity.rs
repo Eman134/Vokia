@@ -97,6 +97,7 @@ pub(super) async fn run_turn(
         serde_json::json!({"event": "user", "message": {"content": format!("{role}\n\n{message}")}})
     );
     let mut activity = TurnActivity::default();
+    let mut plan_state = crate::orchestrator::turn_plan::ClaudePlanState::default();
     let mut last_at = std::time::Instant::now();
     let stdout = super::run_cli_process(
         command,
@@ -111,6 +112,12 @@ pub(super) async fn run_turn(
             let Ok(value) = serde_json::from_str::<Json>(line.trim()) else {
                 return;
             };
+            if let Some(plan) = crate::orchestrator::turn_plan::plan_from_acp_notification(&value) {
+                activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                console.turn_plan(plan);
+                console.live_activity(activity.clone());
+                return;
+            }
             if value.get("event").and_then(Json::as_str) == Some("step_update") {
                 let step = &value["step_update"];
                 let step_type = step.get("step_type").and_then(Json::as_str).unwrap_or("");
@@ -130,6 +137,10 @@ pub(super) async fn run_turn(
                     activity.current_step_label = None;
                     console.live_activity(activity.clone());
                 } else if matches!(step_type, "tool_use" | "tool_call" | "command" | "web_search") {
+                    if let Some(plan) = extract_antigravity_step_plan(&mut plan_state, step) {
+                        activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                        console.turn_plan(plan);
+                    }
                     activity.current_step_label =
                         crate::orchestrator::step_labels::label_for_antigravity_step(step);
                     console.live_activity(activity.clone());
@@ -139,7 +150,17 @@ pub(super) async fn run_turn(
                     let mut updated = false;
                     for block in blocks {
                         if block.get("type").and_then(Json::as_str) == Some("tool_use") {
+                            let call_id = block.get("id").and_then(Json::as_str).unwrap_or("");
                             let name = block.get("name").and_then(Json::as_str).unwrap_or("");
+                            if let Some(plan) = extract_tool_plan(
+                                &mut plan_state,
+                                call_id,
+                                name,
+                                &block["input"],
+                            ) {
+                                activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                                console.turn_plan(plan);
+                            }
                             activity.current_step_label =
                                 crate::orchestrator::step_labels::label_for_tool(name, &block["input"]);
                             updated = true;
@@ -149,11 +170,87 @@ pub(super) async fn run_turn(
                         console.live_activity(activity.clone());
                     }
                 }
+            } else if value.get("type").and_then(Json::as_str) == Some("user") {
+                if let Some(blocks) = value.pointer("/message/content").and_then(Json::as_array) {
+                    let outcome = value.get("tool_use_result");
+                    for block in blocks {
+                        if block.get("type").and_then(Json::as_str) == Some("tool_result") {
+                            if let Some(id) = block.get("tool_use_id").and_then(Json::as_str) {
+                                let is_error =
+                                    block.get("is_error").and_then(Json::as_bool) == Some(true);
+                                if let Some(plan) =
+                                    crate::orchestrator::turn_plan::fold_claude_plan_result(
+                                        &mut plan_state,
+                                        id,
+                                        block.get("content"),
+                                        outcome,
+                                        is_error,
+                                    )
+                                {
+                                    activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                                    console.turn_plan(plan);
+                                    console.live_activity(activity.clone());
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
     )
     .await?;
-    parse_stream_output_with_provider(&stdout, Some(provider), model)
+    let mut reply = parse_stream_output_with_provider(&stdout, Some(provider), model)?;
+    activity.current_step_label = None;
+    reply.activity = activity;
+    Ok(reply)
+}
+
+fn extract_antigravity_step_plan(
+    state: &mut crate::orchestrator::turn_plan::ClaudePlanState,
+    step: &Json,
+) -> Option<crate::orchestrator::turn_plan::TurnPlan> {
+    let name = step
+        .get("tool_name")
+        .or_else(|| step.get("name"))
+        .or_else(|| step.get("tool"))
+        .or_else(|| step.pointer("/tool_call/name"))
+        .or_else(|| step.pointer("/tool_use/name"))
+        .and_then(Json::as_str)?;
+    let call_id = step
+        .get("tool_call_id")
+        .or_else(|| step.get("id"))
+        .and_then(Json::as_str)
+        .unwrap_or("");
+    let raw_input = step
+        .get("tool_input")
+        .or_else(|| step.get("input"))
+        .or_else(|| step.get("arguments"))
+        .or_else(|| step.get("args"))
+        .or_else(|| step.pointer("/tool_call/input"))
+        .or_else(|| step.pointer("/tool_call/arguments"))
+        .or_else(|| step.pointer("/tool_use/input"));
+    let parsed_string = raw_input
+        .and_then(Json::as_str)
+        .and_then(|s| serde_json::from_str::<Json>(s).ok());
+    let input = parsed_string
+        .as_ref()
+        .or(raw_input)
+        .unwrap_or(&Json::Null);
+    extract_tool_plan(state, call_id, name, input)
+}
+
+fn extract_tool_plan(
+    state: &mut crate::orchestrator::turn_plan::ClaudePlanState,
+    call_id: &str,
+    name: &str,
+    input: &Json,
+) -> Option<crate::orchestrator::turn_plan::TurnPlan> {
+    if name.eq_ignore_ascii_case("update_steps") {
+        let steps = input.get("steps").and_then(Json::as_array)?;
+        let plan = crate::orchestrator::turn_plan::plan_from_acp_entries(steps);
+        return (!plan.is_empty()).then_some(plan);
+    }
+    crate::orchestrator::turn_plan::fold_claude_plan_call(state, call_id, name, input)
 }
 
 #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes

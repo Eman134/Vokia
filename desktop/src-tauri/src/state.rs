@@ -9,6 +9,7 @@ use crate::claude::CliProblem;
 use crate::console_log::ConsoleLog;
 use crate::events::{Agent, AgentState};
 use crate::orchestrator::fallback::{CooldownTracker, TemporaryOverride};
+use crate::orchestrator::turn_plan::TurnPlanStore;
 use crate::orchestrator::SessionPool;
 use crate::permissions::PermissionBroker;
 use crate::session_key::SessionKey;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub cooldowns: Mutex<CooldownTracker>,
     pub temporary_overrides: Mutex<HashMap<Agent, TemporaryOverride>>,
     pub usage: UsageEngine,
+    pub turn_plans: TurnPlanStore,
 }
 
 impl AppState {
@@ -45,6 +47,7 @@ impl AppState {
             cooldowns: Mutex::new(CooldownTracker::default()),
             temporary_overrides: Mutex::new(HashMap::new()),
             usage: UsageEngine::default(),
+            turn_plans: TurnPlanStore::default(),
         }
     }
 }

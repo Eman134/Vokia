@@ -8,6 +8,9 @@ use serde_json::Value;
 use super::console::{ConsoleKind, ConsoleLine};
 use crate::commands::dispatcher::{command_domain, APP_PREFIX};
 use crate::mcp::tools::is_tool;
+use crate::orchestrator::turn_plan::{
+    fold_claude_plan_call, fold_claude_plan_result, ClaudePlanState, TurnPlan,
+};
 
 const MAX_TOOLS: usize = 100;
 const TEXT_MAX_CHARS: usize = 300;
@@ -138,6 +141,8 @@ pub struct TurnActivity {
     pub tools: Vec<ToolActivity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_step_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<TurnPlan>,
 }
 
 struct OpenTool {
@@ -152,6 +157,8 @@ pub(super) struct ActivityParser {
     thinking_text: Option<String>,
     tools: Vec<ToolActivity>,
     current_step_label: Option<String>,
+    plan_state: ClaudePlanState,
+    plan: Option<TurnPlan>,
     open: HashMap<String, OpenTool>,
 }
 
@@ -163,6 +170,8 @@ impl ActivityParser {
             thinking_text: None,
             tools: Vec::new(),
             current_step_label: None,
+            plan_state: ClaudePlanState::default(),
+            plan: None,
             open: HashMap::new(),
         }
     }
@@ -192,6 +201,7 @@ impl ActivityParser {
             thinking_text: self.thinking_text.clone(),
             tools: self.tools.clone(),
             current_step_label: self.current_step_label.clone(),
+            plan: self.plan.clone(),
         }
     }
 
@@ -201,6 +211,7 @@ impl ActivityParser {
             thinking_text: self.thinking_text,
             tools: self.tools,
             current_step_label: None,
+            plan: self.plan,
         }
     }
 
@@ -253,11 +264,22 @@ impl ActivityParser {
         let Some(call_id) = block["id"].as_str() else {
             return false;
         };
-        if self.tools.len() >= MAX_TOOLS || self.tools.iter().any(|tool| tool.call_id == call_id) {
+        if self.tools.iter().any(|tool| tool.call_id == call_id) {
             return false;
         }
         let name = block["name"].as_str().unwrap_or_default();
         let input = &block["input"];
+        let plan_changed = if let Some(plan) =
+            fold_claude_plan_call(&mut self.plan_state, call_id, name, input)
+        {
+            self.plan = (!plan.is_empty()).then_some(plan);
+            true
+        } else {
+            false
+        };
+        if self.tools.len() >= MAX_TOOLS {
+            return plan_changed;
+        }
         let category = category_of(name, input);
         let (added, removed) = written_lines(name, input);
         let change = change_of(name, input);
@@ -303,17 +325,28 @@ impl ActivityParser {
         let patch = outcome.and_then(|outcome| patch_counts(&outcome["structuredPatch"]));
         let mut closed = false;
         for result in results {
-            let Some(open) = result["tool_use_id"]
-                .as_str()
-                .and_then(|id| self.open.remove(id))
-            else {
+            let tool_use_id = result["tool_use_id"].as_str();
+            let is_error = result["is_error"].as_bool() == Some(true);
+            if let Some(id) = tool_use_id {
+                if let Some(plan) = fold_claude_plan_result(
+                    &mut self.plan_state,
+                    id,
+                    result.get("content"),
+                    outcome,
+                    is_error,
+                ) {
+                    self.plan = (!plan.is_empty()).then_some(plan);
+                    closed = true;
+                }
+            }
+            let Some(open) = tool_use_id.and_then(|id| self.open.remove(id)) else {
                 continue;
             };
             closed = true;
             let tool = &mut self.tools[open.index];
             tool.duration_ms =
                 Some(now.saturating_duration_since(open.started_at).as_millis() as u64);
-            if result["is_error"].as_bool() == Some(true) {
+            if is_error {
                 tool.status = ToolStatus::Failed;
                 tool.added = None;
                 tool.removed = None;

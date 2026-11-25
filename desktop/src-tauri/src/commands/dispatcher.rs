@@ -10,7 +10,7 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, execution_mode, orchestration, projects, providers,
-    roles, settings, team, usage, usage_analytics,
+    roles, settings, team, turn_plan, usage, usage_analytics,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -413,6 +413,17 @@ fn schema_plan_usage() -> Value {
     )
 }
 
+fn schema_get_turn_plan() -> Value {
+    obj_schema(
+        json!({
+            "agent": { "type": "string", "description": "Id do agente (ex.: hefesto, ember)" },
+            "projectId": { "type": "integer", "description": "Id opcional do projeto; se omitido usa o projeto ativo ou o último plano registrado do agente" },
+            "cardId": { "type": "string", "description": "Id opcional do card do backlog" },
+        }),
+        &["agent"],
+    )
+}
+
 fn schema_get_usage_analytics() -> Value {
     obj_schema(
         json!({
@@ -529,6 +540,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("orchestration", "save_orchestration_settings", "Grava as configurações da orquestração.", "Para gravar os limites e opções gerais da orquestração.", schema_save_orchestration_settings),
     exposed("orchestration", "list_agent_activity", "Lista as execuções em andamento por agente.", "Para ver o que cada agente está executando agora em todos os projetos.", empty_object_schema),
     exposed("orchestration", "list_agent_copies", "Lista as réplicas de agentes em execução em um projeto.", "Para ver as réplicas de agentes em execução em um projeto e os cards delas.", schema_project_id),
+    exposed("orchestration", "get_turn_plan", "Devolve o plano vivo de etapas do turno atual (ou mais recente) de um agente. Parâmetros: agent (obrigatório), projectId (opcional), cardId (opcional).", "Para consultar o checklist de etapas em execução de um agente ou o último plano registrado para um card.", schema_get_turn_plan),
     exposed("providers", "list_providers", "Lista os provedores configurados.", "Para ver os provedores configurados e se a CLI de cada um está instalada.", empty_object_schema),
     exposed("providers", "save_provider", "Grava a configuração de um provedor.", "Para criar ou atualizar a configuração de um provedor; o id usa letras, números, hífen ou sublinhado.", schema_save_provider),
     exposed("providers", "delete_provider", "Remove um provedor.", "Para remover um provedor; recusado para o claude e para provedores em uso por agentes.", schema_id),
@@ -854,6 +866,7 @@ async fn run(
             app,
             parse_args(arguments)?,
         )),
+        "get_turn_plan" => json_result(turn_plan::get_turn_plan_exec(app, parse_args(arguments)?)),
 
         "list_providers" => json_result(providers::list_providers_exec(app)),
         "save_provider" => json_result(providers::save_provider_exec(app, parse_args(arguments)?)),

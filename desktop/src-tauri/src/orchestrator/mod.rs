@@ -17,6 +17,7 @@ mod session_policy;
 mod session_pool;
 pub(crate) mod step_labels;
 mod text_fallback;
+pub(crate) mod turn_plan;
 mod turns;
 mod validation;
 

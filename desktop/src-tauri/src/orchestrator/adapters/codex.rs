@@ -83,6 +83,13 @@ pub(super) async fn run_turn(
             let Ok(value) = serde_json::from_str::<Json>(line.trim()) else {
                 return;
             };
+            if let Some(plan) = crate::orchestrator::turn_plan::plan_from_codex_notification(&value)
+            {
+                activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                console.turn_plan(plan);
+                console.live_activity(activity.clone());
+                return;
+            }
             let kind = value.get("type").and_then(Json::as_str).unwrap_or("");
             if matches!(kind, "item.completed" | "item.updated" | "item.started") {
                 let item = &value["item"];
@@ -118,7 +125,10 @@ pub(super) async fn run_turn(
         },
     )
     .await?;
-    parse_jsonl_output_with_provider(&stdout, Some(provider), model)
+    let mut reply = parse_jsonl_output_with_provider(&stdout, Some(provider), model)?;
+    activity.current_step_label = None;
+    reply.activity = activity;
+    Ok(reply)
 }
 
 #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes

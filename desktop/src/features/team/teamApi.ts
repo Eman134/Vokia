@@ -6,6 +6,7 @@ import {
   type CliProblem,
   type OverrideReason,
   type TemporaryOverride,
+  type TurnPlanSnapshot,
   type VokiaEvent,
 } from './events'
 
@@ -37,6 +38,7 @@ const ENQUEUE_QUEUED_REQUEST_COMMAND = 'enqueue_queued_request'
 const UPDATE_QUEUED_REQUEST_COMMAND = 'update_queued_request'
 const MOVE_QUEUED_REQUEST_COMMAND = 'move_queued_request'
 const REMOVE_QUEUED_REQUEST_COMMAND = 'remove_queued_request'
+const GET_TURN_PLAN_COMMAND = 'get_turn_plan'
 
 export interface QueuedRequestRecord {
   id: number
@@ -269,6 +271,18 @@ export function updateEmberLlm(params: {
     modelTier: params.modelTier ?? null,
     model: params.model ?? null,
     fallback: params.fallback ?? null,
+  })
+}
+
+export function getTurnPlan(
+  agent: Agent,
+  projectId?: number,
+  cardId?: string,
+): Promise<TurnPlanSnapshot | null> {
+  return invoke<TurnPlanSnapshot | null>(GET_TURN_PLAN_COMMAND, {
+    agent,
+    projectId: projectId ?? null,
+    cardId: cardId ?? null,
   })
 }
 

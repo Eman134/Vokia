@@ -2310,6 +2310,7 @@ pub(crate) fn forget_project(state: &AppState, project_id: i64) {
     flow.turn_waiters
         .retain(|key, _| key.project_id != project_id);
     state.console.forget_project(project_id);
+    state.turn_plans.forget_project(project_id);
 }
 
 pub fn report_failure(

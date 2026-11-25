@@ -10,6 +10,8 @@ import type { Speaker, VokiaTaskResult } from './events'
 import { permissionResultRow } from './permissionSummary'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
+import TurnPlanCard from './TurnPlanCard.vue'
+import { statusOfTurnPlan, useTurnPlans } from './useTurnPlans'
 import { protocolMessageRow, splitVokiaConfirmations, taskResultRow, taskStartedRow, type ActivityRowModel } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
 import { formatCostUsd, formatThinkingDuration, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
@@ -36,6 +38,21 @@ const roster = useRoster()
 const overrides = useTemporaryOverrides()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
+const turnPlans = useTurnPlans()
+
+const messagePlan = computed(() => {
+  if (props.entry.type !== 'message' || props.entry.from === 'user') return undefined
+  const plan = props.entry.activity?.plan
+  return plan && plan.steps.length > 0 ? plan : undefined
+})
+const messagePlanStatus = computed(() => {
+  const plan = messagePlan.value
+  if (!plan || props.entry.type !== 'message') return 'completed' as const
+  return statusOfTurnPlan(plan, {
+    active: false,
+    replaced: turnPlans.isMessagePlanReplaced(props.entry),
+  })
+})
 
 const userContent = computed(() => extractAttachments(props.entry.type === 'message' ? props.entry.text : ''))
 const agentUsage = computed(() =>
@@ -229,6 +246,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
         {{ speakerName(entry.from) }}
       </span>
+      <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" />
       <ActivityRun :activity="entry.activity" />
     </div>
   </UiTooltip>
@@ -289,6 +307,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
           <TokenUsageChart :usage="entry.usage" />
         </span>
       </div>
+      <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" class="my-1" />
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
       <div
         v-if="entry.from !== 'user' && (entry.isError || entry.text === 'Limite esgotado')"

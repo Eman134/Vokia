@@ -36,6 +36,7 @@ import { useAgentActivity } from '../teammap/useAgentActivity'
 import { useUsageLimit } from '../usage/useUsageLimit'
 import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
 import { useActiveLlm } from '../providers/useActiveLlm'
+import { useTurnPlans } from './useTurnPlans'
 
 const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_CHANNEL_NAME }
 
@@ -151,6 +152,7 @@ export const useFeed = defineStore('feed', () => {
     await clearConversation(project.id)
     feed.value = []
     useConsole().forgetProject(project.id)
+    useTurnPlans().forgetProject(project.id)
   }
 
   async function restorePauses(): Promise<void> {
@@ -191,6 +193,9 @@ export const useFeed = defineStore('feed', () => {
         }
         break
       }
+      case 'turn-plan-updated':
+        useTurnPlans().apply(event)
+        break
       case 'agent-state':
         recordState(event)
         recordActivity(event)
@@ -319,6 +324,7 @@ export const useFeed = defineStore('feed', () => {
     activity.value[projectAgentKey(projectId, agent)] = state
     if (state === 'idle') {
       dropLiveActivity(projectId, agent)
+      useTurnPlans().markFinished(projectId, agent)
     }
   }
 

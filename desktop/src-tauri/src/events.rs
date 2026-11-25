@@ -274,6 +274,15 @@ pub enum VokiaEvent {
         item_id: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
+    TurnPlanUpdated {
+        project_id: i64,
+        agent: Agent,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card_id: Option<String>,
+        turn_id: String,
+        plan: crate::orchestrator::turn_plan::TurnPlan,
+    },
+    #[serde(rename_all = "camelCase")]
     GoalState {
         project_id: i64,
         state: Option<GoalState>,

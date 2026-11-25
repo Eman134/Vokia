@@ -56,11 +56,36 @@ export interface ToolActivity {
   result?: string
 }
 
+export type TurnPlanStepStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface TurnPlanStep {
+  id: string
+  text: string
+  activeText?: string
+  status: TurnPlanStepStatus
+}
+
+export interface TurnPlan {
+  explanation?: string
+  steps: TurnPlanStep[]
+}
+
+export interface TurnPlanSnapshot {
+  projectId: number
+  agent: Agent
+  cardId?: string
+  turnId: string
+  plan: TurnPlan
+  updatedAt: number
+  active: boolean
+}
+
 export interface TurnActivity {
   thinkingMs?: number
   thinkingText?: string
   tools: ToolActivity[]
   currentStepLabel?: string
+  plan?: TurnPlan
 }
 
 export interface RequestProposal {
@@ -385,6 +410,15 @@ export interface VokiaAgentActivity {
   itemId?: string
 }
 
+export interface VokiaTurnPlanUpdated {
+  type: 'turn-plan-updated'
+  projectId: number
+  agent: Agent
+  cardId?: string
+  turnId: string
+  plan: TurnPlan
+}
+
 export type OverrideReason = 'usage-limit' | 'model-unavailable' | 'manual-temp'
 
 export interface TemporaryOverride {
@@ -418,6 +452,7 @@ export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
   | VokiaAgentActivity
+  | VokiaTurnPlanUpdated
   | VokiaError
   | VokiaPermission
   | VokiaPermissionClosed

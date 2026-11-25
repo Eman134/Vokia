@@ -6,10 +6,12 @@ import UiField from '../../ui/UiField.vue'
 import { useDecisions } from '../decisions/useDecisions'
 import { presenceOf } from '../team/agentStateStyle'
 import AgentProjectIcons from '../team/AgentProjectIcons.vue'
+import TurnPlanCard from '../team/TurnPlanCard.vue'
 import type { Agent } from '../team/events'
 import { useRoster } from '../team/useRoster'
 import { useFeed } from '../team/useFeed'
 import { useRequests } from '../team/useRequests'
+import { statusOfTurnPlan, useTurnPlans } from '../team/useTurnPlans'
 import {
   BADGE_BY_STATUS,
   DONE_TODAY_LABEL,
@@ -38,7 +40,14 @@ const decisions = useDecisions()
 const control = useAgentControl()
 const { task, since, recent, queue, doneToday, status, step } = useAgentActivity(props.agent)
 const roster = useRoster()
+const turnPlans = useTurnPlans()
 const profile = computed(() => roster.profileOf(props.agent))
+const turnPlanEntry = computed(() => turnPlans.planOf(props.agent))
+const turnPlanStatus = computed(() => {
+  const entry = turnPlanEntry.value
+  if (!entry) return 'completed' as const
+  return statusOfTurnPlan(entry.plan, { active: entry.active })
+})
 const message = ref('')
 
 function formatTime(time: number): string {
@@ -82,6 +91,12 @@ async function submit(): Promise<void> {
       <p class="wrap-break-word line-clamp-3 text-label text-ink">{{ task ?? NO_TASK_TEXT }}</p>
       <p class="truncate text-caption text-muted" :title="step" data-testid="agent-now-step">{{ step }}</p>
     </section>
+    <TurnPlanCard
+      v-if="turnPlanEntry"
+      :plan="turnPlanEntry.plan"
+      :status="turnPlanStatus"
+      compact
+    />
     <section :aria-label="RECENT_TITLE">
       <p class="text-caption text-muted">{{ RECENT_TITLE }}</p>
       <p v-if="recent.length === 0" class="text-label text-faint">{{ NO_RECENT_TEXT }}</p>

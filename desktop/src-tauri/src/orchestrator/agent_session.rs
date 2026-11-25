@@ -393,8 +393,11 @@ async fn run_step(
                 return Ok(StepReply {
                     text: reply.text,
                     outcome,
-                    activity: Some(reply.activity)
-                        .filter(|activity| activity.thinking_ms.is_some() || !activity.tools.is_empty()),
+                    activity: Some(reply.activity).filter(|activity| {
+                        activity.thinking_ms.is_some()
+                            || !activity.tools.is_empty()
+                            || activity.plan.is_some()
+                    }),
                     usage: Some(normalized_usage),
                 });
             }

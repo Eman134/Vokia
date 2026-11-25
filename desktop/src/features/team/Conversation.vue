@@ -44,6 +44,7 @@ import { useFollowEnd } from '../../ui/useFollowEnd'
 import ConversationComposer from './ConversationComposer.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
+import { useTurnPlans } from './useTurnPlans'
 
 const STATUS_GROUP_LIST_CLASSES = 'mt-3 flex w-full min-w-0 flex-col gap-3'
 const LIVE_BLOCK_CLASSES = 'flex min-w-0 items-start gap-2'
@@ -80,6 +81,7 @@ const feed = useFeed()
 const roster = useRoster()
 const channels = useChannels()
 const consoleStore = useConsole()
+const turnPlans = useTurnPlans()
 const props = defineProps<{ filaEmAba: boolean }>()
 const { tab: aba } = storeToRefs(useConversationTab())
 // Com a fila em aba (largura estreita), ela ocupa o corpo no lugar das mensagens.
@@ -215,6 +217,10 @@ watch(
         (total, agent) => total + (feed.stateOf(agent.id) === 'thinking' ? consoleStore.entriesOf(agent.id).length : 0),
         0,
       ),
+    () =>
+      scopedPendingAgents.value
+        .map((agent) => turnPlans.livePlanOf(agent.id, activeThreadItemId.value)?.updatedAt ?? 0)
+        .join(','),
   ],
   followEnd,
 )
@@ -376,6 +382,7 @@ watch(
             :state="run.entry.state"
             :since="run.entry.since"
             :activity="run.activity"
+            :item-id="activeThreadItemId"
           />
         </div>
         <div
@@ -396,6 +403,7 @@ watch(
               :agent="entry.agent"
               :state="entry.state"
               :since="entry.since"
+              :item-id="activeThreadItemId"
             />
           </div>
         </div>

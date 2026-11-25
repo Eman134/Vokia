@@ -73,6 +73,7 @@ pub(super) async fn run_turn(
     }
     let prompt = format!("{role}\n\n{message}");
     let mut activity = TurnActivity::default();
+    let mut plan_state = crate::orchestrator::turn_plan::ClaudePlanState::default();
     let mut last_at = std::time::Instant::now();
     let stdout = super::run_cli_process(
         command,
@@ -87,6 +88,12 @@ pub(super) async fn run_turn(
             let Ok(value) = serde_json::from_str::<Json>(line.trim()) else {
                 return;
             };
+            if let Some(plan) = crate::orchestrator::turn_plan::plan_from_acp_notification(&value) {
+                activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                console.turn_plan(plan);
+                console.live_activity(activity.clone());
+                return;
+            }
             let kind = value.get("type").and_then(Json::as_str).unwrap_or("");
             let part_type = value["part"].get("type").and_then(Json::as_str).unwrap_or("");
             if matches!(kind, "reasoning" | "thinking") || part_type == "reasoning" {
@@ -107,6 +114,10 @@ pub(super) async fn run_turn(
                 activity.current_step_label = None;
                 console.live_activity(activity.clone());
             } else if kind == "tool_use" || part_type == "tool_use" || part_type == "tool" {
+                if let Some(plan) = extract_opencode_tool_plan(&mut plan_state, &value) {
+                    activity.plan = (!plan.is_empty()).then_some(plan.clone());
+                    console.turn_plan(plan);
+                }
                 activity.current_step_label =
                     crate::orchestrator::step_labels::label_for_opencode_event(&value);
                 console.live_activity(activity.clone());
@@ -114,7 +125,43 @@ pub(super) async fn run_turn(
         },
     )
     .await?;
-    parse_json_output_with_provider(&stdout, Some(provider), model)
+    let mut reply = parse_json_output_with_provider(&stdout, Some(provider), model)?;
+    activity.current_step_label = None;
+    reply.activity = activity;
+    Ok(reply)
+}
+
+fn extract_opencode_tool_plan(
+    state: &mut crate::orchestrator::turn_plan::ClaudePlanState,
+    value: &Json,
+) -> Option<crate::orchestrator::turn_plan::TurnPlan> {
+    let part = &value["part"];
+    let name = part
+        .get("tool")
+        .or_else(|| part.get("name"))
+        .or_else(|| value.get("tool"))
+        .or_else(|| value.get("name"))
+        .and_then(Json::as_str)?;
+    let call_id = part
+        .get("callID")
+        .or_else(|| part.get("id"))
+        .or_else(|| value.get("id"))
+        .and_then(Json::as_str)
+        .unwrap_or("");
+    let raw_input = part
+        .pointer("/state/input")
+        .or_else(|| part.get("input"))
+        .or_else(|| part.get("arguments"))
+        .or_else(|| value.get("input"))
+        .or_else(|| value.get("arguments"));
+    let parsed_string = raw_input
+        .and_then(Json::as_str)
+        .and_then(|s| serde_json::from_str::<Json>(s).ok());
+    let input = parsed_string
+        .as_ref()
+        .or(raw_input)
+        .unwrap_or(&Json::Null);
+    crate::orchestrator::turn_plan::fold_claude_plan_call(state, call_id, name, input)
 }
 
 #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes

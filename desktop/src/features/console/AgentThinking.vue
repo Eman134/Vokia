@@ -5,11 +5,13 @@ import type { AgentState, TurnActivity } from '../team/events'
 import { formatClock } from '../team/activitySummary'
 import ActivityRun from '../team/ActivityRun.vue'
 import MarkdownText from '../team/MarkdownText.vue'
+import TurnPlanCard from '../team/TurnPlanCard.vue'
+import { useTurnPlans } from '../team/useTurnPlans'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import { currentTurn } from './consoleTurn'
 import { useConsole } from './useConsole'
 
-const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number; activity?: TurnActivity }>()
+const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number; activity?: TurnActivity; itemId?: string }>()
 
 const SENDING_LABEL = 'Enviando…'
 const THINKING_LABEL = 'Pensando…'
@@ -18,6 +20,7 @@ const DOT_CLASSES = 'size-2 fill-current motion-reduce:animate-none'
 const DOT_ANIMATIONS = ['animate-dot-1', 'animate-dot-2', 'animate-dot-3']
 
 const consoleStore = useConsole()
+const turnPlans = useTurnPlans()
 const now = ref(Date.now())
 let timer: number | undefined
 
@@ -45,6 +48,14 @@ const preview = computed(() =>
 const stepLabel = computed(() =>
   props.state === 'thinking' ? props.activity?.currentStepLabel?.trim() || undefined : undefined,
 )
+const activePlan = computed(() => {
+  if (props.state !== 'thinking') return undefined
+  const live = turnPlans.livePlanOf(props.agent.id, props.itemId)?.plan
+  if (live && live.steps.length > 0) return live
+  const fromActivity = props.activity?.plan
+  return fromActivity && fromActivity.steps.length > 0 ? fromActivity : undefined
+})
+
 const label = computed(() => {
   if (props.state !== 'thinking') {
     return SENDING_LABEL
@@ -68,6 +79,7 @@ const label = computed(() => {
         <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
       </span>
     </span>
+    <TurnPlanCard v-if="activePlan" :plan="activePlan" status="active" />
     <ActivityRun v-if="activity" :activity="activity" live />
     <div v-if="preview" class="line-clamp-4 min-w-0">
       <MarkdownText :text="preview" />

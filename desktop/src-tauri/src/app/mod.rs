@@ -122,6 +122,7 @@ pub(crate) fn run() {
             commands::orchestration::save_orchestration_settings,
             commands::orchestration::list_agent_activity,
             commands::orchestration::list_agent_copies,
+            commands::turn_plan::get_turn_plan,
             // providers
             commands::providers::list_providers,
             commands::providers::save_provider,
