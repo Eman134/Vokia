@@ -36,6 +36,10 @@ impl Db {
             "DELETE FROM agent_sessions WHERE project_id = ?1",
             [project_id],
         )?;
+        tx.execute(
+            "DELETE FROM turn_work_steps WHERE project_id = ?1",
+            [project_id],
+        )?;
         tx.commit()?;
         Ok(())
     }

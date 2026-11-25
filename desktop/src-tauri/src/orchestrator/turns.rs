@@ -5,7 +5,10 @@ use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, Team};
 use crate::claude::{ProjectAccess, ToolCategory, TurnActivity, TurnUsage};
-use crate::db::{DbState, HandoffDraft, NewUsageRecord, OrchestrationSnapshot, StoredTaskResult};
+use crate::db::{
+    work_steps_session_key, DbState, HandoffDraft, NewTurnWorkSteps, NewUsageRecord,
+    OrchestrationSnapshot, StoredTaskResult,
+};
 use crate::events::{AgentState, DecisionKind, GoalState, RequestProposal, Speaker, VokiaEvent};
 use crate::mcp::{Delegation, DelegationIntent, ExchangeOutcome, McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
@@ -226,6 +229,12 @@ pub(super) async fn run_turns(
                 turn_duration_ms,
             );
         }
+        record_turn_work_steps(
+            exchange,
+            &turn.speaker,
+            activity.as_ref(),
+            usage.as_ref().and_then(|u| u.provider.as_deref()),
+        );
         counters.task.register_turn(&turn.speaker);
         counters.act(&turn.speaker);
         // Só a primeira mensagem do turno leva a atividade; turno sem mensagem a descarta.
@@ -1594,6 +1603,45 @@ fn record_turn_usage(
     }
     if let Some(db) = exchange.app.state::<DbState>().db() {
         let _ = db.record_usage(&record);
+    }
+}
+
+// Persiste resumo compacto [work steps] do turno no SQLite sem nunca bloquear a conversa.
+pub(super) fn record_turn_work_steps(
+    exchange: &Exchange<'_>,
+    speaker: &Agent,
+    activity: Option<&TurnActivity>,
+    provider: Option<&str>,
+) {
+    let Some(activity) = activity else {
+        return;
+    };
+    let collector = super::work_steps::WorkStepCollector::from_turn_activity(activity);
+    let Some(formatted) = collector.format() else {
+        return;
+    };
+    let created_at = match now_millis() {
+        Ok(ms) => ms as i64,
+        Err(_) => return,
+    };
+    let session_key = work_steps_session_key(
+        exchange.key.project_id,
+        speaker.as_str(),
+        exchange.item_id,
+    );
+    let record = NewTurnWorkSteps {
+        project_id: exchange.key.project_id,
+        agent: speaker.as_str(),
+        session_key: &session_key,
+        card_id: exchange.item_id,
+        provider,
+        block: &formatted.block,
+        step_count: formatted.step_count,
+        omitted_count: formatted.omitted_count,
+        created_at,
+    };
+    if let Some(db) = exchange.app.state::<DbState>().db() {
+        let _ = db.insert_turn_work_steps(&record);
     }
 }
 

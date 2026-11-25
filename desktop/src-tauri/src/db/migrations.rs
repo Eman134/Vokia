@@ -56,6 +56,7 @@ fn rename_agent_sql(old: &str, new: &str) -> String {
         SELECT json_group_array(CASE WHEN value = '{old}' THEN '{new}' ELSE value END) FROM json_each(channels.members)
     ) WHERE EXISTS (SELECT 1 FROM json_each(channels.members) WHERE value = '{old}');
     UPDATE usage_records SET agent_id = '{new}' WHERE agent_id = '{old}';
+    UPDATE turn_work_steps SET agent = '{new}' WHERE agent = '{old}';
 "
     )
 }
@@ -214,6 +215,27 @@ const USAGE_RECORDS_SCHEMA: &str = "
     CREATE INDEX IF NOT EXISTS usage_records_by_agent ON usage_records(agent_id, occurred_at);
     CREATE INDEX IF NOT EXISTS usage_records_by_project ON usage_records(project_id, occurred_at);
     CREATE UNIQUE INDEX IF NOT EXISTS usage_records_by_prompt_id ON usage_records(prompt_id) WHERE prompt_id IS NOT NULL;
+";
+
+// Etapas compactas de trabalho ([work steps]) por turno para passagem de contexto (handoff) e history_read.
+const TURN_WORK_STEPS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS turn_work_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        card_id TEXT,
+        provider TEXT,
+        block TEXT NOT NULL,
+        step_count INTEGER NOT NULL DEFAULT 0,
+        omitted_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS turn_work_steps_by_session
+        ON turn_work_steps(project_id, agent, session_key, created_at);
+    CREATE INDEX IF NOT EXISTS turn_work_steps_by_card
+        ON turn_work_steps(project_id, card_id, created_at)
+        WHERE card_id IS NOT NULL;
 ";
 
 // Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
@@ -755,6 +777,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(ATTACHMENTS_SCHEMA)?;
     tx.execute_batch(QUEUED_REQUESTS_SCHEMA)?;
     tx.execute_batch(USAGE_RECORDS_SCHEMA)?;
+    tx.execute_batch(TURN_WORK_STEPS_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

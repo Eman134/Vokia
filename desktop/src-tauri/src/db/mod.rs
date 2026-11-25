@@ -19,6 +19,7 @@ mod runs;
 mod settings;
 pub mod usage_analytics;
 pub mod usage_pricing;
+mod work_steps;
 
 pub use agent_sessions::AgentPause;
 pub use approvals::ApprovalHistory;
@@ -58,6 +59,9 @@ pub use settings::{
 };
 pub use usage_analytics::{
     NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,
+};
+pub use work_steps::{
+    load_recent_work_steps_safe, work_steps_session_key, NewTurnWorkSteps,
 };
 #[cfg(test)]
 pub use settings::SETTING_AUTO_PAUSE_ON_LIMIT;

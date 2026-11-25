@@ -1373,6 +1373,12 @@ async fn answer_once(
             return Err(error);
         }
     };
+    super::turns::record_turn_work_steps(
+        exchange,
+        &agent,
+        reply.activity.as_ref(),
+        reply.usage.as_ref().and_then(|u| u.provider.as_deref()),
+    );
     let read = read_reply(
         with_tools,
         &TextContext {

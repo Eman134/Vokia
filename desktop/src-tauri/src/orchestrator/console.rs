@@ -24,6 +24,7 @@ pub(super) struct ConsoleSink<'a> {
     turn_id: String,
     acted: AtomicBool,
     last_plan: Mutex<Option<TurnPlan>>,
+    last_activity: Mutex<Option<TurnActivity>>,
 }
 
 impl<'a> ConsoleSink<'a> {
@@ -35,15 +36,26 @@ impl<'a> ConsoleSink<'a> {
             turn_id: next_turn_id(),
             acted: AtomicBool::new(false),
             last_plan: Mutex::new(None),
+            last_activity: Mutex::new(None),
         }
     }
 
     pub(super) fn reset_acted(&self) {
         self.acted.store(false, Ordering::SeqCst);
+        if let Ok(mut guard) = self.last_activity.lock() {
+            *guard = None;
+        }
     }
 
     pub(super) fn has_acted(&self) -> bool {
         self.acted.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn take_last_activity(&self) -> Option<TurnActivity> {
+        self.last_activity
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
     }
 
     // O console é auxiliar: falha ao registrar ou emitir não pode derrubar o turno do agente.
@@ -61,6 +73,9 @@ impl<'a> ConsoleSink<'a> {
         }
         if let Some(plan) = activity.plan.clone() {
             self.turn_plan(plan);
+        }
+        if let Ok(mut guard) = self.last_activity.lock() {
+            *guard = Some(activity.clone());
         }
         let _ = emit(
             self.app,

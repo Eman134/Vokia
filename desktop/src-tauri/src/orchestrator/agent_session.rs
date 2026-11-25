@@ -9,10 +9,10 @@ use tauri::{AppHandle, Manager};
 use crate::agents::{Agent, AgentProfile, Team};
 use crate::claude::{Access, ClaudeError, LiveSession, ProjectAccess, Reply, TurnActivity, TurnUsage};
 use crate::db::{
-    Db, DbError, DbState, OrchestrationSnapshot, GRANT_SESSION, SETTING_AUTO_TRIAGE,
-    SETTING_PERMISSION_GRANT,
+    load_recent_work_steps_safe, work_steps_session_key, Db, DbError, DbState,
+    OrchestrationSnapshot, GRANT_SESSION, SETTING_AUTO_TRIAGE, SETTING_PERMISSION_GRANT,
 };
-use crate::events::{AgentState, VokiaEvent};
+use crate::events::{AgentState, Speaker, VokiaEvent};
 use crate::mcp::{
     Binding, ExchangeOutcome, ExchangeSlot, McpServer, McpSession, McpState, ToolScope,
     CONFIG_DIR,
@@ -44,6 +44,7 @@ use super::session_policy::{
 };
 use super::session_pool::{ExchangeSessions, NO_PID};
 use super::turns::Exchange;
+use super::work_steps::{build_handoff_packet, HandoffInput, HandoffMessage};
 
 const GLOBAL_INSTRUCTIONS_PATH: &str = ".claude/CLAUDE.md";
 
@@ -77,6 +78,11 @@ pub(super) async fn ask_step(
     );
     console.started();
     let result = run_step(exchange, sessions, agent, prompts, &console).await;
+    if result.is_err() {
+        if let Some(partial) = console.take_last_activity() {
+            super::turns::record_turn_work_steps(exchange, agent, Some(&partial), None);
+        }
+    }
     console.finished(&result);
     result
 }
@@ -129,6 +135,7 @@ async fn run_step(
     let mut fallback_reason: Option<OverrideReason> = None;
     let mut fallback_expires_at: Option<u64> = None;
     let mut original_limited: Option<(String, String, Option<ModelTier>, u64)> = None;
+    let mut failed_from: Option<(String, String)> = None;
     for (idx, candidate) in candidates.iter().enumerate() {
         console.reset_acted();
         let adapter = ProviderAdapter::from_cli(&candidate.cli, &providers)?;
@@ -202,10 +209,11 @@ async fn run_step(
             has_variables: !exchange.definition.variables.is_empty(),
             collected: StdMutex::default(),
         };
+        let stored_session = store.load().ok().flatten();
         if !per_step && !call.adapter.supports_live_session() {
-            call.resume_session = store.load()?.and_then(|stored| {
+            call.resume_session = stored_session.as_deref().and_then(|stored| {
                 decode_provider_session(
-                    &stored,
+                    stored,
                     &candidate.cli,
                     &candidate.model,
                     exchange.item_id,
@@ -216,6 +224,34 @@ async fn run_step(
         let mut held = sessions.hold(agent).await;
         if first {
             held.guard.begin_exchange();
+        }
+        let current_provider = (candidate.cli.clone(), candidate.model.clone());
+        let previous_provider = detect_previous_provider(
+            failed_from.as_ref(),
+            held.guard.provider_key.as_ref(),
+            stored_session.as_deref(),
+            &current_provider,
+        );
+        let provider_switched = previous_provider.is_some();
+        let rotating_session =
+            held.guard.live.is_some() && held.guard.messages >= SESSION_ROTATE_MESSAGES;
+        let handoff_prompts = if provider_switched || rotating_session {
+            let reason = handoff_reason_label(fallback_reason, provider_switched, rotating_session);
+            Some(build_handoff_prompts(
+                exchange,
+                agent,
+                prompts,
+                previous_provider.as_ref(),
+                &current_provider,
+                Some(reason),
+            ))
+        } else {
+            None
+        };
+        let effective_prompts = handoff_prompts.as_ref().unwrap_or(prompts);
+        if provider_switched {
+            held.guard.session_id = None;
+            call.resume_session = None;
         }
         if idx > 0 {
             held.guard.degrade().await;
@@ -260,7 +296,7 @@ async fn run_step(
                                 gate.clone(),
                                 &store,
                                 &call,
-                                prompts,
+                                effective_prompts,
                                 first,
                                 console,
                             )
@@ -280,9 +316,9 @@ async fn run_step(
                         ..gate
                     };
                     let message = if call.resume_session.is_some() {
-                        &prompts.follow_up
+                        &effective_prompts.follow_up
                     } else {
-                        &prompts.opening
+                        &effective_prompts.opening
                     };
                     match fresh_reply(
                         access,
@@ -307,7 +343,7 @@ async fn run_step(
                                 gate,
                                 &held.slot.pid,
                                 &call,
-                                &prompts.opening,
+                                &effective_prompts.opening,
                                 console,
                             )
                             .await
@@ -362,6 +398,16 @@ async fn run_step(
                     }
                     emit_overrides_changed(app, state);
                 }
+                if let (Some(prev), Some(item_id)) = (previous_provider.as_ref(), exchange.item_id) {
+                    record_provider_switch_card_activity(
+                        app,
+                        key.project_id,
+                        item_id,
+                        prev,
+                        &current_provider,
+                        fallback_reason,
+                    );
+                }
                 if !per_step && !call.adapter.supports_live_session() {
                     if let Some(session_id) = reply.session_id.as_deref() {
                         store.save(&encode_provider_session(
@@ -371,6 +417,9 @@ async fn run_step(
                             session_id,
                         ))?;
                     }
+                }
+                if !call.adapter.supports_live_session() {
+                    held.guard.provider_key = Some(current_provider);
                 }
                 report_limits(app, reply.limits)?;
                 let outcome = call
@@ -422,6 +471,8 @@ async fn run_step(
                         held.guard.degrade().await;
                         fallback_expires_at = Some(limit_entry.release_at_ms);
                         fallback_reason = Some(OverrideReason::UsageLimit);
+                        failed_from
+                            .get_or_insert_with(|| (candidate.cli.clone(), candidate.model.clone()));
                         if original_limited.is_none() {
                             original_limited = Some((
                                 candidate.cli.clone(),
@@ -438,6 +489,8 @@ async fn run_step(
                     fallback_expires_at =
                         Some(now_ms.saturating_add(DEFAULT_COOLDOWN_SECS * 1000));
                     fallback_reason = Some(OverrideReason::ModelUnavailable);
+                    failed_from
+                        .get_or_insert_with(|| (candidate.cli.clone(), candidate.model.clone()));
                     continue;
                 }
                 if let FlowError::Claude(ClaudeError::ModelUnavailable {
@@ -529,6 +582,233 @@ fn decode_provider_session(
         .map(str::trim)
         .filter(|session_id| !session_id.is_empty())
         .map(str::to_string)
+}
+
+const HANDOFF_WORK_STEPS_LIMIT: usize = 20;
+
+fn detect_previous_provider(
+    failed_from: Option<&(String, String)>,
+    live_provider: Option<&(String, String)>,
+    stored_session: Option<&str>,
+    current: &(String, String),
+) -> Option<(String, String)> {
+    if let Some(prev) = failed_from {
+        if prev != current {
+            return Some(prev.clone());
+        }
+    }
+    if let Some(prev) = live_provider {
+        if prev != current {
+            return Some(prev.clone());
+        }
+    }
+    if let Some(stored) = stored_session.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some((cli, rest)) = stored.split_once(':') {
+            if let Some((model, _)) = rest.split_once(':') {
+                if !cli.is_empty() && (cli != current.0 || (!model.is_empty() && model != current.1)) {
+                    return Some((cli.to_string(), model.to_string()));
+                }
+            }
+        } else if current.0 != "claude" {
+            return Some(("claude".to_string(), String::new()));
+        }
+    }
+    None
+}
+
+fn handoff_reason_label(
+    fallback_reason: Option<OverrideReason>,
+    provider_switched: bool,
+    rotating_session: bool,
+) -> &'static str {
+    match fallback_reason {
+        Some(OverrideReason::UsageLimit) => "limite de uso",
+        Some(OverrideReason::ModelUnavailable) => "modelo indisponível",
+        Some(OverrideReason::ManualTemp) => "troca manual",
+        None if provider_switched => "troca de provedor",
+        None if rotating_session => "rotação de sessão",
+        None => "continuidade",
+    }
+}
+
+fn format_provider_label(provider: &(String, String)) -> String {
+    if provider.1.trim().is_empty() {
+        provider.0.clone()
+    } else {
+        format!("{} ({})", provider.0, provider.1)
+    }
+}
+
+fn build_handoff_prompts(
+    exchange: &Exchange<'_>,
+    agent: &Agent,
+    prompts: &StepPrompts,
+    previous_provider: Option<&(String, String)>,
+    current_provider: &(String, String),
+    reason: Option<&str>,
+) -> StepPrompts {
+    let db_state = exchange.app.state::<DbState>();
+    let db = db_state.db();
+    let project_id = exchange.key.project_id;
+    let session_key = work_steps_session_key(project_id, agent.as_str(), exchange.item_id);
+
+    let work_steps_blocks: Vec<String> = load_recent_work_steps_safe(
+        db,
+        project_id,
+        agent.as_str(),
+        &session_key,
+        HANDOFF_WORK_STEPS_LIMIT,
+    )
+    .into_iter()
+    .map(|record| record.block)
+    .collect();
+
+    let mut recent_messages = load_handoff_messages(
+        db,
+        project_id,
+        agent,
+        exchange.item_id,
+        exchange.channel_id,
+    );
+    if recent_messages.is_empty() {
+        if let Ok(lines) = super::turns::with_cache(exchange.state, project_id, |cache| {
+            Ok(cache.recent_conversation(20))
+        }) {
+            recent_messages = lines
+                .into_iter()
+                .map(|line| HandoffMessage {
+                    author: String::new(),
+                    text: line,
+                })
+                .collect();
+        }
+    }
+
+    let open_plan_steps = load_open_plan_steps(db, project_id, exchange.item_id);
+    let card_summary = exchange.card_context();
+
+    let packet = build_handoff_packet(&HandoffInput {
+        from_provider: previous_provider.map(format_provider_label),
+        to_provider: Some(format_provider_label(current_provider)),
+        reason: reason.map(str::to_string),
+        objective: (!exchange.definition.objetivo.trim().is_empty())
+            .then(|| exchange.definition.objetivo.clone()),
+        current_request: (!exchange.request.trim().is_empty())
+            .then(|| exchange.request.to_string()),
+        card_summary,
+        open_plan_steps,
+        recent_messages,
+        older_messages: Vec::new(),
+        work_steps_blocks,
+        history_pointers: Vec::new(),
+    });
+
+    StepPrompts {
+        opening: format!("{}\n\n{}", packet.text, prompts.opening),
+        follow_up: prompts.follow_up.clone(),
+        minimal: format!("{}\n\n{}", packet.text, prompts.minimal),
+    }
+}
+
+fn load_handoff_messages(
+    db: Option<&Db>,
+    project_id: i64,
+    agent: &Agent,
+    item_id: Option<&str>,
+    channel_id: Option<i64>,
+) -> Vec<HandoffMessage> {
+    let Some(db) = db else {
+        return Vec::new();
+    };
+    let Ok(events) = db.load_history(project_id) else {
+        return Vec::new();
+    };
+    let agent_speaker = Speaker::from(agent.clone());
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            VokiaEvent::Message {
+                from,
+                to,
+                text,
+                channel_id: msg_channel,
+                item_id: msg_item,
+                is_error,
+                ..
+            } => {
+                if is_error || text.trim().is_empty() {
+                    return None;
+                }
+                let matches_scope = if let Some(target_item) = item_id {
+                    msg_item.as_deref() == Some(target_item)
+                } else if let Some(target_channel) = channel_id {
+                    msg_channel == Some(target_channel)
+                } else {
+                    from == agent_speaker || to == agent_speaker
+                };
+                if !matches_scope {
+                    return None;
+                }
+                Some(HandoffMessage {
+                    author: from.as_str().to_string(),
+                    text,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn load_open_plan_steps(db: Option<&Db>, project_id: i64, item_id: Option<&str>) -> Vec<String> {
+    let (Some(db), Some(item_id)) = (db, item_id) else {
+        return Vec::new();
+    };
+    let mut steps = Vec::new();
+    if let Ok(criteria) = db.plan_criteria(project_id, item_id) {
+        for criterion in criteria.into_iter().filter(|c| !c.done) {
+            steps.push(format!("[ ] {}: {}", criterion.id, criterion.text));
+        }
+    }
+    if steps.is_empty() {
+        if let Ok(stages) = db.plan_stages(project_id, item_id) {
+            for stage in stages
+                .into_iter()
+                .filter(|s| s.column.as_deref() != Some("Done"))
+            {
+                let col = stage.column.as_deref().unwrap_or("Backlog");
+                steps.push(format!("{} ({col}): {}", stage.id, stage.title));
+            }
+        }
+    }
+    steps
+}
+
+fn record_provider_switch_card_activity(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: &str,
+    from: &(String, String),
+    to: &(String, String),
+    reason: Option<OverrideReason>,
+) {
+    let state = app.state::<DbState>();
+    let Some(db) = state.db() else {
+        return;
+    };
+    let reason_text = reason.map(|r| match r {
+        OverrideReason::UsageLimit => " (limite de uso)",
+        OverrideReason::ModelUnavailable => " (modelo indisponível)",
+        OverrideReason::ManualTemp => " (troca manual)",
+    });
+    let text = format!(
+        "Troca de provedor: {} → {}{}",
+        format_provider_label(from),
+        format_provider_label(to),
+        reason_text.unwrap_or("")
+    );
+    if db.add_card_activity(project_id, item_id, &text).is_ok() {
+        let _ = super::emit::emit_backlog_changed(app, project_id);
+    }
 }
 
 pub(super) struct SessionStore<'a> {

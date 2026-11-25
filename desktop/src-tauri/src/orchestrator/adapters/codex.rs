@@ -5,7 +5,8 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
+    base_command, classify_provider_error, Access, ClaudeError, Reply, ToolActivity, ToolCategory,
+    ToolStatus, TurnActivity, TurnUsage,
 };
 use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
@@ -145,6 +146,7 @@ pub(crate) fn parse_jsonl_output_with_provider(
     let mut agent_messages: Vec<String> = Vec::new();
     let mut saw_json = false;
     let mut usage: Option<TurnUsage> = None;
+    let mut tools: Vec<ToolActivity> = Vec::new();
 
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -161,12 +163,18 @@ pub(crate) fn parse_jsonl_output_with_provider(
         match kind {
             "item.completed" => {
                 let item = &value["item"];
-                if item.get("type").and_then(Json::as_str) == Some("agent_message") {
-                    if let Some(text) = item.get("text").and_then(Json::as_str) {
-                        if !text.trim().is_empty() {
-                            agent_messages.push(text.to_string());
+                match item.get("type").and_then(Json::as_str) {
+                    Some("agent_message") => {
+                        if let Some(text) = item.get("text").and_then(Json::as_str) {
+                            if !text.trim().is_empty() {
+                                agent_messages.push(text.to_string());
+                            }
                         }
                     }
+                    Some(_) => {
+                        collect_codex_tools(item, &mut tools);
+                    }
+                    None => {}
                 }
             }
             "turn.completed" => {
@@ -242,8 +250,198 @@ pub(crate) fn parse_jsonl_output_with_provider(
     Ok(Reply {
         text,
         limits: None,
-        activity: TurnActivity::default(),
+        activity: TurnActivity {
+            tools,
+            ..TurnActivity::default()
+        },
         usage,
         session_id: None,
     })
+}
+
+fn collect_codex_tools(item: &Json, tools: &mut Vec<ToolActivity>) {
+    let item_type = item.get("type").and_then(Json::as_str).unwrap_or("");
+    let call_id = item
+        .get("id")
+        .and_then(Json::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("codex-{}", tools.len() + 1));
+    let status = match item.get("status").and_then(Json::as_str).unwrap_or("completed") {
+        "failed" | "error" => ToolStatus::Failed,
+        "in_progress" | "running" => ToolStatus::Running,
+        _ => ToolStatus::Ok,
+    };
+    match item_type {
+        "command_execution" => {
+            let Some(command) = item
+                .get("command")
+                .or_else(|| item.get("aggregated_command"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return;
+            };
+            let exit_code = item
+                .get("exit_code")
+                .or_else(|| item.get("exitCode"))
+                .and_then(Json::as_i64)
+                .and_then(|code| i32::try_from(code).ok());
+            let final_status = match exit_code {
+                Some(0) => ToolStatus::Ok,
+                Some(_) => ToolStatus::Failed,
+                None => status,
+            };
+            let output = item
+                .get("aggregated_output")
+                .or_else(|| item.get("output"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
+            tools.push(ToolActivity {
+                call_id,
+                name: "Bash".to_string(),
+                category: ToolCategory::Command,
+                target: command.to_string(),
+                status: final_status,
+                description: None,
+                added: None,
+                removed: None,
+                change: None,
+                duration_ms: None,
+                detail: None,
+                result: output,
+                exit_code,
+            });
+        }
+        "file_change" | "patch_apply" => {
+            if let Some(changes) = item.get("changes").and_then(Json::as_array) {
+                for (i, change) in changes.iter().enumerate() {
+                    let Some(path) = change
+                        .get("path")
+                        .or_else(|| change.get("file_path"))
+                        .and_then(Json::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                    else {
+                        continue;
+                    };
+                    let kind = change
+                        .get("kind")
+                        .or_else(|| change.get("action"))
+                        .and_then(Json::as_str)
+                        .unwrap_or("edit")
+                        .to_ascii_lowercase();
+                    let name = match kind.as_str() {
+                        "add" | "create" => "Write",
+                        "delete" | "remove" => "Delete",
+                        _ => "Edit",
+                    };
+                    tools.push(ToolActivity {
+                        call_id: format!("{call_id}-{i}"),
+                        name: name.to_string(),
+                        category: ToolCategory::Edit,
+                        target: path.to_string(),
+                        status,
+                        description: None,
+                        added: None,
+                        removed: (name == "Write").then_some(0),
+                        change: None,
+                        duration_ms: None,
+                        detail: None,
+                        result: None,
+                        exit_code: None,
+                    });
+                }
+            } else if let Some(path) = item
+                .get("path")
+                .or_else(|| item.get("file_path"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                tools.push(ToolActivity {
+                    call_id,
+                    name: "Edit".to_string(),
+                    category: ToolCategory::Edit,
+                    target: path.to_string(),
+                    status,
+                    description: None,
+                    added: None,
+                    removed: None,
+                    change: None,
+                    duration_ms: None,
+                    detail: None,
+                    result: None,
+                    exit_code: None,
+                });
+            }
+        }
+        "mcp_tool_call" | "function_call" | "tool_use" => {
+            let Some(raw_name) = item
+                .get("tool")
+                .or_else(|| item.get("name"))
+                .or_else(|| item.pointer("/function/name"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return;
+            };
+            let server = item
+                .get("server")
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let name = match server {
+                Some(srv) if !raw_name.contains('/') && !raw_name.starts_with("mcp__") => {
+                    format!("{srv}/{raw_name}")
+                }
+                _ => raw_name.to_string(),
+            };
+            tools.push(ToolActivity {
+                call_id,
+                name,
+                category: ToolCategory::Mcp,
+                target: String::new(),
+                status,
+                description: None,
+                added: None,
+                removed: None,
+                change: None,
+                duration_ms: None,
+                detail: None,
+                result: None,
+                exit_code: None,
+            });
+        }
+        "web_search" => {
+            let Some(query) = item
+                .get("query")
+                .or_else(|| item.pointer("/action/query"))
+                .and_then(Json::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            else {
+                return;
+            };
+            tools.push(ToolActivity {
+                call_id,
+                name: "WebSearch".to_string(),
+                category: ToolCategory::Web,
+                target: query.to_string(),
+                status,
+                description: None,
+                added: None,
+                removed: None,
+                change: None,
+                duration_ms: None,
+                detail: None,
+                result: None,
+                exit_code: None,
+            });
+        }
+        _ => {}
+    }
 }

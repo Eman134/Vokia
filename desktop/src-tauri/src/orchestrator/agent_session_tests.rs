@@ -101,3 +101,102 @@ fn ember_lider_geral_e_lideres_de_time_coordenam_e_os_demais_trabalham() {
     assert_eq!(tool_scope(None, &agent("axiom")), ToolScope::Coordinator, "sem mapa o líder padrão é o Axiom");
     assert_eq!(tool_scope(None, &agent("kairo")), ToolScope::Worker);
 }
+
+#[test]
+fn detect_previous_provider_identifica_troca_sem_falso_positivo_no_resume_claude() {
+    let claude = ("claude".to_string(), "sonnet".to_string());
+    let codex = ("codex".to_string(), "gpt-5.3-codex".to_string());
+    let claude_opus = ("claude".to_string(), "opus".to_string());
+
+    // Retomada normal do mesmo provedor Claude (session_id nu sem ':') não é troca.
+    assert_eq!(
+        detect_previous_provider(None, None, Some("sess-claude-123"), &claude),
+        None
+    );
+    // Troca de Claude (session_id nu) para Codex é detectada.
+    assert_eq!(
+        detect_previous_provider(None, None, Some("sess-claude-123"), &codex),
+        Some(("claude".to_string(), String::new()))
+    );
+    // Fallback imediato (failed_from) tem prioridade.
+    assert_eq!(
+        detect_previous_provider(Some(&claude), None, None, &codex),
+        Some(claude.clone())
+    );
+    // Troca de modelo dentro do mesmo provedor via sessão ativa.
+    assert_eq!(
+        detect_previous_provider(None, Some(&claude), None, &claude_opus),
+        Some(claude.clone())
+    );
+    // Sessão prefixada de outro provedor detecta troca.
+    assert_eq!(
+        detect_previous_provider(
+            None,
+            None,
+            Some("codex:gpt-5.3-codex:item-1:sid-1"),
+            &claude
+        ),
+        Some(codex)
+    );
+}
+
+#[test]
+fn record_provider_switch_registra_origem_e_destino_na_atividade_do_card() {
+    use crate::db::NewCard;
+
+    let data_dir = std::env::temp_dir().join(format!(
+        "vokia-provider-switch-card-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
+    let app = support::build_app(&data_dir);
+    let db_state = app.state::<DbState>();
+    let db = db_state.db().expect("banco de teste");
+    let project = db
+        .insert_project(&NewProject {
+            name: "handoff-card",
+            symbol: "folder",
+            description: "",
+            path: "C:/test/handoff-card",
+            origin_kind: "folder",
+            origin_repo: None,
+        })
+        .expect("projeto");
+    let card = db
+        .create_card(
+            project.id,
+            &NewCard {
+                title: "Troca de provedor".into(),
+                description: Some("Card de teste".into()),
+                origin: "usuario".into(),
+                links: Vec::new(),
+            },
+        )
+        .expect("card");
+
+    record_provider_switch_card_activity(
+        app.handle(),
+        project.id,
+        &card.id,
+        &("claude".to_string(), "sonnet".to_string()),
+        &("codex".to_string(), "gpt-5.3-codex".to_string()),
+        Some(OverrideReason::UsageLimit),
+    );
+
+    let updated = db.read_card(project.id, &card.id).expect("card atualizado");
+    let last = updated.activity.last().expect("atividade registrada");
+    assert!(
+        last.text.contains("claude (sonnet)")
+            && last.text.contains("codex (gpt-5.3-codex)")
+            && last.text.contains("limite de uso"),
+        "atividade inesperada: {}",
+        last.text
+    );
+
+    drop(app);
+    let _ = std::fs::remove_dir_all(&data_dir);
+}

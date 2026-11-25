@@ -45,6 +45,7 @@ const FIRST_LINE: u32 = 1;
 const NAME_MAX_CHARS: usize = 120;
 const DELEGATION_COMMAND: &str = "maestri ask";
 const RESULT_MAX_CHARS: usize = 2000;
+const COMMAND_RESULT_TAIL_CHARS: usize = 600;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -129,6 +130,8 @@ pub struct ToolActivity {
     pub detail: Option<ToolDetail>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,6 +308,7 @@ impl ActivityParser {
             duration_ms: None,
             detail: entry_detail(name, input),
             result: None,
+            exit_code: None,
         });
         true
     }
@@ -351,6 +355,10 @@ impl ActivityParser {
                 tool.added = None;
                 tool.removed = None;
                 tool.change = None;
+                if tool.category == ToolCategory::Command {
+                    tool.result = command_result_tail(&result["content"]);
+                    tool.exit_code = outcome.and_then(command_exit_code);
+                }
                 if !matches!(tool.detail, Some(ToolDetail::AppCommand { .. })) {
                     tool.detail = None;
                 }
@@ -359,6 +367,9 @@ impl ActivityParser {
             tool.status = ToolStatus::Ok;
             if tool.target.starts_with(DELEGATION_COMMAND) {
                 tool.result = result_text(&result["content"]);
+            } else if tool.category == ToolCategory::Command {
+                tool.result = command_result_tail(&result["content"]);
+                tool.exit_code = outcome.and_then(command_exit_code).or(Some(0));
             }
             if let (true, Some((added, removed))) = (open.patchable, patch) {
                 tool.added = Some(added);
@@ -391,6 +402,40 @@ fn result_text(content: &Value) -> Option<String> {
         .take(RESULT_MAX_CHARS)
         .collect();
     (!text.trim().is_empty()).then_some(text)
+}
+
+fn command_result_tail(content: &Value) -> Option<String> {
+    let raw = match content {
+        Value::String(text) => text.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|block| block["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let safe = ConsoleLine::new(ConsoleKind::Text, &raw).text;
+    let trimmed = safe.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let total = trimmed.chars().count();
+    let tail: String = if total > COMMAND_RESULT_TAIL_CHARS {
+        trimmed.chars().skip(total - COMMAND_RESULT_TAIL_CHARS).collect()
+    } else {
+        trimmed.to_string()
+    };
+    Some(tail)
+}
+
+fn command_exit_code(outcome: &Value) -> Option<i32> {
+    outcome
+        .get("exitCode")
+        .or_else(|| outcome.get("exit_code"))
+        .or_else(|| outcome.get("returnCode"))
+        .or_else(|| outcome.get("return_code"))
+        .and_then(Value::as_i64)
+        .and_then(|code| i32::try_from(code).ok())
 }
 
 fn entry_detail(name: &str, input: &Value) -> Option<ToolDetail> {
