@@ -2,7 +2,11 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { BalloonItem } from '../balloon/balloonTypes'
 import { useBalloons } from '../balloon/useBalloons'
-import type { VokiaModelUnavailable, VokiaUsageLimit } from '../team/events'
+import type {
+  VokiaModelUnavailable,
+  VokiaProviderDisabled,
+  VokiaUsageLimit,
+} from '../team/events'
 import { availableProviders, resumeInterruptedRun, type AgentProfile, type CliPreset } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
 import { useRoster } from '../team/useRoster'
@@ -194,6 +198,27 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     })
   }
 
+  function notifyProviderDisabled(event: VokiaProviderDisabled): void {
+    enqueueOrReplace({
+      id: `provider-disabled:${event.provider}`,
+      kind: 'limit',
+      source: 'uso do plano',
+      title: `${event.label} desativado`,
+      text: `${event.label} foi desativado automaticamente (${event.reason}) e não será mais usado pelos agentes.`,
+      mascot: 'pausado',
+      actions: [
+        {
+          id: 'open-provider-setup',
+          label: 'Configurar provedores',
+          primary: true,
+          run: () => {
+            useProviders().openSetup(event.provider)
+          },
+        },
+      ],
+    })
+  }
+
   function apply(event: VokiaUsageLimit): void {
     usage.refreshClock()
     notice.value = event
@@ -236,6 +261,7 @@ export const useUsageLimit = defineStore('usageLimit', () => {
     apply,
     suggestFromLimitMessage,
     suggestModelUnavailable,
+    notifyProviderDisabled,
     alternativeProviderFor,
     migrateToProvider,
     resume,

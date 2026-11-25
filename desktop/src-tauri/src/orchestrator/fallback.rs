@@ -276,6 +276,9 @@ pub fn resolve_candidates(
         let Ok(provider) = providers.get(&cli) else {
             continue;
         };
+        if !provider.enabled {
+            continue;
+        }
         if is_ember && !provider.has_tools() {
             continue;
         }
@@ -356,6 +359,61 @@ pub fn emit_overrides_changed(app: &AppHandle, state: &AppState) {
         .cloned()
         .collect();
     let _ = emit(app, VokiaEvent::TemporaryOverridesChanged { overrides });
+}
+
+/// Desativa automaticamente um provedor com erro de assinatura/pagamento/autenticação,
+/// limpa overrides e ativo global que apontavam para ele e notifica a interface.
+pub fn handle_provider_auth_or_billing(
+    app: &AppHandle,
+    state: &AppState,
+    provider_id: &str,
+    reason: &str,
+) {
+    let label = if let Some(providers) = app.try_state::<ProviderRegistry>() {
+        match providers.set_enabled(provider_id, false, Some(reason)) {
+            Ok(updated) => updated.label,
+            Err(_) => provider_id.to_string(),
+        }
+    } else {
+        provider_id.to_string()
+    };
+
+    let cleared_override = {
+        let mut overrides = state
+            .temporary_overrides
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let before = overrides.len();
+        overrides.retain(|_, ov| ov.cli != provider_id && ov.original_cli != provider_id);
+        overrides.len() != before
+    };
+    if cleared_override {
+        emit_overrides_changed(app, state);
+    }
+
+    if let Some(db_state) = app.try_state::<DbState>() {
+        if let Some(db) = db_state.db() {
+            if let Ok(settings) = db.load_settings() {
+                if let Some(raw) = settings.get(SETTING_ACTIVE_LLM) {
+                    if let Ok(target) = serde_json::from_str::<LlmTarget>(raw) {
+                        if target.cli == provider_id {
+                            let _ = db.save_setting(SETTING_ACTIVE_LLM, "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = emit(
+        app,
+        VokiaEvent::ProviderDisabled {
+            provider: provider_id.to_string(),
+            label,
+            reason: reason.to_string(),
+        },
+    );
+    let _ = emit(app, VokiaEvent::ProvidersChanged);
 }
 
 /// Releases expired `(provider_id, model)` limits and restores any agents whose
@@ -452,9 +510,9 @@ pub(crate) async fn ask_with_fallback(
         None,
     );
     if candidates.is_empty() {
-        return claude::ask(default_cli, message, role, &profile.model)
-            .await
-            .map_err(FlowError::Claude);
+        return Err(FlowError::CliUnavailable(
+            "Nenhum provedor ativo disponível para executar esta ação.".to_string(),
+        ));
     }
 
     let mut last_error: Option<FlowError> = None;
@@ -519,6 +577,18 @@ pub(crate) async fn ask_with_fallback(
 
         match res {
             Ok(reply) => return Ok(reply),
+            Err(error) if error.is_provider_disabled() => {
+                let reason = error
+                    .auth_or_billing()
+                    .map(|(_, r)| r)
+                    .unwrap_or_else(|| "Falha de autenticação ou assinatura.".to_string());
+                handle_provider_auth_or_billing(app, state, &candidate.cli, &reason);
+                mark_cooldown(state, &candidate.cli, &candidate.model);
+                last_error = Some(FlowError::ProviderDisabled {
+                    provider: candidate.cli,
+                    reason,
+                });
+            }
             Err(error) if error.is_limit() => {
                 let resets_at = error.usage_limit().map(|l| l.resets_at).filter(|&r| r > 0);
                 let entry = state.usage.mark_limit_reached(

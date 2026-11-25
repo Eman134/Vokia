@@ -205,6 +205,17 @@ fn schema_set_active_llm() -> Value {
     )
 }
 
+fn schema_set_provider_enabled() -> Value {
+    obj_schema(
+        json!({
+            "id": { "type": "string", "description": "ID do provedor" },
+            "enabled": { "type": "boolean", "description": "Define se o provedor está ativo para uso pelos agentes" },
+            "reason": { "type": "string", "description": "Motivo opcional quando desativado" },
+        }),
+        &["id", "enabled"],
+    )
+}
+
 fn schema_reorder_layers() -> Value {
     obj_schema(
         json!({ "ids": { "type": "array", "items": { "type": "string" } } }),
@@ -634,6 +645,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("providers", "check_provider_status", "Verifica instalação e autenticação de provedores.", "Para consultar o estado de conexão (connected, signed-out, missing, error) de todos os provedores ou de um id específico.", schema_optional_id),
     exposed("providers", "get_active_llm", "Lê o LLM ativo global.", "Para consultar o provedor, modelo, tier e reasoningEffort ativos globalmente.", empty_object_schema),
     exposed("providers", "set_active_llm", "Define o LLM ativo global.", "Para alterar provedor (cli), modelo, modelTier e reasoningEffort ativos globalmente.", schema_set_active_llm),
+    exposed("providers", "set_provider_enabled", "Ativa ou desativa um provedor.", "Para habilitar ou desabilitar um provedor sem removê-lo do catálogo.", schema_set_provider_enabled),
     exposed("providers", "save_provider", "Grava a configuração de um provedor.", "Para criar ou atualizar a configuração de um provedor; o id usa letras, números, hífen ou sublinhado.", schema_save_provider),
     exposed("providers", "delete_provider", "Remove um provedor.", "Para remover um provedor; recusado para o claude e para provedores em uso por agentes.", schema_id),
     exposed("providers", "discover_provider_models", "Descobre os modelos disponíveis de um provedor.", "Para descobrir os modelos de um provedor antes de escolher um modelo para um agente.", schema_id),
@@ -988,6 +1000,9 @@ async fn run(
         "get_active_llm" => json_result(providers::get_active_llm_exec(app)),
         "set_active_llm" => {
             json_result(providers::set_active_llm_exec(app, parse_args(arguments)?).await)
+        }
+        "set_provider_enabled" => {
+            json_result(providers::set_provider_enabled_exec(app, parse_args(arguments)?))
         }
         "save_provider" => json_result(providers::save_provider_exec(app, parse_args(arguments)?)),
         "delete_provider" => {

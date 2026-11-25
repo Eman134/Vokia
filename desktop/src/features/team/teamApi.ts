@@ -121,6 +121,8 @@ export interface AgentProfile {
 export interface CliPreset {
   id: string
   label: string
+  enabled?: boolean
+  disabledReason?: string | null
   models: string[]
   freeModels?: string[]
   defaultModel: string

@@ -128,6 +128,7 @@ pub(crate) fn run() {
             commands::providers::check_provider_status,
             commands::providers::get_active_llm,
             commands::providers::set_active_llm,
+            commands::providers::set_provider_enabled,
             commands::providers::save_provider,
             commands::providers::delete_provider,
             commands::providers::discover_provider_models,

@@ -27,6 +27,7 @@ const LIST_PROVIDERS_COMMAND = 'list_providers'
 const CHECK_PROVIDER_STATUS_COMMAND = 'check_provider_status'
 const GET_ACTIVE_LLM_COMMAND = 'get_active_llm'
 const SET_ACTIVE_LLM_COMMAND = 'set_active_llm'
+const SET_PROVIDER_ENABLED_COMMAND = 'set_provider_enabled'
 const SAVE_PROVIDER_COMMAND = 'save_provider'
 const DELETE_PROVIDER_COMMAND = 'delete_provider'
 const DISCOVER_PROVIDER_MODELS_COMMAND = 'discover_provider_models'
@@ -88,6 +89,8 @@ export interface GenericCliSpec {
 export interface ProviderConfig {
   id: string
   label: string
+  enabled?: boolean
+  disabledReason?: string | null
   protocol: ProviderProtocol
   defaultCommand: string
   defaultModel: string
@@ -168,6 +171,18 @@ export function setActiveLlm(params: {
 
 export function saveProvider(config: ProviderConfig): Promise<ProviderConfig> {
   return invoke<ProviderConfig>(SAVE_PROVIDER_COMMAND, { config })
+}
+
+export function setProviderEnabled(
+  id: string,
+  enabled: boolean,
+  reason?: string | null,
+): Promise<ProviderConfig> {
+  return invoke<ProviderConfig>(SET_PROVIDER_ENABLED_COMMAND, {
+    id,
+    enabled,
+    reason: reason ?? null,
+  })
 }
 
 export function deleteProvider(id: string): Promise<void> {

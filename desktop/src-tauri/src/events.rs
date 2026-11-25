@@ -352,4 +352,11 @@ pub enum VokiaEvent {
         model: String,
         detail: String,
     },
+    #[serde(rename_all = "camelCase")]
+    ProviderDisabled {
+        provider: String,
+        label: String,
+        reason: String,
+    },
+    ProvidersChanged,
 }

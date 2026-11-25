@@ -17,6 +17,10 @@ pub enum ClaudeError {
         model: String,
         detail: String,
     },
+    ProviderAuthOrBilling {
+        provider: String,
+        reason: String,
+    },
     Timeout(Duration),
     SessionClosed(String),
     Mcp(String),
@@ -72,6 +76,54 @@ impl ClaudeError {
             _ => false,
         }
     }
+
+    pub fn auth_or_billing_reason(&self) -> Option<(Option<&str>, String)> {
+        match self {
+            ClaudeError::ForCli { cli, inner } => inner
+                .auth_or_billing_reason()
+                .map(|(p, r)| (Some(p.unwrap_or(cli.as_str())), r)),
+            ClaudeError::ProviderAuthOrBilling { provider, reason } => {
+                Some((Some(provider.as_str()), reason.clone()))
+            }
+            ClaudeError::Reported(message) | ClaudeError::Exit { message, .. } => {
+                classify_auth_or_billing_message(message).map(|reason| (None, reason))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn is_auth_or_billing(&self) -> bool {
+        self.auth_or_billing_reason().is_some()
+    }
+}
+
+pub fn classify_auth_or_billing_message(text: &str) -> Option<String> {
+    let lower = text.to_ascii_lowercase();
+    if lower.contains("payment is past due")
+        || lower.contains("past due")
+        || lower.contains("credit balance is too low")
+        || lower.contains("insufficient_quota")
+        || lower.contains("billing")
+        || lower.contains("can't use your") && lower.contains("subscription")
+        || lower.contains("subscription") && (lower.contains("expired") || lower.contains("inactive"))
+    {
+        return Some("Assinatura vencida ou pagamento pendente.".to_string());
+    }
+    if lower.contains("account suspended") || lower.contains("account disabled") {
+        return Some("Conta suspensa ou desativada no provedor.".to_string());
+    }
+    if lower.contains("invalid api key")
+        || lower.contains("invalid_api_key")
+        || lower.contains("authentication failed")
+        || lower.contains("not logged in")
+        || lower.contains("please login")
+        || lower.contains("please log in")
+        || lower.contains("unauthenticated")
+        || lower.contains("unauthorized")
+    {
+        return Some("Autenticação necessária ou credencial inválida.".to_string());
+    }
+    None
 }
 
 pub fn classify_provider_error(
@@ -82,6 +134,12 @@ pub fn classify_provider_error(
     unavailable_patterns: &[String],
 ) -> Option<ClaudeError> {
     let lower = message.to_ascii_lowercase();
+    if let Some(reason) = classify_auth_or_billing_message(message) {
+        return Some(ClaudeError::ProviderAuthOrBilling {
+            provider: provider.to_string(),
+            reason,
+        });
+    }
     if unavailable_patterns
         .iter()
         .any(|pattern| !pattern.is_empty() && lower.contains(&pattern.to_ascii_lowercase()))
@@ -161,6 +219,9 @@ impl ClaudeError {
                 model,
                 detail,
             } => write!(f, "Modelo {model} indisponível em {provider}: {detail}"),
+            ClaudeError::ProviderAuthOrBilling { provider, reason } => {
+                write!(f, "Provedor {provider} desativado: {reason}")
+            }
             ClaudeError::SessionClosed(reason) => {
                 write!(f, "A sessão da CLI {cli} foi encerrada: {reason}")
             }

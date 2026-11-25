@@ -173,6 +173,9 @@ pub struct EmberOverride {
 pub struct CliPreset {
     pub id: String,
     pub label: String,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
     pub models: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub free_models: Vec<String>,

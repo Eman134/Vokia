@@ -223,11 +223,19 @@ impl ReasoningEffortSpec {
     }
 }
 
+fn default_provider_enabled() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
     pub id: String,
     pub label: String,
+    #[serde(default = "default_provider_enabled")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
     pub protocol: ProviderProtocol,
     pub default_command: String,
     pub default_model: String,
@@ -366,6 +374,8 @@ impl ProviderConfig {
         CliPreset {
             id: self.id,
             label: self.label,
+            enabled: self.enabled,
+            disabled_reason: self.disabled_reason,
             models: self.models,
             free_models: self.free_models,
             default_model: self.default_model,
@@ -491,6 +501,39 @@ impl ProviderRegistry {
         Ok(())
     }
 
+    pub fn set_enabled(
+        &self,
+        id: &str,
+        enabled: bool,
+        reason: Option<&str>,
+    ) -> Result<ProviderConfig, ProviderError> {
+        let mut state = self.lock();
+        let providers = match &mut *state {
+            Ok(providers) => providers,
+            Err(message) => return Err(ProviderError::LoadFailed(message.clone())),
+        };
+        let mut next = providers.clone();
+        let target = next
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| ProviderError::UnknownProvider(id.to_string()))?;
+        target.enabled = enabled;
+        target.disabled_reason = if enabled {
+            None
+        } else {
+            reason
+                .map(str::trim)
+                .filter(|r| !r.is_empty())
+                .map(ToString::to_string)
+        };
+        let updated = target.clone();
+        if let Some(file) = &self.file {
+            write_file(file, &next).map_err(ProviderError::SaveFailed)?;
+        }
+        *providers = next;
+        Ok(updated)
+    }
+
     pub fn update_cached_models(&self, id: &str, models: Vec<String>) -> Result<(), ProviderError> {
         let mut state = self.lock();
         let providers = match &mut *state {
@@ -553,6 +596,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         ProviderConfig {
             id: "claude".to_string(),
             label: "Claude Code".to_string(),
+            enabled: true,
+            disabled_reason: None,
             protocol: ProviderProtocol::ClaudeLive,
             default_command: "claude".to_string(),
             default_model: "haiku".to_string(),
@@ -613,6 +658,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         ProviderConfig {
             id: "codex".to_string(),
             label: "Codex".to_string(),
+            enabled: true,
+            disabled_reason: None,
             protocol: ProviderProtocol::CodexAppServer,
             default_command: "codex".to_string(),
             default_model: "gpt-6-luna".to_string(),
@@ -673,6 +720,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         ProviderConfig {
             id: "opencode".to_string(),
             label: "OpenCode".to_string(),
+            enabled: true,
+            disabled_reason: None,
             protocol: ProviderProtocol::OpenCodeJson,
             default_command: "opencode".to_string(),
             default_model: "openai/gpt-6-astra".to_string(),
@@ -738,6 +787,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
         ProviderConfig {
             id: "antigravity".to_string(),
             label: "Gemini".to_string(),
+            enabled: true,
+            disabled_reason: None,
             protocol: ProviderProtocol::AntigravityStream,
             default_command: "agy".to_string(),
             default_model: "gemini-4-hydrogen-medium".to_string(),

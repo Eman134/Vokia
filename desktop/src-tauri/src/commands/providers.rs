@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
 use tokio::time::timeout;
 
@@ -121,6 +121,15 @@ pub(crate) struct ProviderIdArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct SetProviderEnabledArgs {
+    pub id: String,
+    pub enabled: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct InspectCliArgs {
     pub command: String,
 }
@@ -181,6 +190,16 @@ pub async fn set_active_llm(
 #[tauri::command]
 pub fn save_provider(app: AppHandle, config: ProviderConfig) -> Result<ProviderConfig, String> {
     save_provider_exec(&app, SaveProviderArgs { config })
+}
+
+#[tauri::command]
+pub fn set_provider_enabled(
+    app: AppHandle,
+    id: String,
+    enabled: bool,
+    reason: Option<String>,
+) -> Result<ProviderConfig, String> {
+    set_provider_enabled_exec(&app, SetProviderEnabledArgs { id, enabled, reason })
 }
 
 #[tauri::command]
@@ -347,6 +366,13 @@ pub(crate) async fn set_active_llm_exec(
         .state::<ProviderRegistry>()
         .get(&cli)
         .map_err(|error| error.to_string())?;
+    if !provider.enabled {
+        let reason = provider
+            .disabled_reason
+            .as_deref()
+            .unwrap_or("Provedor desativado.");
+        return Err(format!("{} está desativado ({reason}).", provider.label));
+    }
     let normalized_effort = validate_reasoning_effort(args.reasoning_effort.as_deref())?;
     let resolved_model = match args.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) {
         Some(explicit) => Some(provider.resolve_model_with_effort(explicit, normalized_effort.as_deref())),
@@ -391,7 +417,29 @@ pub(crate) fn save_provider_exec(
     if let Some(state) = app.try_state::<AppState>() {
         state.usage.invalidate_provider(&saved.id);
     }
+    let _ = app.emit(
+        crate::events::EVENT_NAME,
+        crate::events::VokiaEvent::ProvidersChanged,
+    );
     Ok(saved)
+}
+
+pub(crate) fn set_provider_enabled_exec(
+    app: &AppHandle,
+    args: SetProviderEnabledArgs,
+) -> Result<ProviderConfig, String> {
+    let updated = app
+        .state::<ProviderRegistry>()
+        .set_enabled(&args.id, args.enabled, args.reason.as_deref())
+        .map_err(|error| error.to_string())?;
+    if let Some(state) = app.try_state::<AppState>() {
+        state.usage.invalidate_provider(&updated.id);
+    }
+    let _ = app.emit(
+        crate::events::EVENT_NAME,
+        crate::events::VokiaEvent::ProvidersChanged,
+    );
+    Ok(updated)
 }
 
 pub(crate) fn delete_provider_exec(app: &AppHandle, args: ProviderIdArgs) -> Result<(), String> {

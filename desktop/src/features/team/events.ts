@@ -467,6 +467,17 @@ export interface VokiaModelUnavailable {
   detail: string
 }
 
+export interface VokiaProviderDisabled {
+  type: 'provider-disabled'
+  provider: string
+  label: string
+  reason: string
+}
+
+export interface VokiaProvidersChanged {
+  type: 'providers-changed'
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -496,6 +507,8 @@ export type VokiaEvent =
   | VokiaTaskStage
   | VokiaTemporaryOverridesChanged
   | VokiaModelUnavailable
+  | VokiaProviderDisabled
+  | VokiaProvidersChanged
 
 export interface CliProblem {
   reason: string

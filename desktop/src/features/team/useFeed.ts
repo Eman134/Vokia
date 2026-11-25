@@ -23,6 +23,7 @@ import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
 import { clearConversation, fetchDbProblem, loadHistory } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
+import { useProviders } from '../providers/useProviders'
 import { pauseNotice } from '../panel/nowCopy'
 import { useRoster } from './useRoster'
 import { projectAgentKey } from './projectAgentKey'
@@ -284,6 +285,13 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'model-unavailable':
         useUsageLimit().suggestModelUnavailable(event)
+        break
+      case 'provider-disabled':
+        useUsageLimit().notifyProviderDisabled(event)
+        void useProviders().load()
+        break
+      case 'providers-changed':
+        void useProviders().load()
         break
       case 'temporary-overrides-changed':
         useTemporaryOverrides().apply(event.overrides)

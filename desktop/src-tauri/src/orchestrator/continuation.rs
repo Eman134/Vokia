@@ -742,7 +742,7 @@ fn build_recovery_prompt(
 /// Classifica um erro de turno de forma agnóstica a provedor para decidir
 /// se é elegível a retomada única por falha de compactação ou queda abrupta da CLI.
 pub fn classify_turn_failure(error: &FlowError) -> TurnFailureKind {
-    if error.is_limit() || error.is_model_unavailable() {
+    if error.is_limit() || error.is_model_unavailable() || error.is_provider_disabled() {
         return TurnFailureKind::Other;
     }
     match error {
@@ -756,7 +756,8 @@ fn classify_claude_error(error: &ClaudeError) -> TurnFailureKind {
         ClaudeError::ForCli { inner, .. } => classify_claude_error(inner),
         ClaudeError::UsageLimit(_)
         | ClaudeError::LimitExhausted
-        | ClaudeError::ModelUnavailable { .. } => TurnFailureKind::Other,
+        | ClaudeError::ModelUnavailable { .. }
+        | ClaudeError::ProviderAuthOrBilling { .. } => TurnFailureKind::Other,
         ClaudeError::Reported(msg) => {
             if is_compaction_error_text(msg) {
                 TurnFailureKind::Compaction

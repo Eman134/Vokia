@@ -30,9 +30,10 @@ use super::console::ConsoleSink;
 use super::emit::{emit, emit_state, report_limits};
 use super::error::FlowError;
 use super::fallback::{
-    emit_overrides_changed, load_global_active_llm, load_global_fallback, mark_cooldown,
-    now_millis_u64, resolve_candidates, resolve_program_for, schedule_limit_return, LlmTarget,
-    OverrideReason, ResolvedCandidate, TemporaryOverride, DEFAULT_COOLDOWN_SECS,
+    emit_overrides_changed, handle_provider_auth_or_billing, load_global_active_llm,
+    load_global_fallback, mark_cooldown, now_millis_u64, resolve_candidates, resolve_program_for,
+    schedule_limit_return, LlmTarget, OverrideReason, ResolvedCandidate, TemporaryOverride,
+    DEFAULT_COOLDOWN_SECS,
 };
 use super::flow::profile_of;
 use super::project_context::project_choices;
@@ -460,6 +461,21 @@ async fn run_step(
                 });
             }
             Err(err) => {
+                if let Some((err_provider, reason)) = err.auth_or_billing() {
+                    let target_provider = err_provider.unwrap_or(&candidate.cli).to_string();
+                    let acted = console.has_acted() || call.has_collected_actions();
+                    let has_backup = idx + 1 < candidates.len();
+                    handle_provider_auth_or_billing(app, state, &target_provider, &reason);
+                    mark_cooldown(state, &candidate.cli, &candidate.model);
+                    if UsageLimitGate::can_failover(acted, has_backup) {
+                        held.guard.degrade().await;
+                        continue;
+                    }
+                    return Err(FlowError::ProviderDisabled {
+                        provider: target_provider,
+                        reason,
+                    });
+                }
                 let is_limit = err.is_limit();
                 let is_unavail = err.is_model_unavailable();
                 let acted = console.has_acted() || call.has_collected_actions();

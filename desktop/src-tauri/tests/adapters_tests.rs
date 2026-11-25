@@ -575,6 +575,8 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
     let custom = crate::providers::ProviderConfig {
         id: "meu-llm-custom".to_string(),
         label: "Meu LLM Customizado".to_string(),
+        enabled: true,
+        disabled_reason: None,
         protocol: crate::providers::ProviderProtocol::GenericCli,
         default_command: "meu-llm".to_string(),
         default_model: "modelo-base".to_string(),
@@ -1442,6 +1444,8 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
     let no_tools = crate::providers::ProviderConfig {
         id: "sem-tools".to_string(),
         label: "Sem Tools".to_string(),
+        enabled: true,
+        disabled_reason: None,
         protocol: crate::providers::ProviderProtocol::GenericCli,
         default_command: "sem-tools".to_string(),
         default_model: "base".to_string(),
@@ -1648,6 +1652,8 @@ fn req085_evaluate_provider_status_abstract_probe() {
     let missing = crate::providers::ProviderConfig {
         id: "inexistente-cli".to_string(),
         label: "Inexistente".to_string(),
+        enabled: true,
+        disabled_reason: None,
         protocol: crate::providers::ProviderProtocol::GenericCli,
         default_command: "vokia-binary-definitely-missing-987654".to_string(),
         default_model: "m1".to_string(),
@@ -1681,6 +1687,89 @@ fn req085_evaluate_provider_status_abstract_probe() {
         status,
         crate::commands::providers::ProviderConnectionStatus::Missing
     );
+}
+
+#[test]
+fn billing_or_auth_error_disables_provider_and_excludes_from_candidates() {
+    let dir = std::env::temp_dir().join(format!(
+        "vokia-provider-disable-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // 1. Classifica erro de assinatura vencida / pagamento pendente sem tratá-lo como falha de CLI
+    let billing_msg = "Claude Code can't use your Claude subscription, usually because a payment is past due · Pay or renew at https://claude.ai/settings/billing";
+    let classified = crate::claude::classify_provider_error(
+        "claude",
+        "sonnet",
+        billing_msg,
+        &[],
+        &[],
+    )
+    .expect("deve classificar erro de billing/assinatura");
+    assert!(classified.is_auth_or_billing());
+    let flow_err = crate::orchestrator::error::FlowError::Claude(classified);
+    assert!(flow_err.is_provider_disabled());
+    assert!(!flow_err.is_cli_failure());
+
+    // 2. Desabilitar o provedor o exclui de resolve_candidates para qualquer agente
+    let providers = crate::providers::ProviderRegistry::load(&dir);
+    let agents = crate::agents::AgentRegistry::load(&dir);
+    let team = agents.team().unwrap();
+    let app_state = crate::state::AppState::new(Ok(std::path::PathBuf::from("claude")));
+    let agent = crate::agents::Agent::ember();
+    let profile = team.profile(&agent).unwrap().clone();
+
+    let before = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &app_state,
+        None,
+        &[crate::orchestrator::fallback::LlmTarget {
+            cli: "codex".to_string(),
+            model_tier: Some(crate::providers::ModelTier::Intermediate),
+            model: None,
+            reasoning_effort: None,
+        }],
+        None,
+    );
+    assert!(before.iter().any(|c| c.cli == profile.cli));
+
+    let disabled = providers
+        .set_enabled(&profile.cli, false, Some("Assinatura vencida ou pagamento pendente."))
+        .expect("desabilitar provedor");
+    assert!(!disabled.enabled);
+    assert!(disabled.disabled_reason.is_some());
+
+    let after = crate::orchestrator::fallback::resolve_candidates(
+        &agent,
+        &profile,
+        &providers,
+        &app_state,
+        None,
+        &[crate::orchestrator::fallback::LlmTarget {
+            cli: "codex".to_string(),
+            model_tier: Some(crate::providers::ModelTier::Intermediate),
+            model: None,
+            reasoning_effort: None,
+        }],
+        None,
+    );
+    assert!(after.iter().all(|c| c.cli != profile.cli));
+
+    // 3. Reativar limpa o motivo e volta a permitir uso
+    let reenabled = providers
+        .set_enabled(&profile.cli, true, None)
+        .expect("reativar provedor");
+    assert!(reenabled.enabled);
+    assert!(reenabled.disabled_reason.is_none());
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 

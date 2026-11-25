@@ -48,6 +48,7 @@ pub enum FlowError {
     Team(AgentError),
     Worktree(WorktreeError),
     Roles(RoleError),
+    ProviderDisabled { provider: String, reason: String },
 }
 
 impl fmt::Display for FlowError {
@@ -117,6 +118,9 @@ impl fmt::Display for FlowError {
             FlowError::Team(error) => write!(f, "{error}"),
             FlowError::Worktree(error) => write!(f, "{error}"),
             FlowError::Roles(error) => write!(f, "{error}"),
+            FlowError::ProviderDisabled { provider, reason } => {
+                write!(f, "Provedor {provider} desativado: {reason}")
+            }
         }
     }
 }
@@ -137,7 +141,28 @@ impl FlowError {
     }
 
     pub fn is_cli_failure(&self) -> bool {
-        matches!(self, FlowError::Claude(_))
+        match self {
+            FlowError::Claude(error) => !error.is_auth_or_billing(),
+            _ => false,
+        }
+    }
+
+    pub fn is_provider_disabled(&self) -> bool {
+        match self {
+            FlowError::ProviderDisabled { .. } => true,
+            FlowError::Claude(error) => error.is_auth_or_billing(),
+            _ => false,
+        }
+    }
+
+    pub fn auth_or_billing(&self) -> Option<(Option<&str>, String)> {
+        match self {
+            FlowError::ProviderDisabled { provider, reason } => {
+                Some((Some(provider.as_str()), reason.clone()))
+            }
+            FlowError::Claude(error) => error.auth_or_billing_reason(),
+            _ => None,
+        }
     }
 
     pub fn is_model_unavailable(&self) -> bool {
