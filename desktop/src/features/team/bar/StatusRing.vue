@@ -57,35 +57,37 @@ function dashClass(agent: Agent): string {
 </script>
 
 <template>
-  <svg
-    v-if="feed.activeAgents.length < 2"
-    class="size-6.5 shrink-0"
-    :class="{ 'animate-spin': !flow.active && statusStore.status === 'working' }"
-    :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
-    fill="none"
-    :stroke-width="RING_STROKE"
-    aria-hidden="true"
-  >
-    <g :transform="`translate(${RING_OFFSET} ${RING_OFFSET})`">
-      <path :d="RING_PATH" class="stroke-line" />
-      <path
-        :d="RING_PATH"
-        :class="[statusStore.ring, needsYou && 'ring-draw']"
-        :pathLength="PATH_LENGTH"
-        stroke-linecap="round"
-        :stroke-dasharray="ringDashArray"
+  <span class="inline-flex shrink-0 items-center" :title="statusLabel">
+    <svg
+      v-if="feed.activeAgents.length < 2"
+      class="size-6.5 shrink-0"
+      :class="{ 'animate-spin': !flow.active && statusStore.status === 'working' }"
+      :viewBox="`0 0 ${RING_BOX} ${RING_BOX}`"
+      fill="none"
+      :stroke-width="RING_STROKE"
+      aria-hidden="true"
+    >
+      <g :transform="`translate(${RING_OFFSET} ${RING_OFFSET})`">
+        <path :d="RING_PATH" class="stroke-line" />
+        <path
+          :d="RING_PATH"
+          :class="[statusStore.ring, needsYou && 'ring-draw']"
+          :pathLength="PATH_LENGTH"
+          stroke-linecap="round"
+          :stroke-dasharray="ringDashArray"
+        />
+      </g>
+    </svg>
+    <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
+      <span
+        v-for="agent in feed.activeAgents"
+        :key="agent.id"
+        class="h-1 w-3.5 rounded-full"
+        :class="dashClass(agent.id)"
       />
-    </g>
-  </svg>
-  <span v-else data-testid="agent-dash" class="flex shrink-0 items-center gap-1">
-    <span
-      v-for="agent in feed.activeAgents"
-      :key="agent.id"
-      class="h-1 w-3.5 rounded-full"
-      :class="dashClass(agent.id)"
-    />
+    </span>
   </span>
-  <span class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
+  <span v-if="!expanded || flow.active || !canAsk" class="flex min-w-0 flex-col" :class="expanded ? undefined : 'pr-2'">
     <span
       class="text-label font-semibold"
       :class="[

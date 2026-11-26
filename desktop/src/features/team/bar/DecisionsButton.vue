@@ -26,8 +26,9 @@ const showDecisionsButton = computed(
     variant="quiet"
     size="sm"
     :aria-label="decisionsTitle"
+    :title="decisionsTitle"
     :aria-expanded="decisions.open"
-    class="gap-1.75"
+    :class="decisions.pendingCount > 0 ? 'gap-1.5 px-2' : 'w-7 px-0'"
     data-testid="decisions-button"
     @press="panelTab.toggle()"
   >
@@ -39,7 +40,7 @@ const showDecisionsButton = computed(
     >
     <svg
       v-else-if="statusStore.status === 'done' && !expanded"
-      class="size-3 text-ok"
+      class="size-3.5 text-ok"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -51,8 +52,8 @@ const showDecisionsButton = computed(
       <path d="M2.5 8.5L6 12l7.5-8" />
     </svg>
     <svg
-      v-else-if="expanded"
-      class="size-3.5 sm:hidden"
+      v-if="decisions.pendingCount > 0 || expanded"
+      class="size-4 shrink-0"
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
@@ -63,6 +64,5 @@ const showDecisionsButton = computed(
     >
       <path d="M2.5 3.5h11v6h-3l-1 2h-3l-1-2h-3z" />
     </svg>
-    <span v-if="expanded" class="max-sm:hidden">{{ decisionsTitle }}</span>
   </UiButton>
 </template>
