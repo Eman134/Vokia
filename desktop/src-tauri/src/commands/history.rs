@@ -1,10 +1,14 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::db::history::{
     HistoryReadQuery, HistoryReadResponse, HistorySearchQuery, HistorySearchResponse,
+    HistoryWorkStepEntry,
 };
 use crate::db::DbState;
+
+const DEFAULT_WORK_STEPS_LIMIT: usize = 10;
+const MAX_WORK_STEPS_LIMIT: usize = 50;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +52,31 @@ pub(crate) struct HistoryReadArgs {
     pub include_work_steps: bool,
     #[serde(default)]
     pub work_steps_offset: Option<usize>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListTurnWorkStepsArgs {
+    #[serde(default)]
+    pub project_id: Option<i64>,
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default, alias = "itemId")]
+    pub card_id: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListTurnWorkStepsResponse {
+    pub project_id: i64,
+    pub work_steps: Vec<HistoryWorkStepEntry>,
+    pub has_more: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<usize>,
 }
 
 fn resolve_scoped_project_id(
@@ -178,6 +207,60 @@ pub fn history_read(
             card_id,
             include_work_steps: include_work_steps.unwrap_or(false),
             work_steps_offset,
+        },
+    )
+}
+
+pub(crate) fn list_turn_work_steps_exec(
+    app: &AppHandle,
+    bound_project_id: Option<i64>,
+    args: ListTurnWorkStepsArgs,
+) -> Result<ListTurnWorkStepsResponse, String> {
+    let project_id = resolve_scoped_project_id(args.project_id, bound_project_id)?;
+    let limit = args
+        .limit
+        .unwrap_or(DEFAULT_WORK_STEPS_LIMIT)
+        .clamp(1, MAX_WORK_STEPS_LIMIT);
+    let offset = args.offset.unwrap_or(0);
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|error| error.to_string())?;
+    let (records, has_more) = db
+        .list_history_work_steps(
+            project_id,
+            args.agent.as_deref(),
+            args.card_id.as_deref(),
+            limit,
+            offset,
+        )
+        .map_err(|error| error.to_string())?;
+    let work_steps: Vec<HistoryWorkStepEntry> = records.into_iter().map(Into::into).collect();
+    let next_offset = has_more.then_some(offset + work_steps.len());
+    Ok(ListTurnWorkStepsResponse {
+        project_id,
+        work_steps,
+        has_more,
+        next_offset,
+    })
+}
+
+#[tauri::command]
+pub fn list_turn_work_steps(
+    app: AppHandle,
+    project_id: i64,
+    agent: Option<String>,
+    card_id: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<ListTurnWorkStepsResponse, String> {
+    list_turn_work_steps_exec(
+        &app,
+        None,
+        ListTurnWorkStepsArgs {
+            project_id: Some(project_id),
+            agent,
+            card_id,
+            limit,
+            offset,
         },
     )
 }

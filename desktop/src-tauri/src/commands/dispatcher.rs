@@ -549,6 +549,19 @@ fn schema_history_read() -> Value {
     )
 }
 
+fn schema_list_turn_work_steps() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id do projeto (obrigatório fora de sessão MCP; no MCP usa o projeto vinculado e recusa outro)" },
+            "agent": { "type": "string", "description": "Filtro opcional por agente" },
+            "cardId": { "type": "string", "description": "Filtro opcional por card do backlog (também aceita itemId)" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Quantidade máxima de blocos por página (padrão 10, máximo 50)" },
+            "offset": { "type": "integer", "minimum": 0, "description": "Offset de paginação devolvido em nextOffset" },
+        }),
+        &[],
+    )
+}
+
 fn schema_run_memory_review() -> Value {
     obj_schema(
         json!({
@@ -714,6 +727,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("search", "command_search", "Busca sob demanda no catálogo de comandos do Vokia por nome exato ou palavras-chave. Parâmetros: query ou queries (camelCase), domain (opcional), limit (padrão 5, máx 10). Devolve até 3 resultados fortes já com inputSchema, parameters e exampleCall embutidos.", "Para descobrir qual comando chamar e seus parâmetros exatos sem carregar o catálogo inteiro nem gastar um turno extra de inspeção.", schema_command_search),
     exposed("search", "history_search", "Busca no histórico local de mensagens do projeto atual (FTS5 com fallback LIKE), respeitando o último marcador de reset de contexto. Parâmetros: projectId (no MCP usa o projeto vinculado), query, agent (opcional), channelId (opcional), cardId/itemId (opcional), limit (padrão 5, máx 10). Excertos de até 400 chars e resposta total até 8.000 chars com messageId e timestamp.", "Para recuperar decisões ou detalhes discutidos em turnos antigos da própria conversa ou card após compactação ou troca de provedor.", schema_history_search),
     exposed("search", "history_read", "Lê mensagens recentes, uma mensagem específica por messageId ou página anterior a um cursor/beforeMessageId dentro do projeto atual. Parâmetros: projectId, messageId, beforeMessageId/cursor, limit (padrão 10, máx 20), offset, agent, channelId, cardId/itemId, includeWorkSteps, workStepsOffset. Respeita teto de 16.000 chars serializados e devolve nextOffset, nextCursor e nextWorkStepsOffset.", "Para ler na íntegra uma mensagem antiga encontrada por history_search, paginar turnos anteriores ou inspecionar blocos [work steps] sob demanda.", schema_history_read),
+    exposed("search", "list_turn_work_steps", "Lista blocos [work steps] recentes de um projeto (filtráveis por agent e cardId/itemId) com paginação por limit (padrão 10, máx 50) e offset. Devolve workSteps, hasMore e nextOffset.", "Para consultar de forma leve as etapas compactas executadas por um agente ou card sem carregar mensagens.", schema_list_turn_work_steps),
     exposed("search", "web_search", "Pesquisa na web via provedor auxiliar com busca nativa ou conector MCP configurado em Configurações › Pesquisa. Parâmetros: query (obrigatório), projectId (opcional). Devolve summary conciso, lista de sources com URLs verificáveis, backend utilizado e stepLabel.", "Para provedores sem busca web nativa (ex.: OpenCode ou CLI customizada) pesquisarem documentação e referências atualizadas na web.", schema_web_search),
     exposed("learning", "run_memory_review", "Dispara revisão assíncrona de memórias e sugestão de skills para um projeto usando ModelTier::Basic, respeitando limites de uso (75%) e modo configurado. Parâmetros: projectId, agent (opcional), cardId (opcional), trigger (opcional).", "Para revisar aprendizados duráveis e sugerir memórias ou SKILL.md após entrega de card ou sob demanda.", schema_run_memory_review),
     exposed("learning", "list_learning_suggestions", "Lista sugestões de memória e SKILL.md geradas pela revisão assíncrona. Parâmetros opcionais: projectId, status (pending|applied|dismissed).", "Para consultar sugestões pendentes ou histórico de aprendizados.", schema_list_learning_suggestions),
@@ -1129,6 +1143,11 @@ async fn run(
             parse_args(arguments)?,
         )),
         "history_read" => json_result(history::history_read_exec(
+            app,
+            bound_project_id,
+            parse_args(arguments)?,
+        )),
+        "list_turn_work_steps" => json_result(history::list_turn_work_steps_exec(
             app,
             bound_project_id,
             parse_args(arguments)?,

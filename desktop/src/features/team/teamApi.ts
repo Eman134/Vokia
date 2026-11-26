@@ -39,6 +39,7 @@ const UPDATE_QUEUED_REQUEST_COMMAND = 'update_queued_request'
 const MOVE_QUEUED_REQUEST_COMMAND = 'move_queued_request'
 const REMOVE_QUEUED_REQUEST_COMMAND = 'remove_queued_request'
 const GET_TURN_PLAN_COMMAND = 'get_turn_plan'
+const LIST_TURN_WORK_STEPS_COMMAND = 'list_turn_work_steps'
 
 export interface QueuedRequestRecord {
   id: number
@@ -327,6 +328,40 @@ export function getTurnPlan(
     agent,
     projectId: projectId ?? null,
     cardId: cardId ?? null,
+  })
+}
+
+export interface HistoryWorkStepEntry {
+  id: number
+  agent: Agent
+  cardId?: string
+  provider?: string
+  block: string
+  stepCount: number
+  omittedCount: number
+  createdAt: number
+}
+
+export interface ListTurnWorkStepsResponse {
+  projectId: number
+  workSteps: HistoryWorkStepEntry[]
+  hasMore: boolean
+  nextOffset?: number
+}
+
+export function listTurnWorkSteps(params: {
+  projectId: number
+  agent?: Agent
+  cardId?: string
+  limit?: number
+  offset?: number
+}): Promise<ListTurnWorkStepsResponse> {
+  return invoke<ListTurnWorkStepsResponse>(LIST_TURN_WORK_STEPS_COMMAND, {
+    projectId: params.projectId,
+    agent: params.agent ?? null,
+    cardId: params.cardId ?? null,
+    limit: params.limit ?? null,
+    offset: params.offset ?? null,
   })
 }
 

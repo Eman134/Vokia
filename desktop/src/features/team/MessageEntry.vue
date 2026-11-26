@@ -11,6 +11,7 @@ import { permissionResultRow } from './permissionSummary'
 import ActivityRow from './ActivityRow.vue'
 import ActivityRun from './ActivityRun.vue'
 import TurnPlanCard from './TurnPlanCard.vue'
+import WorkStepsAccordion from './WorkStepsAccordion.vue'
 import { statusOfTurnPlan, useTurnPlans } from './useTurnPlans'
 import {
   continuationRow,
@@ -248,13 +249,23 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       <ActivityRow :row="protocolRow" />
     </ul>
     <span v-else :class="[EXCHANGE_TEXT_CLASSES, 'truncate']">{{ entry.text }}</span>
-    <div v-if="entry.activity" class="flex w-full flex-col gap-1">
+    <div v-if="entry.activity || entry.usage?.isFallback" class="flex w-full flex-col gap-1">
       <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
         {{ speakerName(entry.from) }}
       </span>
       <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" />
-      <ActivityRun :activity="entry.activity" />
+      <ActivityRun v-if="entry.activity" :activity="entry.activity" />
+      <WorkStepsAccordion
+        v-if="entry.from !== 'user'"
+        :project-id="entry.projectId"
+        :agent="entry.from"
+        :card-id="entry.itemId"
+        :activity="entry.activity"
+        :provider="entry.usage?.provider"
+        :is-fallback="entry.usage?.isFallback"
+        :message-time="entry.time"
+      />
     </div>
   </UiTooltip>
   <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-2">
@@ -316,6 +327,16 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       </div>
       <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" class="my-1" />
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
+      <WorkStepsAccordion
+        v-if="entry.from !== 'user' && (entry.activity || entry.usage?.isFallback)"
+        :project-id="entry.projectId"
+        :agent="entry.from"
+        :card-id="entry.itemId"
+        :activity="entry.activity"
+        :provider="entry.usage?.provider"
+        :is-fallback="entry.usage?.isFallback"
+        :message-time="entry.time"
+      />
       <div
         v-if="entry.from !== 'user' && (entry.isError || entry.text === 'Limite esgotado')"
         class="flex items-center gap-2 text-danger"

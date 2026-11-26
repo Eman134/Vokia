@@ -159,6 +159,7 @@ pub(crate) fn run() {
             commands::command_search::command_search,
             commands::history::history_search,
             commands::history::history_read,
+            commands::history::list_turn_work_steps,
             commands::web_search::web_search,
             // learning
             commands::learning::run_memory_review,
