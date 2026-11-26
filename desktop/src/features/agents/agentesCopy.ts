@@ -32,3 +32,13 @@ export const EXTRA_INSTRUCTIONS_HINT = 'Texto livre, lido no prompt deste agente
 export const EXTRA_INSTRUCTIONS_SAVE_LABEL = 'Salvar instruções'
 export const COMMAND_LABEL = 'Comando de invocação'
 export const RESTORE_DEFAULT_LABEL = 'Restaurar padrão'
+
+export const SECTION_BRAIN = 'Cérebro'
+export const SECTION_KNOWS = 'Sabe'
+export const SECTION_DOES = 'Faz'
+export const SECTION_RULES = 'Regras'
+export const SECTION_NOTIFY = 'Me notificar'
+
+export const TITLE_PLACEHOLDER = 'Descreva o que seu agente faz'
+export const DESCRIPTION_PLACEHOLDER = 'Escopo e responsabilidades usadas na delegação'
+export const NOTIFICATION_NOTE = 'Silenciar globalmente o app também silencia o agente.'

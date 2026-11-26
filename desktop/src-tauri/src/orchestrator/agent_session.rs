@@ -282,6 +282,7 @@ async fn run_step(
         };
         let access = if call.adapter.has_tools() {
             Access::Project(ProjectAccess {
+                extra_dirs: &profile.extra_dirs,
                 builtin_tools: has_builtin_tools(agent),
                 ..*project
             })
@@ -1331,6 +1332,7 @@ pub(super) fn open_preloaded_session(
     let access = Access::Project(ProjectAccess {
         dir: project_dir,
         attachments: attachments_dir,
+        extra_dirs: &profile.extra_dirs,
         level: permission_level,
         builtin_tools: has_builtin_tools(agent),
     });

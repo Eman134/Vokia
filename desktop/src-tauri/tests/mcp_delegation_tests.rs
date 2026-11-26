@@ -498,6 +498,7 @@ fn delegate_com_item_id_recusa_agente_sem_suporte_a_mcp_conforme_d2() {
             command: cmd.to_string(),
             follow_default_llm: false,
             fallback: Vec::new(),
+            ..Default::default()
         };
         registry
             .update(&agent("vexa"), &draft, &providers)

@@ -30,6 +30,12 @@ fn sample_profile(cli: &str) -> AgentProfile {
         command: String::new(),
         builtin: true,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     }
 }
 

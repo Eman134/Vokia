@@ -1,6 +1,12 @@
 pub(crate) mod acp;
+#[cfg(test)]
+pub(crate) mod antigravity;
+#[cfg(not(test))]
 mod antigravity;
 mod claude;
+#[cfg(test)]
+pub(crate) mod codex;
+#[cfg(not(test))]
 mod codex;
 pub(crate) mod codex_app_server;
 mod generic;

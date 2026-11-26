@@ -1,3 +1,6 @@
+#[cfg(test)]
+pub(crate) mod adapters;
+#[cfg(not(test))]
 mod adapters;
 mod agent_session;
 mod archive;

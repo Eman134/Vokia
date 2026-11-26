@@ -184,6 +184,7 @@ fn opencode_flavor_desativa_ferramentas_via_opencode_config_temporario_sem_tocar
             Access::Project(ProjectAccess {
                 dir: &project_dir,
                 attachments: &attachments_dir,
+                extra_dirs: &[],
                 level: PermissionLevel::Liberado,
                 builtin_tools: true,
             }),
@@ -315,6 +316,7 @@ rl.on('line', (line) => {
                     Access::Project(ProjectAccess {
                         dir: &project_dir,
                         attachments: &attachments_dir,
+                        extra_dirs: &[],
                         level,
                         builtin_tools: true,
                     }),
@@ -372,6 +374,7 @@ fn gemini_flavor_rotulo_gemini_args_e_preset_gemini_cli_e_retrocompatibilidade()
             Access::Project(ProjectAccess {
                 dir: &project_dir,
                 attachments: &attachments_dir,
+                extra_dirs: &[],
                 level: PermissionLevel::Edicao,
                 builtin_tools: true,
             }),

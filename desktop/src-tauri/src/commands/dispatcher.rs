@@ -666,10 +666,10 @@ const COMMANDS: &[CommandMeta] = &[
     ui_only("attachments", "save_attachment_bytes", "Salva anexo enviado como bytes pela interface."),
     exposed("attachments", "discard_attachment", "Descarta um anexo de um projeto.", "Para remover um anexo que não será enviado.", empty_object_schema),
     exposed("attachments", "read_attachment_preview", "Lê uma imagem da pasta de anexos do Vokia e devolve como data URL (base64). Parâmetro: path.", "Para carregar a miniatura de uma imagem anexada validando que o caminho pertence à pasta de anexos.", schema_read_attachment_preview),
-    exposed("agents", "list_agents", "Lista o elenco de agentes.", "Para ver o elenco completo de agentes com papel, provedor e modelo.", empty_object_schema),
+    exposed("agents", "list_agents", "Lista o elenco de agentes.", "Para ver o elenco completo de agentes com papel, título, descrição, provedor, modelo, cor do chat, pastas extras e modo de notificação.", empty_object_schema),
     exposed("agents", "available_providers", "Lista os provedores instalados na máquina.", "Para saber quais provedores têm a CLI instalada na máquina antes de configurar um agente.", empty_object_schema),
-    exposed("agents", "create_agent", "Cria um agente.", "Para criar um agente novo (draft aceita cli, model, modelTier, reasoningEffort, followDefaultLlm, fallback); o papel precisa existir (veja role_list) e o provedor, estar configurado.", schema_draft),
-    exposed("agents", "update_agent", "Edita um agente.", "Para alterar nome, papel, provedor, modelo ou esforço de raciocínio (reasoningEffort) de um agente existente.", schema_id_draft),
+    exposed("agents", "create_agent", "Cria um agente.", "Para criar um agente novo (draft aceita cli, model, modelTier, reasoningEffort, followDefaultLlm, fallback, title, description, chatColor, extraDirs, notificationMode, backupMode); o papel precisa existir (veja role_list) e o provedor, estar configurado.", schema_draft),
+    exposed("agents", "update_agent", "Edita um agente.", "Para alterar nome, papel, provedor, modelo, esforço de raciocínio (reasoningEffort), title, description, chatColor, extraDirs, notificationMode ou backupMode de um agente existente.", schema_id_draft),
     exposed("agents", "delete_agent", "Exclui um agente.", "Para excluir um agente; os cards dele passam ao Ember. Confirme com o usuário.", schema_id),
     exposed("agents", "set_agent_instructions", "Define as instruções de um agente.", "Para trocar as instruções extras de um agente; a sessão dele é reiniciada.", schema_set_agent_instructions),
     exposed("agents", "list_temporary_overrides", "Lista as trocas temporárias de LLM.", "Para ver as trocas temporárias de LLM em vigor.", empty_object_schema),
@@ -1179,3 +1179,7 @@ async fn run(
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/agent_settings_tests.rs"]
+mod agent_settings_tests;

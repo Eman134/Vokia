@@ -27,6 +27,11 @@ const FILE_VERSION: u32 = 1;
 const AVATAR_MAX_CHARS: usize = 32;
 const INSTRUCTIONS_MAX_CHARS: usize = 4000;
 const MODEL_MAX_CHARS: usize = 120;
+const TITLE_MAX_CHARS: usize = 80;
+const DESCRIPTION_MAX_CHARS: usize = 500;
+const CHAT_COLOR_MAX_CHARS: usize = 32;
+const VALID_NOTIFICATION_MODES: [&str; 3] = ["default", "needs_me", "mute"];
+const VALID_BACKUP_MODES: [&str; 3] = ["ask", "auto", "global"];
 const CLAUDE_CLI: &str = "claude";
 const EMBER: &str = "ember";
 const AXIOM: &str = "axiom";
@@ -132,9 +137,21 @@ pub struct AgentProfile {
     // Vem do mapa de instruções do registro, não do registro de cada agente; vazio quando não há.
     #[serde(default)]
     pub extra_instructions: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_dirs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_mode: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentDraft {
     pub name: String,
@@ -151,6 +168,35 @@ pub struct AgentDraft {
     #[serde(default)]
     pub fallback: Vec<LlmTarget>,
     pub command: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub chat_color: Option<String>,
+    #[serde(default)]
+    pub extra_dirs: Vec<String>,
+    #[serde(default)]
+    pub notification_mode: Option<String>,
+    #[serde(default)]
+    pub backup_mode: Option<String>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotificationKind {
+    TurnFinished,
+    NeedsUser,
+}
+
+/// Avalia se uma notificação nativa deve ser disparada para o agente conforme `notification_mode`.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn should_notify_agent(profile: Option<&AgentProfile>, kind: NotificationKind) -> bool {
+    match profile.and_then(|p| p.notification_mode.as_deref()) {
+        Some("mute") => false,
+        Some("needs_me") => kind == NotificationKind::NeedsUser,
+        _ => true,
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -229,6 +275,11 @@ pub enum AgentError {
     InstanceSuffixReserved(String),
     PositionHeld(String),
     InstructionsTooLong,
+    InvalidTitle,
+    InvalidDescription,
+    InvalidChatColor(String),
+    InvalidNotificationMode(String),
+    InvalidBackupMode(String),
 }
 
 impl From<DbError> for AgentError {
@@ -281,6 +332,21 @@ impl Display for AgentError {
                 f,
                 "As instruções extras passam de {INSTRUCTIONS_MAX_CHARS} caracteres."
             ),
+            AgentError::InvalidTitle => write!(
+                f,
+                "Título inválido: use até {TITLE_MAX_CHARS} caracteres, sem quebra de linha."
+            ),
+            AgentError::InvalidDescription => write!(
+                f,
+                "Descrição inválida: use até {DESCRIPTION_MAX_CHARS} caracteres."
+            ),
+            AgentError::InvalidChatColor(color) => write!(f, "Cor do chat inválida: {color}."),
+            AgentError::InvalidNotificationMode(mode) => {
+                write!(f, "Modo de notificação inválido: {mode}.")
+            }
+            AgentError::InvalidBackupMode(mode) => {
+                write!(f, "Modo de modelos de reserva inválido: {mode}.")
+            }
             AgentError::PositionHeld(message) | AgentError::LoadFailed(message) | AgentError::SaveFailed(message) => {
                 f.write_str(message)
             }
@@ -303,6 +369,12 @@ fn builtin(id: Agent, name: &str, role: &str, avatar: &str) -> AgentProfile {
         command: CLAUDE_CLI.to_string(),
         builtin: true,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     }
 }
 
@@ -327,6 +399,12 @@ fn initial_agents() -> Vec<AgentProfile> {
             command: CLAUDE_CLI.to_string(),
             builtin: false,
             extra_instructions: String::new(),
+            title: None,
+            description: None,
+            chat_color: None,
+            extra_dirs: Vec::new(),
+            notification_mode: None,
+            backup_mode: None,
         })
         .collect()
 }
@@ -491,6 +569,22 @@ fn validate(
     validate_command(reserved, &draft.command)?;
     let reasoning_effort = validate_reasoning_effort(draft.reasoning_effort.as_deref())
         .map_err(AgentError::InvalidReasoningEffort)?;
+    let title = normalize_optional_text(draft.title.as_deref(), TITLE_MAX_CHARS, false)
+        .ok_or(AgentError::InvalidTitle)?;
+    let description = normalize_optional_text(draft.description.as_deref(), DESCRIPTION_MAX_CHARS, true)
+        .ok_or(AgentError::InvalidDescription)?;
+    let chat_color = normalize_chat_color(draft.chat_color.as_deref())?;
+    let extra_dirs = normalize_extra_dirs(&draft.extra_dirs);
+    let notification_mode = validate_enum_opt(
+        draft.notification_mode.as_deref(),
+        &VALID_NOTIFICATION_MODES,
+        AgentError::InvalidNotificationMode,
+    )?;
+    let backup_mode = validate_enum_opt(
+        draft.backup_mode.as_deref(),
+        &VALID_BACKUP_MODES,
+        AgentError::InvalidBackupMode,
+    )?;
 
     Ok(AgentProfile {
         id: editing.cloned().unwrap_or(Agent(key)),
@@ -506,7 +600,80 @@ fn validate(
         command: draft.command.trim().to_string(),
         builtin: false,
         extra_instructions: String::new(),
+        title,
+        description,
+        chat_color,
+        extra_dirs,
+        notification_mode,
+        backup_mode,
     })
+}
+
+fn normalize_optional_text(
+    raw: Option<&str>,
+    max_chars: usize,
+    allow_newlines: bool,
+) -> Option<Option<String>> {
+    let Some(text) = raw else {
+        return Some(None);
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Some(None);
+    }
+    if (!allow_newlines && trimmed.contains(['\n', '\r'])) || trimmed.chars().count() > max_chars {
+        return None;
+    }
+    Some(Some(trimmed.to_string()))
+}
+
+fn normalize_chat_color(raw: Option<&str>) -> Result<Option<String>, AgentError> {
+    let Some(text) = raw else {
+        return Ok(None);
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let valid = trimmed.chars().count() <= CHAT_COLOR_MAX_CHARS
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && !trimmed.starts_with('-')
+        && !trimmed.ends_with('-');
+    if !valid {
+        return Err(AgentError::InvalidChatColor(trimmed.to_string()));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
+fn normalize_extra_dirs(dirs: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for dir in dirs {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() && !out.iter().any(|existing| existing == trimmed) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+fn validate_enum_opt(
+    raw: Option<&str>,
+    allowed: &[&str],
+    make_err: impl FnOnce(String) -> AgentError,
+) -> Result<Option<String>, AgentError> {
+    let Some(text) = raw else {
+        return Ok(None);
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if !allowed.contains(&trimmed) {
+        return Err(make_err(trimmed.to_string()));
+    }
+    Ok(Some(trimmed.to_string()))
 }
 
 fn team_of(stored: &[AgentProfile], ember_override: Option<&EmberOverride>) -> Vec<AgentProfile> {
@@ -907,6 +1074,12 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
             follow_default_llm: profile.follow_default_llm,
             fallback: profile.fallback.clone(),
             command,
+            title: profile.title.clone(),
+            description: profile.description.clone(),
+            chat_color: profile.chat_color.clone(),
+            extra_dirs: profile.extra_dirs.clone(),
+            notification_mode: profile.notification_mode.clone(),
+            backup_mode: profile.backup_mode.clone(),
         };
         let team = team_of(&loaded, parsed.ember_override.as_ref());
         // Avatar repetido já gravado não derruba o carregamento: o segundo recebe o próximo livre.
@@ -964,6 +1137,12 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Stored, AgentError> {
                 command: CLAUDE_CLI.to_string(),
                 builtin: false,
                 extra_instructions: String::new(),
+                title: None,
+                description: None,
+                chat_color: None,
+                extra_dirs: Vec::new(),
+                notification_mode: None,
+                backup_mode: None,
             });
         }
         rewrite = true;

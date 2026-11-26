@@ -135,6 +135,7 @@ fn cls1_settlement_ended_persiste_task_result_somente_para_demanda_ou_conversa_p
             project: ProjectAccess {
                 dir: project_dir,
                 attachments,
+                extra_dirs: &[],
                 level: PermissionLevel::Edicao,
                 builtin_tools: true,
             },

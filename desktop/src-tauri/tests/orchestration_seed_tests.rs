@@ -63,6 +63,7 @@ fn draft(name: &str) -> AgentDraft {
         command: "claude".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     }
 }
 
@@ -403,6 +404,7 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         command: "claude".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let err_update_ember = registry
         .update(&Agent::ember(), &ember_draft, &providers)
@@ -432,6 +434,7 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         command: "claude".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let updated_axiom = registry
         .update(&Agent::axiom(), &axiom_draft, &providers)
@@ -453,6 +456,7 @@ fn axiom_e_vexa_sao_editaveis_e_ember_recusa_alteracao_com_builtin_locked() {
         command: "claude".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let updated_vexa = registry
         .update(&Agent::vexa(), &vexa_draft, &providers)
@@ -563,6 +567,7 @@ fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
         command: cmd.to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
 
     // 1. Comando vazio e apenas espaços
@@ -674,6 +679,7 @@ fn ember_bloqueado_contra_alteracao_de_cli_para_codex_ou_outro_provedor() {
         command: "codex".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
 
     let err = registry.update(&Agent::ember(), &ember_draft, &providers).unwrap_err();
@@ -702,6 +708,7 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         command: "codex --custom-flag --another-opt".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let created = registry.create(&draft_atlas, &providers).expect("criar atlas");
     assert_eq!(created.command, "codex --custom-flag --another-opt");
@@ -740,6 +747,7 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         command: "claude --dangerously-skip-permissions".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let updated_axiom = registry_reloaded.update(&Agent::axiom(), &axiom_draft, &providers).expect("update axiom com custom command");
     assert_eq!(updated_axiom.command, "claude --dangerously-skip-permissions");
@@ -755,6 +763,7 @@ fn cadastrar_e_editar_comando_customizado_com_persistencia_e_restaurar_padrao() 
         command: "codex --custom-vexa".to_string(),
         follow_default_llm: false,
         fallback: Vec::new(),
+        ..Default::default()
     };
     let updated_vexa = registry_reloaded.update(&Agent::vexa(), &vexa_draft, &providers).expect("update vexa com codex");
     assert_eq!(updated_vexa.command, "codex --custom-vexa");

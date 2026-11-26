@@ -58,6 +58,8 @@ const avatarOwners = computed<Record<string, string>>(() =>
 
 const name = ref(props.agent?.name ?? '')
 const role = ref(props.agent?.role ?? '')
+const title = ref(props.agent?.title ?? '')
+const description = ref(props.agent?.description ?? '')
 const avatar = ref(
   props.agent?.avatar ?? (AVATAR_PROFILES.find((profile) => !usedAvatars.has(profile.id)) ?? AVATAR_PROFILES[0]).id,
 )
@@ -314,6 +316,12 @@ async function submit(): Promise<void> {
         command: command.value.trim(),
         followDefaultLlm: followDefaultLlm.value,
         fallback,
+        title: title.value.trim() || null,
+        description: description.value.trim() || null,
+        chatColor: props.agent?.chatColor ?? null,
+        extraDirs: props.agent?.extraDirs ?? [],
+        notificationMode: props.agent?.notificationMode ?? null,
+        backupMode: props.agent?.backupMode ?? null,
       }
       profile = props.agent ? await roster.update(props.agent.id, draft) : await roster.create(draft)
     }
@@ -349,6 +357,22 @@ onMounted(focusName)
       <fieldset :disabled="submitting" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
         <div class="flex flex-col gap-3" @keydown.enter.prevent="submit()">
           <UiField v-model="name" :label="NAME_LABEL" :disabled="isBuiltin" />
+          <UiField
+            v-if="!isBuiltin"
+            v-model="title"
+            label="Título"
+            placeholder="Descreva o que seu agente faz"
+          />
+          <label v-if="!isBuiltin" class="flex flex-col gap-1.5">
+            <span class="text-label font-medium text-muted">Descrição</span>
+            <textarea
+              v-model="description"
+              rows="2"
+              maxlength="500"
+              placeholder="Escopo e responsabilidades usadas na delegação"
+              :class="`w-full min-w-0 rounded-md border border-line bg-surface px-3 py-2 text-control text-ink placeholder:text-faint ${INK_FOCUS_CLASSES}`"
+            />
+          </label>
           <label class="flex flex-col gap-1.5">
             <span class="text-label font-medium text-muted">{{ ROLE_LABEL }}</span>
             <UiSelect

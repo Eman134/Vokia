@@ -34,6 +34,9 @@ pub(crate) fn build_command(
             command.current_dir(project.dir);
             command.arg("-C").arg(project.dir);
             command.arg("--add-dir").arg(project.attachments);
+            for extra_dir in project.extra_dirs {
+                command.arg("--add-dir").arg(extra_dir);
+            }
             let sandbox = match project.level {
                 PermissionLevel::Leitura => "read-only",
                 PermissionLevel::Edicao => "workspace-write",

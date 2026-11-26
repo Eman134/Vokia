@@ -117,6 +117,7 @@ fn project_access(level: PermissionLevel) -> ProjectAccess<'static> {
     ProjectAccess {
         dir: Path::new("."),
         attachments: Path::new("."),
+        extra_dirs: &[],
         level,
         builtin_tools: true,
     }

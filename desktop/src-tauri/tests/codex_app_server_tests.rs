@@ -33,6 +33,7 @@ fn project_access<'a>(dir: &'a Path, attachments: &'a Path, level: PermissionLev
     Access::Project(ProjectAccess {
         dir,
         attachments,
+        extra_dirs: &[],
         level,
         builtin_tools: true,
     })

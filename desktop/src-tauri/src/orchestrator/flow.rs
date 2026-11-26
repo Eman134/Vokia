@@ -1304,6 +1304,7 @@ async fn run_parallel_item(
         project: ProjectAccess {
             dir: &working,
             attachments: &attachments_dir,
+            extra_dirs: &[],
             level: project.permission_level,
             builtin_tools: true,
         },
@@ -2152,6 +2153,7 @@ async fn exchange_turns(
     let access = ProjectAccess {
         dir: &working,
         attachments: &attachments_dir,
+        extra_dirs: &[],
         level: project.permission_level,
         builtin_tools: true,
     };

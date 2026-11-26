@@ -56,6 +56,9 @@ pub(crate) fn build_command_with_resume(
             command.current_dir(project.dir);
             command.arg("--add-dir").arg(project.dir);
             command.arg("--add-dir").arg(project.attachments);
+            for extra_dir in project.extra_dirs {
+                command.arg("--add-dir").arg(extra_dir);
+            }
             match project.level {
                 PermissionLevel::Leitura => {
                     command.args(["--sandbox", "--mode", "plan"]);

@@ -93,6 +93,7 @@ pub enum Access<'a> {
 pub struct ProjectAccess<'a> {
     pub dir: &'a Path,
     pub attachments: &'a Path,
+    pub extra_dirs: &'a [String],
     pub level: PermissionLevel,
     // Sem as ferramentas nativas da CLI o agente só age pelo MCP do Vokia.
     pub builtin_tools: bool,
@@ -126,7 +127,7 @@ pub fn kill_process_tree(pid: u32) {
     let _ = command.output();
 }
 
-pub(super) fn agent_command(
+pub(crate) fn agent_command(
     program: &Path,
     user_args: &[String],
     leading: &[&str],
@@ -158,7 +159,11 @@ pub(super) fn agent_command(
             command
                 .arg("--add-dir")
                 .arg(project.dir)
-                .arg(project.attachments)
+                .arg(project.attachments);
+            for extra_dir in project.extra_dirs {
+                command.arg("--add-dir").arg(extra_dir);
+            }
+            command
                 .args(["--permission-mode", PERMISSION_MODE])
                 .args(["--setting-sources", NO_SETTING_SOURCES]);
             let tools = if project.builtin_tools {

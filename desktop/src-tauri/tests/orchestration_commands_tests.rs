@@ -307,6 +307,7 @@ fn agente_criado_depois_da_semente_nao_aparece_posicionado_na_leitura() {
                 command: "claude".to_string(),
                 follow_default_llm: false,
                 fallback: Vec::new(),
+                ..Default::default()
             },
             &crate::providers::ProviderRegistry::seeded(),
         )

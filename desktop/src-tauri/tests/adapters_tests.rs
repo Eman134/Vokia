@@ -9,6 +9,7 @@ fn project_access(level: PermissionLevel) -> ProjectAccess<'static> {
     ProjectAccess {
         dir: Path::new("C:/test/project"),
         attachments: Path::new("C:/test/attachments"),
+        extra_dirs: &[],
         level,
         builtin_tools: true,
     }
@@ -682,6 +683,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
+        ..Default::default()
     };
     let created = agents.create(&draft_valido, &providers).expect("modelo livre válido deve ser criado");
     assert_eq!(created.model, "modelo-futuro-2026");
@@ -698,6 +700,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
+        ..Default::default()
     };
     match agents.create(&draft_quebra, &providers) {
         Err(crate::agents::AgentError::InvalidModel(m)) => assert!(m.contains('\n')),
@@ -716,6 +719,7 @@ fn llm1_modelo_livre_valido_aceito_vs_invalid_model_em_vazio_ou_com_quebra() {
         follow_default_llm: false,
         fallback: vec![],
         command: "claude".to_string(),
+        ..Default::default()
     };
     match agents.create(&draft_vazio, &providers) {
         Err(crate::agents::AgentError::InvalidModel(_)) => {}
@@ -1096,6 +1100,12 @@ fn llm4_resolve_candidates_prioridade_override_follow_default_agent_e_global_fal
         command: "claude".to_string(),
         builtin: false,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     };
 
     let global_active = crate::orchestrator::fallback::LlmTarget {
@@ -1196,6 +1206,12 @@ fn mdl1_modelo_especifico_em_active_llm_propaga_para_ember_e_lider_e_faz_fallbac
         command: "claude".to_string(),
         builtin: true,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     };
     let ember_candidates = crate::orchestrator::fallback::resolve_candidates(
         &ember,
@@ -1270,6 +1286,12 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         command: "claude".to_string(),
         builtin: true,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     };
 
     let ember_candidates = crate::orchestrator::fallback::resolve_candidates(
@@ -1307,6 +1329,12 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         command: "opencode".to_string(),
         builtin: false,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     };
 
     let liberado_candidates = crate::orchestrator::fallback::resolve_candidates(
@@ -1358,6 +1386,12 @@ fn llm4_expiracao_automatica_vs_clear_temporary_override() {
         command: "claude".to_string(),
         builtin: false,
         extra_instructions: String::new(),
+        title: None,
+        description: None,
+        chat_color: None,
+        extra_dirs: Vec::new(),
+        notification_mode: None,
+        backup_mode: None,
     };
 
     // 1. Override expirado: expires_at no passado
@@ -1623,6 +1657,7 @@ fn req085_reasoning_effort_persists_in_agent_profile_and_llm_target() {
             reasoning_effort: Some("high".to_string()),
         }],
         command: "codex".to_string(),
+        ..Default::default()
     };
     let created = agents.create(&draft, &providers).expect("criar agente com effort");
     assert_eq!(created.reasoning_effort.as_deref(), Some("max"));

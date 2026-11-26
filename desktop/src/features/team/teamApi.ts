@@ -103,6 +103,9 @@ export interface LlmTarget {
   reasoningEffort?: ReasoningEffort | null
 }
 
+export type AgentNotificationMode = 'default' | 'needs_me' | 'mute'
+export type AgentBackupMode = 'ask' | 'auto' | 'global'
+
 export interface AgentProfile {
   id: Agent
   name: string
@@ -117,6 +120,12 @@ export interface AgentProfile {
   extraInstructions: string
   followDefaultLlm: boolean
   fallback: LlmTarget[]
+  title?: string | null
+  description?: string | null
+  chatColor?: string | null
+  extraDirs?: string[]
+  notificationMode?: AgentNotificationMode | null
+  backupMode?: AgentBackupMode | null
 }
 
 export interface CliPreset {
@@ -156,6 +165,12 @@ export interface AgentDraft {
   command: string
   followDefaultLlm: boolean
   fallback: LlmTarget[]
+  title?: string | null
+  description?: string | null
+  chatColor?: string | null
+  extraDirs?: string[]
+  notificationMode?: AgentNotificationMode | null
+  backupMode?: AgentBackupMode | null
 }
 
 export function fetchCliProblem(): Promise<CliProblem | null> {
