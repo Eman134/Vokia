@@ -1,6 +1,6 @@
 [package]
 name = "vokia"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 default-run = "vokia"
 # tests/ guarda módulos de teste incluídos por #[path] nos fontes, não crates de integração.
