@@ -73,8 +73,16 @@ export const useRequests = defineStore('requests', () => {
     return agent
   }
 
-  function queuedFor(agent: Agent): QueuedRequest[] {
-    return queue.value.filter((request) => request.to === agent)
+  function queuedFor(
+    agent: Agent,
+    projectId: number | null = projects.selected?.id ?? null,
+  ): QueuedRequest[] {
+    if (agent === DEFAULT_RECIPIENT) {
+      return []
+    }
+    return queue.value.filter(
+      (request) => request.to === agent && (projectId === null || request.projectId === projectId),
+    )
   }
 
   // Um callback que lança não pode parar a fila nem o laço de eventos: o erro vai ao feed e o fluxo segue.
@@ -87,7 +95,7 @@ export const useRequests = defineStore('requests', () => {
   }
 
   // O callback é registrado antes do envio: o evento request-settled pode chegar antes da resposta do comando.
-  async function dispatch(request: QueuedRequest): Promise<void> {
+  async function dispatch(request: QueuedRequest, steer = false): Promise<void> {
     if (request.onSettled !== undefined) {
       waiting.set(request.id, request.onSettled)
     }
@@ -101,6 +109,7 @@ export const useRequests = defineStore('requests', () => {
         request.itemId,
         request.channelId,
         request.attachments,
+        steer,
       )
       if (outcome === 'queued') {
         if (request.onSettled === undefined || waiting.has(request.id)) {
@@ -161,9 +170,16 @@ export const useRequests = defineStore('requests', () => {
     }
     const persisted = await listQueuedRequests()
     const existingIds = new Set(queue.value.map((item) => item.id))
-    const restored: QueuedRequest[] = persisted
-      .filter((item) => !existingIds.has(item.id))
-      .map((item) => ({
+    const restored: QueuedRequest[] = []
+    for (const item of persisted) {
+      if (existingIds.has(item.id)) {
+        continue
+      }
+      if (item.to === DEFAULT_RECIPIENT) {
+        void removeQueuedRequest(item.id).catch(() => {})
+        continue
+      }
+      restored.push({
         id: item.id,
         text: item.text,
         to: item.to,
@@ -172,7 +188,8 @@ export const useRequests = defineStore('requests', () => {
         itemId: item.itemId ?? undefined,
         attachments: item.attachments,
         editing: false,
-      }))
+      })
+    }
     queue.value = [...restored, ...queue.value]
     loaded.value = true
     void drain()
@@ -269,7 +286,7 @@ export const useRequests = defineStore('requests', () => {
     feed.notify(NO_PROJECT_NOTICE)
   }
 
-  async function targetProjectId(text: string): Promise<number | null> {
+  async function targetProjectId(text: string, recipient: Agent): Promise<number | null> {
     const selected = projects.selected
     const resolution = resolveProject(text, projects.projects, selected?.id ?? null)
     if (resolution.kind === 'ask') {
@@ -282,6 +299,10 @@ export const useRequests = defineStore('requests', () => {
     }
     const { project } = resolution
     if (project.id === selected?.id) {
+      return project.id
+    }
+    // Ember delega entre projetos diretamente pela ActionBar sem ser bloqueado por trabalho em andamento em outro projeto.
+    if (recipient === DEFAULT_RECIPIENT) {
       return project.id
     }
     if (selected !== null && hasPendingWork(selected.id)) {
@@ -298,6 +319,8 @@ export const useRequests = defineStore('requests', () => {
     return project.id
   }
 
+  let nextImmediateId = -1
+
   async function send(
     text: string,
     to: Agent | null,
@@ -307,6 +330,7 @@ export const useRequests = defineStore('requests', () => {
       itemId?: string
       attachments?: string[]
       attachmentsProjectId?: number | null
+      force?: 'now' | 'queue'
       onQueued?: (id: number) => void
       onRejected?: () => void
       onSettled?: (result: RunResult) => void
@@ -327,7 +351,8 @@ export const useRequests = defineStore('requests', () => {
       return false
     }
     const screenProjectId = projects.selected?.id
-    const projectId = options?.projectId ?? (await targetProjectId(text))
+    const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
+    const projectId = options?.projectId ?? (await targetProjectId(text, recipient))
     if (projectId === null) {
       return false
     }
@@ -338,7 +363,34 @@ export const useRequests = defineStore('requests', () => {
     // Um id de canal só vale no projeto da tela; texto que aponta outro projeto vai sem canal.
     const channelId = projectId === screenProjectId ? options?.channelId : undefined
     const itemId = projectId === screenProjectId ? options?.itemId : undefined
-    const recipient = to ?? findNamedAgent(text) ?? DEFAULT_RECIPIENT
+
+    // Ember nunca entra em fila; e mensagens com force === 'now' furam a fila e entram imediatamente (steer).
+    if (recipient === DEFAULT_RECIPIENT || options?.force === 'now') {
+      const immediateId = nextImmediateId--
+      const directRequest: QueuedRequest = {
+        id: immediateId,
+        text,
+        to: recipient,
+        projectId,
+        channelId,
+        itemId,
+        attachments,
+        editing: false,
+        onQueued: options?.onQueued,
+        onRejected: options?.onRejected,
+        onSettled: options?.onSettled,
+      }
+      options?.onEnqueued?.({
+        id: immediateId,
+        to: recipient,
+        ahead: 0,
+        dispatched: true,
+        externalBusy: false,
+      })
+      void dispatch(directRequest, options?.force === 'now')
+      return true
+    }
+
     const paused = control.isPaused(recipient, projectId)
     const waitingBefore = queue.value.filter(isDispatchable).length
     const busyState = feed.activity[projectAgentKey(projectId, recipient)]

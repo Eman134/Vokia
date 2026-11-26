@@ -38,6 +38,7 @@ const ENQUEUE_QUEUED_REQUEST_COMMAND = 'enqueue_queued_request'
 const UPDATE_QUEUED_REQUEST_COMMAND = 'update_queued_request'
 const MOVE_QUEUED_REQUEST_COMMAND = 'move_queued_request'
 const REMOVE_QUEUED_REQUEST_COMMAND = 'remove_queued_request'
+const ASK_BTW_COMMAND = 'ask_btw'
 const GET_TURN_PLAN_COMMAND = 'get_turn_plan'
 const LIST_TURN_WORK_STEPS_COMMAND = 'list_turn_work_steps'
 
@@ -248,6 +249,23 @@ export function moveQueuedRequest(id: number, direction: 'up' | 'down'): Promise
 
 export function removeQueuedRequest(id: number): Promise<boolean> {
   return invoke<boolean>(REMOVE_QUEUED_REQUEST_COMMAND, { id })
+}
+
+export interface AskBtwResponse {
+  agent: Agent
+  answer: string
+}
+
+export function askBtw(params: {
+  projectId?: number | null
+  agent?: Agent | null
+  question: string
+}): Promise<AskBtwResponse> {
+  return invoke<AskBtwResponse>(ASK_BTW_COMMAND, {
+    projectId: params.projectId ?? null,
+    agent: params.agent ?? null,
+    question: params.question,
+  })
 }
 
 export function listInterruptedRuns(): Promise<InterruptedRun[]> {

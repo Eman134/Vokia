@@ -28,6 +28,7 @@ pub(crate) fn run() {
             commands::team::update_queued_request,
             commands::team::move_queued_request,
             commands::team::remove_queued_request,
+            commands::team::ask_btw,
             commands::team::check_connection,
             commands::team::agent_console,
             // projects

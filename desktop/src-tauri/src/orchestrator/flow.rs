@@ -160,7 +160,9 @@ pub(super) async fn handle_request_from(
             return Ok(RequestOutcome::Steered);
         }
     }
-    if !start_or_enqueue(app, state, key.clone(), request, context.clone())? {
+    if (key.agent != Agent::ember() || context.resumed_run.is_some())
+        && !start_or_enqueue(app, state, key.clone(), request, context.clone())?
+    {
         return Ok(RequestOutcome::Queued);
     }
     let item_id = context.item_id.clone();
@@ -828,7 +830,19 @@ fn start_or_enqueue(
 ) -> Result<bool, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     if let Some(pending) = flow.pending.get_mut(&key) {
-        push_pending_job(app, pending, &key, request.to_string(), context);
+        if context.steer {
+            let db_id = app
+                .state::<DbState>()
+                .db()
+                .and_then(|db| db.enqueue_flow_job(key.project_id, &key.agent, request, &context).ok());
+            pending.push_front(QueuedJob {
+                db_id,
+                text: request.to_string(),
+                context,
+            });
+        } else {
+            push_pending_job(app, pending, &key, request.to_string(), context);
+        }
         return Ok(false);
     }
     flow.pending.insert(key, VecDeque::new());

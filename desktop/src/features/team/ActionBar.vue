@@ -60,7 +60,7 @@ const roster = useRoster()
 const projectsStore = useProjects()
 const pillRef = ref<ComponentPublicInstance | null>(null)
 const pillElement = computed(() => pillRef.value?.$el ?? null)
-const { draft, confirmed, attachments, submit } = useComposerSubmit()
+const { draft, confirmed, deliveryMode, attachments, submit } = useComposerSubmit()
 const composer = ref<InstanceType<typeof ComposerField> | null>(null)
 const hovered = ref(false)
 const collapsing = ref(false)
@@ -335,6 +335,7 @@ function onPointerLeave(): void {
         ref="composer"
         v-model:draft="draft"
         v-model:confirmed="confirmed"
+        v-model:delivery-mode="deliveryMode"
         :can-ask="canAsk"
         :interacting="interacting"
         :inline-permission="inlinePermission"

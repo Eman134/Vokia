@@ -1,8 +1,10 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useProjects } from '../projects/useProjects'
 import { useTemporaryOverrides } from '../providers/useTemporaryOverrides'
 import { replicaOf } from './agentCopies'
 import type { Agent } from './events'
+import { projectAgentKey } from './projectAgentKey'
 import {
   createAgent,
   deleteAgent,
@@ -73,17 +75,20 @@ export const useRoster = defineStore('roster', () => {
     return agents.value.find((agent) => agent.id === id)
   }
 
-  // Réplica não está no elenco: o nome de exibição (ex.: "Davi 2") chega do backend pelo evento agent-named.
-  const instanceNames = ref(new Map<Agent, string>())
+  // Réplica não está no elenco: o nome de exibição (ex.: "Davi 2") chega do backend pelo evento agent-named, isolado por projeto.
+  const instanceNames = ref(new Map<string, string>())
 
-  function nameInstance(id: Agent, name: string): void {
-    instanceNames.value = new Map(instanceNames.value).set(id, name)
+  function nameInstance(id: Agent, name: string, projectId: number | null = useProjects().selected?.id ?? null): void {
+    const key = projectId !== null ? projectAgentKey(projectId, id) : id
+    instanceNames.value = new Map(instanceNames.value).set(key, name)
   }
 
-  function nameOf(id: Agent): string {
+  function nameOf(id: Agent, projectId: number | null = useProjects().selected?.id ?? null): string {
     const profile = profileOf(id)
     if (profile) return profile.name
-    const named = instanceNames.value.get(id)
+    const named =
+      (projectId !== null ? instanceNames.value.get(projectAgentKey(projectId, id)) : undefined) ??
+      instanceNames.value.get(id)
     if (named) return named
     const replica = replicaOf(id)
     if (replica) {

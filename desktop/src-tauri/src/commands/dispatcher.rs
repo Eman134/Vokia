@@ -441,6 +441,17 @@ fn schema_erase_all_data() -> Value {
     obj_schema(json!({ "confirm": { "type": "boolean" } }), &["confirm"])
 }
 
+fn schema_ask_btw() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id opcional do projeto" },
+            "agent": { "type": "string", "description": "Id opcional do agente alvo" },
+            "question": { "type": "string", "description": "Pergunta rápida paralela (/btw)" },
+        }),
+        &["question"],
+    )
+}
+
 fn schema_plan_usage() -> Value {
     obj_schema(
         json!({
@@ -606,6 +617,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("team", "set_agent_paused", "Pausa ou retoma um agente em um projeto.", "Para pausar ou retomar um agente em um projeto sem excluí-lo.", empty_object_schema),
     exposed("team", "list_queued_requests", "Lista os pedidos persistidos na fila de entrada.", "Para consultar os pedidos aguardando envio na fila.", empty_object_schema),
     exposed("team", "enqueue_queued_request", "Adiciona um pedido na fila persistida. Parâmetros: projectId, to, text, channelId (opcional), itemId (opcional), attachments (opcional).", "Para enfileirar um pedido persistido no banco.", empty_object_schema),
+    exposed("team", "ask_btw", "Faz uma pergunta rápida (/btw) sem ferramentas, sem entrar na fila e sem interromper o turno ativo. Parâmetros: question, agent (opcional), projectId (opcional).", "Para responder dúvidas rápidas em paralelo durante uma tarefa.", schema_ask_btw),
     exposed("team", "update_queued_request", "Atualiza o texto de um pedido na fila. Parâmetros: id, text.", "Para editar um pedido ainda na fila.", empty_object_schema),
     exposed("team", "move_queued_request", "Move um pedido na fila para cima ou para baixo. Parâmetros: id, direction ('up' ou 'down').", "Para reordenar a fila de pedidos.", empty_object_schema),
     exposed("team", "remove_queued_request", "Remove um pedido da fila persistida. Parâmetro: id.", "Para cancelar ou remover um pedido da fila.", empty_object_schema),
@@ -856,6 +868,7 @@ async fn run(
             app,
             parse_args(arguments)?,
         )),
+        "ask_btw" => json_result(team::ask_btw_exec(app, parse_args(arguments)?).await),
         "update_queued_request" => json_result(team::update_queued_request_exec(
             app,
             parse_args(arguments)?,

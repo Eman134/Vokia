@@ -2,6 +2,9 @@ import { ref } from 'vue'
 import { DEFAULT_RECIPIENT } from '../agents'
 import { mentionSpans } from '../composerMentions'
 import { expandCommand, parseLocalCommand } from '../slashCommands'
+import { askBtw } from '../teamApi'
+import { agentName } from '../agents'
+import { useProjects } from '../../projects/useProjects'
 import type { Agent } from '../events'
 import { useConnection } from '../useConnection'
 import { useRequests } from '../useRequests'
@@ -28,7 +31,9 @@ export function useComposerSubmit() {
   const providers = useProviders()
   const draft = ref('')
   const confirmed = ref(new Set<Agent>())
+  const deliveryMode = ref<'auto' | 'now' | 'queue'>('auto')
   const composerAttachments = useComposerAttachments()
+  const projects = useProjects()
 
   async function submit(): Promise<void> {
     const text = draft.value.trim()
@@ -36,6 +41,36 @@ export function useComposerSubmit() {
       return
     }
     const localCommand = parseLocalCommand(text)
+    if (localCommand?.action === 'btw') {
+      if (!localCommand.arg) {
+        feed.notify('Escreva sua pergunta após /btw.')
+        return
+      }
+      const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
+      const threads = useThreads()
+      const threadAssignee = feed.screen.kind === 'thread' ? (threads.find(feed.screen.itemId)?.assignee ?? null) : null
+      const dest = screenDestination(
+        navigation.page,
+        feed.screen,
+        channels.channels,
+        roster.agents.map((profile) => profile.id),
+        mention,
+        threadAssignee,
+      )
+      draft.value = ''
+      confirmed.value = new Set()
+      try {
+        const res = await askBtw({
+          projectId: projects.selected?.id ?? null,
+          agent: dest.to,
+          question: localCommand.arg,
+        })
+        feed.notify(`/btw (${agentName(res.agent)}): ${localCommand.arg}\n${res.answer}`)
+      } catch (error) {
+        feed.feed.push({ type: 'error', message: String(error) })
+      }
+      return
+    }
     if (localCommand?.action === 'setup') {
       draft.value = ''
       confirmed.value = new Set()
@@ -80,12 +115,15 @@ export function useComposerSubmit() {
         composerAttachments.restore(batch)
       }
     }
+    const forceMode = deliveryMode.value === 'auto' ? undefined : deliveryMode.value
+    deliveryMode.value = 'auto'
     if (
       !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
         channelId: channelId ?? undefined,
         itemId: itemId ?? undefined,
         attachments: batch.ids,
         attachmentsProjectId: batch.projectId,
+        force: forceMode,
         onEnqueued: requestNotices.announceSent,
         onQueued: requestNotices.markBackendQueued,
         onRejected: restore,
@@ -95,5 +133,5 @@ export function useComposerSubmit() {
     }
   }
 
-  return { draft, confirmed, attachments: composerAttachments, submit }
+  return { draft, confirmed, deliveryMode, attachments: composerAttachments, submit }
 }

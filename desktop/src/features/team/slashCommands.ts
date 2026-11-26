@@ -1,14 +1,20 @@
 import { findTrigger, type TriggerMatch } from './composerMentions'
 
 export interface SlashCommand {
-  id: 'plano' | 'revisar' | 'pausar' | 'lembrar' | 'setup' | 'triar' | 'iniciar'
+  id: 'plano' | 'revisar' | 'pausar' | 'lembrar' | 'setup' | 'triar' | 'iniciar' | 'btw'
   description: string
   enabled: boolean
   prompt?: string
-  action?: 'setup' | 'triar' | 'iniciar'
+  action?: 'setup' | 'triar' | 'iniciar' | 'btw'
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
+  {
+    id: 'btw',
+    description: 'pergunta rápida sem interromper nem entrar na fila',
+    enabled: true,
+    action: 'btw',
+  },
   {
     id: 'plano',
     description: 'quebrar o pedido em lotes',
@@ -37,11 +43,13 @@ export function findCommandTrigger(text: string, caret: number): TriggerMatch | 
   return match?.start === 0 ? match : null
 }
 
-export function parseLocalCommand(text: string): { action: 'setup' | 'triar' | 'iniciar'; arg: string } | null {
+export function parseLocalCommand(
+  text: string,
+): { action: 'setup' | 'triar' | 'iniciar' | 'btw'; arg: string } | null {
   const match = COMMAND_PATTERN.exec(text.trim())
   if (match === null) return null
   const cmd = match[1]
-  if (cmd !== 'setup' && cmd !== 'triar' && cmd !== 'iniciar') {
+  if (cmd !== 'setup' && cmd !== 'triar' && cmd !== 'iniciar' && cmd !== 'btw') {
     return null
   }
   return { action: cmd, arg: (match[2] ?? '').trim() }

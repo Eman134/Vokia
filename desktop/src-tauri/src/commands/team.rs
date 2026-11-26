@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::agents::{Agent, AgentError, AgentRegistry};
@@ -95,6 +95,23 @@ pub(crate) struct MoveQueuedRequestArgs {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RemoveQueuedRequestArgs {
     pub id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AskBtwArgs {
+    #[serde(default)]
+    pub project_id: Option<i64>,
+    #[serde(default)]
+    pub agent: Option<Agent>,
+    pub question: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AskBtwResponse {
+    pub agent: Agent,
+    pub answer: String,
 }
 
 pub(crate) fn cli_problem_exec(app: &AppHandle) -> Option<CliProblem> {
@@ -244,6 +261,9 @@ pub(crate) fn enqueue_queued_request_exec(
     app: &AppHandle,
     args: EnqueueQueuedRequestArgs,
 ) -> Result<QueuedRequestRecord, String> {
+    if args.to == Agent::ember() {
+        return Err("O Ember não possui fila; envie o pedido diretamente para ele delegar.".to_string());
+    }
     ensure_agent_exists(&app.state::<AgentRegistry>(), &args.to)?;
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
@@ -437,6 +457,70 @@ pub fn move_queued_request(app: AppHandle, id: i64, direction: String) -> Result
 #[tauri::command]
 pub fn remove_queued_request(app: AppHandle, id: i64) -> Result<bool, String> {
     remove_queued_request_exec(&app, RemoveQueuedRequestArgs { id })
+}
+
+pub(crate) async fn ask_btw_exec(
+    app: &AppHandle,
+    args: AskBtwArgs,
+) -> Result<AskBtwResponse, String> {
+    let question = args.question.trim();
+    if question.is_empty() {
+        return Err("Informe uma pergunta após /btw.".to_string());
+    }
+    let _ = args.project_id;
+    let team = app
+        .state::<AgentRegistry>()
+        .team()
+        .map_err(|error| error.to_string())?;
+    let target_agent = args.agent.unwrap_or_else(Agent::ember);
+    let profile = team
+        .profile(&target_agent)
+        .or_else(|| team.profiles().into_iter().next())
+        .cloned()
+        .ok_or_else(|| "Nenhum agente configurado para responder.".to_string())?;
+    let state = app.state::<AppState>();
+    let default_cli = state
+        .cli
+        .as_deref()
+        .map_err(|problem| problem.reason.clone())?;
+    let role = format!(
+        "Responda de forma direta e concisa à pergunta paralela (/btw) do usuário sem executar ferramentas nem alterar arquivos.\nPapel do agente {}: {}",
+        profile.name, profile.role
+    );
+    let reply = orchestrator::fallback::ask_with_fallback(
+        app,
+        &state,
+        default_cli,
+        &profile.id,
+        &profile,
+        question,
+        &role,
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+
+    Ok(AskBtwResponse {
+        agent: profile.id,
+        answer: reply.text.trim().to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn ask_btw(
+    app: AppHandle,
+    project_id: Option<i64>,
+    agent: Option<Agent>,
+    question: String,
+) -> Result<AskBtwResponse, String> {
+    ask_btw_exec(
+        &app,
+        AskBtwArgs {
+            project_id,
+            agent,
+            question,
+        },
+    )
+    .await
 }
 
 fn ensure_agent_exists(registry: &AgentRegistry, agent: &Agent) -> Result<(), String> {

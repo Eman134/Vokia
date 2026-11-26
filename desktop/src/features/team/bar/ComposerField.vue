@@ -60,6 +60,22 @@ const flow = useFlow()
 const projectsStore = useProjects()
 const draft = defineModel<string>('draft', { required: true })
 const confirmed = defineModel<Set<Agent>>('confirmed', { required: true })
+const deliveryMode = defineModel<'auto' | 'now' | 'queue'>('deliveryMode', { default: 'auto' })
+const showDeliveryToggle = computed(() => {
+  const trimmed = draft.value.trim()
+  if (trimmed === '' || trimmed.startsWith('/btw')) return false
+  return recipient.value !== null && recipient.value !== 'ember'
+})
+function cycleDeliveryMode(): void {
+  const order: Array<'auto' | 'now' | 'queue'> = ['auto', 'now', 'queue']
+  const idx = order.indexOf(deliveryMode.value)
+  deliveryMode.value = order[(idx + 1) % order.length]!
+}
+const deliveryLabel = computed(() => {
+  if (deliveryMode.value === 'now') return 'Agora'
+  if (deliveryMode.value === 'queue') return 'Na fila'
+  return recipient.value && feed.stateOf(recipient.value) !== 'idle' ? 'Fila' : 'Auto'
+})
 const caret = ref(0)
 const scrollLeft = ref(0)
 const menuLeft = ref(0)
@@ -296,6 +312,23 @@ defineExpose({ isFocused, selectRecipient })
         @paste="onPaste"
       />
     </div>
+    <button
+      v-if="showDeliveryToggle"
+      type="button"
+      class="mr-1.5 shrink-0 cursor-pointer rounded-full px-2 py-0.5 text-caption font-medium transition-colors"
+      :class="
+        deliveryMode === 'now'
+          ? 'bg-primary-soft text-primary'
+          : deliveryMode === 'queue'
+            ? 'bg-surface text-ink'
+            : 'text-muted hover:text-ink'
+      "
+      :title="`Modo de envio: ${deliveryLabel} (clique para alternar entre Auto, Entrar agora e Na fila)`"
+      :aria-label="`Modo de envio: ${deliveryLabel}`"
+      @click="cycleDeliveryMode"
+    >
+      {{ deliveryLabel }}
+    </button>
   </div>
   <CommandMenu
     v-if="menuOpen && menuKind === 'command'"

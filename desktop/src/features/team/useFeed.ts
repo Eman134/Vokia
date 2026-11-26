@@ -44,9 +44,12 @@ const GENERAL_SCREEN: ConversationScreen = { kind: 'channel', channel: GENERAL_C
 export const useFeed = defineStore('feed', () => {
   const feed = ref<FeedEntry[]>([])
   const roster = useRoster()
-  const states = ref<Record<Agent, AgentState>>({})
-  const stateSince = ref<Partial<Record<Agent, number>>>({})
-  const stateItem = ref<Record<Agent, string | undefined>>({})
+  const statesByKey = ref<Record<string, AgentState>>({})
+  const stateSinceByKey = ref<Record<string, number>>({})
+  const stateItemByKey = ref<Record<string, string | undefined>>({})
+  const globalStates = ref<Record<Agent, AgentState>>({})
+  const globalStateSince = ref<Partial<Record<Agent, number>>>({})
+  const globalStateItem = ref<Record<Agent, string | undefined>>({})
   const liveActivity = ref<Record<string, TurnActivity>>({})
   const liveActivityItem = ref<Record<string, string | undefined>>({})
   const permissions = ref<VokiaPermission[]>([])
@@ -57,6 +60,34 @@ export const useFeed = defineStore('feed', () => {
   const lastProject = ref<Record<Agent, number | null>>({})
   const screen = ref<ConversationScreen>(GENERAL_SCREEN)
   let requestSettledHandler: ((event: VokiaRequestSettled) => void) | null = null
+
+  function mapForSelectedProject<T>(
+    byKey: Record<string, T>,
+    globalMap: Record<string, T>,
+  ): Record<string, T> {
+    const projectId = projects.selected?.id ?? null
+    if (projectId === null) {
+      return { ...globalMap }
+    }
+    const prefix = `${projectId}:`
+    const scoped: Record<string, T> = { ...globalMap }
+    for (const [key, value] of Object.entries(byKey)) {
+      if (key.startsWith(prefix)) {
+        scoped[key.slice(prefix.length)] = value
+      }
+    }
+    return scoped
+  }
+
+  const states = computed<Record<Agent, AgentState>>(() =>
+    mapForSelectedProject(statesByKey.value, globalStates.value),
+  )
+  const stateSince = computed<Partial<Record<Agent, number>>>(() =>
+    mapForSelectedProject(stateSinceByKey.value, globalStateSince.value as Record<string, number>),
+  )
+  const stateItem = computed<Record<Agent, string | undefined>>(() =>
+    mapForSelectedProject(stateItemByKey.value, globalStateItem.value),
+  )
 
   function stateOf(agent: Agent): AgentState {
     return states.value[agent] ?? 'idle'
@@ -258,7 +289,7 @@ export const useFeed = defineStore('feed', () => {
         void useArtifacts().reloadIfCurrent(event.projectId)
         break
       case 'agent-named':
-        roster.nameInstance(event.agent, event.name)
+        roster.nameInstance(event.agent, event.name, event.projectId)
         break
       case 'orchestration-changed':
         void useOrchestration().reload()
@@ -317,15 +348,28 @@ export const useFeed = defineStore('feed', () => {
     }
   }
 
-  function recordState({ agent, state, itemId }: VokiaAgentState): void {
-    if (stateOf(agent) !== state) {
-      stateSince.value[agent] = Date.now()
+  function recordState({ agent, state, itemId, projectId }: VokiaAgentState): void {
+    if (projectId === null) {
+      if ((globalStates.value[agent] ?? 'idle') !== state) {
+        globalStateSince.value[agent] = Date.now()
+      }
+      globalStates.value[agent] = state
+      if (state === 'idle' || itemId === undefined) {
+        delete globalStateItem.value[agent]
+      } else {
+        globalStateItem.value[agent] = itemId
+      }
+      return
     }
-    states.value[agent] = state
+    const key = projectAgentKey(projectId, agent)
+    if ((statesByKey.value[key] ?? 'idle') !== state) {
+      stateSinceByKey.value[key] = Date.now()
+    }
+    statesByKey.value[key] = state
     if (state === 'idle' || itemId === undefined) {
-      delete stateItem.value[agent]
+      delete stateItemByKey.value[key]
     } else {
-      stateItem.value[agent] = itemId
+      stateItemByKey.value[key] = itemId
     }
   }
 
