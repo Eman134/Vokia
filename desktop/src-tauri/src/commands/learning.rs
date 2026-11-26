@@ -803,6 +803,7 @@ mod tests {
     fn make_active_card(id: &str, title: &str, who: &str, column: &str, files: Vec<&str>) -> BacklogItem {
         BacklogItem {
             id: id.to_string(),
+            public_id: None,
             title: title.to_string(),
             kind: "task".to_string(),
             state: "vinculado".to_string(),

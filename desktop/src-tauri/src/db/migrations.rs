@@ -1131,6 +1131,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;
     ensure_column(&tx, "backlog_items", "worktree_path", "TEXT")?;
     ensure_column(&tx, "backlog_items", "plan_note", "TEXT")?;
+    ensure_column(&tx, "backlog_items", "public_id", "TEXT")?;
     let had_message_item_id: i64 = tx.query_row(HAS_COLUMN, ["messages", "item_id"], |row| row.get(0))?;
     ensure_column(&tx, "messages", "item_id", "TEXT")?;
     tx.execute_batch("CREATE INDEX IF NOT EXISTS messages_by_item ON messages(project_id, item_id)")?;

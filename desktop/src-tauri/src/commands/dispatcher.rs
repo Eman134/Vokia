@@ -395,6 +395,7 @@ fn schema_save_item_plan() -> Value {
                 "type": "object",
                 "properties": {
                     "state": { "type": "string", "description": "vazio | proposto | vinculado" },
+                    "publicId": { "type": "string", "description": "Identificador público curto do card (ex: FIL01, ANIM01)" },
                     "proposal": { "type": "string", "description": PLAN_PROTOCOL_HINT },
                     "plan": {
                         "type": "object",

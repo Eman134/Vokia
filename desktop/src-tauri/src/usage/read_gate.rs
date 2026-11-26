@@ -297,6 +297,15 @@ impl UsageReadGate {
             .and_then(|entry| entry.last_valid.clone())
     }
 
+    pub fn has_error(&self, provider_id: &str) -> bool {
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        inner
+            .entries
+            .get(provider_id)
+            .and_then(|entry| entry.last_error.as_ref())
+            .is_some()
+    }
+
     pub fn snapshot_all(&self) -> Vec<ProviderPlanUsage> {
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut list: Vec<ProviderPlanUsage> = inner

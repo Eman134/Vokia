@@ -162,6 +162,32 @@ impl UsageEngine {
         if let Some(filter) = provider_filter {
             providers.retain(|entry| entry.provider_id == filter);
         }
+        let registered_ids: Vec<String> = {
+            let readers = self.readers.lock().unwrap_or_else(|e| e.into_inner());
+            readers.keys().cloned().collect()
+        };
+        for id in registered_ids {
+            if let Some(filter) = provider_filter {
+                if id != filter {
+                    continue;
+                }
+            }
+            if !providers.iter().any(|entry| entry.provider_id == id) {
+                providers.push(ProviderPlanUsage {
+                    provider_id: id.clone(),
+                    label: None,
+                    primary: None,
+                    secondary: None,
+                    tertiary: None,
+                    groups: Vec::new(),
+                    credits_available: None,
+                    reset_credits_available: None,
+                    updated_at_ms: 0,
+                    read_failed: self.read_gate.has_error(&id),
+                });
+            }
+        }
+        providers.sort_by(|a, b| a.provider_id.cmp(&b.provider_id));
         let (mut active_limits, mut pending_returns, pause_threshold) = {
             let gate = self.limit_gate.lock().unwrap_or_else(|e| e.into_inner());
             (

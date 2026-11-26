@@ -79,6 +79,7 @@ fn proposed(text: &str) -> ItemPlanInput {
         proposal: Some(text.to_string()),
         plan: None,
         agent: Some("axiom".to_string()),
+        public_id: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn linked(item_id: &str, plan_id: &str, text: Option<&str>) -> ItemPlanInput {
             meta: "proposta aceita".to_string(),
         }),
         agent: Some("axiom".to_string()),
+        public_id: None,
     }
 }
 
@@ -101,6 +103,7 @@ fn empty() -> ItemPlanInput {
         proposal: None,
         plan: None,
         agent: None,
+        public_id: None,
     }
 }
 

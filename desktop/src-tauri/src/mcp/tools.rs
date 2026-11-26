@@ -156,6 +156,8 @@ struct LabelArgs {
 struct ResponsibleArgs {
     item_id: String,
     agent: String,
+    #[serde(default)]
+    public_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -380,10 +382,11 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             BACKLOG_SET_RESPONSIBLE,
-            "Define ou troca o agente responsável por um card do backlog; trocar um responsável já definido cabe ao Ember ou ao responsável atual, e indicar o próprio responsável não faz nada.",
+            "Define ou troca o agente responsável por um card do backlog; trocar um responsável já definido cabe ao Ember ou ao responsável atual, e indicar o próprio responsável não faz nada. Opcionalmente defina public_id (código curto do card, ex: FIL01, ANIM01).",
             json!({
                 "item_id": { "type": "string" },
                 "agent": { "type": "string" },
+                "public_id": { "type": "string", "description": "Identificador público curto do card (ex: FIL01, ANIM01, máx. 8-12 caracteres)." },
             }),
             &["item_id", "agent"],
         ),
@@ -471,12 +474,13 @@ pub fn definitions() -> Vec<Value> {
         tool(
             SAVE_ITEM_PLAN,
             &format!(
-                "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id (ID público curto), name (título bem resumido) e meta (estimativa para execução por LLM em minutos, ex: '~5min', '~15min'). {}",
+                "Grava o plano de um card do backlog. state vazio limpa o plano; proposto exige proposal; vinculado exige plan com id (ID público curto), name (título bem resumido) e meta (estimativa para execução por LLM em minutos, ex: '~5min', '~15min'). Defina public_id bem curto (ex: FIL01, ANIM01) na triagem. {}",
                 crate::plan_proposal::PLAN_PROTOCOL_HINT
             ),
             json!({
                 "item_id": { "type": "string" },
                 "state": { "type": "string" },
+                "public_id": { "type": "string", "description": "Identificador público curto do card (ex: FIL01, ANIM01)." },
                 "proposal": { "type": "string", "description": crate::plan_proposal::PLAN_PROTOCOL_HINT },
                 "plan": {
                     "type": "object",
@@ -1475,6 +1479,10 @@ fn set_backlog_responsible(app: &AppHandle, binding: &Binding, args: Responsible
     let db = state.require().map_err(|error| refusal_or_system(&error))?;
     db.set_backlog_responsible(binding.project_id, &args.item_id, &agent, &team, Some(&binding.agent))
         .map_err(|error| refusal_or_system(&error))?;
+    if let Some(ref code) = args.public_id {
+        db.set_backlog_public_id(binding.project_id, &args.item_id, code)
+            .map_err(|error| refusal_or_system(&error))?;
+    }
     let message = format!(
         "Responsável do card {} definido: {}.",
         args.item_id,

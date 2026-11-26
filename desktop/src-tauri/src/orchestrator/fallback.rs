@@ -161,15 +161,15 @@ pub(crate) fn resolve_model_for_provider(
     tier: Option<ModelTier>,
     explicit_model: &str,
 ) -> String {
+    let trimmed = explicit_model.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
     if let Some(tier) = tier {
         let from_tier = provider.tiers.get(tier).trim();
         if !from_tier.is_empty() {
             return from_tier.to_string();
         }
-    }
-    let trimmed = explicit_model.trim();
-    if !trimmed.is_empty() {
-        return trimmed.to_string();
     }
     provider.default_model.clone()
 }

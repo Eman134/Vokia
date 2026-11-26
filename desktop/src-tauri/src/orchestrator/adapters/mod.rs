@@ -662,8 +662,11 @@ where
     let io_future = async {
         if let Some(input) = stdin_input {
             if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input.as_bytes()).await?;
-                stdin.shutdown().await?;
+                stdin
+                    .write_all(input.as_bytes())
+                    .await
+                    .map_err(ClaudeError::Spawn)?;
+                stdin.shutdown().await.map_err(ClaudeError::Spawn)?;
             }
         }
         let stdout = child.stdout.take();
@@ -673,50 +676,55 @@ where
             let mut buf = Vec::new();
             if let Some(out) = stdout {
                 let mut lines = BufReader::new(out).lines();
-                while let Some(line) = lines.next_line().await? {
-                    on_line(&line);
-                    buf.extend_from_slice(line.as_bytes());
-                    buf.push(b'\n');
+                loop {
+                    match timeout(limit, lines.next_line()).await {
+                        Ok(Ok(Some(line))) => {
+                            on_line(&line);
+                            buf.extend_from_slice(line.as_bytes());
+                            buf.push(b'\n');
+                        }
+                        Ok(Ok(None)) => break,
+                        Ok(Err(error)) => return Err(ClaudeError::Spawn(error)),
+                        Err(_) => return Err(ClaudeError::Timeout(limit)),
+                    }
                 }
             }
-            Ok::<Vec<u8>, std::io::Error>(buf)
+            Ok::<Vec<u8>, ClaudeError>(buf)
         };
 
         let stderr_fut = async {
             let mut buf = Vec::new();
             if let Some(mut err) = stderr {
-                err.read_to_end(&mut buf).await?;
+                err.read_to_end(&mut buf)
+                    .await
+                    .map_err(ClaudeError::Spawn)?;
             }
-            Ok::<Vec<u8>, std::io::Error>(buf)
+            Ok::<Vec<u8>, ClaudeError>(buf)
         };
 
-        let (stdout_res, stderr_res) = tokio::join!(stdout_fut, stderr_fut);
-        let status = child.wait().await?;
-        Ok::<std::process::Output, std::io::Error>(std::process::Output {
+        let (stdout_buf, stderr_buf) = tokio::try_join!(stdout_fut, stderr_fut)?;
+        let status = timeout(limit, child.wait())
+            .await
+            .map_err(|_| ClaudeError::Timeout(limit))?
+            .map_err(ClaudeError::Spawn)?;
+        Ok::<std::process::Output, ClaudeError>(std::process::Output {
             status,
-            stdout: stdout_res?,
-            stderr: stderr_res?,
+            stdout: stdout_buf,
+            stderr: stderr_buf,
         })
     };
 
-    let output = match timeout(limit, io_future).await {
-        Ok(Ok(output)) => {
+    let output = match io_future.await {
+        Ok(output) => {
             pid.store(NO_PID, Ordering::SeqCst);
             output
         }
-        Ok(Err(error)) => {
+        Err(error) => {
             if let Some(id) = child_pid {
                 kill_process_tree(id);
             }
             pid.store(NO_PID, Ordering::SeqCst);
-            return Err(ClaudeError::Spawn(error));
-        }
-        Err(_) => {
-            if let Some(id) = child_pid {
-                kill_process_tree(id);
-            }
-            pid.store(NO_PID, Ordering::SeqCst);
-            return Err(ClaudeError::Timeout(limit));
+            return Err(error);
         }
     };
 

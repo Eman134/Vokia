@@ -137,6 +137,11 @@ async fn run_step(
     let mut fallback_expires_at: Option<u64> = None;
     let mut original_limited: Option<(String, String, Option<ModelTier>, u64)> = None;
     let mut failed_from: Option<(String, String)> = None;
+    let has_active_override = state
+        .temporary_overrides
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains_key(agent);
     for (idx, candidate) in candidates.iter().enumerate() {
         console.reset_acted();
         let adapter = ProviderAdapter::from_cli(&candidate.cli, &providers)?;
@@ -374,6 +379,15 @@ async fn run_step(
                         .as_ref()
                         .map(|(cli, model, tier, _)| (cli.clone(), model.clone(), *tier))
                         .unwrap_or_else(|| {
+                            if profile.follow_default_llm {
+                                if let Some(global) = global_active.as_ref() {
+                                    return (
+                                        global.cli.clone(),
+                                        global.model.clone().unwrap_or_default(),
+                                        global.model_tier,
+                                    );
+                                }
+                            }
                             (profile.cli.clone(), profile.model.clone(), profile.model_tier)
                         });
                     let ov = TemporaryOverride {
@@ -443,7 +457,7 @@ async fn run_step(
                     .unwrap_or_default();
                 let mut normalized_usage = reply.usage.unwrap_or_default();
                 normalized_usage.provider = Some(candidate.cli.clone());
-                if candidate.cli != profile.cli || candidate.model != profile.model {
+                if fallback_reason.is_some() || idx > 0 || has_active_override {
                     normalized_usage.is_fallback = Some(true);
                 }
                 if normalized_usage

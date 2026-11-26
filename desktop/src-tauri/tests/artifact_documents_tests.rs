@@ -79,6 +79,7 @@ fn create_card_with_plan(db: &Db, project_id: i64, title: &str) -> (String, Stri
             proposal: Some(PLAN_PROPOSAL.to_string()),
             plan: None,
             agent: Some("axiom".to_string()),
+            public_id: None,
         },
     )
     .expect("o plano deveria ser gravado");

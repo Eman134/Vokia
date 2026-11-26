@@ -59,27 +59,26 @@ const USER_CARD_TYPE: &str = "feature";
 const AGENT_CARD_TYPE: &str = "task";
 const NEW_CARD_STATE: &str = "vazio";
 const TRIAGE_CARD_STATE: &str = "triagem";
-const CARD_ID_PREFIX: &str = "item-";
-const CARD_SLUG_MAX_LEN: usize = 40;
 const USER_CREATED_TEXT: &str = "Pedido criado por você.";
 const CONVERSATION_CREATED_TEXT: &str = "Pedido criado a partir de uma mensagem da conversa.";
 const ACTIVITY_TIME_FORMAT: &str = "%d/%m/%Y, %H:%M:%S";
 const PLAN_CARD_CREATED_TEXT: &str = "Etapa criada pelo plano aceito do item";
 const PLAN_IMPORTED_TEXT: &str = "Plano importado";
 
-const ITEM_COLUMNS: &str = "id, title, \"type\", state, stage, triage_step, parent, feature, \
+const ITEM_COLUMNS: &str = "id, public_id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
     questions, links, activity, children_total, children_done, origin, branch, worktree_path, \
     closed_by, auto_attempts, plan_note";
 
-const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
+const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, public_id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
     priority, estimate, tags, tasks, criteria, questions, links, activity, children_total, \
     children_done, origin, plan_note, position) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
-    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, \
+    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, \
     (SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1)) \
     ON CONFLICT(project_id, id) DO UPDATE SET \
+    public_id = COALESCE(excluded.public_id, backlog_items.public_id), \
     title = excluded.title, \"type\" = excluded.\"type\", state = excluded.state, \
     stage = excluded.stage, triage_step = excluded.triage_step, parent = excluded.parent, \
     feature = excluded.feature, description = excluded.description, plan = excluded.plan, \
@@ -198,6 +197,8 @@ pub struct GitRefLinkInput {
 #[serde(rename_all = "camelCase")]
 pub struct BacklogItem {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub public_id: Option<String>,
     pub title: String,
     #[serde(rename = "type")]
     pub kind: String,
@@ -275,6 +276,8 @@ pub struct ItemPlanInput {
     pub proposal: Option<String>,
     pub plan: Option<LinkedPlan>,
     pub agent: Option<String>,
+    #[serde(default)]
+    pub public_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -739,6 +742,24 @@ impl Db {
         Ok(CardOutcome::Updated)
     }
 
+    pub fn set_backlog_public_id(
+        &self,
+        project_id: i64,
+        item_id: &str,
+        public_id: &str,
+    ) -> Result<(), DbError> {
+        let Some(normalized) = normalize_public_id(public_id) else {
+            return Ok(());
+        };
+        let conn = self.conn()?;
+        ensure_project(&conn, project_id)?;
+        conn.execute(
+            "UPDATE backlog_items SET public_id = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id, normalized],
+        )?;
+        Ok(())
+    }
+
     pub fn archive_backlog_item(&self, project_id: i64, item_id: &str) -> Result<(), DbError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
@@ -1075,6 +1096,7 @@ impl Db {
             proposal: Some(proposal.to_string()),
             plan: None,
             agent: author.map(str::to_string),
+            public_id: None,
         };
         validate_plan(&plan)?;
         let mut conn = self.conn()?;
@@ -1154,6 +1176,21 @@ fn write_item_plan(
             plan.agent,
         ],
     )?;
+    if let Some(code) = plan
+        .public_id
+        .as_deref()
+        .and_then(normalize_public_id)
+        .or_else(|| {
+            linked
+                .filter(|l| l.id != item_id && !l.id.starts_with("plano-") && l.id.len() <= 12)
+                .and_then(|l| normalize_public_id(&l.id))
+        })
+    {
+        conn.execute(
+            "UPDATE backlog_items SET public_id = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, item_id, code],
+        )?;
+    }
     if let (Some(text), Some(draft)) = (proposal, &draft) {
         let author = plan.agent.as_deref();
         if plan.state == PROPOSED_PLAN {
@@ -1398,26 +1435,6 @@ fn parse_priority(raw: &str) -> Result<Option<&'static str>, DbError> {
         .ok_or_else(|| DbError::InvalidBacklogPriority(raw.to_string()))
 }
 
-// Slug do título (acentos e caixa normalizados) cortado em fronteira de palavra; título sem letras ou dígitos cai no id sequencial.
-fn card_slug(title: &str) -> Option<String> {
-    let key = crate::agents::name_key(title);
-    let mut slug = String::new();
-    for word in key.split(|c: char| !c.is_ascii_alphanumeric()).filter(|word| !word.is_empty()) {
-        let separator = if slug.is_empty() { 0 } else { 1 };
-        if slug.len() + separator + word.len() > CARD_SLUG_MAX_LEN {
-            if slug.is_empty() {
-                slug.push_str(&word[..CARD_SLUG_MAX_LEN]);
-            }
-            break;
-        }
-        if separator == 1 {
-            slug.push('-');
-        }
-        slug.push_str(word);
-    }
-    (!slug.is_empty()).then_some(slug)
-}
-
 fn card_id_taken(conn: &Connection, project_id: i64, id: &str) -> Result<bool, DbError> {
     Ok(conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM backlog_items WHERE project_id = ?1 AND id = ?2)",
@@ -1426,22 +1443,34 @@ fn card_id_taken(conn: &Connection, project_id: i64, id: &str) -> Result<bool, D
     )?)
 }
 
-fn next_card_id(conn: &Connection, project_id: i64, title: &str) -> Result<(String, i64), DbError> {
+fn normalize_public_id(raw: &str) -> Option<String> {
+    let cleaned: String = raw
+        .trim()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-' || *ch == '_')
+        .take(12)
+        .collect();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned.to_ascii_uppercase())
+    }
+}
+
+fn next_card_id(conn: &Connection, project_id: i64, _title: &str) -> Result<(String, i64), DbError> {
     let position: i64 = conn.query_row(
         "SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1",
         [project_id],
         |row| row.get(0),
     )?;
-    let Some(slug) = card_slug(title) else {
-        return Ok((format!("{CARD_ID_PREFIX}{position}"), position));
-    };
-    let mut id = slug.clone();
-    let mut suffix = 2;
-    while card_id_taken(conn, project_id, &id)? {
-        id = format!("{slug}-{suffix}");
-        suffix += 1;
+    let mut n = 1i64;
+    loop {
+        let id = format!("T{n}");
+        if !card_id_taken(conn, project_id, &id)? {
+            return Ok((id, position));
+        }
+        n += 1;
     }
-    Ok((id, position))
 }
 
 fn ensure_title_free(conn: &Connection, project_id: i64, title: &str) -> Result<(), DbError> {
@@ -1472,6 +1501,7 @@ fn activity_entry(card_id: &str, number: usize, text: String) -> Activity {
 fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
     BacklogItem {
         id: id.to_string(),
+        public_id: None,
         title: draft.title,
         kind: draft.kind.to_string(),
         state: NEW_CARD_STATE.to_string(),
@@ -2169,6 +2199,7 @@ fn upsert_item(conn: &Connection, project_id: i64, item: &BacklogItem) -> Result
         params![
             project_id,
             item.id,
+            item.public_id.as_deref().and_then(normalize_public_id),
             item.title,
             item.kind,
             item.state,
@@ -2223,6 +2254,7 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
     let column: String = row.get("column")?;
     Ok(BacklogItem {
         id: row.get("id")?,
+        public_id: row.get("public_id").ok().flatten(),
         title: row.get("title")?,
         kind: if ITEM_TYPES.contains(&kind.as_str()) {
             kind
@@ -2281,6 +2313,7 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         }
     };
     let item = BacklogItem {
+        public_id: row.get("public_id")?,
         title: row.get("title")?,
         kind: row.get("type")?,
         state: row.get("state")?,
