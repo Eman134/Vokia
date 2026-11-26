@@ -8,6 +8,7 @@ import { useBacklog } from '../backlog/useBacklog'
 import { useItemPlan } from '../backlog/useItemPlan'
 import { useTriage } from '../backlog/useTriage'
 import { agentName } from './agents'
+import MarkdownText from './MarkdownText.vue'
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
@@ -16,9 +17,28 @@ const triage = useTriage()
 const adjustingId = ref<string | null>(null)
 const adjustDrafts = ref<Record<string, string>>({})
 
-const triageItems = computed<BacklogItem[]>(() =>
-  backlog.items.filter((item) => backlog.triagingIds.has(item.id)),
-)
+// Planos pendentes de aprovação ('proposto') ficam embaixo com maior prioridade visual.
+const triageItems = computed<BacklogItem[]>(() => {
+  const items = backlog.items.filter((item) => backlog.triagingIds.has(item.id))
+  const pendingApproval: BacklogItem[] = []
+  const others: BacklogItem[] = []
+  for (const item of items) {
+    if (stateOf(item) === 'proposto') {
+      pendingApproval.push(item)
+    } else {
+      others.push(item)
+    }
+  }
+  return [...others, ...pendingApproval]
+})
+
+function formatPlanSummary(raw: string): string {
+  return raw
+    .replace(/\s+(#{2,4}\s+)/g, '\n\n$1')
+    .replace(/\s+(-\s+\*\*)/g, '\n$1')
+    .replace(/\s+(\d+\.\s+)/g, '\n$1')
+    .trim()
+}
 
 function displayId(item: BacklogItem): string {
   return item.publicId ?? item.id
@@ -92,12 +112,14 @@ function sendAdjustment(itemId: string): void {
 
       <div
         v-if="itemPlan.proposalFor(item)"
-        class="flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink"
+        class="flex flex-col gap-2 rounded-sm bg-sticky px-3 py-2.5 text-mark-ink"
       >
-        <p v-if="itemPlan.proposalFor(item)!.summary" class="text-caption leading-[1.45]">
-          {{ itemPlan.proposalFor(item)!.summary }}
-        </p>
-        <p class="text-meta">
+        <MarkdownText
+          v-if="itemPlan.proposalFor(item)!.summary"
+          :text="formatPlanSummary(itemPlan.proposalFor(item)!.summary)"
+          class="text-caption leading-[1.5] [&>h2]:mt-2 [&>h2]:text-caption [&>h2]:font-semibold [&>h3]:mt-1.5 [&>h3]:text-caption [&>h3]:font-semibold [&>p]:my-0.5 [&>ul]:my-1 [&>ul]:pl-4 [&>ol]:my-1 [&>ol]:pl-4"
+        />
+        <p class="text-meta font-medium">
           {{ itemPlan.proposalFor(item)!.lots.length }} etapas<template v-if="itemPlan.proposalFor(item)!.estimate"> · {{ itemPlan.proposalFor(item)!.estimate }}</template>
         </p>
         <ul v-if="itemPlan.proposalFor(item)!.lots.length" class="flex list-disc flex-col gap-0.5 pl-4 text-meta">

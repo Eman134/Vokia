@@ -263,6 +263,26 @@ pub struct ModelBreakdown {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TaskBreakdown {
+    pub card_id: String,
+    pub project_id: Option<i64>,
+    pub title: Option<String>,
+    pub public_id: Option<String>,
+    pub turns: u64,
+    pub input_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub output_tokens: u64,
+    pub thought_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd_estimated: Option<f64>,
+    pub unpriced_turns: u64,
+    pub duration_ms: u64,
+    pub tokens_per_sec: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UsageAnalyticsResponse {
     pub range: UsageRange,
     pub totals: UsageTotals,
@@ -272,6 +292,7 @@ pub struct UsageAnalyticsResponse {
     pub by_provider: Vec<ProviderBreakdown>,
     pub by_agent: Vec<AgentBreakdown>,
     pub by_model: Vec<ModelBreakdown>,
+    pub by_task: Vec<TaskBreakdown>,
     pub pricing_version: String,
     pub cost_disclaimer: String,
 }
@@ -337,6 +358,10 @@ impl Bucket {
 
 struct StoredUsageRow {
     occurred_at: i64,
+    project_id: Option<i64>,
+    card_id: Option<String>,
+    card_title: Option<String>,
+    card_public_id: Option<String>,
     agent_id: String,
     provider_id: String,
     model: String,
@@ -705,11 +730,13 @@ impl Db {
         let end_exclusive_ms = local_day_start_ms(to_date + Duration::days(1), offset)?;
 
         let mut sql = String::from(
-            "SELECT occurred_at, agent_id, provider_id, model,
-                    input_tokens, cached_input_tokens, cache_write_tokens, output_tokens, thought_tokens,
-                    cost_usd_estimated, price_basis, is_fallback, duration_ms
-             FROM usage_records
-             WHERE occurred_at >= ?1 AND occurred_at < ?2",
+            "SELECT u.occurred_at, u.project_id, u.card_id, b.title, b.public_id,
+                    u.agent_id, u.provider_id, u.model,
+                    u.input_tokens, u.cached_input_tokens, u.cache_write_tokens, u.output_tokens, u.thought_tokens,
+                    u.cost_usd_estimated, u.price_basis, u.is_fallback, u.duration_ms
+             FROM usage_records u
+             LEFT JOIN backlog_items b ON b.id = u.card_id AND (u.project_id IS NULL OR b.project_id = u.project_id)
+             WHERE u.occurred_at >= ?1 AND u.occurred_at < ?2",
         );
         let mut params: Vec<SqlValue> = vec![
             SqlValue::Integer(start_ms),
@@ -717,7 +744,7 @@ impl Db {
         ];
         if let Some(project_id) = query.project_id {
             params.push(SqlValue::Integer(project_id));
-            sql.push_str(&format!(" AND project_id = ?{}", params.len()));
+            sql.push_str(&format!(" AND u.project_id = ?{}", params.len()));
         }
         if let Some(agent_id) = query
             .agent_id
@@ -726,7 +753,7 @@ impl Db {
             .filter(|s| !s.is_empty())
         {
             params.push(SqlValue::Text(agent_id.to_string()));
-            sql.push_str(&format!(" AND agent_id = ?{}", params.len()));
+            sql.push_str(&format!(" AND u.agent_id = ?{}", params.len()));
         }
         if let Some(provider_id) = query
             .provider_id
@@ -735,9 +762,9 @@ impl Db {
             .filter(|s| !s.is_empty())
         {
             params.push(SqlValue::Text(provider_id.to_string()));
-            sql.push_str(&format!(" AND provider_id = ?{}", params.len()));
+            sql.push_str(&format!(" AND u.provider_id = ?{}", params.len()));
         }
-        sql.push_str(" ORDER BY occurred_at ASC, id ASC");
+        sql.push_str(" ORDER BY u.occurred_at ASC, u.id ASC");
 
         let rows: Vec<StoredUsageRow> = {
             let conn = self.conn()?;
@@ -745,18 +772,22 @@ impl Db {
             let mapped = statement.query_map(params_from_iter(params), |row| {
                 Ok(StoredUsageRow {
                     occurred_at: row.get(0)?,
-                    agent_id: row.get(1)?,
-                    provider_id: row.get(2)?,
-                    model: row.get(3)?,
-                    input_tokens: row.get::<_, i64>(4)?.max(0) as u64,
-                    cached_input_tokens: row.get::<_, i64>(5)?.max(0) as u64,
-                    cache_write_tokens: row.get::<_, i64>(6)?.max(0) as u64,
-                    output_tokens: row.get::<_, i64>(7)?.max(0) as u64,
-                    thought_tokens: row.get::<_, i64>(8)?.max(0) as u64,
-                    cost_usd_estimated: row.get(9)?,
-                    price_basis: row.get(10)?,
-                    is_fallback: row.get::<_, i64>(11)? != 0,
-                    duration_ms: row.get::<_, i64>(12)?.max(0) as u64,
+                    project_id: row.get(1)?,
+                    card_id: row.get(2)?,
+                    card_title: row.get(3)?,
+                    card_public_id: row.get(4)?,
+                    agent_id: row.get(5)?,
+                    provider_id: row.get(6)?,
+                    model: row.get(7)?,
+                    input_tokens: row.get::<_, i64>(8)?.max(0) as u64,
+                    cached_input_tokens: row.get::<_, i64>(9)?.max(0) as u64,
+                    cache_write_tokens: row.get::<_, i64>(10)?.max(0) as u64,
+                    output_tokens: row.get::<_, i64>(11)?.max(0) as u64,
+                    thought_tokens: row.get::<_, i64>(12)?.max(0) as u64,
+                    cost_usd_estimated: row.get(13)?,
+                    price_basis: row.get(14)?,
+                    is_fallback: row.get::<_, i64>(15)? != 0,
+                    duration_ms: row.get::<_, i64>(16)?.max(0) as u64,
                 })
             })?;
             mapped.collect::<rusqlite::Result<Vec<_>>>()?
@@ -768,6 +799,8 @@ impl Db {
         let mut provider_map: BTreeMap<String, Bucket> = BTreeMap::new();
         let mut agent_map: BTreeMap<String, Bucket> = BTreeMap::new();
         let mut model_map: BTreeMap<(String, String), Bucket> = BTreeMap::new();
+        let mut task_map: BTreeMap<String, (Option<i64>, Option<String>, Option<String>, Bucket)> =
+            BTreeMap::new();
 
         let mut cache_savings_usd = 0.0_f64;
         let mut light_tier_savings_usd = 0.0_f64;
@@ -794,6 +827,26 @@ impl Db {
                 .entry((row.provider_id.clone(), row.model.clone()))
                 .or_default()
                 .add(row);
+            if let Some(card_id) = row
+                .card_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                let entry = task_map
+                    .entry(card_id.to_string())
+                    .or_insert_with(|| (row.project_id, row.card_title.clone(), row.card_public_id.clone(), Bucket::default()));
+                if entry.0.is_none() {
+                    entry.0 = row.project_id;
+                }
+                if entry.1.is_none() {
+                    entry.1 = row.card_title.clone();
+                }
+                if entry.2.is_none() {
+                    entry.2 = row.card_public_id.clone();
+                }
+                entry.3.add(row);
+            }
 
             let counts = TokenCounts {
                 input_tokens: row.input_tokens,
@@ -931,6 +984,41 @@ impl Db {
                 .then_with(|| a.model.cmp(&b.model))
         });
 
+        let mut by_task: Vec<TaskBreakdown> = task_map
+            .into_iter()
+            .map(|(card_id, (project_id, title, public_id, bucket))| {
+                let total_tokens = bucket.total_tokens();
+                let tokens_per_sec = if bucket.duration_ms > 0 {
+                    Some(((total_tokens as f64) / (bucket.duration_ms as f64 / 1000.0) * 10.0).round() / 10.0)
+                } else {
+                    None
+                };
+                TaskBreakdown {
+                    card_id,
+                    project_id,
+                    title,
+                    public_id,
+                    turns: bucket.turns,
+                    input_tokens: bucket.input_tokens,
+                    cached_input_tokens: bucket.cached_input_tokens,
+                    cache_write_tokens: bucket.cache_write_tokens,
+                    output_tokens: bucket.output_tokens,
+                    thought_tokens: bucket.thought_tokens,
+                    total_tokens,
+                    cost_usd_estimated: bucket.cost_usd_estimated(),
+                    unpriced_turns: bucket.unpriced_turns,
+                    duration_ms: bucket.duration_ms,
+                    tokens_per_sec,
+                }
+            })
+            .collect();
+        by_task.sort_by(|a, b| {
+            b.total_tokens
+                .cmp(&a.total_tokens)
+                .then_with(|| b.duration_ms.cmp(&a.duration_ms))
+                .then_with(|| a.card_id.cmp(&b.card_id))
+        });
+
         Ok(UsageAnalyticsResponse {
             range: UsageRange {
                 from: from_date.format("%Y-%m-%d").to_string(),
@@ -965,6 +1053,7 @@ impl Db {
             by_provider,
             by_agent,
             by_model,
+            by_task,
             pricing_version: PRICING_VERSION.to_string(),
             cost_disclaimer: COST_DISCLAIMER.to_string(),
         })

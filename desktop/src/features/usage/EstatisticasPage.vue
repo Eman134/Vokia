@@ -110,6 +110,15 @@ const DAILY_COLUMNS = [
   { key: 'cost', title: 'Estimativa equiv. API', align: 'right' as const },
 ]
 
+const TASK_COLUMNS = [
+  { key: 'task', title: 'Task' },
+  { key: 'turns', title: 'Turnos', align: 'right' as const },
+  { key: 'duration', title: 'Tempo', align: 'right' as const },
+  { key: 'tokens', title: 'Tokens', align: 'right' as const },
+  { key: 'rate', title: 'Razão (tok/s)', align: 'right' as const },
+  { key: 'cost', title: 'Equiv. API', align: 'right' as const },
+]
+
 const analytics = useUsageAnalytics()
 const projectsStore = useProjects()
 const roster = useRoster()
@@ -372,6 +381,99 @@ const dailyRows = computed(() =>
   })),
 )
 
+const hoveredLineIndex = ref<number | null>(null)
+
+const LINE_CHART_W = 680
+const LINE_CHART_H = 190
+const LINE_PAD_L = 48
+const LINE_PAD_R = 16
+const LINE_PAD_T = 16
+const LINE_PAD_B = 28
+
+const tokenLineChart = computed(() => {
+  const days = data.value?.daily ?? []
+  if (days.length === 0) return null
+  const plotW = LINE_CHART_W - LINE_PAD_L - LINE_PAD_R
+  const plotH = LINE_CHART_H - LINE_PAD_T - LINE_PAD_B
+  const maxTokens = Math.max(1, ...days.map((d) => d.totalTokens))
+  const count = days.length
+  const xFor = (i: number) =>
+    count === 1 ? LINE_PAD_L + plotW / 2 : LINE_PAD_L + (i / (count - 1)) * plotW
+  const yFor = (val: number) => LINE_PAD_T + plotH - (val / maxTokens) * plotH
+
+  const points = days.map((day, i) => {
+    const outputTotal = day.outputTokens + day.thoughtTokens
+    return {
+      index: i,
+      date: day.date,
+      shortLabel: shortDateLabel(day.date),
+      x: xFor(i),
+      yTotal: yFor(day.totalTokens),
+      yOutput: yFor(outputTotal),
+      totalTokens: day.totalTokens,
+      inputTokens: day.inputTokens,
+      outputTotal,
+      turns: day.turns,
+      duration: formatDurationMs(day.durationMs),
+      cost: formatEstimatedUsd(day.costUsdEstimated),
+    }
+  })
+
+  const totalLine = points.map((p) => `${p.x.toFixed(1)},${p.yTotal.toFixed(1)}`).join(' ')
+  const outputLine = points.map((p) => `${p.x.toFixed(1)},${p.yOutput.toFixed(1)}`).join(' ')
+  const baseY = (LINE_PAD_T + plotH).toFixed(1)
+  const firstX = points[0].x.toFixed(1)
+  const lastX = points[points.length - 1].x.toFixed(1)
+  const areaPath = `M ${firstX} ${baseY} L ${points.map((p) => `${p.x.toFixed(1)} ${p.yTotal.toFixed(1)}`).join(' L ')} L ${lastX} ${baseY} Z`
+
+  const yTicks = [0, 0.5, 1].map((ratio) => ({
+    y: yFor(maxTokens * ratio),
+    label: formatTokenCount(Math.round(maxTokens * ratio)),
+  }))
+
+  const xLabelStep = Math.max(1, Math.ceil(points.length / 8))
+  return { points, totalLine, outputLine, areaPath, yTicks, xLabelStep, plotBottom: LINE_PAD_T + plotH }
+})
+
+function formatTokensPerSec(rate: number | null): string {
+  if (rate === null || !Number.isFinite(rate) || rate <= 0) return '—'
+  if (rate >= 1000) return `${(rate / 1000).toFixed(1)}k tok/s`
+  return `${rate.toFixed(1)} tok/s`
+}
+
+function projectNameOf(projectId: number | null): string | null {
+  if (projectId === null) return null
+  return projectsStore.projects.find((p) => p.id === projectId)?.name ?? null
+}
+
+const taskRows = computed(() =>
+  (data.value?.byTask ?? []).map((row) => ({
+    cardId: row.cardId,
+    code: row.publicId ?? row.cardId,
+    title: row.title ?? row.cardId,
+    project: projectNameOf(row.projectId),
+    turns: INT_FORMAT.format(row.turns),
+    duration: formatDurationMs(row.durationMs),
+    tokens: formatTokenCount(row.totalTokens),
+    tokensDetail: `Ent. ${formatTokenCount(row.inputTokens)} · Saída ${formatTokenCount(row.outputTokens + row.thoughtTokens)}`,
+    rate: formatTokensPerSec(row.tokensPerSec),
+    cost: formatEstimatedUsd(row.costUsdEstimated),
+    unpriced: row.unpricedTurns > 0 && row.costUsdEstimated === null,
+  })),
+)
+
+const taskSummary = computed(() => {
+  const tasks = data.value?.byTask ?? []
+  const totalDurationMs = tasks.reduce((acc, row) => acc + row.durationMs, 0)
+  const totalTokens = tasks.reduce((acc, row) => acc + row.totalTokens, 0)
+  const avgRate = totalDurationMs > 0 ? (totalTokens / (totalDurationMs / 1000)) : null
+  return {
+    count: tasks.length,
+    totalDuration: formatDurationMs(totalDurationMs),
+    avgRate: formatTokensPerSec(avgRate),
+  }
+})
+
 function applyCustom(): void {
   void analytics.applyCustomRange(draftFrom.value, draftTo.value)
 }
@@ -628,6 +730,156 @@ onMounted(async () => {
           <p v-else class="text-caption text-muted">Sem consumo de tokens por agente no período.</p>
         </section>
       </div>
+
+      <section :class="SECTION_CARD_CLASSES">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-lead text-ink">Consumo de tokens ao longo do tempo</h2>
+            <p class="text-meta text-muted">
+              Evolução diária do total de tokens e de saída + pensamento no período.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 text-meta text-muted">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-0.5 w-4 rounded-full bg-accent" aria-hidden="true" />
+              <span class="text-ink">Total de tokens</span>
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-0.5 w-4 border-t-2 border-dashed border-ok" aria-hidden="true" />
+              <span class="text-ink">Saída + pens.</span>
+            </span>
+          </div>
+        </div>
+
+        <div v-if="tokenLineChart" class="flex flex-col gap-2">
+          <div class="w-full overflow-x-auto">
+            <svg
+              :viewBox="`0 0 ${LINE_CHART_W} ${LINE_CHART_H}`"
+              class="h-48 w-full min-w-[460px]"
+              role="img"
+              aria-label="Gráfico de linha do consumo de tokens ao longo do tempo"
+            >
+              <defs>
+                <linearGradient id="vokia-tokens-area" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="var(--color-accent)" stop-opacity="0.22" />
+                  <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0.01" />
+                </linearGradient>
+              </defs>
+
+              <g v-for="tick in tokenLineChart.yTicks" :key="tick.label">
+                <line
+                  :x1="LINE_PAD_L"
+                  :x2="LINE_CHART_W - LINE_PAD_R"
+                  :y1="tick.y"
+                  :y2="tick.y"
+                  stroke="var(--color-line)"
+                  stroke-dasharray="3 3"
+                />
+                <text
+                  :x="LINE_PAD_L - 8"
+                  :y="tick.y + 3.5"
+                  text-anchor="end"
+                  fill="var(--color-muted)"
+                  font-size="10"
+                >
+                  {{ tick.label }}
+                </text>
+              </g>
+
+              <path :d="tokenLineChart.areaPath" fill="url(#vokia-tokens-area)" />
+              <polyline
+                :points="tokenLineChart.totalLine"
+                fill="none"
+                stroke="var(--color-accent)"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <polyline
+                :points="tokenLineChart.outputLine"
+                fill="none"
+                stroke="var(--color-ok)"
+                stroke-width="1.6"
+                stroke-dasharray="4 3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+
+              <g v-for="pt in tokenLineChart.points" :key="pt.date">
+                <text
+                  v-if="pt.index % tokenLineChart.xLabelStep === 0 || pt.index === tokenLineChart.points.length - 1"
+                  :x="pt.x"
+                  :y="tokenLineChart.plotBottom + 16"
+                  text-anchor="middle"
+                  fill="var(--color-muted)"
+                  font-size="10"
+                >
+                  {{ pt.shortLabel }}
+                </text>
+                <circle
+                  :cx="pt.x"
+                  :cy="pt.yTotal"
+                  :r="hoveredLineIndex === pt.index ? 5 : 3.2"
+                  fill="var(--color-accent)"
+                  stroke="var(--color-surface)"
+                  stroke-width="1.5"
+                  class="cursor-pointer transition-all duration-100"
+                  @mouseenter="hoveredLineIndex = pt.index"
+                  @mouseleave="hoveredLineIndex = null"
+                >
+                  <title>{{ pt.date }} · {{ formatTokenCount(pt.totalTokens) }} tokens (saída+pens: {{ formatTokenCount(pt.outputTotal) }}) · {{ pt.turns }} turnos · {{ pt.duration }} · {{ pt.cost }}</title>
+                </circle>
+              </g>
+            </svg>
+          </div>
+          <p v-if="hoveredLineIndex !== null && tokenLineChart.points[hoveredLineIndex]" class="text-caption tabular-nums text-muted">
+            <strong class="text-ink">{{ tokenLineChart.points[hoveredLineIndex].date }}</strong>
+            · Total {{ formatTokenCount(tokenLineChart.points[hoveredLineIndex].totalTokens) }}
+            · Saída+pens {{ formatTokenCount(tokenLineChart.points[hoveredLineIndex].outputTotal) }}
+            · {{ tokenLineChart.points[hoveredLineIndex].turns }} turno(s)
+            · {{ tokenLineChart.points[hoveredLineIndex].duration }}
+            · {{ tokenLineChart.points[hoveredLineIndex].cost }}
+          </p>
+        </div>
+        <p v-else class="text-caption text-muted">Sem dados diários para exibir a linha de consumo.</p>
+      </section>
+
+      <section :class="SECTION_CARD_CLASSES">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-lead text-ink">Estatísticas por task</h2>
+            <p class="text-meta text-muted">
+              Consumo de tokens, tempo gasto e razão de vazão (tokens/s) por card executado.
+            </p>
+          </div>
+          <div v-if="taskSummary.count > 0" class="flex flex-wrap items-center gap-2 text-meta tabular-nums text-muted">
+            <span>{{ taskSummary.count }} task(s)</span>
+            <span>· Tempo {{ taskSummary.totalDuration }}</span>
+            <span>· Média {{ taskSummary.avgRate }}</span>
+          </div>
+        </div>
+        <UiTable v-if="taskRows.length > 0" :columns="TASK_COLUMNS" :rows="taskRows" :min-width="640">
+          <template #cell-task="{ row }">
+            <div class="flex min-w-0 flex-col">
+              <div class="flex items-center gap-1.5">
+                <span class="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-tiny font-semibold text-muted">{{ row.code }}</span>
+                <span class="truncate font-medium text-ink">{{ row.title }}</span>
+              </div>
+              <span v-if="row.project" class="text-tiny text-muted">{{ row.project }}</span>
+            </div>
+          </template>
+          <template #cell-tokens="{ row }">
+            <div class="flex flex-col items-end">
+              <span class="font-medium text-ink">{{ row.tokens }}</span>
+              <span class="text-tiny text-muted">{{ row.tokensDetail }}</span>
+            </div>
+          </template>
+          <template #cell-cost="{ row }">
+            <span :class="row.unpriced ? 'text-muted italic' : ''">{{ row.cost }}</span>
+          </template>
+        </UiTable>
+        <p v-else class="text-caption text-muted">Nenhuma task vinculada aos turnos deste período.</p>
+      </section>
 
       <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section :class="SECTION_CARD_CLASSES">

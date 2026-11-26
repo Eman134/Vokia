@@ -3,7 +3,8 @@ import type { BacklogColumn } from '../backlog/backlogTypes'
 export type ThreadStatus = 'working' | 'needs-you' | 'idle' | 'done'
 
 const DONE_COLUMN: BacklogColumn = 'Done'
-const ACTIVE_COLUMNS: readonly BacklogColumn[] = ['In progress', 'In review']
+const THREAD_COLUMNS: readonly BacklogColumn[] = ['Ready', 'In progress', 'In review']
+export const DONE_THREAD_RETENTION_MS = 24 * 60 * 60 * 1000
 
 interface StatusInput {
   column: BacklogColumn
@@ -27,7 +28,7 @@ export function splitThreads<T extends { status: ThreadStatus }>(threads: readon
   }
 }
 
-export type ThreadCategoryKey = 'needs-you' | 'triage' | 'in-progress' | 'in-review' | 'recent' | 'done'
+export type ThreadCategoryKey = 'recent' | 'needs-you' | 'in-progress' | 'in-review' | 'done'
 
 export interface ThreadCategory<T> {
   key: ThreadCategoryKey
@@ -42,7 +43,6 @@ export function categorizeThreads<
   T extends { status: ThreadStatus; column: BacklogColumn; isTriaging?: boolean; lastActivity: number },
 >(threads: readonly T[]): ThreadCategory<T>[] {
   const needsYou: T[] = []
-  const triage: T[] = []
   const inProgress: T[] = []
   const inReview: T[] = []
   const done: T[] = []
@@ -52,8 +52,6 @@ export function categorizeThreads<
       done.push(thread)
     } else if (thread.status === 'needs-you') {
       needsYou.push(thread)
-    } else if (thread.isTriaging || thread.column === 'Backlog' || thread.column === 'Ready') {
-      triage.push(thread)
     } else if (thread.column === 'In review') {
       inReview.push(thread)
     } else {
@@ -62,23 +60,30 @@ export function categorizeThreads<
   }
 
   const recent = [...threads]
-    .filter((thread) => thread.lastActivity > 0)
+    .filter((thread) => thread.status !== 'done' && thread.lastActivity > 0)
     .sort((a, b) => b.lastActivity - a.lastActivity)
     .slice(0, RECENT_LIMIT)
 
   const categories: ThreadCategory<T>[] = [
+    { key: 'recent', label: 'Recentes', items: recent, defaultOpen: true },
     { key: 'needs-you', label: 'Precisa de você', items: needsYou, defaultOpen: true },
-    { key: 'triage', label: 'Em triagem', items: triage, defaultOpen: true },
     { key: 'in-progress', label: 'Em andamento', items: inProgress, defaultOpen: true },
     { key: 'in-review', label: 'Em revisão', items: inReview, defaultOpen: true },
-    { key: 'recent', label: 'Recentes', items: recent, defaultOpen: false },
     { key: 'done', label: 'Concluídas', items: done, defaultOpen: false },
   ]
   return categories.filter((category) => category.items.length > 0)
 }
 
-// Card concluído sem conversa não tem o que mostrar numa thread.
-export function showsAsThread(item: { column: BacklogColumn; isTriaging: boolean; messageCount: number }): boolean {
-  if (item.isTriaging || ACTIVE_COLUMNS.includes(item.column)) return true
-  return item.column === DONE_COLUMN && item.messageCount > 0
+// Triagem fica no canal #triagem; após aprovação (Ready) a task vira thread e após concluída fica visível por um período antes de ser arquivada.
+export function showsAsThread(
+  item: { column: BacklogColumn; isTriaging: boolean; messageCount: number; lastActivity?: number },
+  now = Date.now(),
+): boolean {
+  if (item.isTriaging || item.column === 'Backlog') return false
+  if (THREAD_COLUMNS.includes(item.column)) return true
+  if (item.column === DONE_COLUMN && item.messageCount > 0) {
+    const last = item.lastActivity ?? 0
+    return last === 0 || now - last <= DONE_THREAD_RETENTION_MS
+  }
+  return false
 }

@@ -870,6 +870,51 @@ pub(super) async fn run_turns(
                     None,
                 );
             }
+            if !has_pending_decision_for(state, project_id, &turn.speaker)
+                && super::continuation::is_waiting_for_human(&visible)
+            {
+                let is_approval = super::continuation::is_approval_wait(&visible);
+                let kind = if is_approval {
+                    DecisionKind::Aprovacao
+                } else {
+                    DecisionKind::Pergunta
+                };
+                let title = visible
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .map(|line| {
+                        let chars: Vec<char> = line.chars().collect();
+                        if chars.len() > 90 {
+                            format!("{}…", chars[..89].iter().collect::<String>())
+                        } else {
+                            line.to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        if is_approval {
+                            "Aprovação pendente".to_string()
+                        } else {
+                            "Decisão pendente".to_string()
+                        }
+                    });
+                let decision = SlotDecision {
+                    kind,
+                    title,
+                    detail: visible.clone(),
+                    options: Vec::new(),
+                };
+                return raise_decision(
+                    exchange,
+                    transcript,
+                    &turn,
+                    decision,
+                    String::new(),
+                    None,
+                    None,
+                    None,
+                );
+            }
             waiters_guard.set(&[]);
             for requester in &turn.requesters {
                 emit_state(app, project_id, requester.clone(), AgentState::Idle, *item_id)?;

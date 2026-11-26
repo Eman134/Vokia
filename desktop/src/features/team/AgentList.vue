@@ -26,6 +26,7 @@ import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
 import { useBacklog } from '../backlog/useBacklog'
+import { useRunItem } from '../backlog/useRunItem'
 import { useProjects } from '../projects/useProjects'
 import UiChip from '../../ui/UiChip.vue'
 import UiHandDivider from '../../ui/UiHandDivider.vue'
@@ -40,8 +41,15 @@ const LOGS_SCREEN: ConversationScreen = { kind: 'logs' }
 const OPEN_CARD_LABEL = 'Abrir task'
 const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
 const OPEN_CARD_ICON_SIZE = 13
-const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
-const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
+const START_THREAD_LABEL = 'Iniciar task'
+const START_THREAD_ICON_PATH = 'M5 3.5l7.5 4.5L5 12.5z'
+const THREAD_CATEGORY_ICON: Record<ThreadCategoryKey, string> = {
+  recent: 'M8 3.5a4.5 4.5 0 1 0 4.5 4.5A4.5 4.5 0 0 0 8 3.5z M8 5.5v2.7l1.8 1.1',
+  'needs-you': 'M8 2.5l5.5 10.5h-11z M8 6.5v3 M8 11v.4',
+  'in-progress': 'M4.5 3.5l7 4.5-7 4.5z',
+  'in-review': 'M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z M8 6.3a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4z',
+  done: 'M3.5 8.5l3 3 6-6.5',
+}
 const GENERAL_ICON_PATH =
   'M2.3 4.2 Q7 2.8 11.4 4.1 Q12.3 7.2 11.2 9.8 Q7.8 10.6 5.2 10.2 L3.1 12.1 Q3.4 10.5 3.3 9.7 Q1.9 7.2 2.3 4.2 M12.2 6.5 Q14.1 7.2 13.9 9.7 Q13.8 11.5 12.6 12.1 L13.1 13.7 Q11.7 12.9 10.8 12.5 Q9.2 12.6 8.1 11.8'
 const TRIAGE_ICON_PATH =
@@ -89,6 +97,7 @@ const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
 const backlog = useBacklog()
+const runItem = useRunItem()
 const creating = ref(false)
 const editing = ref<Channel | null>(null)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
@@ -380,6 +389,7 @@ function closeChannelDialog(): void {
             @click="toggleCategory(category.key, isCategoryOpen(category))"
           >
             <span aria-hidden="true">{{ isCategoryOpen(category) ? '▾' : '▸' }}</span>
+            <UiIcon :path="THREAD_CATEGORY_ICON[category.key]" :size="13" class="shrink-0" />
             <span>{{ category.label }} ({{ category.items.length }})</span>
           </button>
           <ul v-show="isCategoryOpen(category)" :id="`threads-${category.key}`" class="flex flex-col gap-0.5">
@@ -389,6 +399,7 @@ function closeChannelDialog(): void {
                 :class="[
                   CHANNEL_CLASSES,
                   'flex items-center gap-1.5',
+                  runItem.canRun(thread.itemId) && 'pr-12',
                   category.key === 'done' && 'text-muted',
                   threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES,
                 ]"
@@ -396,12 +407,12 @@ function closeChannelDialog(): void {
                 :aria-pressed="threadShown(thread.itemId)"
                 @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
               >
-                <UiIcon
-                  v-if="thread.isTriaging || !thread.assignee || category.key === 'done'"
-                  :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
-                  class="h-3.5 w-3.5 shrink-0"
+                <AgentPortrait
+                  v-if="thread.assignee && category.key !== 'done'"
+                  :who="thread.assignee"
+                  :size="THREAD_PORTRAIT_SIZE"
+                  class="shrink-0"
                 />
-                <AgentPortrait v-else :who="thread.assignee" :size="THREAD_PORTRAIT_SIZE" class="shrink-0" />
                 <span v-if="shortThreadId(thread)" class="max-w-16 shrink-0 truncate font-mono text-tiny font-semibold text-muted">{{ shortThreadId(thread) }}</span>
                 <span class="min-w-0 flex-1 truncate">{{ thread.title }}</span>
                 <span
@@ -425,6 +436,16 @@ function closeChannelDialog(): void {
                   :class="THREAD_DOT[thread.status] ? '' : 'ml-auto'"
                 />
                 <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
+              </button>
+              <button
+                v-if="runItem.canRun(thread.itemId)"
+                type="button"
+                :class="[THREAD_CARD_BUTTON_CLASSES, 'right-6 text-ok hover:text-ok']"
+                :title="`${START_THREAD_LABEL}: ${thread.title}`"
+                :aria-label="`${START_THREAD_LABEL}: ${thread.title}`"
+                @click.stop="void runItem.run(thread.itemId)"
+              >
+                <UiIcon :path="START_THREAD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
               </button>
               <button
                 type="button"

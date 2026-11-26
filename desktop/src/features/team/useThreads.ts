@@ -72,7 +72,7 @@ export const useThreads = defineStore('threads', () => {
         const column = item.column ?? 'Backlog'
         const bucket = byItem.get(item.id)
         const isTriaging = backlog.triagingIds.has(item.id)
-        if (!showsAsThread({ column, isTriaging, messageCount: bucket?.messageCount ?? 0 })) return []
+        if (!showsAsThread({ column, isTriaging, messageCount: bucket?.messageCount ?? 0, lastActivity: bucket?.lastActivity ?? 0 })) return []
         const participants = [...(bucket?.participants ?? [])]
         const working = feed.activeAgentsForItems(new Set([item.id]))
         const status = threadStatus({

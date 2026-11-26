@@ -257,7 +257,7 @@ impl PlanContinuation {
         // com proteção contra estagnação pela assinatura serializada de `openSteps`.
         if let Some(plan) = input.turn_plan.as_ref() {
             let open_steps = plan.open_steps();
-            if !open_steps.is_empty() {
+            if !open_steps.is_empty() && !is_waiting_for_human(&input.reply_text) {
                 let signature = open_steps_signature(plan);
                 if self.last_plan_signature.as_deref() == Some(signature.as_str()) {
                     return ContinuationDecision::Stopped {
@@ -432,6 +432,15 @@ pub fn is_waiting_for_human(text: &str) -> bool {
         return true;
     }
     false
+}
+
+/// Indica se a resposta pede aprovação ou confirmação explícita do usuário.
+pub fn is_approval_wait(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    contains_approval_wait(&normalize_for_match(trimmed))
 }
 
 const APPROVAL_WAIT_PATTERNS: &[&str] = &[

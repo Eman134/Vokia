@@ -118,6 +118,24 @@ export interface ModelBreakdown {
   durationMs: number
 }
 
+export interface TaskBreakdown {
+  cardId: string
+  projectId: number | null
+  title: string | null
+  publicId: string | null
+  turns: number
+  inputTokens: number
+  cachedInputTokens: number
+  cacheWriteTokens: number
+  outputTokens: number
+  thoughtTokens: number
+  totalTokens: number
+  costUsdEstimated: number | null
+  unpricedTurns: number
+  durationMs: number
+  tokensPerSec: number | null
+}
+
 export interface UsageAnalyticsResponse {
   range: UsageRange
   totals: UsageTotals
@@ -127,6 +145,7 @@ export interface UsageAnalyticsResponse {
   byProvider: ProviderBreakdown[]
   byAgent: AgentBreakdown[]
   byModel: ModelBreakdown[]
+  byTask: TaskBreakdown[]
   pricingVersion: string
   costDisclaimer: string
 }

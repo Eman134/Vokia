@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { createJiti } from 'jiti'
 
 const jiti = createJiti(import.meta.url)
-const { threadStatus, splitThreads, showsAsThread } = jiti('../src/features/team/threadStatus.ts')
+const { threadStatus, splitThreads, showsAsThread, categorizeThreads, DONE_THREAD_RETENTION_MS } = jiti('../src/features/team/threadStatus.ts')
 
 const base = { column: 'In progress', isTriaging: false, hasOpenQuestion: false, hasPendingPermission: false, hasWorkingAgent: false }
 
@@ -26,10 +26,24 @@ test('divide em ativas e concluídas, mantendo a ordem de cada lista', () => {
   assert.deepEqual(done.map((thread) => thread.itemId), ['b', 'd'])
 })
 
-test('card concluído só vira thread se teve conversa', () => {
-  assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 0 }), false)
-  assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 3 }), true)
-  assert.equal(showsAsThread({ column: 'In review', isTriaging: false, messageCount: 0 }), true)
-  assert.equal(showsAsThread({ column: 'Backlog', isTriaging: true, messageCount: 0 }), true)
-  assert.equal(showsAsThread({ column: 'Ready', isTriaging: false, messageCount: 5 }), false)
+test('triagem fica fora das threads; Ready aparece e Done arquiva após o tempo', () => {
+  const now = 1_700_000_000_000
+  assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 0 }, now), false)
+  assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 3, lastActivity: now - 1000 }, now), true)
+  assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 3, lastActivity: now - DONE_THREAD_RETENTION_MS - 1 }, now), false)
+  assert.equal(showsAsThread({ column: 'In review', isTriaging: false, messageCount: 0 }, now), true)
+  assert.equal(showsAsThread({ column: 'Backlog', isTriaging: true, messageCount: 0 }, now), false)
+  assert.equal(showsAsThread({ column: 'Ready', isTriaging: false, messageCount: 0 }, now), true)
+})
+
+test('categorias de threads: recentes primeiro, depois em andamento, sem triagem e concluídas por último', () => {
+  const categories = categorizeThreads([
+    { status: 'done', column: 'Done', lastActivity: 300 },
+    { status: 'idle', column: 'Ready', lastActivity: 200 },
+    { status: 'working', column: 'In progress', lastActivity: 500 },
+  ])
+  assert.deepEqual(
+    categories.map((c) => c.key),
+    ['recent', 'in-progress', 'done'],
+  )
 })
