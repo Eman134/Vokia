@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiCreateButton from '../../ui/UiCreateButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
@@ -46,8 +46,6 @@ const SEARCH_INPUT_CLASSES =
 const FILTER_SELECT_CLASSES =
   'h-8 cursor-pointer rounded-md border border-line bg-surface px-2 text-caption text-ink focus:border-ink focus:outline-none'
 const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 flex items-center justify-between gap-1 bg-bg pb-1'
-const COLUMN_SORT_SELECT_CLASSES =
-  'h-5.5 max-w-[74px] xl:max-w-[115px] shrink-0 cursor-pointer rounded-sm border border-line bg-surface px-1 text-tiny text-muted hover:text-ink focus:border-ink focus:outline-none'
 const COLUMN_TITLE_CLASSES = 'relative flex min-w-0 w-fit items-baseline gap-1.5 whitespace-nowrap pb-1 text-small lg:text-card-title text-ink'
 const COLUMN_COUNT_CLASSES = 'text-tiny lg:text-caption text-muted'
 const COLUMN_UNDERLINE_CLASSES = 'pointer-events-none absolute inset-x-0 bottom-0 h-1.5'
@@ -106,6 +104,16 @@ const UNASSIGNED_FILTER_VALUE = '__unassigned__'
 
 const dismissedError = ref(false)
 const filtersOpen = ref(false)
+const openSortColumn = ref<BacklogColumn | null>(null)
+
+function onSortMenuPointerDown(e: PointerEvent): void {
+  if (openSortColumn.value === null) return
+  if (e.target instanceof Element && e.target.closest('[data-sort-menu]')) return
+  openSortColumn.value = null
+}
+
+onMounted(() => window.addEventListener('pointerdown', onSortMenuPointerDown))
+onUnmounted(() => window.removeEventListener('pointerdown', onSortMenuPointerDown))
 const searchQuery = ref('')
 const featureFilter = ref<string>(ALL_FEATURES_VALUE)
 const ownerFilter = ref<string>(ALL_FILTER_VALUE)
@@ -375,16 +383,44 @@ watch(
                 <span :class="COLUMN_COUNT_CLASSES">{{ column.cards.length }}</span>
                 <UiHandLine :class="COLUMN_UNDERLINE_CLASSES" :style="{ color: colorVar(column.colorToken) }" />
               </div>
-              <select
-                v-model="columnSort[column.name]"
-                :class="COLUMN_SORT_SELECT_CLASSES"
-                :aria-label="`Ordenar ${COLUMN_LABEL[column.name]}`"
-                :data-testid="`sort-${column.name}`"
-              >
-                <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
+              <div class="relative shrink-0" data-sort-menu>
+                <button
+                  type="button"
+                  class="relative inline-flex size-6 cursor-pointer items-center justify-center rounded-sm text-muted hover:bg-hover hover:text-ink"
+                  :class="columnSort[column.name] !== 'default' && 'text-accent'"
+                  :title="`Ordenar ${COLUMN_LABEL[column.name]}: ${SORT_OPTIONS.find((o) => o.value === columnSort[column.name])?.label ?? 'Padrão'}`"
+                  :aria-label="`Ordenar ${COLUMN_LABEL[column.name]}`"
+                  :aria-expanded="openSortColumn === column.name"
+                  :data-testid="`sort-${column.name}`"
+                  @click="openSortColumn = openSortColumn === column.name ? null : column.name"
+                >
+                  <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 3v10M5 3 2.8 5.2M5 3l2.2 2.2M11 13V3M11 13l-2.2-2.2M11 13l2.2-2.2" />
+                  </svg>
+                  <span
+                    v-if="columnSort[column.name] !== 'default'"
+                    class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-accent"
+                    aria-hidden="true"
+                  />
+                </button>
+                <div
+                  v-if="openSortColumn === column.name"
+                  role="menu"
+                  class="absolute right-0 top-full z-30 mt-1 flex min-w-36 flex-col gap-0.5 rounded-md border border-line bg-surface p-1 shadow-paper"
+                >
+                  <button
+                    v-for="opt in SORT_OPTIONS"
+                    :key="opt.value"
+                    type="button"
+                    role="menuitem"
+                    class="cursor-pointer rounded-sm px-2.5 py-1.5 text-left text-caption transition-colors hover:bg-hover"
+                    :class="columnSort[column.name] === opt.value ? 'bg-accent-soft font-semibold text-accent' : 'text-ink'"
+                    @click="columnSort[column.name] = opt.value; openSortColumn = null"
+                  >
+                    {{ opt.label }}
+                  </button>
+                </div>
+              </div>
             </div>
             <span v-if="!backlog.loading && !isEmptyBoard && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
             <TaskCard

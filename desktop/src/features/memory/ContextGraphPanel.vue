@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import MarkdownText from '../team/MarkdownText.vue'
 import { useProjects } from '../projects/useProjects'
 import { useLearningSuggestions } from './useLearningSuggestions'
 import UiButton from '../../ui/UiButton.vue'
@@ -599,9 +600,11 @@ function nodeColor(node: ContextGraphNode): string {
         </div>
 
         <h3 class="wrap-break-word text-label font-semibold text-ink">{{ selectedNode.label }}</h3>
-        <p v-if="selectedNode.subtitle || selectedNode.path" class="wrap-break-word text-small text-muted">
-          {{ selectedNode.subtitle ?? selectedNode.path }}
-        </p>
+        <MarkdownText
+          v-if="selectedNode.subtitle || selectedNode.path"
+          :text="(selectedNode.subtitle ?? selectedNode.path)!"
+          class="wrap-break-word text-small text-muted"
+        />
 
         <div v-if="selectedNode.agents.length > 0" class="flex flex-wrap items-center gap-1.5">
           <span class="text-tiny text-muted">Agentes:</span>
@@ -653,7 +656,7 @@ function nodeColor(node: ContextGraphNode): string {
             <span class="rounded-sm px-1.5 py-0.5 text-tiny font-semibold" :class="BADGE_CLASSES[opt.kind]">
               {{ opt.badge }}
             </span>
-            <span class="min-w-0 flex-1 text-small text-ink">{{ opt.message }}</span>
+            <MarkdownText :text="opt.message" class="min-w-0 flex-1 text-small text-ink" />
             <UiButton
               v-if="opt.files.length > 0 || opt.cardIds.length > 0"
               variant="quiet"

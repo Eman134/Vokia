@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import MarkdownText from '../team/MarkdownText.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
 import {
@@ -334,16 +335,19 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
                 </g>
               </svg>
             </div>
-            <div v-if="selectedNode" class="border-t border-line bg-surface px-3.5 py-2 text-small text-ink">
-              <span class="mr-1.5 rounded-sm bg-accent-soft px-1.5 py-0.5 text-tiny font-semibold text-accent">{{ selectedNode.kind }}</span>
-              <span>{{ selectedNode.subtitle ?? selectedNode.path ?? selectedNode.label }}</span>
+            <div v-if="selectedNode" class="flex items-start gap-2 border-t border-line bg-surface px-3.5 py-2 text-small text-ink">
+              <span class="mt-0.5 shrink-0 rounded-sm bg-accent-soft px-1.5 py-0.5 text-tiny font-semibold text-accent">{{ selectedNode.kind }}</span>
+              <MarkdownText :text="selectedNode.subtitle ?? selectedNode.path ?? selectedNode.label" class="min-w-0 flex-1" />
             </div>
           </div>
 
           <div class="grid gap-4 md:grid-cols-2">
-            <div class="flex flex-col gap-1.5 rounded-md border border-line p-3.5">
+            <div class="flex min-w-0 flex-col gap-1.5 rounded-md border border-line p-3.5">
               <h3 class="text-label font-semibold text-ink">Contexto completo</h3>
-              <pre class="max-h-48 overflow-y-auto whitespace-pre-wrap wrap-break-word font-sans text-small text-ink">{{ contextText || 'Sem conteúdo textual.' }}</pre>
+              <MarkdownText
+                :text="contextText || 'Sem conteúdo textual.'"
+                class="max-h-48 overflow-y-auto wrap-break-word text-small text-ink"
+              />
             </div>
 
             <div class="flex flex-col gap-2 rounded-md border border-line p-3.5">
@@ -385,12 +389,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
 
           <div v-if="memories.length > 0 || optimizations.length > 0" class="flex flex-col gap-1.5 rounded-md border border-line p-3.5">
             <h3 class="text-label font-semibold text-ink">Memórias e sugestões vinculadas</h3>
-            <ul class="flex flex-col gap-1 text-small text-muted">
-              <li v-for="mem in memories.slice(0, 5)" :key="mem.id">
-                • [{{ mem.wing ?? mem.source }}] {{ mem.fact }}
+            <ul class="flex flex-col gap-1.5 text-small text-muted">
+              <li v-for="mem in memories.slice(0, 5)" :key="mem.id" class="flex items-start gap-1.5">
+                <span class="shrink-0 font-semibold">[{{ mem.wing ?? mem.source }}]</span>
+                <MarkdownText :text="mem.fact" class="min-w-0 flex-1" />
               </li>
-              <li v-for="opt in optimizations.slice(0, 3)" :key="opt.id">
-                • [{{ opt.badge }}] {{ opt.message }}
+              <li v-for="opt in optimizations.slice(0, 3)" :key="opt.id" class="flex items-start gap-1.5">
+                <span class="shrink-0 font-semibold">[{{ opt.badge }}]</span>
+                <MarkdownText :text="opt.message" class="min-w-0 flex-1" />
               </li>
             </ul>
           </div>
