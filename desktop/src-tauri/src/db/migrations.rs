@@ -238,7 +238,7 @@ const TURN_WORK_STEPS_SCHEMA: &str = "
         WHERE card_id IS NOT NULL;
 ";
 
-// Memórias duráveis do projeto e fila de sugestões de aprendizado (098).
+// Memórias duráveis do projeto e fila de sugestões de aprendizado (098, 100, 103).
 const LEARNING_SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS project_memories (
         id TEXT NOT NULL,
@@ -248,12 +248,43 @@ const LEARNING_SCHEMA: &str = "
         origin_type TEXT NOT NULL DEFAULT 'review' CHECK (origin_type IN ('manual','pinned','review','auto')),
         pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
         author TEXT,
+        valid_from INTEGER,
+        valid_until INTEGER,
+        superseded_by TEXT,
+        wing TEXT,
+        room TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (project_id, id)
     );
     CREATE INDEX IF NOT EXISTS project_memories_by_project
         ON project_memories(project_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS memory_edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        source_node TEXT NOT NULL,
+        target_node TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        weight INTEGER NOT NULL DEFAULT 1,
+        valid_until INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE(project_id, source_node, target_node, relation)
+    );
+    CREATE INDEX IF NOT EXISTS memory_edges_by_project
+        ON memory_edges(project_id, source_node);
+
+    CREATE TABLE IF NOT EXISTS orchestration_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        agent TEXT,
+        item_id TEXT,
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS orchestration_events_by_project
+        ON orchestration_events(project_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS learning_suggestions (
         id TEXT PRIMARY KEY,
@@ -1126,6 +1157,12 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(USAGE_RECORDS_SCHEMA)?;
     tx.execute_batch(TURN_WORK_STEPS_SCHEMA)?;
     tx.execute_batch(LEARNING_SCHEMA)?;
+    ensure_column(&tx, "project_memories", "valid_from", "INTEGER")?;
+    ensure_column(&tx, "project_memories", "valid_until", "INTEGER")?;
+    ensure_column(&tx, "project_memories", "superseded_by", "TEXT")?;
+    ensure_column(&tx, "project_memories", "wing", "TEXT")?;
+    ensure_column(&tx, "project_memories", "room", "TEXT")?;
+    ensure_column(&tx, "memory_edges", "valid_until", "INTEGER")?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

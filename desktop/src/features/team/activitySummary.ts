@@ -322,6 +322,24 @@ function commandRow(tool: ToolActivity, detail: CommandDetail, nameOf: AgentName
 }
 
 function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
+  if (tool.name === 'mcp__vokia__memory_graph_query' || tool.name === 'memory_graph_query') {
+    return {
+      id: tool.callId,
+      icon: 'search',
+      verb: tool.status === 'running' ? 'Consultando grafo de memória' : 'Consultou grafo de memória',
+      text: tool.target || undefined,
+      failed,
+    }
+  }
+  if (tool.name === 'mcp__vokia__memory_graph_save' || tool.name === 'memory_graph_save') {
+    return {
+      id: tool.callId,
+      icon: 'artifact',
+      verb: tool.status === 'running' ? 'Salvando no grafo de memória' : 'Salvou no grafo de memória',
+      text: tool.target || undefined,
+      failed,
+    }
+  }
   if (tool.category === 'command' && tool.description !== undefined) {
     return { id: tool.callId, icon, verb: tool.description, command: tool.target, failed }
   }

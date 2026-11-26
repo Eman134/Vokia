@@ -20,6 +20,8 @@ import {
 } from './backlogLabels'
 import { returnTask } from './backlogApi'
 import { useFeed } from '../team/useFeed'
+import { useProjects } from '../projects/useProjects'
+import ContextGraphModal from '../memory/ContextGraphModal.vue'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagLabel, tagMarkerTone } from './tags'
 import {
   AUTO_COLUMNS_HINT,
@@ -267,6 +269,21 @@ function pickOption(question: TriageQuestion, option: string): void {
 }
 
 // Salva antes de fechar: depois do close, item.value vira null e o rascunho não tem mais onde ser gravado.
+const graphModalOpen = ref(false)
+const projects = useProjects()
+
+const taskGraphContext = computed(() => {
+  const current = item.value
+  if (!current) return ''
+  return [
+    `${current.publicId ?? current.id} — ${current.title}`,
+    current.description ? `\nDescrição:\n${current.description}` : '',
+    current.planNote ? `\nNota do plano:\n${current.planNote}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+})
+
 function closeModal(): void {
   item.value?.questions?.filter(isOtherAnswer).forEach((question) => saveOther(question))
   backlog.close()
@@ -353,9 +370,24 @@ watch(
             <UiBadge v-if="autoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
             <UiBadge v-if="showStateBadge" class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
             <button
+              type="button"
+              :class="[!showStateBadge && navigation.page === 'backlog' && 'ml-auto', 'inline-flex cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny font-medium text-muted hover:text-ink']"
+              title="Abrir grafo e contexto da task"
+              data-testid="modal-open-task-graph"
+              @click="graphModalOpen = true"
+            >
+              <svg viewBox="0 0 16 16" class="size-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="3.5" cy="4" r="1.5" />
+                <circle cx="12.5" cy="4" r="1.5" />
+                <circle cx="8" cy="12" r="1.5" />
+                <path d="M4.8 4.8 7 10.7M11.2 4.8 9 10.7M5 4h6" />
+              </svg>
+              <span>Grafo</span>
+            </button>
+            <button
               v-if="navigation.page !== 'backlog'"
               type="button"
-              :class="[!showStateBadge && 'ml-auto', 'inline-flex cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny font-medium text-muted hover:text-ink']"
+              class="inline-flex cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny font-medium text-muted hover:text-ink"
               title="Abrir na tela de Tasks"
               data-testid="modal-open-external-tasks"
               @click="openInTasks()"
@@ -367,7 +399,7 @@ watch(
               </svg>
               <span>Tasks</span>
             </button>
-            <UiCloseButton :class="!showStateBadge && navigation.page === 'backlog' && 'ml-auto'" @press="closeModal()" />
+            <UiCloseButton @press="closeModal()" />
           </div>
           <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
         </header>
@@ -587,5 +619,17 @@ watch(
       </footer>
     </section>
     </div>
+    <ContextGraphModal
+      v-if="graphModalOpen"
+      :open="graphModalOpen"
+      :project-id="projects.selected?.id"
+      :title="`Grafo da task — ${item.publicId ?? item.id}`"
+      :query="item.id"
+      :context-text="taskGraphContext"
+      :card-id="item.id"
+      :agent="item.who"
+      :meta-summary="item.title"
+      @close="graphModalOpen = false"
+    />
   </div>
 </template>

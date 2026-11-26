@@ -122,6 +122,11 @@ impl McpServer {
         }
     }
 
+    #[cfg(test)]
+    pub fn install_test_tools(&self) {
+        self.shared.tools.install(tools::definitions());
+    }
+
     #[cfg_attr(not(test), allow(dead_code))] // usado só nos testes
     pub fn register(&self, binding: Binding) -> Result<Token, RandomnessUnavailable> {
         self.shared.sessions.register(binding)

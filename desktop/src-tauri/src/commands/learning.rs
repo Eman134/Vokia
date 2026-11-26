@@ -62,6 +62,51 @@ pub struct GetContextGraphArgs {
     pub project_id: i64,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryGraphQueryArgs {
+    pub project_id: i64,
+    #[serde(default)]
+    pub query: String,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryGraphSaveArgs {
+    pub project_id: i64,
+    pub fact: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub card_id: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub wing: Option<String>,
+    #[serde(default)]
+    pub room: Option<String>,
+    #[serde(default)]
+    pub supersede_id: Option<String>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryGraphQueryResult {
+    pub memories: Vec<ProjectMemory>,
+    pub decisions: Vec<String>,
+    pub keywords: Vec<String>,
+    pub compact_context: String,
+    pub nodes: Vec<ContextGraphNode>,
+    pub edges: Vec<ContextGraphEdge>,
+    pub optimizations: Vec<ContextGraphOptimization>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextGraphNode {
@@ -83,6 +128,12 @@ pub struct ContextGraphNode {
     #[serde(default)]
     pub card_ids: Vec<String>,
     pub conflict_risk: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<String>,
+    #[serde(default)]
+    pub superseded: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,6 +304,7 @@ pub(crate) fn save_project_memory_exec(
     })
     .map_err(|e| e.to_string())?;
     emit_learning_changed(app, args.project_id);
+    let (wing, room) = crate::db::learning::infer_wing_and_room(source, fact);
     Ok(ProjectMemory {
         id,
         project_id: args.project_id,
@@ -261,6 +313,11 @@ pub(crate) fn save_project_memory_exec(
         origin_type: MemoryOriginType::Manual,
         pinned: true,
         author: Some("você".to_string()),
+        valid_from: Some(now_ms),
+        valid_until: None,
+        superseded_by: None,
+        wing: Some(wing),
+        room: Some(room),
         created_at: now_ms,
         updated_at: now_ms,
     })
@@ -490,6 +547,9 @@ pub(crate) fn build_context_graph(db: &Db, project_id: i64) -> Result<ContextGra
             },
             card_ids: vec![card.id.clone()],
             conflict_risk: false,
+            wing: None,
+            room: None,
+            superseded: false,
         });
     }
 
@@ -515,6 +575,9 @@ pub(crate) fn build_context_graph(db: &Db, project_id: i64) -> Result<ContextGra
             agents: agents.clone(),
             card_ids: card_ids.clone(),
             conflict_risk,
+            wing: None,
+            room: None,
+            superseded: false,
         });
 
         for cid in &card_ids {
@@ -564,6 +627,9 @@ pub(crate) fn build_context_graph(db: &Db, project_id: i64) -> Result<ContextGra
             agents: art.author.clone().into_iter().collect(),
             card_ids: art.item_id.clone().into_iter().collect(),
             conflict_risk: false,
+            wing: None,
+            room: None,
+            superseded: false,
         });
 
         if let Some(item_id) = art.item_id.as_deref() {
@@ -687,6 +753,132 @@ pub(crate) fn build_context_graph(db: &Db, project_id: i64) -> Result<ContextGra
         }
     }
 
+    let memories = db.list_project_memories(project_id).unwrap_or_default();
+    let active_memories: Vec<&ProjectMemory> =
+        memories.iter().filter(|m| m.is_active()).take(24).collect();
+    let mut keyword_freq: HashMap<String, Vec<String>> = HashMap::new();
+    for mem in &active_memories {
+        let mem_node_id = format!("memory:{}", mem.id);
+        let is_decision = matches!(
+            mem.source.to_ascii_lowercase().as_str(),
+            "decisao" | "decisão" | "arquitetura"
+        );
+        let kind = if is_decision { "decision" } else { "memory" };
+        let label: String = if mem.fact.chars().count() > 54 {
+            let clipped: String = mem.fact.chars().take(53).collect();
+            format!("{clipped}…")
+        } else {
+            mem.fact.clone()
+        };
+        let wing_room = match (mem.wing.as_deref(), mem.room.as_deref()) {
+            (Some(w), Some(r)) => format!("{w} · {r}"),
+            (Some(w), None) => w.to_string(),
+            _ => mem.source.clone(),
+        };
+        nodes.push(ContextGraphNode {
+            id: mem_node_id.clone(),
+            kind: kind.to_string(),
+            label,
+            subtitle: Some(format!("{wing_room} — {}", mem.fact)),
+            path: None,
+            status: Some(mem.source.clone()),
+            artifact_kind: None,
+            card_id: None,
+            agents: mem.author.clone().into_iter().collect(),
+            card_ids: Vec::new(),
+            conflict_risk: false,
+            wing: mem.wing.clone(),
+            room: mem.room.clone(),
+            superseded: !mem.is_active(),
+        });
+        for kw in extract_domain_keywords(&mem.fact, 4) {
+            keyword_freq.entry(kw).or_default().push(mem_node_id.clone());
+        }
+    }
+    for card in &active_cards {
+        let card_node_id = format!("card:{}", card.id);
+        for kw in extract_domain_keywords(&card.title, 3) {
+            keyword_freq.entry(kw).or_default().push(card_node_id.clone());
+        }
+    }
+    for art in artifacts.iter().take(MAX_ARTIFACT_NODES) {
+        let art_node_id = format!("artifact:{}", art.id);
+        let art_text = format!("{} {}", art.title, art.summary);
+        for kw in extract_domain_keywords(&art_text, 3) {
+            keyword_freq.entry(kw).or_default().push(art_node_id.clone());
+        }
+    }
+
+    let mut ranked_keywords: Vec<(String, Vec<String>)> = keyword_freq.into_iter().collect();
+    ranked_keywords.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    for (kw, linked_sources) in ranked_keywords.into_iter().take(12) {
+        let kw_node_id = format!("keyword:{kw}");
+        nodes.push(ContextGraphNode {
+            id: kw_node_id.clone(),
+            kind: "keyword".to_string(),
+            label: kw.clone(),
+            subtitle: Some(format!("Palavra-chave conectando {} item(ns)", linked_sources.len())),
+            path: None,
+            status: None,
+            artifact_kind: None,
+            card_id: None,
+            agents: Vec::new(),
+            card_ids: Vec::new(),
+            conflict_risk: false,
+            wing: None,
+            room: None,
+            superseded: false,
+        });
+        for src in linked_sources {
+            push_edge_unique(
+                &mut edges,
+                &mut seen_edges,
+                &src,
+                &kw_node_id,
+                "has_keyword",
+                None,
+            );
+        }
+    }
+
+    if let Ok(mem_edges) = db.list_memory_edges(project_id) {
+        let mut existing_node_ids: HashSet<String> = nodes.iter().map(|n| n.id.clone()).collect();
+        for edge in mem_edges {
+            if edge.target_node.starts_with("keyword:") && !existing_node_ids.contains(&edge.target_node) {
+                let kw = edge.target_node.trim_start_matches("keyword:").to_string();
+                existing_node_ids.insert(edge.target_node.clone());
+                nodes.push(ContextGraphNode {
+                    id: edge.target_node.clone(),
+                    kind: "keyword".to_string(),
+                    label: kw,
+                    subtitle: Some("Palavra-chave registrada".to_string()),
+                    path: None,
+                    status: None,
+                    artifact_kind: None,
+                    card_id: None,
+                    agents: Vec::new(),
+                    card_ids: Vec::new(),
+                    conflict_risk: false,
+                    wing: None,
+                    room: None,
+                    superseded: false,
+                });
+            }
+            if existing_node_ids.contains(&edge.source_node)
+                && existing_node_ids.contains(&edge.target_node)
+            {
+                push_edge_unique(
+                    &mut edges,
+                    &mut seen_edges,
+                    &edge.source_node,
+                    &edge.target_node,
+                    &edge.relation,
+                    Some(edge.relation.clone()),
+                );
+            }
+        }
+    }
+
     Ok(ContextGraph {
         project_id,
         nodes,
@@ -743,12 +935,511 @@ pub fn save_project_memory(
     save_project_memory_exec(&app, args)
 }
 
+fn extract_domain_keywords(text: &str, max: usize) -> Vec<String> {
+    const STOPWORDS: &[&str] = &[
+        "para", "como", "com", "sem", "uma", "uns", "umas", "que", "por", "mais", "menos",
+        "sobre", "entre", "após", "antes", "quando", "onde", "qual", "quais", "esse", "essa",
+        "isso", "isto", "este", "esta", "aqui", "ali", "tudo", "nada", "cada", "deve", "devem",
+        "pode", "podem", "fazer", "feito", "sendo", "será", "foram", "tem", "ter", "tinha",
+        "this", "that", "with", "from", "into", "when", "where", "should", "must", "will",
+        "the", "and", "for", "are", "was", "were", "have", "has", "not", "but", "use",
+    ];
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for raw in text.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
+        let kw = raw.trim_matches(|c: char| c == '-' || c == '_').to_lowercase();
+        if kw.chars().count() < 4 || kw.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        if STOPWORDS.contains(&kw.as_str()) {
+            continue;
+        }
+        if seen.insert(kw.clone()) {
+            out.push(kw);
+            if out.len() >= max {
+                break;
+            }
+        }
+    }
+    out
+}
+
+fn summarize_query_subgraph(
+    memories: &[ProjectMemory],
+    nodes: &[ContextGraphNode],
+) -> (Vec<String>, Vec<String>, String) {
+    let decisions: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.kind == "decision")
+        .map(|n| n.subtitle.clone().unwrap_or_else(|| n.label.clone()))
+        .take(6)
+        .collect();
+    let keywords: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.kind == "keyword")
+        .map(|n| n.label.clone())
+        .take(10)
+        .collect();
+    let mut parts = Vec::new();
+    if !decisions.is_empty() {
+        parts.push(format!("[decisões] {}", decisions.join(" | ")));
+    }
+    if !keywords.is_empty() {
+        parts.push(format!("[palavras-chave] {}", keywords.join(", ")));
+    }
+    if !memories.is_empty() {
+        let mems: Vec<String> = memories.iter().take(5).map(|m| m.fact.clone()).collect();
+        parts.push(format!("[memórias] {}", mems.join(" | ")));
+    }
+    let files: Vec<&str> = nodes
+        .iter()
+        .filter(|n| n.kind == "file")
+        .map(|n| n.path.as_deref().unwrap_or(n.label.as_str()))
+        .take(8)
+        .collect();
+    if !files.is_empty() {
+        parts.push(format!("[arquivos] {}", files.join(", ")));
+    }
+    (decisions, keywords, parts.join("\n"))
+}
+
+pub(crate) fn query_memory_graph(
+    db: &Db,
+    project_id: i64,
+    query: &str,
+    limit: usize,
+) -> Result<MemoryGraphQueryResult, String> {
+    let cap = limit.clamp(1, 50);
+    let memories = db
+        .search_project_memories(project_id, query, cap)
+        .map_err(|e| e.to_string())?;
+    let graph = build_context_graph(db, project_id)?;
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        let (decisions, keywords, compact_context) = summarize_query_subgraph(&memories, &graph.nodes);
+        return Ok(MemoryGraphQueryResult {
+            memories,
+            decisions,
+            keywords,
+            compact_context,
+            nodes: graph.nodes,
+            edges: graph.edges,
+            optimizations: graph.optimizations,
+        });
+    }
+    let terms: Vec<&str> = needle.split_whitespace().filter(|t| !t.is_empty()).collect();
+    let matched_ids: HashSet<String> = graph
+        .nodes
+        .iter()
+        .filter(|n| {
+            let hay = format!("{} {} {}", n.id, n.label, n.subtitle.as_deref().unwrap_or("")).to_lowercase();
+            terms.iter().any(|t| hay.contains(*t))
+        })
+        .map(|n| n.id.clone())
+        .collect();
+    let mut hop1 = matched_ids.clone();
+    for edge in &graph.edges {
+        if matched_ids.contains(&edge.source) {
+            hop1.insert(edge.target.clone());
+        }
+        if matched_ids.contains(&edge.target) {
+            hop1.insert(edge.source.clone());
+        }
+    }
+    let mut neighbor_ids = hop1.clone();
+    for edge in &graph.edges {
+        if hop1.contains(&edge.source) {
+            neighbor_ids.insert(edge.target.clone());
+        }
+        if hop1.contains(&edge.target) {
+            neighbor_ids.insert(edge.source.clone());
+        }
+    }
+    let nodes: Vec<ContextGraphNode> = graph
+        .nodes
+        .into_iter()
+        .filter(|n| neighbor_ids.contains(&n.id))
+        .collect();
+    let edges = graph
+        .edges
+        .into_iter()
+        .filter(|e| neighbor_ids.contains(&e.source) && neighbor_ids.contains(&e.target))
+        .collect();
+    let (decisions, keywords, compact_context) = summarize_query_subgraph(&memories, &nodes);
+    Ok(MemoryGraphQueryResult {
+        memories,
+        decisions,
+        keywords,
+        compact_context,
+        nodes,
+        edges,
+        optimizations: graph.optimizations,
+    })
+}
+
+fn is_noise_memory_fact(fact: &str) -> bool {
+    let trimmed = fact.trim();
+    if trimmed.chars().count() < 12 {
+        return true;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let transient_markers = [
+        "não respondeu em",
+        "timed out",
+        "exit code",
+        "stack trace",
+        "cargo test failed",
+        "erro temporário",
+        "tentando novamente",
+    ];
+    transient_markers.iter().any(|m| lower.contains(m))
+        && !lower.contains("regra")
+        && !lower.contains("sempre")
+        && !lower.contains("nunca")
+        && !lower.contains("arquitetura")
+}
+
+fn token_jaccard_similarity(a: &str, b: &str) -> f32 {
+    let norm = |s: &str| -> HashSet<String> {
+        s.to_ascii_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() >= 3)
+            .map(str::to_string)
+            .collect()
+    };
+    let set_a = norm(a);
+    let set_b = norm(b);
+    if set_a.is_empty() || set_b.is_empty() {
+        return 0.0;
+    }
+    let inter = set_a.intersection(&set_b).count() as f32;
+    let union = set_a.union(&set_b).count() as f32;
+    inter / union
+}
+
+fn link_memory_graph_edges(
+    db: &Db,
+    project_id: i64,
+    memory_id: &str,
+    fact: &str,
+    keywords: &[String],
+    files: &[String],
+    card_id: Option<&str>,
+    now_ms: i64,
+) {
+    let mem_node = format!("memory:{memory_id}");
+    for file in files {
+        let trimmed = file.trim();
+        if !trimmed.is_empty() {
+            let _ = db.upsert_memory_edge(
+                project_id,
+                &mem_node,
+                &format!("file:{trimmed}"),
+                "touches_file",
+                now_ms,
+            );
+        }
+    }
+    if let Some(cid) = card_id.map(str::trim).filter(|s| !s.is_empty()) {
+        let _ = db.upsert_memory_edge(
+            project_id,
+            &mem_node,
+            &format!("card:{cid}"),
+            "about_card",
+            now_ms,
+        );
+    }
+    let mut kw_set: Vec<String> = keywords
+        .iter()
+        .map(|k| k.trim().to_lowercase())
+        .filter(|k| k.chars().count() >= 3)
+        .collect();
+    for auto_kw in extract_domain_keywords(fact, 4) {
+        if !kw_set.contains(&auto_kw) {
+            kw_set.push(auto_kw);
+        }
+    }
+    for kw in kw_set.into_iter().take(6) {
+        let _ = db.upsert_memory_edge(
+            project_id,
+            &mem_node,
+            &format!("keyword:{kw}"),
+            "has_keyword",
+            now_ms,
+        );
+    }
+}
+
+pub(crate) fn save_memory_graph_fact(
+    db: &Db,
+    args: MemoryGraphSaveArgs,
+) -> Result<ProjectMemory, String> {
+    let fact = args.fact.trim();
+    if fact.is_empty() {
+        return Err("O fato da memória não pode ser vazio.".to_string());
+    }
+    if is_noise_memory_fact(fact) {
+        return Err(
+            "Memória rejeitada pelo Write Gate: informe uma decisão durável, regra ou mapa de arquivos (não erros transitórios)."
+                .to_string(),
+        );
+    }
+    // Fail-closed: quando o projeto existe no disco e `files` foram informados, valida os caminhos.
+    if !args.files.is_empty() {
+        if let Ok(project) = db.project(args.project_id) {
+            let root = std::path::Path::new(&project.path);
+            if root.is_dir() {
+                for f in &args.files {
+                    let rel = f.trim();
+                    if rel.is_empty() || rel.contains('*') {
+                        continue;
+                    }
+                    let candidate = root.join(rel);
+                    if !candidate.exists() {
+                        return Err(format!(
+                            "Contrato fail-closed: arquivo '{rel}' não existe no projeto."
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let now_ms = now_millis_i64();
+    let existing = db.list_project_memories(args.project_id).unwrap_or_default();
+
+    // Deduplicação semântica: se já existe memória ativa muito parecida (>= 0.80), reforça arestas.
+    if args.supersede_id.is_none() {
+        if let Some(dup) = existing
+            .iter()
+            .filter(|m| m.is_active())
+            .find(|m| token_jaccard_similarity(&m.fact, fact) >= 0.80)
+        {
+            let _ = db.touch_project_memory(args.project_id, &dup.id, now_ms);
+            link_memory_graph_edges(
+                db,
+                args.project_id,
+                &dup.id,
+                fact,
+                &args.keywords,
+                &args.files,
+                args.card_id.as_deref(),
+                now_ms,
+            );
+            let _ = db.record_orchestration_event(
+                args.project_id,
+                "memory_reinforced",
+                args.author.as_deref(),
+                args.card_id.as_deref(),
+                &format!(r#"{{"memoryId":"{}"}}"#, dup.id),
+                now_ms,
+            );
+            return db
+                .get_project_memory(args.project_id, &dup.id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Memória reforçada não encontrada.".to_string());
+        }
+    }
+
+    let id = format!("mem-{}", now_ms);
+    let source = args
+        .category
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("macro")
+        .to_string();
+    db.insert_project_memory(&NewProjectMemory {
+        id: &id,
+        project_id: args.project_id,
+        fact,
+        source: &source,
+        origin_type: MemoryOriginType::Auto,
+        pinned: source == "macro" || source == "arquitetura",
+        author: args.author.as_deref(),
+        now_ms,
+    })
+    .map_err(|e| e.to_string())?;
+    if args.wing.is_some() || args.room.is_some() {
+        let _ = db.set_memory_palace_location(
+            args.project_id,
+            &id,
+            args.wing.as_deref(),
+            args.room.as_deref(),
+        );
+    }
+    if let Some(old_id) = args.supersede_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let _ = db.supersede_project_memory(args.project_id, old_id, &id, now_ms);
+    }
+    link_memory_graph_edges(
+        db,
+        args.project_id,
+        &id,
+        fact,
+        &args.keywords,
+        &args.files,
+        args.card_id.as_deref(),
+        now_ms,
+    );
+    let _ = db.record_orchestration_event(
+        args.project_id,
+        "memory_saved",
+        args.author.as_deref(),
+        args.card_id.as_deref(),
+        &format!(r#"{{"memoryId":"{id}","source":"{source}"}}"#),
+        now_ms,
+    );
+    db.get_project_memory(args.project_id, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Memória salva não encontrada.".to_string())
+}
+
+pub(crate) fn build_compact_memory_context(
+    db: &Db,
+    project_id: i64,
+    item_id: Option<&str>,
+    agent: Option<&str>,
+    max_chars: usize,
+) -> String {
+    let memories: Vec<ProjectMemory> = db
+        .list_project_memories(project_id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .collect();
+    let graph = build_context_graph(db, project_id).ok();
+    if memories.is_empty() && graph.as_ref().is_none_or(|g| g.nodes.is_empty()) {
+        return String::new();
+    }
+    let mut lines: Vec<String> = vec!["[memória e grafo do projeto — camadas]".to_string()];
+    let mut prioritized: Vec<&ProjectMemory> = memories
+        .iter()
+        .filter(|m| {
+            m.pinned
+                || m.source == "macro"
+                || m.source == "arquitetura"
+                || m.source == "mapa-arquivos"
+                || agent.is_some_and(|a| m.author.as_deref() == Some(a))
+        })
+        .take(6)
+        .collect();
+    if prioritized.len() < 4 {
+        for mem in memories.iter().take(6) {
+            if !prioritized.iter().any(|p| p.id == mem.id) {
+                prioritized.push(mem);
+            }
+            if prioritized.len() >= 6 {
+                break;
+            }
+        }
+    }
+    if !prioritized.is_empty() {
+        lines.push("[núcleo] Visão macro e fatos ativos:".to_string());
+        for mem in prioritized {
+            let palace = match (mem.wing.as_deref(), mem.room.as_deref()) {
+                (Some(w), Some(r)) => format!("{w}/{r}"),
+                _ => mem.source.clone(),
+            };
+            lines.push(format!("- [{palace}] {}", mem.fact.trim()));
+        }
+    }
+    if let Some(graph) = &graph {
+        let keywords: Vec<&str> = graph
+            .nodes
+            .iter()
+            .filter(|n| n.kind == "keyword")
+            .map(|n| n.label.as_str())
+            .take(10)
+            .collect();
+        if !keywords.is_empty() {
+            lines.push(format!("[palavras-chave] {}", keywords.join(", ")));
+        }
+        let files: Vec<&ContextGraphNode> = graph
+            .nodes
+            .iter()
+            .filter(|n| n.kind == "file")
+            .take(10)
+            .collect();
+        if !files.is_empty() {
+            let file_list = files
+                .iter()
+                .map(|f| f.label.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            lines.push(format!("[palácio/mapa] Arquivos ativos: {file_list}"));
+        }
+        if let Some(target_card) = item_id {
+            let card_node = format!("card:{target_card}");
+            let related_files: Vec<&str> = graph
+                .edges
+                .iter()
+                .filter(|e| e.source == card_node && e.target.starts_with("file:"))
+                .map(|e| e.target.trim_start_matches("file:"))
+                .take(8)
+                .collect();
+            if !related_files.is_empty() {
+                lines.push(format!(
+                    "[grafo] {target_card} toca: {}",
+                    related_files.join(", ")
+                ));
+            }
+        }
+        for opt in graph.optimizations.iter().take(2) {
+            lines.push(format!("- [{}] {}", opt.kind, opt.message));
+        }
+    }
+    lines.push("[ferramentas] Antes de implementar ou decidir, chame memory_graph_query(query=\"palavra-chave ou item-XX\") para puxar decisões e arquivos ligados; ao concluir/decidir algo durável, salve com memory_graph_save(fact, category=\"decisao|macro|mapa-arquivos\", keywords=[...], files=[...], card_id).".to_string());
+    let joined = lines.join("\n");
+    if joined.chars().count() <= max_chars {
+        joined
+    } else {
+        let clipped: String = joined.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{clipped}…")
+    }
+}
+
+pub(crate) fn memory_graph_query_exec(
+    app: &AppHandle,
+    args: MemoryGraphQueryArgs,
+) -> Result<MemoryGraphQueryResult, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|e| e.to_string())?;
+    query_memory_graph(db, args.project_id, &args.query, args.limit.unwrap_or(12))
+}
+
+pub(crate) fn memory_graph_save_exec(
+    app: &AppHandle,
+    args: MemoryGraphSaveArgs,
+) -> Result<ProjectMemory, String> {
+    let state = app.state::<DbState>();
+    let db = state.require().map_err(|e| e.to_string())?;
+    save_memory_graph_fact(db, args)
+}
+
 #[tauri::command]
 pub fn get_context_graph(
     app: AppHandle,
     args: GetContextGraphArgs,
 ) -> Result<ContextGraph, String> {
     get_context_graph_exec(&app, args)
+}
+
+#[tauri::command]
+pub fn memory_graph_query(
+    app: AppHandle,
+    args: MemoryGraphQueryArgs,
+) -> Result<MemoryGraphQueryResult, String> {
+    memory_graph_query_exec(&app, args)
+}
+
+#[tauri::command]
+pub fn memory_graph_save(
+    app: AppHandle,
+    args: MemoryGraphSaveArgs,
+) -> Result<ProjectMemory, String> {
+    let saved = memory_graph_save_exec(&app, args)?;
+    emit_learning_changed(&app, saved.project_id);
+    Ok(saved)
 }
 
 #[cfg(test)]
@@ -981,5 +1672,65 @@ mod tests {
         assert!(graph.edges.iter().any(|e| e.kind == "artifact_link"));
         assert!(graph.optimizations.iter().any(|o| o.kind == "context"));
         assert!(graph.optimizations.iter().any(|o| o.kind == "artifact"));
+    }
+
+    #[test]
+    fn e2e_full_card_triage_plan_and_memory_graph_flow() {
+        let dir = TempDbDir::new();
+        let db = dir.open();
+        let project_id = create_test_project(&db, "e2e-flow");
+
+        // 1. Card criado em triagem com plano multi-etapa (2 micro-etapas)
+        let mut card = make_active_card(
+            "E2E-1",
+            "Implementar autenticação com refresh token",
+            "kairo",
+            "Backlog",
+            vec!["src/auth/token.rs", "src/auth/middleware.ts"],
+        );
+        let mut step2 = card.micro[0].clone();
+        step2.id = "E2E-1-m2".to_string();
+        step2.title = "Integrar middleware e testes".to_string();
+        step2.status = "ready".to_string();
+        card.micro.push(step2);
+        db.save_backlog_item(project_id, &card).unwrap();
+
+        // 2. Agente salva decisão arquitetural conectada a palavras-chave e card
+        let saved = save_memory_graph_fact(
+            &db,
+            MemoryGraphSaveArgs {
+                project_id,
+                fact: "Usar rotação de refresh token com revogação em SQLite".to_string(),
+                category: Some("decisao".to_string()),
+                files: vec!["src/auth/token.rs".to_string()],
+                card_id: Some("E2E-1".to_string()),
+                author: Some("kairo".to_string()),
+                wing: None,
+                room: None,
+                supersede_id: None,
+                keywords: vec!["autenticacao".to_string(), "refresh".to_string()],
+            },
+        )
+        .expect("memory_graph_save should succeed");
+        assert_eq!(saved.source, "decisao");
+
+        // 3. Aceita o plano e inicia desenvolvimento (In progress + atualização de etapa)
+        card.column = Some("In progress".to_string());
+        card.micro[0].status = "feito".to_string();
+        card.micro[1].status = "em andamento".to_string();
+        db.save_backlog_item(project_id, &card).unwrap();
+
+        // 4. Outro agente consulta o grafo via palavra-chave (2-hop)
+        let query_res = query_memory_graph(&db, project_id, "autenticacao", 10)
+            .expect("memory_graph_query should succeed");
+        assert!(query_res.nodes.iter().any(|n| n.kind == "decision"));
+        assert!(query_res.nodes.iter().any(|n| n.kind == "keyword" && n.label == "autenticacao"));
+        assert!(query_res.compact_context.contains("[decisões]"));
+
+        // 5. Contexto compacto injetado nas delegações contém decisões, palavras-chave e instruções
+        let compact = build_compact_memory_context(&db, project_id, Some("E2E-1"), Some("kairo"), 2200);
+        assert!(compact.contains("[núcleo]"));
+        assert!(compact.contains("[palavras-chave]"));
+        assert!(compact.contains("memory_graph_query"));
     }
 }

@@ -727,7 +727,15 @@ pub fn persist_review_output(
             .filter(|s| !s.is_empty())
             .or(existing_fact)
             .unwrap_or("");
-        if fact_text.is_empty() {
+        if fact_text.is_empty() || fact_text.chars().count() < 12 {
+            continue;
+        }
+        let lower_fact = fact_text.to_ascii_lowercase();
+        if operation == SuggestionOperation::Add
+            && (lower_fact.contains("não respondeu em")
+                || lower_fact.contains("timed out")
+                || lower_fact.contains("stack trace"))
+        {
             continue;
         }
 

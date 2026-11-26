@@ -62,6 +62,6 @@ export const MEMORY_FACTS: readonly MemoryFact[] = [
 export const MEMORY_NOTE =
   'Salva em .vokia/memory/ como Markdown, versionada com o código. Cada fato guarda a origem: conversa, tarefa ou artefato.'
 
-export const GRAPH_DESCRIPTION = 'arquivos do checkout, quem está mexendo em cada um e os artefatos que os descrevem'
+export const GRAPH_DESCRIPTION = 'decisões, palavras-chave, memórias, cards, arquivos e artefatos conectados'
 
 export const GRAPH_EMPTY_TITLE = 'Nenhum nó no grafo ainda'

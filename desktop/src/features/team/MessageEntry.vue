@@ -33,6 +33,8 @@ import UserAvatar from '../profile/UserAvatar.vue'
 import { useUserProfile } from '../profile/useUserProfile'
 import { useBacklog } from '../backlog/useBacklog'
 import { runTitleOf } from '../backlog/useRunItem'
+import { useProjects } from '../projects/useProjects'
+import ContextGraphModal from '../memory/ContextGraphModal.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
@@ -47,6 +49,8 @@ const overrides = useTemporaryOverrides()
 const userProfile = useUserProfile()
 const backlog = useBacklog()
 const turnPlans = useTurnPlans()
+const projects = useProjects()
+const graphModalOpen = ref(false)
 
 const messagePlan = computed(() => {
   if (props.entry.type !== 'message' || props.entry.from === 'user') return undefined
@@ -188,15 +192,55 @@ function exchangeTooltipText(): string {
   const body = formatExchangeSummary(props.entry.text)
   return [header, metaParts.join(' · '), body ? `\n${body}` : ''].filter(Boolean).join('\n')
 }
+
+const graphModalProjectId = computed(() =>
+  props.entry.type === 'message' ? (props.entry.projectId ?? projects.selected?.id) : projects.selected?.id,
+)
+
+const graphModalQuery = computed(() => {
+  if (props.entry.type !== 'message') return ''
+  if (props.entry.itemId) return props.entry.itemId
+  const words = props.entry.text
+    .replace(/[^\p{L}\p{N}_./-]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4)
+    .slice(0, 5)
+  return words.join(' ')
+})
+
+const graphModalMeta = computed(() => {
+  if (props.entry.type !== 'message') return ''
+  const parts = [`${speakerName(props.entry.from)} → ${speakerName(props.entry.to)}`]
+  if (props.entry.itemId) parts.push(props.entry.itemId)
+  if (usageModel.value) parts.push(usageModel.value)
+  if (usageCost.value) parts.push(usageCost.value)
+  return parts.join(' · ')
+})
 </script>
 
 <template>
-  <div v-if="entry.type === 'message' && entry.from === 'user'" class="flex min-w-0 flex-row-reverse items-start gap-2">
+  <div v-if="entry.type === 'message' && entry.from === 'user'" class="group flex min-w-0 flex-row-reverse items-start gap-2">
     <div class="mt-0.5 shrink-0">
       <UserAvatar :size="AVATAR_SIZE" :title="userProfile.displayName" />
     </div>
     <div class="flex min-w-0 flex-1 flex-col items-end gap-0.5">
       <div class="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Ver grafo e contexto da mensagem"
+          aria-label="Ver grafo e contexto da mensagem"
+          data-testid="message-graph-btn"
+          @click.stop="graphModalOpen = true"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="3.5" cy="4" r="1.5" />
+            <circle cx="12.5" cy="4" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <path d="M4.8 4.8 7 10.7M11.2 4.8 9 10.7M5 4h6" />
+          </svg>
+        </button>
         <span class="text-control font-semibold text-ink">{{ speakerName(entry.from) }}</span>
         <span v-if="entry.to !== DEFAULT_RECIPIENT" class="text-small text-muted">
           → {{ speakerName(entry.to) }}
@@ -314,6 +358,21 @@ function exchangeTooltipText(): string {
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />
         </span>
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Ver grafo e contexto da mensagem"
+          aria-label="Ver grafo e contexto da mensagem"
+          data-testid="message-graph-btn"
+          @click.stop="graphModalOpen = true"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="3.5" cy="4" r="1.5" />
+            <circle cx="12.5" cy="4" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <path d="M4.8 4.8 7 10.7M11.2 4.8 9 10.7M5 4h6" />
+          </svg>
+        </button>
       </div>
       <ul v-if="protocolRow" :class="[EXCHANGE_TEXT_CLASSES, 'flex min-w-0 flex-col']">
         <ActivityRow :row="protocolRow" />
@@ -413,6 +472,21 @@ function exchangeTooltipText(): string {
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />
         </span>
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Ver grafo e contexto da mensagem"
+          aria-label="Ver grafo e contexto da mensagem"
+          data-testid="message-graph-btn"
+          @click.stop="graphModalOpen = true"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="3.5" cy="4" r="1.5" />
+            <circle cx="12.5" cy="4" r="1.5" />
+            <circle cx="8" cy="12" r="1.5" />
+            <path d="M4.8 4.8 7 10.7M11.2 4.8 9 10.7M5 4h6" />
+          </svg>
+        </button>
       </div>
       <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" class="my-1" />
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
@@ -482,6 +556,14 @@ function exchangeTooltipText(): string {
       </UiButton>
     </div>
   </div>
+  <div
+    v-else-if="entry.type === 'error'"
+    class="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-caption text-danger"
+    data-testid="log-error-entry"
+  >
+    <UiIcon class="mt-0.5 shrink-0" :path="ERROR_ICON_PATH" :size="ICON_SIZE" />
+    <span class="min-w-0 flex-1 wrap-break-word">{{ entry.message }}</span>
+  </div>
   <UsageLimitFailedNotice v-else-if="entry.type === 'usage-limit-failed'" :entry="entry" />
   <p v-else-if="entry.type === 'notice'" class="text-caption text-muted">{{ entry.text }}</p>
   <ul
@@ -505,4 +587,16 @@ function exchangeTooltipText(): string {
   >
     <ActivityRow :row="permissionResultRow(entry)" />
   </ul>
+  <ContextGraphModal
+    v-if="entry.type === 'message' && graphModalOpen"
+    :open="graphModalOpen"
+    :project-id="graphModalProjectId"
+    title="Grafo e contexto da mensagem"
+    :query="graphModalQuery"
+    :context-text="entry.text"
+    :card-id="entry.itemId"
+    :agent="entry.from !== 'user' ? entry.from : undefined"
+    :meta-summary="graphModalMeta"
+    @close="graphModalOpen = false"
+  />
 </template>

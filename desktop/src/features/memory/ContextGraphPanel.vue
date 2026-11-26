@@ -2,22 +2,35 @@
 import { computed, ref, watch } from 'vue'
 import AgentPortrait from '../team/AgentPortrait.vue'
 import { useProjects } from '../projects/useProjects'
+import { useLearningSuggestions } from './useLearningSuggestions'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import {
+  DEFAULT_JITTER,
+  sketchDiamond,
+  sketchEllipse,
+  sketchQuadratic,
+  sketchRect,
+} from '../../ui/sketch/sketchPath'
 import {
   getContextGraph,
   type ContextGraph,
   type ContextGraphEdge,
   type ContextGraphNode,
+  type ContextGraphNodeKind,
   type ContextGraphOptimization,
   type ContextGraphOptimizationKind,
 } from './learningApi'
 import { GRAPH_DESCRIPTION, GRAPH_EMPTY_TITLE } from './memoriaSample'
 
-interface PositionedNode {
+interface SimNode {
   node: ContextGraphNode
   x: number
   y: number
+  vx: number
+  vy: number
+  degree: number
+  radius: number
 }
 
 interface PositionedEdge {
@@ -25,12 +38,23 @@ interface PositionedEdge {
   d: string
 }
 
-const PORTRAIT_SIZE = 20
-const HEADER_CLASSES = 'flex flex-wrap items-baseline justify-between gap-2 px-4.5 py-4'
-const CANVAS_CLASSES = 'relative h-[470px] w-full min-w-[620px]'
-const LEGEND_CLASSES =
-  'absolute left-4 top-3 z-10 flex flex-wrap gap-3.5 rounded-sm border border-line bg-surface px-2.5 py-1 text-meta text-muted'
-const OPTIMIZATIONS_CLASSES = 'flex flex-col gap-3 border-t border-line px-4.5 py-4'
+const KIND_LABEL: Record<ContextGraphNodeKind, string> = {
+  decision: 'Decisão',
+  keyword: 'Palavra-chave',
+  memory: 'Memória',
+  card: 'Card',
+  file: 'Arquivo',
+  artifact: 'Artefato',
+}
+
+const KIND_COLOR: Record<ContextGraphNodeKind, string> = {
+  decision: 'var(--color-mark-pink)',
+  keyword: 'var(--color-mark-blue)',
+  memory: 'var(--color-mark-green)',
+  card: 'var(--color-mark-yellow)',
+  file: 'var(--color-accent-soft)',
+  artifact: 'var(--color-warn-soft)',
+}
 
 const BADGE_CLASSES: Record<ContextGraphOptimizationKind, string> = {
   conflict: 'bg-warn-soft text-warn-text',
@@ -40,12 +64,22 @@ const BADGE_CLASSES: Record<ContextGraphOptimizationKind, string> = {
 }
 
 const projects = useProjects()
+const learning = useLearningSuggestions()
 
 const graph = ref<ContextGraph | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const selectedNodeId = ref<string | null>(null)
+const hoveredNodeId = ref<string | null>(null)
+const activeKindFilter = ref<ContextGraphNodeKind | 'all'>('all')
 const expandedOptId = ref<string | null>(null)
+
+// Pan & zoom state for the organic constellation view
+const zoom = ref(1)
+const panX = ref(0)
+const panY = ref(0)
+const isPanning = ref(false)
+const panStart = ref({ x: 0, y: 0 })
 
 async function loadGraph(projectId: number | undefined): Promise<void> {
   if (projectId === undefined) {
@@ -58,12 +92,44 @@ async function loadGraph(projectId: number | undefined): Promise<void> {
     graph.value = await getContextGraph(projectId)
     selectedNodeId.value = null
     expandedOptId.value = null
+    resetView()
   } catch (err) {
     error.value = `Não foi possível montar o grafo: ${String(err)}`
     graph.value = null
   } finally {
     loading.value = false
   }
+}
+
+function resetView(): void {
+  zoom.value = 1
+  panX.value = 0
+  panY.value = 0
+}
+
+function adjustZoom(delta: number): void {
+  zoom.value = Math.min(2.4, Math.max(0.55, Number((zoom.value + delta).toFixed(2))))
+}
+
+function onWheel(e: WheelEvent): void {
+  e.preventDefault()
+  adjustZoom(e.deltaY < 0 ? 0.12 : -0.12)
+}
+
+function startPan(e: PointerEvent): void {
+  if ((e.target as HTMLElement)?.closest('[data-graph-node]')) return
+  isPanning.value = true
+  panStart.value = { x: e.clientX - panX.value, y: e.clientY - panY.value }
+}
+
+function movePan(e: PointerEvent): void {
+  if (!isPanning.value) return
+  panX.value = e.clientX - panStart.value.x
+  panY.value = e.clientY - panStart.value.y
+}
+
+function endPan(): void {
+  isPanning.value = false
 }
 
 watch(
@@ -74,82 +140,255 @@ watch(
   { immediate: true },
 )
 
-function distributeX(index: number, total: number): number {
-  if (total <= 1) return 50
-  const margin = 12
-  const span = 100 - margin * 2
-  return margin + (span * index) / (total - 1)
+watch(
+  () => learning.memories.length,
+  () => {
+    if (projects.selected?.id !== undefined) {
+      void loadGraph(projects.selected.id)
+    }
+  },
+)
+
+const visibleNodes = computed<ContextGraphNode[]>(() => {
+  const all = graph.value?.nodes ?? []
+  if (activeKindFilter.value === 'all') return all
+  return all.filter((n) => n.kind === activeKindFilter.value)
+})
+
+const visibleNodeIds = computed(() => new Set(visibleNodes.value.map((n) => n.id)))
+
+const visibleEdges = computed<ContextGraphEdge[]>(() => {
+  const ids = visibleNodeIds.value
+  return (graph.value?.edges ?? []).filter((e) => ids.has(e.source) && ids.has(e.target))
+})
+
+// Deterministic force-directed constellation layout (Obsidian / InfraNodus style)
+const simulatedNodes = computed<SimNode[]>(() => {
+  const nodes = visibleNodes.value
+  const edges = visibleEdges.value
+  if (nodes.length === 0) return []
+
+  const degreeMap = new Map<string, number>()
+  for (const edge of edges) {
+    degreeMap.set(edge.source, (degreeMap.get(edge.source) ?? 0) + 1)
+    degreeMap.set(edge.target, (degreeMap.get(edge.target) ?? 0) + 1)
+  }
+
+  const W = 800
+  const H = 500
+  const cx = W / 2
+  const cy = H / 2
+
+  const sim: SimNode[] = nodes.map((node, i) => {
+    const angle = (2 * Math.PI * i) / Math.max(1, nodes.length)
+    const ring =
+      node.kind === 'card'
+        ? 110
+        : node.kind === 'keyword'
+          ? 165
+          : node.kind === 'decision' || node.kind === 'memory'
+            ? 200
+            : 235
+    const degree = degreeMap.get(node.id) ?? 0
+    return {
+      node,
+      x: cx + Math.cos(angle) * ring,
+      y: cy + Math.sin(angle) * ring * 0.78,
+      vx: 0,
+      vy: 0,
+      degree,
+      radius: Math.min(18, 8 + Math.sqrt(degree) * 3.5),
+    }
+  })
+
+  const indexById = new Map(sim.map((s, idx) => [s.node.id, idx]))
+  const iterations = 130
+
+  for (let step = 0; step < iterations; step++) {
+    const cooling = 1 - step / (iterations + 12)
+
+    // Strong repulsion so nodes spread across the viewport cleanly
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = sim[i]
+        const b = sim[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        let distSq = dx * dx + dy * dy
+        if (distSq < 1) {
+          dx = 1
+          dy = 1
+          distSq = 2
+        }
+        const dist = Math.sqrt(distSq)
+        const minSep = 115
+        const sepBoost = dist < minSep ? (minSep - dist) * 0.25 : 0
+        const force = ((14000 / distSq) + sepBoost) * cooling
+        const fx = (dx / dist) * force
+        const fy = (dy / dist) * force
+        a.vx -= fx
+        a.vy -= fy
+        b.vx += fx
+        b.vy += fy
+      }
+    }
+
+    // Spring attraction along edges
+    for (const edge of edges) {
+      const ia = indexById.get(edge.source)
+      const ib = indexById.get(edge.target)
+      if (ia === undefined || ib === undefined) continue
+      const a = sim[ia]
+      const b = sim[ib]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+      const ideal = 145
+      const force = ((dist - ideal) * 0.045) * cooling
+      const fx = (dx / dist) * force
+      const fy = (dy / dist) * force
+      a.vx += fx
+      a.vy += fy
+      b.vx -= fx
+      b.vy -= fy
+    }
+
+    // Gentle center gravity so disconnected clusters stay framed
+    for (const s of sim) {
+      s.vx += (cx - s.x) * 0.008 * cooling
+      s.vy += (cy - s.y) * 0.008 * cooling
+      s.x = Math.max(76, Math.min(W - 76, s.x + s.vx * 0.65))
+      s.y = Math.max(58, Math.min(H - 58, s.y + s.vy * 0.65))
+      s.vx *= 0.55
+      s.vy *= 0.55
+    }
+  }
+
+  return sim
+})
+
+const simMap = computed(() => new Map(simulatedNodes.value.map((s) => [s.node.id, s])))
+
+function hashSeed(id: string): number {
+  let h = 2166136261
+  for (let i = 0; i < id.length; i += 1) {
+    h ^= id.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
 }
 
-const positionedNodes = computed<PositionedNode[]>(() => {
-  const nodes = graph.value?.nodes ?? []
-  const cards = nodes.filter((n) => n.kind === 'card')
-  const files = nodes.filter((n) => n.kind === 'file')
-  const artifacts = nodes.filter((n) => n.kind === 'artifact')
+function nodeSketchPath(sim: SimNode): string {
+  const d = sim.radius * 2
+  const seed = hashSeed(sim.node.id)
+  if (sim.node.kind === 'decision') return sketchDiamond(d + 4, d + 4, seed, DEFAULT_JITTER * 0.9)
+  if (sim.node.kind === 'artifact') return sketchRect(d + 2, d + 2, seed, DEFAULT_JITTER * 0.85)
+  return sketchEllipse(d + 3, d + 3, seed, DEFAULT_JITTER * 0.9)
+}
 
-  const result: PositionedNode[] = []
-
-  cards.forEach((node, idx) => {
-    result.push({
-      node,
-      x: distributeX(idx, cards.length),
-      y: 20,
-    })
-  })
-
-  files.forEach((node, idx) => {
-    const stagger = files.length > 3 ? (idx % 2 === 0 ? -5 : 6) : 0
-    result.push({
-      node,
-      x: distributeX(idx, files.length),
-      y: (cards.length > 0 ? 52 : 38) + stagger,
-    })
-  })
-
-  artifacts.forEach((node, idx) => {
-    result.push({
-      node,
-      x: distributeX(idx, artifacts.length),
-      y: 84,
-    })
-  })
-
-  return result
-})
-
-const nodePositionMap = computed(() => {
-  const map = new Map<string, PositionedNode>()
-  for (const item of positionedNodes.value) {
-    map.set(item.node.id, item)
-  }
-  return map
-})
+function nodeSketchOffset(sim: SimNode): number {
+  if (sim.node.kind === 'decision') return sim.radius + 2
+  if (sim.node.kind === 'artifact') return sim.radius + 1
+  return sim.radius + 1.5
+}
 
 const positionedEdges = computed<PositionedEdge[]>(() => {
-  const edges = graph.value?.edges ?? []
-  const posMap = nodePositionMap.value
+  const map = simMap.value
   const list: PositionedEdge[] = []
-  for (const edge of edges) {
-    const src = posMap.get(edge.source)
-    const dst = posMap.get(edge.target)
+  for (const edge of visibleEdges.value) {
+    const src = map.get(edge.source)
+    const dst = map.get(edge.target)
     if (!src || !dst) continue
-    const midY = (src.y + dst.y) / 2
-    const d = `M${src.x} ${src.y} C${src.x} ${midY}, ${dst.x} ${midY}, ${dst.x} ${dst.y}`
-    list.push({ edge, d })
+    const dx = dst.x - src.x
+    const dy = dst.y - src.y
+    const cx = (src.x + dst.x) / 2 - dy * 0.11
+    const cy = (src.y + dst.y) / 2 + dx * 0.11
+    list.push({
+      edge,
+      d: sketchQuadratic(
+        { x: src.x, y: src.y },
+        { x: cx, y: cy },
+        { x: dst.x, y: dst.y },
+        hashSeed(edge.id),
+        DEFAULT_JITTER,
+      ),
+    })
   }
   return list
 })
 
+const focusNodeId = computed(() => hoveredNodeId.value ?? selectedNodeId.value)
+
+const filterActive = computed(
+  () => Boolean(learning.agentFilter) || Boolean(learning.searchQuery.trim()),
+)
+
+function nodeMatchesFilters(node: ContextGraphNode): boolean {
+  const agent = learning.agentFilter
+  const q = learning.searchQuery.trim().toLowerCase()
+  const agentOk = !agent || node.agents.includes(agent)
+  const qOk =
+    !q ||
+    `${node.label} ${node.subtitle ?? ''} ${node.path ?? ''} ${node.wing ?? ''} ${node.room ?? ''}`
+      .toLowerCase()
+      .includes(q)
+  return agentOk && qOk
+}
+
 const highlightedIds = computed<Set<string>>(() => {
   const ids = new Set<string>()
-  const active = selectedNodeId.value
-  if (!active) return ids
-  ids.add(active)
-  for (const edge of graph.value?.edges ?? []) {
-    if (edge.source === active) ids.add(edge.target)
-    if (edge.target === active) ids.add(edge.source)
+  const active = focusNodeId.value
+  if (active) {
+    ids.add(active)
+    for (const edge of visibleEdges.value) {
+      if (edge.source === active) ids.add(edge.target)
+      if (edge.target === active) ids.add(edge.source)
+    }
+    return ids
+  }
+  if (filterActive.value) {
+    for (const node of visibleNodes.value) {
+      if (nodeMatchesFilters(node)) ids.add(node.id)
+    }
   }
   return ids
+})
+
+const selectedNode = computed<ContextGraphNode | null>(() => {
+  if (!selectedNodeId.value) return null
+  return graph.value?.nodes.find((n) => n.id === selectedNodeId.value) ?? null
+})
+
+const selectedNeighbors = computed<Array<{ node: ContextGraphNode; relation: string }>>(() => {
+  const active = selectedNodeId.value
+  if (!active || !graph.value) return []
+  const out: Array<{ node: ContextGraphNode; relation: string }> = []
+  const seen = new Set<string>()
+  for (const edge of graph.value.edges) {
+    const otherId = edge.source === active ? edge.target : edge.target === active ? edge.source : null
+    if (!otherId || seen.has(otherId)) continue
+    const nb = graph.value.nodes.find((n) => n.id === otherId)
+    if (nb) {
+      seen.add(otherId)
+      out.push({ node: nb, relation: edge.kind })
+    }
+  }
+  return out
+})
+
+const kindCounts = computed(() => {
+  const counts: Record<ContextGraphNodeKind, number> = {
+    decision: 0,
+    keyword: 0,
+    memory: 0,
+    card: 0,
+    file: 0,
+    artifact: 0,
+  }
+  for (const n of graph.value?.nodes ?? []) {
+    counts[n.kind] = (counts[n.kind] ?? 0) + 1
+  }
+  return counts
 })
 
 const hasNodes = computed(() => (graph.value?.nodes.length ?? 0) > 0)
@@ -170,50 +409,36 @@ function toggleOptFiles(opt: ContextGraphOptimization): void {
 
 function edgeStroke(kind: ContextGraphEdge['kind']): string {
   if (kind === 'conflict_risk') return 'var(--color-warn)'
-  return 'var(--color-accent)'
-}
-
-function edgeDash(kind: ContextGraphEdge['kind']): string | undefined {
-  if (kind === 'conflict_risk') return '4 3'
-  if (kind === 'artifact_link') return '2 4'
-  return undefined
+  if (kind === 'touches_file' || kind === 'about_card') return 'var(--color-ok)'
+  if (kind === 'has_keyword') return 'var(--color-accent)'
+  if (kind === 'superseded_by') return 'var(--color-muted)'
+  return 'var(--color-graphite)'
 }
 
 function edgeOpacity(edge: ContextGraphEdge): number {
-  if (!selectedNodeId.value) return 0.9
-  return edge.source === selectedNodeId.value || edge.target === selectedNodeId.value ? 1 : 0.2
-}
-
-function nodeOpacity(id: string): string {
-  if (!selectedNodeId.value) return 'opacity-100'
-  return highlightedIds.value.has(id) ? 'opacity-100' : 'opacity-40'
-}
-
-function fileNodeClasses(node: ContextGraphNode): string {
-  const base =
-    'absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-small transition-opacity cursor-pointer'
-  if (node.conflictRisk) {
-    return `${base} border-[1.5px] border-dashed border-warn bg-warn-soft text-ink`
+  const active = focusNodeId.value
+  if (!active && !filterActive.value) return 0.65
+  if (active) {
+    return edge.source === active || edge.target === active ? 1 : 0.14
   }
-  if (node.cardIds.length > 0) {
-    return `${base} border border-accent bg-accent-soft text-ink`
-  }
-  return `${base} border border-line bg-surface text-ink`
+  return highlightedIds.value.has(edge.source) || highlightedIds.value.has(edge.target) ? 0.95 : 0.15
 }
 
-function cardNodeClasses(): string {
-  return 'absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 rounded-md border border-accent bg-surface px-2.5 py-1.5 text-small text-ink transition-opacity cursor-pointer'
+function nodeOpacity(id: string): number {
+  if (!focusNodeId.value && !filterActive.value) return 1
+  return highlightedIds.value.has(id) ? 1 : 0.24
 }
 
-function artifactNodeClasses(): string {
-  return 'absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-2 rounded-md border border-accent bg-accent-soft px-2.5 py-1.5 text-small text-ink whitespace-nowrap transition-opacity cursor-pointer'
+function nodeColor(node: ContextGraphNode): string {
+  if (node.conflictRisk) return 'var(--color-warn-soft)'
+  return KIND_COLOR[node.kind] ?? 'var(--color-mark-yellow)'
 }
 </script>
 
 <template>
-  <div :class="HEADER_CLASSES">
+  <div class="flex flex-wrap items-baseline justify-between gap-2 px-4.5 py-4">
     <div class="flex flex-wrap items-baseline gap-2">
-      <h2 class="text-lead text-ink">Grafo</h2>
+      <h2 class="text-lead text-ink">Grafo de Conhecimento</h2>
       <p class="text-caption text-muted">{{ GRAPH_DESCRIPTION }}</p>
     </div>
     <UiButton
@@ -235,160 +460,220 @@ function artifactNodeClasses(): string {
     v-else-if="!hasNodes && !loading"
     class="px-4.5 pb-6"
     :title="GRAPH_EMPTY_TITLE"
-    text="Quando cards ativos, passos de trabalho ou artefatos existirem no projeto, o grafo aparece aqui."
+    text="Quando memórias, cards ativos, passos de trabalho ou artefatos existirem no projeto, o grafo aparece aqui."
   />
 
   <template v-else-if="hasNodes">
-    <div class="overflow-x-auto">
+    <div class="flex flex-col border-t border-line lg:flex-row">
       <div
-        :class="CANVAS_CLASSES"
-        style="
-          background-image: radial-gradient(var(--color-line) 1.2px, transparent 1.2px);
-          background-size: 18px 18px;
-        "
+        class="relative isolate z-0 h-[500px] flex-1 overflow-hidden select-none"
+        style="background-color: light-dark(#fcf6e3, #17171c);"
+        :class="isPanning ? 'cursor-grabbing' : 'cursor-grab'"
+        @wheel="onWheel"
+        @pointerdown="startPan"
+        @pointermove="movePan"
+        @pointerup="endPan"
+        @pointerleave="endPan"
       >
-        <div :class="LEGEND_CLASSES">
-          <span class="inline-flex items-center gap-1.5">
-            <span class="inline-block h-0.5 w-4 bg-accent align-middle" />
-            caminho da tarefa
-          </span>
-          <span class="inline-flex items-center gap-1.5">
-            <span class="inline-block w-4 border-t-[1.5px] border-dashed border-warn align-middle" />
-            risco de conflito
-          </span>
-          <span class="inline-flex items-center gap-1.5">
-            <span class="inline-block w-4 border-t-[1.5px] border-dotted border-accent align-middle" />
-            artefato descreve
+        <!-- Top-left cluster filter pills -->
+        <div class="absolute left-3 top-3 z-[1] flex flex-wrap items-center gap-1 rounded-md border border-line bg-surface/95 p-1 shadow-seg backdrop-blur-sm">
+          <button
+            type="button"
+            class="cursor-pointer rounded-sm px-2 py-0.5 text-tiny font-medium transition-colors"
+            :class="activeKindFilter === 'all' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'"
+            @click="activeKindFilter = 'all'"
+          >
+            Todos ({{ graph?.nodes.length ?? 0 }})
+          </button>
+          <button
+            v-for="kind in (['decision', 'keyword', 'memory', 'card', 'file', 'artifact'] as const)"
+            :key="kind"
+            type="button"
+            class="inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-0.5 text-tiny font-medium transition-colors"
+            :class="activeKindFilter === kind ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'"
+            @click="activeKindFilter = kind"
+          >
+            <span class="size-2.5 rounded-full border border-ink/40" :style="{ backgroundColor: KIND_COLOR[kind] }" />
+            {{ KIND_LABEL[kind] }} ({{ kindCounts[kind] }})
+          </button>
+        </div>
+
+        <!-- Bottom-left zoom controls -->
+        <div class="absolute bottom-3 left-3 z-[1] flex items-center gap-1 rounded-md border border-line bg-surface/95 p-1 text-tiny text-ink shadow-seg backdrop-blur-sm">
+          <button type="button" class="cursor-pointer rounded-sm px-2 py-0.5 hover:bg-hover" title="Diminuir zoom" @click="adjustZoom(-0.15)">−</button>
+          <span class="px-1 tabular-nums text-muted">{{ Math.round(zoom * 100) }}%</span>
+          <button type="button" class="cursor-pointer rounded-sm px-2 py-0.5 hover:bg-hover" title="Aumentar zoom" @click="adjustZoom(0.15)">+</button>
+          <button type="button" class="cursor-pointer rounded-sm px-2 py-0.5 text-muted hover:bg-hover hover:text-ink" @click="resetView()">Reset</button>
+        </div>
+
+        <!-- Excalidraw Hand-Drawn SVG Constellation -->
+        <svg
+          viewBox="0 0 800 500"
+          class="h-full w-full"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <g :transform="`translate(${400 + panX}, ${250 + panY}) scale(${zoom}) translate(-400, -250)`">
+            <path
+              v-for="item in positionedEdges"
+              :key="item.edge.id"
+              :d="item.d"
+              :stroke="edgeStroke(item.edge.kind)"
+              :stroke-width="focusNodeId && (item.edge.source === focusNodeId || item.edge.target === focusNodeId) ? 2.1 : 1.4"
+              :stroke-dasharray="item.edge.kind === 'conflict_risk' ? '5 4' : item.edge.kind === 'superseded_by' ? '2 4' : undefined"
+              :stroke-opacity="edgeOpacity(item.edge)"
+              stroke-linecap="round"
+              fill="none"
+            />
+
+            <g
+              v-for="sim in simulatedNodes"
+              :key="sim.node.id"
+              data-graph-node
+              class="cursor-pointer transition-opacity duration-150"
+              :style="{ opacity: nodeOpacity(sim.node.id) }"
+              @mouseenter="hoveredNodeId = sim.node.id"
+              @mouseleave="hoveredNodeId = null"
+              @click.stop="toggleNode(sim.node.id)"
+            >
+              <!-- Pastel hand-painted fill dab (slightly offset like Excalidraw hachure/marker) -->
+              <g :transform="`translate(${sim.x - nodeSketchOffset(sim) + 1.5}, ${sim.y - nodeSketchOffset(sim) + 2})`">
+                <path
+                  :d="nodeSketchPath(sim)"
+                  :fill="nodeColor(sim.node)"
+                  fill-opacity="0.92"
+                />
+              </g>
+              <!-- Hand-drawn pencil/ink outline -->
+              <g :transform="`translate(${sim.x - nodeSketchOffset(sim)}, ${sim.y - nodeSketchOffset(sim)})`">
+                <path
+                  :d="nodeSketchPath(sim)"
+                  fill="none"
+                  :stroke="selectedNodeId === sim.node.id || hoveredNodeId === sim.node.id ? 'var(--color-accent)' : 'var(--color-ink)'"
+                  :stroke-width="selectedNodeId === sim.node.id ? 2.1 : 1.45"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </g>
+              <!-- Node label -->
+              <text
+                :x="sim.x"
+                :y="sim.y + sim.radius + 17"
+                text-anchor="middle"
+                fill="var(--color-ink)"
+                font-size="11.5"
+                font-weight="600"
+                class="pointer-events-none select-none"
+                style="paint-order: stroke; stroke: light-dark(#fcf6e3, #17171c); stroke-width: 4.5px; stroke-linejoin: round;"
+              >
+                {{ sim.node.label.length > 28 ? `${sim.node.label.slice(0, 27)}…` : sim.node.label }}
+              </text>
+            </g>
+          </g>
+        </svg>
+      </div>
+
+      <!-- Collapsible Right Inspector Panel -->
+      <aside
+        v-if="selectedNode"
+        class="flex w-full flex-col gap-3 border-t border-line bg-surface p-4 lg:w-80 lg:border-t-0 lg:border-l"
+      >
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span
+              class="inline-flex items-center gap-1 rounded-sm border border-ink/20 px-1.5 py-0.5 text-tiny font-semibold text-mark-ink"
+              :style="{ backgroundColor: nodeColor(selectedNode) }"
+            >
+              {{ KIND_LABEL[selectedNode.kind] }}
+            </span>
+            <span v-if="selectedNode.wing" class="rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny text-muted">
+              {{ selectedNode.wing }}<template v-if="selectedNode.room"> / {{ selectedNode.room }}</template>
+            </span>
+          </div>
+          <button
+            type="button"
+            class="cursor-pointer text-meta text-muted hover:text-ink"
+            @click="selectedNodeId = null"
+          >
+            Fechar
+          </button>
+        </div>
+
+        <h3 class="wrap-break-word text-label font-semibold text-ink">{{ selectedNode.label }}</h3>
+        <p v-if="selectedNode.subtitle || selectedNode.path" class="wrap-break-word text-small text-muted">
+          {{ selectedNode.subtitle ?? selectedNode.path }}
+        </p>
+
+        <div v-if="selectedNode.agents.length > 0" class="flex flex-wrap items-center gap-1.5">
+          <span class="text-tiny text-muted">Agentes:</span>
+          <span
+            v-for="agent in selectedNode.agents"
+            :key="agent"
+            class="inline-flex items-center gap-1 rounded-sm border border-line px-1.5 py-0.5 text-tiny text-ink"
+          >
+            <AgentPortrait :who="agent" :size="14" />
+            {{ agent }}
           </span>
         </div>
 
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-0 h-full w-full"
-        >
-          <path
-            v-for="item in positionedEdges"
-            :key="item.edge.id"
-            :d="item.d"
-            :stroke="edgeStroke(item.edge.kind)"
-            :stroke-width="item.edge.kind === 'task_path' ? 2 : 1.5"
-            :stroke-dasharray="edgeDash(item.edge.kind)"
-            :stroke-opacity="edgeOpacity(item.edge)"
-            vector-effect="non-scaling-stroke"
-            fill="none"
-          />
-        </svg>
-
-        <template v-for="pos in positionedNodes" :key="pos.node.id">
-          <button
-            v-if="pos.node.kind === 'card'"
-            type="button"
-            :class="[cardNodeClasses(), nodeOpacity(pos.node.id)]"
-            :style="{ left: `${pos.x}%`, top: `${pos.y}%` }"
-            :title="pos.node.subtitle ?? pos.node.label"
-            @click="toggleNode(pos.node.id)"
-          >
-            <AgentPortrait
-              v-if="pos.node.agents.length > 0"
-              :who="pos.node.agents[0]"
-              :size="PORTRAIT_SIZE"
-            />
-            <span class="flex flex-col items-start text-left leading-tight">
-              <span class="text-tiny font-semibold text-accent">{{ pos.node.label }}</span>
-              <span v-if="pos.node.subtitle" class="max-w-[140px] truncate text-meta text-ink">
-                {{ pos.node.subtitle }}
-              </span>
-            </span>
-          </button>
-
-          <button
-            v-else-if="pos.node.kind === 'file'"
-            type="button"
-            :class="[fileNodeClasses(pos.node), nodeOpacity(pos.node.id)]"
-            :style="{ left: `${pos.x}%`, top: `${pos.y}%` }"
-            :title="pos.node.path ?? pos.node.label"
-            @click="toggleNode(pos.node.id)"
-          >
-            <AgentPortrait
-              v-for="agent in pos.node.agents.slice(0, 2)"
-              :key="agent"
-              :who="agent"
-              :size="PORTRAIT_SIZE"
-            />
-            <span>{{ pos.node.label }}</span>
-            <span
-              v-if="pos.node.conflictRisk"
-              class="rounded-sm bg-warn px-1 py-0.5 font-sans text-tiny font-semibold text-accent-ink"
+        <div class="flex flex-col gap-1.5 border-t border-line pt-3">
+          <span class="text-tiny font-semibold text-muted">
+            Conexões ({{ selectedNeighbors.length }})
+          </span>
+          <p v-if="selectedNeighbors.length === 0" class="text-tiny text-muted">
+            Nó isolado — sem arestas registradas ainda.
+          </p>
+          <div v-else class="flex max-h-56 flex-col gap-1 overflow-y-auto">
+            <button
+              v-for="item in selectedNeighbors"
+              :key="item.node.id"
+              type="button"
+              class="flex cursor-pointer items-center justify-between gap-2 rounded-sm border border-line bg-surface-2 px-2 py-1 text-left text-tiny text-ink hover:border-accent"
+              @click="selectedNodeId = item.node.id"
             >
-              conflito
-            </span>
-          </button>
-
-          <button
-            v-else
-            type="button"
-            :class="[artifactNodeClasses(), nodeOpacity(pos.node.id)]"
-            :style="{ left: `${pos.x}%`, top: `${pos.y}%` }"
-            :title="pos.node.subtitle ?? pos.node.label"
-            @click="toggleNode(pos.node.id)"
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true" class="flex-none text-accent">
-              <path
-                d="M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8h4.5M6 10.5h4.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <span class="flex flex-col items-start text-left leading-tight">
-              <span class="text-tiny text-muted">{{ pos.node.artifactKind ?? 'artefato' }}</span>
-              <span class="max-w-[160px] truncate font-semibold text-ink">{{ pos.node.label }}</span>
-            </span>
-          </button>
-        </template>
-      </div>
+              <span class="truncate font-medium">{{ item.node.label }}</span>
+              <span class="shrink-0 text-muted">{{ item.relation }}</span>
+            </button>
+          </div>
+        </div>
+      </aside>
     </div>
 
-    <div :class="OPTIMIZATIONS_CLASSES">
+    <div class="flex flex-col gap-3 border-t border-line px-4.5 py-4">
       <h3 class="text-label font-semibold text-ink">Otimizações sugeridas</h3>
       <p v-if="optimizations.length === 0" class="text-small text-muted">
         Nenhuma otimização pendente para o estado atual do grafo.
       </p>
-      <div v-for="opt in optimizations" :key="opt.id" class="flex flex-col gap-1.5">
-        <div class="flex items-center gap-2.5 text-control">
-          <span
-            class="flex-none rounded-sm px-2 py-0.5 text-meta font-medium"
-            :class="BADGE_CLASSES[opt.kind]"
-          >
-            {{ opt.badge }}
-          </span>
-          <span class="min-w-0 flex-1 text-ink">{{ opt.message }}</span>
-          <UiButton
-            v-if="opt.files.length > 0 || opt.cardIds.length > 0"
-            variant="quiet"
-            size="sm"
-            @press="toggleOptFiles(opt)"
-          >
-            {{ expandedOptId === opt.id ? 'Ocultar' : 'Ver arquivos' }}
-          </UiButton>
-        </div>
-        <div
-          v-if="expandedOptId === opt.id && opt.files.length > 0"
-          class="flex flex-wrap gap-1.5 pl-16"
+      <ul v-else class="flex flex-col gap-2">
+        <li
+          v-for="opt in optimizations"
+          :key="opt.id"
+          class="flex flex-col gap-2 rounded-md border border-line bg-surface-2 px-3 py-2.5"
         >
-          <span
-            v-for="file in opt.files"
-            :key="file"
-            class="rounded-sm bg-surface-2 px-2 py-0.5 font-mono text-tiny text-muted"
-          >
-            {{ file }}
-          </span>
-        </div>
-      </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-sm px-1.5 py-0.5 text-tiny font-semibold" :class="BADGE_CLASSES[opt.kind]">
+              {{ opt.badge }}
+            </span>
+            <span class="min-w-0 flex-1 text-small text-ink">{{ opt.message }}</span>
+            <UiButton
+              v-if="opt.files.length > 0 || opt.cardIds.length > 0"
+              variant="quiet"
+              size="sm"
+              @press="toggleOptFiles(opt)"
+            >
+              {{ expandedOptId === opt.id ? 'Ocultar' : 'Focar no grafo' }}
+            </UiButton>
+          </div>
+          <div v-if="expandedOptId === opt.id && opt.files.length > 0" class="flex flex-wrap gap-1.5">
+            <span
+              v-for="file in opt.files"
+              :key="file"
+              class="rounded-sm border border-line bg-surface px-2 py-0.5 font-mono text-tiny text-muted"
+            >
+              {{ file }}
+            </span>
+          </div>
+        </li>
+      </ul>
     </div>
   </template>
 </template>

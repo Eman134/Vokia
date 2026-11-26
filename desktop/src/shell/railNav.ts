@@ -91,6 +91,11 @@ export const PROJECT_TOOLS: readonly RailItem[] = [
     label: PAGE_LABELS.diff,
     path: 'M4 2v8M4 12.5a1.5 1.5 0 100-.1M12 3.5a1.5 1.5 0 100-.1M12 5v2c0 2-2 3-5.5 3.5',
   },
+  {
+    page: 'memoria',
+    label: PAGE_LABELS.memoria,
+    path: 'M8 2a3 3 0 0 0-3 3v.5A2.5 2.5 0 0 0 3 8a2.5 2.5 0 0 0 1.5 2.3V11a3 3 0 0 0 3.5 2.95V2zm0 0a3 3 0 0 1 3 3v.5A2.5 2.5 0 0 1 13 8a2.5 2.5 0 0 1-1.5 2.3V11a3 3 0 0 1-3.5 2.95V2z',
+  },
 ]
 
 const PROJECT_PAGES: ReadonlySet<AppPage> = new Set(PROJECT_TOOLS.map((item) => item.page))

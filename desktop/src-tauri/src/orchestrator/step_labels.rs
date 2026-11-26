@@ -352,6 +352,18 @@ fn label_for_tool_with_home(name: &str, input: &Value, home: Option<&str>) -> Op
             ])?;
             label_for_action_with_home(StepAction::Command { command: cmd }, home)
         }
+        "memory_graph_query" => {
+            let query = first_str(&[input.get("query"), input.get("q")]);
+            let cleaned = query.map(sanitize_arg).filter(|s| !s.is_empty());
+            Some(match cleaned {
+                Some(term) => format!("Consultando grafo: '{term}'"),
+                None => "Consultando grafo de memória".to_string(),
+            })
+        }
+        "memory_graph_save" => {
+            let cat = first_str(&[input.get("category")]).unwrap_or("memória");
+            Some(format!("Salvando no grafo ({cat})"))
+        }
         _ => None,
     }
 }

@@ -48,6 +48,16 @@ pub struct ProjectMemory {
     pub pinned: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_until: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -55,6 +65,10 @@ pub struct ProjectMemory {
 impl ProjectMemory {
     pub fn is_protected(&self) -> bool {
         self.pinned || self.origin_type.is_protected()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.valid_until.is_none() && self.superseded_by.is_none()
     }
 }
 
@@ -246,14 +260,102 @@ pub struct ReviewMessageEntry {
     pub item_id: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryEdge {
+    pub source_node: String,
+    pub target_node: String,
+    pub relation: String,
+    pub weight: i64,
+}
+
 impl Db {
+    pub fn upsert_memory_edge(
+        &self,
+        project_id: i64,
+        source_node: &str,
+        target_node: &str,
+        relation: &str,
+        now_ms: i64,
+    ) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO memory_edges (project_id, source_node, target_node, relation, weight, created_at) \
+             VALUES (?1, ?2, ?3, ?4, 1, ?5) \
+             ON CONFLICT(project_id, source_node, target_node, relation) DO UPDATE SET weight = weight + 1",
+            params![project_id, source_node, target_node, relation, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_memory_edges(&self, project_id: i64) -> Result<Vec<MemoryEdge>, DbError> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT source_node, target_node, relation, weight \
+             FROM memory_edges \
+             WHERE project_id = ?1 AND valid_until IS NULL \
+             ORDER BY weight DESC, id DESC LIMIT 200",
+        )?;
+        let rows = stmt.query_map([project_id], |row| {
+            Ok(MemoryEdge {
+                source_node: row.get(0)?,
+                target_node: row.get(1)?,
+                relation: row.get(2)?,
+                weight: row.get(3)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(DbError::from)
+    }
+
+    pub fn search_project_memories(
+        &self,
+        project_id: i64,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ProjectMemory>, DbError> {
+        let needle = query.trim().to_lowercase();
+        let all: Vec<ProjectMemory> = self
+            .list_project_memories(project_id)?
+            .into_iter()
+            .filter(|m| m.is_active())
+            .collect();
+        if needle.is_empty() {
+            return Ok(all.into_iter().take(limit).collect());
+        }
+        let terms: Vec<&str> = needle.split_whitespace().filter(|t| !t.is_empty()).collect();
+        let mut scored: Vec<(usize, ProjectMemory)> = all
+            .into_iter()
+            .filter_map(|mem| {
+                let hay = format!(
+                    "{} {} {} {} {} {}",
+                    mem.fact.to_lowercase(),
+                    mem.source.to_lowercase(),
+                    mem.origin_type.as_str(),
+                    mem.author.as_deref().unwrap_or("").to_lowercase(),
+                    mem.wing.as_deref().unwrap_or("").to_lowercase(),
+                    mem.room.as_deref().unwrap_or("").to_lowercase(),
+                );
+                let hits = terms.iter().filter(|t| hay.contains(*t)).count();
+                if hits > 0 {
+                    Some((hits + if mem.pinned { 2 } else { 0 }, mem))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        scored.sort_by(|a, b| b.0.cmp(&a.0));
+        Ok(scored.into_iter().take(limit).map(|(_, m)| m).collect())
+    }
+
     pub fn list_project_memories(&self, project_id: i64) -> Result<Vec<ProjectMemory>, DbError> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, fact, source, origin_type, pinned, author, created_at, updated_at \
+            "SELECT id, project_id, fact, source, origin_type, pinned, author, \
+                    valid_from, valid_until, superseded_by, wing, room, created_at, updated_at \
              FROM project_memories \
              WHERE project_id = ?1 \
-             ORDER BY pinned DESC, updated_at DESC, id ASC",
+             ORDER BY (valid_until IS NOT NULL) ASC, pinned DESC, updated_at DESC, id ASC",
         )?;
         let rows = stmt.query_map([project_id], decode_memory_row)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -267,7 +369,8 @@ impl Db {
     ) -> Result<Option<ProjectMemory>, DbError> {
         let conn = self.conn()?;
         conn.query_row(
-            "SELECT id, project_id, fact, source, origin_type, pinned, author, created_at, updated_at \
+            "SELECT id, project_id, fact, source, origin_type, pinned, author, \
+                    valid_from, valid_until, superseded_by, wing, room, created_at, updated_at \
              FROM project_memories \
              WHERE project_id = ?1 AND id = ?2",
             params![project_id, memory_id],
@@ -278,11 +381,13 @@ impl Db {
     }
 
     pub fn insert_project_memory(&self, mem: &NewProjectMemory<'_>) -> Result<(), DbError> {
+        let (wing, room) = infer_wing_and_room(mem.source, mem.fact);
         let conn = self.conn()?;
         let inserted = conn.execute(
             "INSERT INTO project_memories \
-                (id, project_id, fact, source, origin_type, pinned, author, created_at, updated_at) \
-             SELECT ?1, id, ?3, ?4, ?5, ?6, ?7, ?8, ?8 FROM projects WHERE id = ?2",
+                (id, project_id, fact, source, origin_type, pinned, author, \
+                 valid_from, valid_until, superseded_by, wing, room, created_at, updated_at) \
+             SELECT ?1, id, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, ?9, ?10, ?8, ?8 FROM projects WHERE id = ?2",
             params![
                 mem.id,
                 mem.project_id,
@@ -292,11 +397,86 @@ impl Db {
                 if mem.pinned { 1 } else { 0 },
                 mem.author,
                 mem.now_ms,
+                wing,
+                room,
             ],
         )?;
         if inserted == 0 {
             return Err(DbError::ProjectNotFound(mem.project_id));
         }
+        Ok(())
+    }
+
+    pub fn set_memory_palace_location(
+        &self,
+        project_id: i64,
+        memory_id: &str,
+        wing: Option<&str>,
+        room: Option<&str>,
+    ) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE project_memories SET wing = COALESCE(?3, wing), room = COALESCE(?4, room) \
+             WHERE project_id = ?1 AND id = ?2",
+            params![project_id, memory_id, wing, room],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_project_memory(
+        &self,
+        project_id: i64,
+        memory_id: &str,
+        now_ms: i64,
+    ) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE project_memories SET updated_at = ?3 WHERE project_id = ?1 AND id = ?2",
+            params![project_id, memory_id, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn supersede_project_memory(
+        &self,
+        project_id: i64,
+        old_id: &str,
+        new_id: &str,
+        now_ms: i64,
+    ) -> Result<bool, DbError> {
+        let conn = self.conn()?;
+        let updated = conn.execute(
+            "UPDATE project_memories \
+             SET valid_until = ?3, superseded_by = ?4, updated_at = ?3 \
+             WHERE project_id = ?1 AND id = ?2 AND valid_until IS NULL",
+            params![project_id, old_id, now_ms, new_id],
+        )?;
+        if updated > 0 {
+            let _ = conn.execute(
+                "INSERT INTO memory_edges (project_id, source_node, target_node, relation, weight, created_at) \
+                 VALUES (?1, ?2, ?3, 'superseded_by', 1, ?4) \
+                 ON CONFLICT(project_id, source_node, target_node, relation) DO UPDATE SET weight = weight + 1",
+                params![project_id, format!("memory:{old_id}"), format!("memory:{new_id}"), now_ms],
+            );
+        }
+        Ok(updated > 0)
+    }
+
+    pub fn record_orchestration_event(
+        &self,
+        project_id: i64,
+        event_type: &str,
+        agent: Option<&str>,
+        item_id: Option<&str>,
+        payload_json: &str,
+        now_ms: i64,
+    ) -> Result<(), DbError> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT INTO orchestration_events (project_id, event_type, agent, item_id, payload_json, created_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![project_id, event_type, agent, item_id, payload_json, now_ms],
+        )?;
         Ok(())
     }
 
@@ -580,6 +760,40 @@ impl Db {
     }
 }
 
+pub fn infer_wing_and_room(source: &str, fact: &str) -> (String, String) {
+    let src_l = source.trim().to_ascii_lowercase();
+    let fact_l = fact.to_ascii_lowercase();
+    let wing = if fact_l.contains("src-tauri")
+        || fact_l.contains(".rs")
+        || fact_l.contains("sqlite")
+        || fact_l.contains("rust")
+    {
+        "backend"
+    } else if fact_l.contains(".vue")
+        || fact_l.contains(".ts")
+        || fact_l.contains("css")
+        || fact_l.contains("frontend")
+    {
+        "frontend"
+    } else if src_l == "macro" || src_l == "arquitetura" || fact_l.contains("arquitetura") {
+        "arquitetura"
+    } else if fact_l.contains("orquestra") || fact_l.contains("deleg") || fact_l.contains("triagem") {
+        "orquestracao"
+    } else {
+        "geral"
+    };
+    let room = if src_l == "mapa-arquivos" || fact_l.contains("arquivo") || fact_l.contains("src/") {
+        "mapa-arquivos"
+    } else if src_l == "macro" || src_l == "arquitetura" {
+        "decisoes"
+    } else if src_l == "convencao" || fact_l.contains("padrão") || fact_l.contains("sempre") {
+        "convencoes"
+    } else {
+        "notas"
+    };
+    (wing.to_string(), room.to_string())
+}
+
 fn decode_memory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectMemory> {
     let origin_raw: String = row.get(4)?;
     let pinned_int: i64 = row.get(5)?;
@@ -591,8 +805,13 @@ fn decode_memory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProjectMemory>
         origin_type: MemoryOriginType::parse(&origin_raw),
         pinned: pinned_int != 0,
         author: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        valid_from: row.get(7)?,
+        valid_until: row.get(8)?,
+        superseded_by: row.get(9)?,
+        wing: row.get(10)?,
+        room: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 

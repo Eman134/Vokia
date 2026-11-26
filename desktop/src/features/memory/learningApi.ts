@@ -36,6 +36,11 @@ export interface ProjectMemory {
   originType: MemoryOriginType
   pinned: boolean
   author?: string
+  validFrom?: number
+  validUntil?: number
+  supersededBy?: string
+  wing?: string
+  room?: string
   createdAt: number
   updatedAt: number
 }
@@ -48,8 +53,15 @@ export interface ReviewOutcome {
   model?: string
 }
 
-export type ContextGraphNodeKind = 'file' | 'card' | 'artifact'
-export type ContextGraphEdgeKind = 'task_path' | 'conflict_risk' | 'artifact_link'
+export type ContextGraphNodeKind = 'memory' | 'decision' | 'keyword' | 'card' | 'file' | 'artifact'
+export type ContextGraphEdgeKind =
+  | 'task_path'
+  | 'conflict_risk'
+  | 'artifact_link'
+  | 'touches_file'
+  | 'about_card'
+  | 'superseded_by'
+  | 'has_keyword'
 export type ContextGraphOptimizationKind = 'conflict' | 'context' | 'artifact' | 'order'
 
 export interface ContextGraphNode {
@@ -64,6 +76,9 @@ export interface ContextGraphNode {
   agents: string[]
   cardIds: string[]
   conflictRisk: boolean
+  wing?: string
+  room?: string
+  superseded?: boolean
 }
 
 export interface ContextGraphEdge {
@@ -132,8 +147,40 @@ export function saveProjectMemory(projectId: number, fact: string): Promise<Proj
   })
 }
 
+export interface MemoryGraphQueryResult {
+  memories: ProjectMemory[]
+  decisions: string[]
+  keywords: string[]
+  compactContext: string
+  nodes: ContextGraphNode[]
+  edges: ContextGraphEdge[]
+  optimizations: ContextGraphOptimization[]
+}
+
 export function getContextGraph(projectId: number): Promise<ContextGraph> {
   return invoke<ContextGraph>('get_context_graph', {
     args: { projectId },
   })
+}
+
+export function memoryGraphQuery(
+  projectId: number,
+  query: string,
+  limit = 20,
+): Promise<MemoryGraphQueryResult> {
+  return invoke<MemoryGraphQueryResult>('memory_graph_query', {
+    args: { projectId, query, limit },
+  })
+}
+
+export function memoryGraphSave(args: {
+  projectId: number
+  fact: string
+  category?: string
+  keywords?: string[]
+  files?: string[]
+  cardId?: string
+  author?: string
+}): Promise<ProjectMemory> {
+  return invoke<ProjectMemory>('memory_graph_save', { args })
 }

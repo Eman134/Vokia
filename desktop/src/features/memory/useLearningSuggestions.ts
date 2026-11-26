@@ -24,7 +24,18 @@ export const useLearningSuggestions = defineStore('learningSuggestions', () => {
   const error = ref<string | null>(null)
   const busyIds = ref<Set<string>>(new Set())
   const activeProjectId = ref<number | undefined>(undefined)
+  const agentFilter = ref<string | null>(null)
+  const searchQuery = ref('')
   let unlisten: UnlistenFn | null = null
+
+  function setAgentFilter(agentId: string | null): void {
+    agentFilter.value = agentId
+  }
+
+  function clearFilters(): void {
+    agentFilter.value = null
+    searchQuery.value = ''
+  }
 
   const pendingSuggestions = computed(() =>
     suggestions.value.filter((item) => item.status === 'pending'),
@@ -152,6 +163,10 @@ export const useLearningSuggestions = defineStore('learningSuggestions', () => {
     reviewing,
     error,
     busyIds,
+    agentFilter,
+    searchQuery,
+    setAgentFilter,
+    clearFilters,
     pendingSuggestions,
     pendingCount,
     pendingMemoryCount,

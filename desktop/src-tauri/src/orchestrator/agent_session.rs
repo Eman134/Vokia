@@ -707,26 +707,29 @@ fn build_handoff_prompts(
     .map(|record| record.block)
     .collect();
 
-    let mut recent_messages = load_handoff_messages(
+    let mut all_messages = load_handoff_messages(
         db,
         project_id,
         agent,
         exchange.item_id,
         exchange.channel_id,
     );
-    if recent_messages.is_empty() {
+    if all_messages.is_empty() {
         if let Ok(lines) = super::turns::with_cache(exchange.state, project_id, |cache| {
             Ok(cache.recent_conversation(20))
         }) {
-            recent_messages = lines
+            all_messages = lines
                 .into_iter()
                 .map(|line| HandoffMessage {
                     author: String::new(),
-                    text: line,
+                    text: compact_context_text(&line, 320),
                 })
                 .collect();
         }
     }
+    let split_at = all_messages.len().saturating_sub(8);
+    let older_messages = all_messages[..split_at].to_vec();
+    let recent_messages = all_messages[split_at..].to_vec();
 
     let open_plan_steps = load_open_plan_steps(db, project_id, exchange.item_id);
     let card_summary = exchange.card_context();
@@ -742,16 +745,92 @@ fn build_handoff_prompts(
         card_summary,
         open_plan_steps,
         recent_messages,
-        older_messages: Vec::new(),
+        older_messages,
         work_steps_blocks,
         history_pointers: Vec::new(),
     });
 
+    let memory_context = db
+        .map(|d| {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |dur| dur.as_millis() as i64);
+            let _ = d.record_orchestration_event(
+                project_id,
+                "handoff_built",
+                Some(agent.as_str()),
+                exchange.item_id,
+                &format!(r#"{{"chars":{}}}"#, packet.total_chars),
+                now_ms,
+            );
+            crate::commands::learning::build_compact_memory_context(
+                d,
+                project_id,
+                exchange.item_id,
+                Some(agent.as_str()),
+                2200,
+            )
+        })
+        .unwrap_or_default();
+    let prefix = if memory_context.is_empty() {
+        packet.text
+    } else {
+        format!("{memory_context}\n\n{}", packet.text)
+    };
+
     StepPrompts {
-        opening: format!("{}\n\n{}", packet.text, prompts.opening),
+        opening: format!("{prefix}\n\n{}", prompts.opening),
         follow_up: prompts.follow_up.clone(),
-        minimal: format!("{}\n\n{}", packet.text, prompts.minimal),
+        minimal: format!("{prefix}\n\n{}", prompts.minimal),
     }
+}
+
+fn compact_context_text(raw: &str, max_chars: usize) -> String {
+    // Tool-result clearing: remove blocos verbosos de stdout/compilação antes de compactar.
+    let mut cleaned_lines: Vec<&str> = Vec::new();
+    let mut skipping_verbose = false;
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("Compiling ")
+            || trimmed.starts_with("Finished `")
+            || trimmed.starts_with("Running unittests ")
+            || trimmed.starts_with("at ")
+        {
+            if !skipping_verbose {
+                cleaned_lines.push("[saída de build/teste compactada]");
+                skipping_verbose = true;
+            }
+            continue;
+        }
+        skipping_verbose = false;
+        cleaned_lines.push(trimmed);
+    }
+    let normalized: String = cleaned_lines
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.chars().count() <= max_chars {
+        normalized
+    } else {
+        let truncated: String = normalized.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{truncated}…")
+    }
+}
+
+fn same_task_family(msg_item: Option<&str>, target_item: &str) -> bool {
+    let Some(msg_item) = msg_item else {
+        return false;
+    };
+    if msg_item == target_item {
+        return true;
+    }
+    if let Some((parent, _)) = target_item.split_once('.') {
+        if msg_item == parent || msg_item.starts_with(&format!("{parent}.")) {
+            return true;
+        }
+    }
+    msg_item.starts_with(&format!("{target_item}."))
 }
 
 fn load_handoff_messages(
@@ -768,7 +847,7 @@ fn load_handoff_messages(
         return Vec::new();
     };
     let agent_speaker = Speaker::from(agent.clone());
-    events
+    let mut collected: Vec<HandoffMessage> = events
         .into_iter()
         .filter_map(|event| match event {
             VokiaEvent::Message {
@@ -784,7 +863,7 @@ fn load_handoff_messages(
                     return None;
                 }
                 let matches_scope = if let Some(target_item) = item_id {
-                    msg_item.as_deref() == Some(target_item)
+                    same_task_family(msg_item.as_deref(), target_item)
                 } else if let Some(target_channel) = channel_id {
                     msg_channel == Some(target_channel)
                 } else {
@@ -793,14 +872,19 @@ fn load_handoff_messages(
                 if !matches_scope {
                     return None;
                 }
-                Some(HandoffMessage {
+                let compacted = compact_context_text(&text, 320);
+                (!compacted.is_empty()).then(|| HandoffMessage {
                     author: from.as_str().to_string(),
-                    text,
+                    text: compacted,
                 })
             }
             _ => None,
         })
-        .collect()
+        .collect();
+    if collected.len() > 16 {
+        collected.drain(..collected.len() - 16);
+    }
+    collected
 }
 
 fn load_open_plan_steps(db: Option<&Db>, project_id: i64, item_id: Option<&str>) -> Vec<String> {

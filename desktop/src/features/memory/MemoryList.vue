@@ -8,10 +8,11 @@ import UiSegmented from '../../ui/UiSegmented.vue'
 import { useProjects } from '../projects/useProjects'
 import type { LearningSuggestion, ProjectMemory } from './learningApi'
 import { useLearningSuggestions } from './useLearningSuggestions'
-import { MEMORY_FACTS, MEMORY_NOTE } from './memoriaSample'
 
 type MemoryFilter =
   | 'projeto'
+  | 'macro'
+  | 'mapa'
   | 'agente'
   | 'decisoes'
   | 'artefatos'
@@ -19,12 +20,14 @@ type MemoryFilter =
   | 'preferencias'
 
 const FILTER_OPTIONS: readonly { label: string; value: MemoryFilter }[] = [
-  { label: 'Projeto', value: 'projeto' },
+  { label: 'Todas', value: 'projeto' },
+  { label: 'Visão macro', value: 'macro' },
+  { label: 'Mapa de arquivos', value: 'mapa' },
   { label: 'Por agente', value: 'agente' },
   { label: 'Decisões', value: 'decisoes' },
-  { label: 'De artefatos', value: 'artefatos' },
-  { label: 'De devoluções', value: 'devolucoes' },
-  { label: 'Suas preferências', value: 'preferencias' },
+  { label: 'Artefatos', value: 'artefatos' },
+  { label: 'Devoluções', value: 'devolucoes' },
+  { label: 'Preferências', value: 'preferencias' },
 ]
 
 const MARKER_SIZE = 30
@@ -33,7 +36,6 @@ const LIST_CLASSES = 'flex flex-col gap-3 px-4.5 py-4'
 const ROW_CLASSES = 'flex items-start gap-3'
 const SUGGESTION_ROW_CLASSES = 'flex items-start gap-3 rounded-md bg-accent-soft p-3'
 const CONTENT_CLASSES = 'flex min-w-0 flex-1 flex-col items-stretch gap-2'
-const NOTE_CLASSES = 'border-t border-line px-4.5 py-3 text-small text-muted'
 const CHIP_WARN_CLASSES = 'inline-flex items-center rounded-sm bg-warn-soft px-1.5 py-0.5 text-tiny font-medium text-warn-text'
 const CHIP_ACCENT_CLASSES = 'inline-flex items-center rounded-sm bg-accent-soft px-1.5 py-0.5 text-tiny font-medium text-accent'
 const CHIP_MUTED_CLASSES = 'inline-flex items-center rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny font-medium text-muted'
@@ -69,41 +71,55 @@ function originChip(mem: ProjectMemory): DisplayMemoryRow['chip'] {
   return undefined
 }
 
-const persistedRows = computed<DisplayMemoryRow[]>(() => {
-  if (store.memories.length > 0) {
-    return store.memories.map((mem) => ({
-      key: mem.id,
-      who: mem.author ?? null,
-      fact: mem.fact,
-      author: mem.author ?? (mem.originType === 'manual' ? 'sua preferência' : 'Time'),
-      usage:
-        mem.originType === 'manual'
-          ? 'sua preferência · vale para todos os agentes'
-          : `${mem.source} · ${mem.originType}`,
-      chip: originChip(mem),
-    }))
-  }
-  return MEMORY_FACTS.filter((f) => !f.suggested).map((f) => ({
-    key: f.text,
-    who: f.who,
-    fact: f.text,
-    author: f.author,
-    usage: f.usage,
-    chip: f.usage.includes('devolução')
-      ? { label: 'devolução', tone: 'warn' as const }
-      : f.usage.includes('ADR') || f.usage.includes('diagrama')
-        ? { label: 'artefato', tone: 'accent' as const }
-        : undefined,
-  }))
-})
+const persistedRows = computed<DisplayMemoryRow[]>(() =>
+  store.memories.map((mem) => ({
+    key: mem.id,
+    who: mem.author ?? null,
+    fact: mem.fact,
+    author: mem.author ?? (mem.originType === 'manual' ? 'sua preferência' : 'Time'),
+    usage:
+      mem.originType === 'manual'
+        ? 'sua preferência · vale para todos os agentes'
+        : `${mem.source} · ${mem.originType}`,
+    chip: originChip(mem),
+  })),
+)
 
 const filteredRows = computed<DisplayMemoryRow[]>(() => {
-  const rows = persistedRows.value
+  let rows = persistedRows.value
+  if (store.agentFilter) {
+    rows = rows.filter((r) => r.who === store.agentFilter)
+  }
+  const query = store.searchQuery.trim().toLowerCase()
+  if (query) {
+    rows = rows.filter(
+      (r) =>
+        r.fact.toLowerCase().includes(query) ||
+        r.author.toLowerCase().includes(query) ||
+        r.usage.toLowerCase().includes(query),
+    )
+  }
   switch (activeFilter.value) {
+    case 'macro':
+      return rows.filter(
+        (r) =>
+          r.usage.toLowerCase().includes('macro') ||
+          r.usage.toLowerCase().includes('arquitetura') ||
+          r.chip?.label === 'fixada',
+      )
+    case 'mapa':
+      return rows.filter(
+        (r) =>
+          r.usage.toLowerCase().includes('mapa') ||
+          r.fact.includes('/') ||
+          r.fact.includes('.rs') ||
+          r.fact.includes('.ts') ||
+          r.fact.includes('.vue'),
+      )
     case 'agente':
       return rows.filter((r) => r.who !== null)
     case 'decisoes':
-      return rows.filter((r) => r.usage.toLowerCase().includes('decisão') || r.usage.toLowerCase().includes('adr'))
+      return rows.filter((r) => r.usage.toLowerCase().includes('decis') || r.usage.toLowerCase().includes('adr'))
     case 'artefatos':
       return rows.filter((r) => r.chip?.tone === 'accent' || r.usage.toLowerCase().includes('artefato') || r.usage.toLowerCase().includes('diagrama'))
     case 'devolucoes':
@@ -201,6 +217,4 @@ onMounted(() => {
       </div>
     </li>
   </ol>
-
-  <p :class="NOTE_CLASSES">{{ MEMORY_NOTE }}</p>
 </template>

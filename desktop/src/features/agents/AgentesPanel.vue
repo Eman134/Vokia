@@ -314,6 +314,12 @@ function openUsageForAgent(): void {
   navigation.goTo('estatisticas')
 }
 
+function openAgentMemories(): void {
+  const agent = selected.value
+  learning.setAgentFilter(agent ? agent.id : null)
+  navigation.goTo('memoria')
+}
+
 function onSaved(profile: AgentProfile): void {
   selectedId.value = profile.id
 }
@@ -499,7 +505,7 @@ async function removeSelected(): Promise<void> {
             <AgentSettingsRow
               label="Memórias"
               :summary="`${learning.memories.length} salvas`"
-              @press="openSubpanel('memories', $event)"
+              @press="openAgentMemories()"
             />
             <AgentSettingsRow
               label="Habilidades"

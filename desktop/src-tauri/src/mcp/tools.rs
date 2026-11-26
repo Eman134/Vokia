@@ -58,6 +58,8 @@ const ARTIFACT_OPS: [&str; 5] = [
 ];
 const LIST_MOVEMENTS: &str = "list_movements";
 const POST_CHANNEL_MESSAGE: &str = "post_channel_message";
+const MEMORY_GRAPH_QUERY: &str = "memory_graph_query";
+const MEMORY_GRAPH_SAVE: &str = "memory_graph_save";
 const APP_COMMANDS_LIST: &str = "app_commands_list";
 pub(super) const APP_COMMAND_CALL: &str = "app_command_call";
 const COMMAND_DOMAINS: [&str; 12] = [
@@ -232,6 +234,26 @@ struct CommandsListArgs {
 struct PostChannelArgs {
     channel: String,
     text: String,
+}
+
+#[derive(Deserialize)]
+struct McpMemoryQueryArgs {
+    query: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct McpMemorySaveArgs {
+    fact: String,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    files: Vec<String>,
+    #[serde(default)]
+    card_id: Option<String>,
+    #[serde(default)]
+    keywords: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -537,6 +559,27 @@ pub fn definitions() -> Vec<Value> {
             &["channel", "text"],
         ),
         tool(
+            MEMORY_GRAPH_QUERY,
+            "Consulta o grafo de memória do projeto (decisões, palavras-chave, memórias, arquivos e cards conectados em 2-hop). Use ANTES de editar ou planejar passando palavras-chave ou o ID da task (ex: 'item-123') para obter contexto enxuto e relevante.",
+            json!({
+                "query": { "type": "string", "description": "Palavras-chave, ID da task (ex: item-123), arquivo ou conceito para buscar no grafo." },
+                "limit": { "type": "integer" },
+            }),
+            &["query"],
+        ),
+        tool(
+            MEMORY_GRAPH_SAVE,
+            "Salva uma decisão arquitetural, visão macro ou mapa de arquivos conectado ao grafo por palavras-chave, arquivos e task.",
+            json!({
+                "fact": { "type": "string" },
+                "category": { "type": "string", "description": "decisao | macro | mapa-arquivos | padrao" },
+                "keywords": { "type": "array", "items": { "type": "string" }, "description": "Palavras-chave de domínio para conectar no grafo." },
+                "files": { "type": "array", "items": { "type": "string" } },
+                "card_id": { "type": "string" },
+            }),
+            &["fact"],
+        ),
+        tool(
             APP_COMMANDS_LIST,
             "Lista os comandos administrativos do Vokia (papéis, agentes, orquestração, provedores, canais, projetos, configurações) com o schema de cada um.",
             json!({ "domain": { "type": "string", "enum": COMMAND_DOMAINS } }),
@@ -607,6 +650,39 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         LIST_MOVEMENTS => list_movements(app, binding),
         POST_CHANNEL_MESSAGE => {
             parse(name, arguments).and_then(|args| post_channel_message(app, binding, args))
+        }
+        MEMORY_GRAPH_QUERY => {
+            parse(name, arguments).and_then(|args: McpMemoryQueryArgs| {
+                let res = crate::commands::learning::memory_graph_query_exec(
+                    app,
+                    crate::commands::learning::MemoryGraphQueryArgs {
+                        project_id: binding.project_id,
+                        query: args.query,
+                        limit: args.limit,
+                    },
+                )?;
+                to_json(&res)
+            })
+        }
+        MEMORY_GRAPH_SAVE => {
+            parse(name, arguments).and_then(|args: McpMemorySaveArgs| {
+                let res = crate::commands::learning::memory_graph_save_exec(
+                    app,
+                    crate::commands::learning::MemoryGraphSaveArgs {
+                        project_id: binding.project_id,
+                        fact: args.fact,
+                        category: args.category,
+                        files: args.files,
+                        card_id: args.card_id,
+                        author: Some(binding.agent.as_str().to_string()),
+                        wing: None,
+                        room: None,
+                        supersede_id: None,
+                        keywords: args.keywords,
+                    },
+                )?;
+                to_json(&res)
+            })
         }
         APP_COMMANDS_LIST => parse(name, arguments).and_then(app_commands_list),
         _ => return None,

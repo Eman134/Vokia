@@ -749,6 +749,8 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("learning", "list_project_memories", "Lista as memórias registradas de um projeto, incluindo origem (manual/pinned/review/auto). Parâmetro: projectId.", "Para consultar memórias persistidas do projeto.", schema_project_id),
     exposed("learning", "save_project_memory", "Salva uma memória manual fixada no projeto atual. Parâmetros: projectId, fact, source (opcional).", "Para registrar um fato permanente na memória do projeto via comando /lembrar ou agente.", empty_object_schema),
     exposed("learning", "get_context_graph", "Monta o grafo de contexto do projeto com arquivos ativos/recentes, cards em andamento/revisão, artefatos vinculados, riscos de conflito e otimizações sugeridas. Parâmetro: projectId.", "Para visualizar o grafo de contexto e detectar conflitos ou otimizações de fluxo.", schema_project_id),
+    exposed("learning", "memory_graph_query", "Consulta o grafo de memória e mapa de arquivos do projeto (busca memórias, cards, arquivos e conexões 1-hop). Parâmetros: projectId, query, limit (opcional).", "Para consultar visão macro, decisões e quais arquivos tocar antes de implementar.", empty_object_schema),
+    exposed("learning", "memory_graph_save", "Salva um fato macro, decisão ou mapa de arquivos na memória conectada ao grafo. Parâmetros: projectId, fact, category (macro|mapa-arquivos|decisao), files (opcional), cardId (opcional).", "Para registrar aprendizados macro e conexões entre arquivos e cards.", empty_object_schema),
 ];
 
 #[derive(Deserialize, Default)]
@@ -1196,6 +1198,14 @@ async fn run(
             parse_args(arguments)?,
         )),
         "get_context_graph" => json_result(learning::get_context_graph_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "memory_graph_query" => json_result(learning::memory_graph_query_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "memory_graph_save" => json_result(learning::memory_graph_save_exec(
             app,
             parse_args(arguments)?,
         )),

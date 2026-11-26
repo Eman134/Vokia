@@ -402,3 +402,35 @@ fn corpo_acima_de_64_kb_responde_413_e_no_limite_exato_responde_200() {
         assert_eq!(at_limit.status, 200);
     });
 }
+
+#[test]
+fn vokia_cli_lista_tools_de_memoria_e_grafo_via_http_real() {
+    run(async {
+        let (server, _port, token) = started().await;
+        server.install_test_tools();
+        let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("debug")
+            .join(if cfg!(windows) { "vokia-cli.exe" } else { "vokia-cli" });
+        assert!(bin.exists(), "vokia-cli binário deveria existir em {:?}", bin);
+
+        let out = tokio::process::Command::new(&bin)
+            .args(["tools", "--json"])
+            .env("VOKIA_URL", server.url())
+            .env("VOKIA_TOKEN", token.as_str())
+            .output()
+            .await
+            .expect("vokia-cli deveria executar");
+        assert!(
+            out.status.success(),
+            "vokia-cli falhou: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("memory_graph_query"), "faltou memory_graph_query: {stdout}");
+        assert!(stdout.contains("memory_graph_save"), "faltou memory_graph_save: {stdout}");
+        assert!(stdout.contains("create_card"), "faltou create_card: {stdout}");
+        assert!(stdout.contains("save_item_plan"), "faltou save_item_plan: {stdout}");
+        assert!(stdout.contains("move_card"), "faltou move_card: {stdout}");
+    });
+}
