@@ -1606,7 +1606,7 @@ async fn answer_once(
                 Speaker::from(target),
                 &request,
                 exchange.scope(),
-                None,
+                reply.activity.take(),
                 None,
                 reply.usage.take(),
             )?;
@@ -1633,9 +1633,9 @@ async fn answer_once(
                 Speaker::User,
                 &text,
                 exchange.scope(),
+                reply.activity.take(),
                 None,
-                None,
-                None,
+                reply.usage.take(),
             );
         }
         if let Some(item_id) = exchange.item_id {

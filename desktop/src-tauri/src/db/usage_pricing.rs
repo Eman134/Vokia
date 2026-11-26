@@ -421,6 +421,36 @@ const PRICING_RULES: &[ModelPriceRule] = &[
     },
     // Google / Gemini / Antigravity
     ModelPriceRule {
+        pattern: "gemini-4-hydrogen",
+        standard: GEMINI_PRO_STANDARD,
+        long_context: Some((DEFAULT_LONG_CONTEXT_THRESHOLD, GEMINI_PRO_LONG)),
+        baseline_standard: None,
+    },
+    ModelPriceRule {
+        pattern: "gemini-4-neon",
+        standard: GEMINI_PRO_STANDARD,
+        long_context: Some((DEFAULT_LONG_CONTEXT_THRESHOLD, GEMINI_PRO_LONG)),
+        baseline_standard: None,
+    },
+    ModelPriceRule {
+        pattern: "gemini-4-argon",
+        standard: GEMINI_PRO_STANDARD,
+        long_context: Some((DEFAULT_LONG_CONTEXT_THRESHOLD, GEMINI_PRO_LONG)),
+        baseline_standard: None,
+    },
+    ModelPriceRule {
+        pattern: "gemini-4-carbon",
+        standard: GEMINI_PRO_STANDARD,
+        long_context: Some((DEFAULT_LONG_CONTEXT_THRESHOLD, GEMINI_PRO_LONG)),
+        baseline_standard: None,
+    },
+    ModelPriceRule {
+        pattern: "gemini-3.8-flash",
+        standard: GEMINI_25_FLASH_STANDARD,
+        long_context: None,
+        baseline_standard: Some(GEMINI_PRO_STANDARD),
+    },
+    ModelPriceRule {
         pattern: "gemini-3-flash",
         standard: GEMINI_25_FLASH_STANDARD,
         long_context: None,

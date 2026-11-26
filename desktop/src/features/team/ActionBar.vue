@@ -16,7 +16,6 @@ import UsageLimitNotice from './UsageLimitNotice.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
 import BtwWindow from './bar/BtwWindow.vue'
-import { useDelegationNotices } from '../balloon/useDelegationNotices'
 import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
 import { BAR_COLLAPSE_TOTAL_MS, BAR_FADE_CLASSES, BAR_SPRING, BAR_WRAP_CLASSES, PILL_CLASSES } from './bar/barClasses'
@@ -95,7 +94,6 @@ const control = useAgentControl()
 const usageLimit = useUsageLimit()
 const learningSuggestions = useLearningSuggestions()
 useErrorNotices()
-useDelegationNotices()
 // Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
 const layoutKey = computed(() =>
   [

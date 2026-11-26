@@ -1122,13 +1122,19 @@ fn extract_usage_from_result(
         .and_then(Json::as_u64);
     let cached_input_tokens = usage
         .get("cachedInputTokens")
+        .or_else(|| usage.get("cachedReadTokens"))
         .or_else(|| usage.get("cache_read_input_tokens"))
+        .and_then(Json::as_u64);
+    let cache_write_tokens = usage
+        .get("cachedWriteTokens")
+        .or_else(|| usage.get("cacheWriteTokens"))
+        .or_else(|| usage.get("cache_creation_input_tokens"))
         .and_then(Json::as_u64);
     let thought_tokens = usage
         .get("thoughtTokens")
         .or_else(|| usage.get("reasoning_tokens"))
         .and_then(Json::as_u64);
-    let cost_usd = usage
+    let raw_cost_usd = usage
         .get("costUsd")
         .or_else(|| usage.get("total_cost_usd"))
         .and_then(Json::as_f64);
@@ -1136,19 +1142,38 @@ fn extract_usage_from_result(
     if input_tokens.is_none()
         && output_tokens.is_none()
         && cached_input_tokens.is_none()
+        && cache_write_tokens.is_none()
         && thought_tokens.is_none()
-        && cost_usd.is_none()
+        && raw_cost_usd.is_none()
     {
         return None;
     }
 
+    let trimmed_model = model.trim();
+    let cost_usd = raw_cost_usd.or_else(|| {
+        if trimmed_model.is_empty() {
+            return None;
+        }
+        let counts = crate::db::usage_pricing::TokenCounts {
+            input_tokens: input_tokens.unwrap_or(0),
+            cached_input_tokens: cached_input_tokens.unwrap_or(0),
+            cache_write_tokens: cache_write_tokens.unwrap_or(0),
+            output_tokens: output_tokens.unwrap_or(0),
+            thought_tokens: thought_tokens.unwrap_or(0),
+        };
+        (counts.total() > 0)
+            .then(|| crate::db::usage_pricing::estimate_usage_price(trimmed_model, counts))
+            .flatten()
+            .map(|est| est.cost_usd)
+    });
+
     Some(TurnUsage {
         provider: provider.map(|p| p.id.clone()),
-        model: (!model.trim().is_empty()).then(|| model.to_string()),
+        model: (!trimmed_model.is_empty()).then(|| trimmed_model.to_string()),
         input_tokens,
         output_tokens,
         cached_input_tokens,
-        cache_write_tokens: None,
+        cache_write_tokens,
         thought_tokens,
         cost_usd,
         is_fallback: None,
@@ -1199,5 +1224,27 @@ mod tests {
         assert_eq!(activity.tools.len(), 1);
         assert_eq!(activity.tools[0].status, ToolStatus::Ok);
         assert_eq!(activity.tools[0].result.as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn extract_usage_from_result_estima_custo_para_gemini_4_hydrogen_com_cached_read_tokens() {
+        let payload = json!({
+            "stopReason": "end_turn",
+            "usage": {
+                "inputTokens": 12760,
+                "outputTokens": 238,
+                "cachedReadTokens": 8393,
+                "cachedWriteTokens": 0,
+                "thoughtTokens": 145
+            }
+        });
+        let usage = extract_usage_from_result(&payload, None, "gemini-4-hydrogen-medium")
+            .expect("usage deve ser extraído");
+        assert_eq!(usage.input_tokens, Some(12760));
+        assert_eq!(usage.output_tokens, Some(238));
+        assert_eq!(usage.cached_input_tokens, Some(8393));
+        assert_eq!(usage.cache_write_tokens, Some(0));
+        assert_eq!(usage.thought_tokens, Some(145));
+        assert!(usage.cost_usd.is_some_and(|c| c > 0.0), "cost_usd={:?}", usage.cost_usd);
     }
 }
