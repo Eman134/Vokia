@@ -55,7 +55,7 @@ export function screenDestination(
 ): ScreenDestination {
   if (page === CONVERSATIONS_PAGE && screen.kind === 'thread') {
     return {
-      to: mention ?? threadAssignee ?? DEFAULT_RECIPIENT,
+      to: mention ?? screen.agent ?? threadAssignee ?? DEFAULT_RECIPIENT,
       channelId: null,
       itemId: screen.itemId,
     }
@@ -89,8 +89,14 @@ export function screenPlaceholder(
 ): string | undefined {
   if (page !== CONVERSATIONS_PAGE) return undefined
   if (screen.kind === 'thread') {
+    if (screen.agent) {
+      return threadTitle
+        ? `Mensagem para ${nameOf(screen.agent)} em ${threadTitle}`
+        : `Mensagem para ${nameOf(screen.agent)} na thread`
+    }
     return threadTitle ? `Mensagem na thread de ${threadTitle}` : 'Mensagem na thread'
   }
+  if (screen.kind === 'logs') return 'Canal #logs (somente leitura)'
   if (screen.kind === 'agent') return `Mensagem para ${nameOf(screen.agent)}`
   if (screen.kind === 'copy') return `Mensagem para ${nameOf(screen.baseAgent)} · Cópia ${screen.number}`
   const channel = screenChannel(page, screen, channels)

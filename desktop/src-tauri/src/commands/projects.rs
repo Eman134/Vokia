@@ -180,21 +180,37 @@ pub(crate) async fn delete_project_exec(
     Ok(())
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClearConversationArgs {
+    pub project_id: i64,
+    #[serde(default)]
+    pub scope: Option<crate::db::ClearConversationScope>,
+}
+
 pub(crate) async fn clear_conversation_exec(
     app: &AppHandle,
-    args: ProjectIdArgs,
+    args: ClearConversationArgs,
 ) -> Result<(), String> {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
     let app_state = app.state::<AppState>();
-    if orchestrator::has_flow(&app_state, Some(args.project_id))
-        .map_err(|error| error.to_string())?
+    let is_all = args
+        .scope
+        .as_ref()
+        .and_then(|s| s.kind.as_deref())
+        .is_none_or(|k| k == "all");
+    if is_all
+        && orchestrator::has_flow(&app_state, Some(args.project_id))
+            .map_err(|error| error.to_string())?
     {
         return Err(DbError::ProjectBusy.to_string());
     }
-    stop_project_work(&app_state, args.project_id).await;
+    if is_all {
+        stop_project_work(&app_state, args.project_id).await;
+    }
     let review_snapshot = orchestrator::capture_review_snapshot(db, args.project_id);
-    db.clear_messages(args.project_id)
+    db.clear_messages_scoped(args.project_id, args.scope.as_ref())
         .map_err(|error| error.to_string())?;
     if !review_snapshot.messages.is_empty() || !review_snapshot.work_steps.is_empty() {
         orchestrator::schedule_memory_review(
@@ -206,8 +222,10 @@ pub(crate) async fn clear_conversation_exec(
             Some(review_snapshot),
         );
     }
-    attachments::purge_sent_files(app, db, args.project_id);
-    orchestrator::forget_project(&app_state, args.project_id);
+    if is_all {
+        attachments::purge_sent_files(app, db, args.project_id);
+        orchestrator::forget_project(&app_state, args.project_id);
+    }
     Ok(())
 }
 
@@ -309,8 +327,12 @@ pub async fn delete_project(app: AppHandle, id: i64) -> Result<(), ProjectError>
 }
 
 #[tauri::command]
-pub async fn clear_conversation(app: AppHandle, project_id: i64) -> Result<(), String> {
-    clear_conversation_exec(&app, ProjectIdArgs { project_id }).await
+pub async fn clear_conversation(
+    app: AppHandle,
+    project_id: i64,
+    scope: Option<crate::db::ClearConversationScope>,
+) -> Result<(), String> {
+    clear_conversation_exec(&app, ClearConversationArgs { project_id, scope }).await
 }
 
 #[tauri::command]

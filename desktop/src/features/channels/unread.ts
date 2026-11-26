@@ -1,6 +1,6 @@
 import type { Agent, VokiaDecision, VokiaPermission } from '../team/events'
 import type { ConversationScreen, FeedEntry } from '../team/timeline'
-import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from './channelRouting'
+import { GENERAL_CHANNEL_NAME, LOGS_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from './channelRouting'
 
 export type UnreadKey = string
 export type UnreadState = 'read' | 'unread' | 'decision'
@@ -18,6 +18,8 @@ export function unreadKeyOf(screen: ConversationScreen): UnreadKey | null {
       return screen.channel === GENERAL_CHANNEL_NAME ? GENERAL_CHANNEL_NAME : String(screen.channel)
     case 'triage':
       return TRIAGE_CHANNEL_NAME
+    case 'logs':
+      return LOGS_CHANNEL_NAME
     case 'thread':
       return threadUnreadKey(screen.itemId)
     case 'all':

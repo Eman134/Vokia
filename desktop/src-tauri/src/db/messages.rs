@@ -19,8 +19,27 @@ pub struct StoredTaskResult {
     pub agents: Vec<Agent>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearConversationScope {
+    pub kind: Option<String>,
+    pub agent: Option<String>,
+    pub channel_id: Option<i64>,
+    pub item_id: Option<String>,
+    #[serde(default)]
+    pub item_ids: Vec<String>,
+}
+
 impl Db {
     pub fn clear_messages(&self, project_id: i64) -> Result<(), DbError> {
+        self.clear_messages_scoped(project_id, None)
+    }
+
+    pub fn clear_messages_scoped(
+        &self,
+        project_id: i64,
+        scope: Option<&ClearConversationScope>,
+    ) -> Result<(), DbError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let exists: bool = tx.query_row(
@@ -31,15 +50,76 @@ impl Db {
         if !exists {
             return Err(DbError::ProjectNotFound(project_id));
         }
-        tx.execute("DELETE FROM messages WHERE project_id = ?1", [project_id])?;
-        tx.execute(
-            "DELETE FROM agent_sessions WHERE project_id = ?1",
-            [project_id],
-        )?;
-        tx.execute(
-            "DELETE FROM turn_work_steps WHERE project_id = ?1",
-            [project_id],
-        )?;
+        let kind = scope.and_then(|s| s.kind.as_deref()).unwrap_or("all");
+        match kind {
+            "agent" | "copy" => {
+                if let Some(agent) = scope.and_then(|s| s.agent.as_deref()) {
+                    tx.execute(
+                        "DELETE FROM messages WHERE project_id = ?1 AND channel_id IS NULL AND (\"from\" = ?2 OR \"to\" = ?2)",
+                        params![project_id, agent],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM agent_sessions WHERE project_id = ?1 AND agent = ?2",
+                        params![project_id, agent],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM turn_work_steps WHERE project_id = ?1 AND agent = ?2",
+                        params![project_id, agent],
+                    )?;
+                }
+            }
+            "general" => {
+                tx.execute(
+                    "DELETE FROM messages WHERE project_id = ?1 AND channel_id IS NULL",
+                    [project_id],
+                )?;
+            }
+            "channel" => {
+                if let Some(channel_id) = scope.and_then(|s| s.channel_id) {
+                    tx.execute(
+                        "DELETE FROM messages WHERE project_id = ?1 AND channel_id = ?2",
+                        params![project_id, channel_id],
+                    )?;
+                }
+            }
+            "thread" => {
+                if let Some(item_id) = scope.and_then(|s| s.item_id.as_deref()) {
+                    tx.execute(
+                        "DELETE FROM messages WHERE project_id = ?1 AND item_id = ?2",
+                        params![project_id, item_id],
+                    )?;
+                    tx.execute(
+                        "DELETE FROM turn_work_steps WHERE project_id = ?1 AND item_id = ?2",
+                        params![project_id, item_id],
+                    )?;
+                }
+            }
+            "triage" => {
+                if let Some(item_ids) = scope.map(|s| &s.item_ids) {
+                    for item_id in item_ids {
+                        tx.execute(
+                            "DELETE FROM messages WHERE project_id = ?1 AND item_id = ?2",
+                            params![project_id, item_id],
+                        )?;
+                        tx.execute(
+                            "DELETE FROM turn_work_steps WHERE project_id = ?1 AND item_id = ?2",
+                            params![project_id, item_id],
+                        )?;
+                    }
+                }
+            }
+            _ => {
+                tx.execute("DELETE FROM messages WHERE project_id = ?1", [project_id])?;
+                tx.execute(
+                    "DELETE FROM agent_sessions WHERE project_id = ?1",
+                    [project_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM turn_work_steps WHERE project_id = ?1",
+                    [project_id],
+                )?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }

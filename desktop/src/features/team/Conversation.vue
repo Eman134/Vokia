@@ -31,7 +31,7 @@ import { PORTRAIT_SIZES } from './portraitArt'
 import { useRoster } from './useRoster'
 import { useChannels } from '../channels/useChannels'
 import { useThreads } from './useThreads'
-import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME, LOGS_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
 import { useBacklog } from '../backlog/useBacklog'
 import VokiaMascot from '../brand/VokiaMascot.vue'
 import { useProjects } from '../projects/useProjects'
@@ -73,7 +73,7 @@ function triageRole(count: number): string {
 }
 const CLEAR_CONVERSATION_LABEL = 'Limpar conversa'
 const CLEAR_CONVERSATION_TITLE = 'Limpar conversa?'
-const CLEAR_CONVERSATION_MESSAGE = 'Apaga todas as mensagens desta conversa.'
+const CLEAR_CONVERSATION_MESSAGE = 'Apaga apenas as mensagens desta conversa e compacta o contexto.'
 const CLEAR_BUTTON_CLASSES = `flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-2 hover:text-ink ${INK_FOCUS_CLASSES}`
 const CLEAR_POPUP_CLASSES =
   'absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-paper'
@@ -120,6 +120,9 @@ const screenLabel = computed(() => {
   if (feed.screen.kind === 'triage') {
     return `#${TRIAGE_CHANNEL_NAME}`
   }
+  if (feed.screen.kind === 'logs') {
+    return `#${LOGS_CHANNEL_NAME}`
+  }
   return ALL_SCREEN_LABEL
 })
 const screenRole = computed(() => {
@@ -130,8 +133,12 @@ const screenRole = computed(() => {
     }
     return roster.profileOf(feed.screen.baseAgent)?.role ?? ''
   }
-  if (feed.screen.kind === 'thread') return activeThread.value?.column ?? ''
+  if (feed.screen.kind === 'thread') {
+    const col = activeThread.value?.column ?? ''
+    return feed.screen.agent ? `${col} · ${agentName(feed.screen.agent)}` : col
+  }
   if (feed.screen.kind === 'triage') return triageRole(backlog.triagingIds.size)
+  if (feed.screen.kind === 'logs') return 'Erros e logs do sistema'
   return ''
 })
 
@@ -179,6 +186,14 @@ const quietGroups = computed(() => {
     .map((group) => ({ ...group, entries: group.entries.filter((entry) => !liveIds.has(entry.agent.id)) }))
     .filter((group) => group.entries.length > 0)
 })
+const hasVisibleElements = computed(
+  () =>
+    feed.timeline.length > 0 ||
+    feed.permissions.length > 0 ||
+    scopedLiveRuns.value.length > 0 ||
+    quietGroups.value.length > 0 ||
+    (feed.screen.kind === 'triage' && backlog.triagingIds.size > 0),
+)
 const pendingLabel = computed(() => formatPendingStatusLabel(pendingGroups.value))
 const scroller = ref<HTMLElement | null>(null)
 const { onScroll, followEnd } = useFollowEnd(scroller)
@@ -339,7 +354,7 @@ watch(
             <UiHandLine :class="[TAB_MARK, handReveal(aba === 'fila')]" />
           </button>
         </div>
-        <div v-if="feed.feed.length > 0" ref="clearWrap" class="relative flex items-center">
+        <div v-if="feed.timeline.length > 0" ref="clearWrap" class="relative flex items-center">
           <button
             type="button"
             :class="CLEAR_BUTTON_CLASSES"
@@ -391,19 +406,61 @@ watch(
     <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <template v-if="!filaAberta">
       <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
+      <div
+        v-if="feed.screen.kind === 'thread' && activeThread && activeThread.participants.length > 0"
+        class="mb-3 flex flex-wrap items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5"
+        aria-label="Instâncias na thread"
+        data-testid="thread-instances-bar"
+      >
+        <button
+          type="button"
+          class="cursor-pointer rounded-full border px-2 py-0.5 text-tiny font-medium transition-colors"
+          :class="!feed.screen.agent ? 'border-ink bg-ink text-bg' : 'border-line bg-surface-2 text-muted hover:text-ink'"
+          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId })"
+        >
+          Todos ({{ activeThread.participants.length }})
+        </button>
+        <button
+          v-for="participant in activeThread.participants"
+          :key="participant"
+          type="button"
+          class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-tiny font-medium transition-colors"
+          :class="
+            feed.screen.agent === participant
+              ? 'border-ink bg-ink text-bg'
+              : 'border-line bg-surface-2 text-ink hover:bg-hover'
+          "
+          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId, agent: participant })"
+        >
+          <AgentPortrait :who="participant" :size="16" />
+          <span>{{ agentName(participant) }}</span>
+          <span
+            v-if="feed.stateOf(participant) === 'thinking' || feed.stateOf(participant) === 'sending'"
+            class="size-1.5 rounded-full bg-ok animate-pulse"
+            aria-hidden="true"
+          />
+        </button>
+        <span
+          v-if="activeThread.exchangeCount > 0"
+          class="ml-auto rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny font-medium text-muted"
+          title="Mensagens entre agentes nesta thread"
+        >
+          ↔ {{ activeThread.exchangeCount }} entre agentes
+        </span>
+      </div>
       <TriageChannelPanel v-if="feed.screen.kind === 'triage'" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
-      <UiEmpty v-else-if="feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE">
+      <UiEmpty v-else-if="!hasVisibleElements && feed.feed.length === 0" class="m-auto" :title="EMPTY_FEED_TITLE">
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
       <UiEmpty
-        v-else-if="feed.timeline.length === 0"
+        v-else-if="!hasVisibleElements"
         class="m-auto"
         :title="EMPTY_SCREEN_TITLE_PREFIX + screenLabel + EMPTY_SCREEN_TITLE_SUFFIX"
       >

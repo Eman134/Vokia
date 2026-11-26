@@ -33,7 +33,7 @@ pub use artifact_documents::{
     ArtifactDetail, ArtifactDocument, ArtifactDocumentPatch, ArtifactSummary, NewArtifactDocument,
 };
 pub use artifact_kinds::{ArtifactKind, ARTIFACT_KINDS};
-pub use messages::StoredTaskResult;
+pub use messages::{ClearConversationScope, StoredTaskResult};
 pub use permission_rules::{root_command, PermissionRule};
 pub use backlog::{
     board_column, is_stage_finished, is_unstarted, AgentActor, BacklogItem, BacklogSnapshot, CardOperation, CardOutcome, CardResponsible,

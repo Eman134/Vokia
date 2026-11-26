@@ -319,7 +319,8 @@ export const useRequests = defineStore('requests', () => {
     return project.id
   }
 
-  let nextImmediateId = -1
+  // IDs imediatos são inteiros positivos altos para nunca colidir com os IDs do SQLite nem violar u64 no backend.
+  let nextImmediateId = Date.now() * 1000
 
   async function send(
     text: string,
@@ -366,7 +367,7 @@ export const useRequests = defineStore('requests', () => {
 
     // Ember nunca entra em fila; e mensagens com force === 'now' furam a fila e entram imediatamente (steer).
     if (recipient === DEFAULT_RECIPIENT || options?.force === 'now') {
-      const immediateId = nextImmediateId--
+      const immediateId = nextImmediateId++
       const directRequest: QueuedRequest = {
         id: immediateId,
         text,

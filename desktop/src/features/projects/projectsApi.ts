@@ -137,8 +137,16 @@ export function deleteProject(id: number): Promise<void> {
   return invoke<void>(DELETE_PROJECT_COMMAND, { id })
 }
 
-export function clearConversation(projectId: number): Promise<void> {
-  return invoke<void>(CLEAR_CONVERSATION_COMMAND, { projectId })
+export interface ClearConversationScope {
+  kind: 'all' | 'agent' | 'copy' | 'channel' | 'general' | 'thread' | 'triage'
+  agent?: string
+  channelId?: number
+  itemId?: string
+  itemIds?: string[]
+}
+
+export function clearConversation(projectId: number, scope?: ClearConversationScope): Promise<void> {
+  return invoke<void>(CLEAR_CONVERSATION_COMMAND, { projectId, scope: scope ?? null })
 }
 
 export function pinProject(id: number | null): Promise<void> {

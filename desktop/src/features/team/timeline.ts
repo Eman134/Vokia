@@ -35,8 +35,9 @@ export type ConversationScreen =
   | { kind: 'agent'; agent: Agent }
   | { kind: 'copy'; copyId: string; baseAgent: Agent; number: number; itemId?: string | null; itemTitle?: string | null }
   | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
-  | { kind: 'thread'; itemId: string }
+  | { kind: 'thread'; itemId: string; agent?: Agent }
   | { kind: 'triage' }
+  | { kind: 'logs' }
 
 export const ALL_SCREEN: ConversationScreen = { kind: 'all' }
 export const ALL_SCREEN_LABEL = 'Todos'
@@ -130,10 +131,14 @@ export function screenEntries(
       return feed.filter((entry) => entryInvolves(entry, screen.copyId) && !entryHasChannel(entry, channels))
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
-    case 'thread':
-      return entriesOfItems(feed, new Set([screen.itemId]), threadAgents)
+    case 'thread': {
+      const items = entriesOfItems(feed, new Set([screen.itemId]), threadAgents)
+      return screen.agent ? items.filter((entry) => entryInvolves(entry, screen.agent!)) : items
+    }
     case 'triage':
       return entriesOfItems(feed, triagingIds, threadAgents)
+    case 'logs':
+      return feed.filter((entry) => entry.type === 'error' || entry.type === 'usage-limit-failed')
   }
 }
 
@@ -154,11 +159,11 @@ function entryInChannel(entry: FeedEntry, target: number | typeof GENERAL_CHANNE
   return target === GENERAL_CHANNEL_NAME ? channel === null : channel === target
 }
 
-export function buildTimeline(feed: readonly FeedEntry[]): TimelineItem[] {
+export function buildTimeline(feed: readonly FeedEntry[], includeErrors = false): TimelineItem[] {
   const items: TimelineItem[] = []
   feed.forEach((entry, index) => {
-    // Erros vão para o popup da Actionbar, não para a conversa.
-    if (entry.type === 'error') return
+    // Erros vão para o canal #logs e popup da Actionbar, não para a conversa comum.
+    if (entry.type === 'error' && !includeErrors) return
     const last = items.at(-1)
     if (entry.type === 'permission-result' && isAutomaticPermission(entry)) {
       if (last?.type === 'permissions' && last.agent === entry.agent) {

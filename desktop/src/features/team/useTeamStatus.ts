@@ -19,6 +19,7 @@ import {
 } from './status'
 
 const DONE_TICK_MS = 1000
+const ERROR_HOLD_MS = 10_000
 
 export const useTeamStatus = defineStore('teamStatus', () => {
   const feed = useFeed()
@@ -29,14 +30,37 @@ export const useTeamStatus = defineStore('teamStatus', () => {
   const decisions = useDecisions()
   const now = ref(Date.now())
   const doneUntil = ref(0)
+  const errorUntil = ref(0)
   let doneTimer: ReturnType<typeof setInterval> | null = null
+  let errorTimer: ReturnType<typeof setTimeout> | null = null
 
   // Mensagens do usuário também entram no feed; só erro ou resposta de agente mudam o estado.
   const outcomes = computed(() =>
     feed.feed.filter((entry) => entry.type === 'error' || (entry.type === 'message' && entry.from !== 'user')),
   )
   const lastOutcome = computed(() => outcomes.value.at(-1))
-  const lastIsError = computed(() => lastOutcome.value?.type === 'error')
+  const lastIsError = computed(() => lastOutcome.value?.type === 'error' && now.value < errorUntil.value)
+
+  watch(lastOutcome, (next) => {
+    if (errorTimer !== null) {
+      clearTimeout(errorTimer)
+      errorTimer = null
+    }
+    if (next?.type === 'error') {
+      now.value = Date.now()
+      errorUntil.value = now.value + ERROR_HOLD_MS
+      errorTimer = setTimeout(() => {
+        now.value = Date.now()
+        errorTimer = null
+      }, ERROR_HOLD_MS)
+    } else {
+      errorUntil.value = 0
+    }
+  })
+
+  onScopeDispose(() => {
+    if (errorTimer !== null) clearTimeout(errorTimer)
+  })
   const allAgentsPaused = computed(
     () => roster.agents.length > 0 && roster.agents.every((agent) => control.isPaused(agent.id)),
   )

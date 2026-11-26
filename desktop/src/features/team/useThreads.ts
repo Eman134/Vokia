@@ -6,6 +6,7 @@ import { useDecisions } from '../decisions/useDecisions'
 import { useProjects } from '../projects/useProjects'
 import type { Agent } from './events'
 import { showsAsThread, threadStatus, type ThreadStatus } from './threadStatus'
+import { isBetweenAgents } from './timeline'
 import { useFeed } from './useFeed'
 
 export interface TaskThread {
@@ -17,6 +18,7 @@ export interface TaskThread {
   participants: Agent[]
   lastActivity: number
   messageCount: number
+  exchangeCount: number
   isTriaging?: boolean
   status: ThreadStatus
 }
@@ -29,11 +31,11 @@ export const useThreads = defineStore('threads', () => {
   const projects = useProjects()
 
   const threads = computed<TaskThread[]>(() => {
-    const byItem = new Map<string, { participants: Set<Agent>; lastActivity: number; messageCount: number }>()
+    const byItem = new Map<string, { participants: Set<Agent>; lastActivity: number; messageCount: number; exchangeCount: number }>()
     const ensureBucket = (itemId: string) => {
       let bucket = byItem.get(itemId)
       if (!bucket) {
-        bucket = { participants: new Set<Agent>(), lastActivity: 0, messageCount: 0 }
+        bucket = { participants: new Set<Agent>(), lastActivity: 0, messageCount: 0, exchangeCount: 0 }
         byItem.set(itemId, bucket)
       }
       return bucket
@@ -45,6 +47,7 @@ export const useThreads = defineStore('threads', () => {
       bucket.messageCount += 1
       if (entry.time > bucket.lastActivity) bucket.lastActivity = entry.time
       if (entry.type === 'message') {
+        if (isBetweenAgents(entry)) bucket.exchangeCount += 1
         if (entry.from !== 'user') bucket.participants.add(entry.from)
         if (entry.to !== 'user') bucket.participants.add(entry.to)
       } else {
@@ -85,6 +88,7 @@ export const useThreads = defineStore('threads', () => {
             participants,
             lastActivity: bucket?.lastActivity ?? 0,
             messageCount: bucket?.messageCount ?? 0,
+            exchangeCount: bucket?.exchangeCount ?? 0,
             isTriaging,
             status,
           },

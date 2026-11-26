@@ -21,7 +21,7 @@ import { GENERAL_CHANNEL_NAME } from '../channels/channelRouting'
 import { answerPermission, type AgentProfile } from './teamApi'
 import { useDecisions } from '../decisions/useDecisions'
 import { useAgentControl } from '../panel/useAgentControl'
-import { clearConversation, fetchDbProblem, loadHistory } from '../projects/projectsApi'
+import { clearConversation, fetchDbProblem, loadHistory, type ClearConversationScope } from '../projects/projectsApi'
 import { useProjects } from '../projects/useProjects'
 import { useProviders } from '../providers/useProviders'
 import { pauseNotice } from '../panel/nowCopy'
@@ -153,7 +153,7 @@ export const useFeed = defineStore('feed', () => {
       return buildTimeline(screenEntries(feed.value, current, channels.channels, activeAgentsForItems(triagingIds), triagingIds))
     }
     const threadAgents = current.kind === 'thread' ? activeAgentsForItems(new Set([current.itemId])) : undefined
-    return buildTimeline(screenEntries(feed.value, current, channels.channels, threadAgents))
+    return buildTimeline(screenEntries(feed.value, current, channels.channels, threadAgents), current.kind === 'logs')
   })
 
   async function restoreHistory(): Promise<void> {
@@ -181,10 +181,33 @@ export const useFeed = defineStore('feed', () => {
     if (project === null) {
       return
     }
-    await clearConversation(project.id)
-    feed.value = []
-    useConsole().forgetProject(project.id)
-    useTurnPlans().forgetProject(project.id)
+    const current = screen.value
+    const triagingIds = current.kind === 'triage' ? useBacklog().triagingIds : new Set<string>()
+    let scope: ClearConversationScope = { kind: 'all' }
+    if (current.kind === 'agent') {
+      scope = { kind: 'agent', agent: current.agent }
+    } else if (current.kind === 'copy') {
+      scope = { kind: 'copy', agent: current.copyId }
+    } else if (current.kind === 'channel') {
+      scope =
+        current.channel === GENERAL_CHANNEL_NAME
+          ? { kind: 'general' }
+          : { kind: 'channel', channelId: current.channel }
+    } else if (current.kind === 'thread') {
+      scope = { kind: 'thread', itemId: current.itemId }
+    } else if (current.kind === 'triage') {
+      scope = { kind: 'triage', itemIds: [...triagingIds] }
+    }
+    await clearConversation(project.id, scope)
+    if (scope.kind === 'all') {
+      feed.value = []
+      useConsole().forgetProject(project.id)
+      useTurnPlans().forgetProject(project.id)
+      return
+    }
+    const threadAgents = current.kind === 'thread' ? activeAgentsForItems(new Set([current.itemId])) : current.kind === 'triage' ? activeAgentsForItems(triagingIds) : undefined
+    const toRemove = new Set(screenEntries(feed.value, current, channels.channels, threadAgents, triagingIds))
+    feed.value = feed.value.filter((entry) => !toRemove.has(entry))
   }
 
   async function restorePauses(): Promise<void> {

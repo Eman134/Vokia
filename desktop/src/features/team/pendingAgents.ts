@@ -61,6 +61,9 @@ export function isAgentInScreen(
       return channel?.members.includes(agentId) ?? false
     }
     case 'thread': {
+      if (screen.agent) {
+        return screen.agent === agentId
+      }
       if (context.agentItems !== undefined) {
         return context.agentItems[agentId] === screen.itemId
       }
@@ -73,6 +76,8 @@ export function isAgentInScreen(
       const itemId = context.agentItems?.[agentId]
       return itemId !== undefined && (context.triagingIds?.has(itemId) ?? false)
     }
+    case 'logs':
+      return false
   }
 }
 

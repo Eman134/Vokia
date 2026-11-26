@@ -4,7 +4,7 @@ import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import AgentPicker from '../agents/AgentPicker.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
-import { splitThreads, type ThreadStatus } from './threadStatus'
+import { categorizeThreads, type ThreadCategoryKey, type ThreadStatus } from './threadStatus'
 import { useRoster } from './useRoster'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
@@ -12,7 +12,8 @@ import { useThreads } from './useThreads'
 import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import { useChannels } from '../channels/useChannels'
-import { GENERAL_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
+import { GENERAL_CHANNEL_NAME, LOGS_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
+import { agentName } from './agents'
 import UnreadDot from '../channels/UnreadDot.vue'
 import type { UnreadState } from '../channels/unread'
 import { useUnread } from '../channels/useUnread'
@@ -31,18 +32,24 @@ import UiHandDivider from '../../ui/UiHandDivider.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { HAND_DRAWN_RADIUS, HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
-import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const TRIAGE_SCREEN: ConversationScreen = { kind: 'triage' }
+const LOGS_SCREEN: ConversationScreen = { kind: 'logs' }
 const OPEN_CARD_LABEL = 'Abrir task'
 const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
 const OPEN_CARD_ICON_SIZE = 13
 const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
 const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
+const GENERAL_ICON_PATH =
+  'M2.3 4.2 Q7 2.8 11.4 4.1 Q12.3 7.2 11.2 9.8 Q7.8 10.6 5.2 10.2 L3.1 12.1 Q3.4 10.5 3.3 9.7 Q1.9 7.2 2.3 4.2 M12.2 6.5 Q14.1 7.2 13.9 9.7 Q13.8 11.5 12.6 12.1 L13.1 13.7 Q11.7 12.9 10.8 12.5 Q9.2 12.6 8.1 11.8'
+const TRIAGE_ICON_PATH =
+  'M2.4 3.4 Q8 2.8 13.6 3.5 Q11.4 6.6 9.5 8.8 Q9.3 11.2 9.4 13.3 Q8 13.9 6.6 13.1 Q6.7 10.9 6.5 8.8 Q4.5 6.5 2.4 3.4 M7.9 1.6 Q8.1 2.2 7.8 2.8'
+const LOGS_ICON_PATH =
+  'M2.6 3.3 Q8 2.7 13.4 3.4 Q13.9 8 13.3 12.7 Q8 13.3 2.7 12.6 Q2.1 8 2.6 3.3 M4.6 6.1 Q5.7 7 6.5 7.4 Q5.5 8.1 4.5 8.9 M7.6 8.9 Q9.4 8.7 11.2 9 M4.7 10.8 Q7.6 10.5 10.6 10.9'
 const PANEL_CLASSES =
-  `relative flex min-h-0 w-full shrink-0 flex-col overflow-y-auto p-1.5 max-md:max-h-[45vh] md:w-56 md:py-2 md:pl-1.5 md:pr-3 lg:w-64 xl:w-72 ${HIDDEN_SCROLLBAR_CLASSES}`
+  'relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden p-1.5 max-md:max-h-[45vh] md:w-56 md:py-2 md:pl-1.5 md:pr-3 lg:w-64 xl:w-72'
 const QUEUE_BADGE_CLASSES =
   'absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-accent-soft px-1 text-tiny font-semibold text-accent'
 const MENTION_LABEL = 'Mencionar'
@@ -55,7 +62,7 @@ const SELECTED_TEXT_CLASSES = 'text-ink-pen'
 const UNSELECTED_CLASSES = 'hover:bg-surface-2'
 const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
 const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-2 w-[calc(100%-2.75rem)]`
-const CHANNEL_CLASSES = `relative flex w-full cursor-pointer items-center rounded-md py-1 pl-2 pr-7 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
+const CHANNEL_CLASSES = `relative flex w-full min-w-0 cursor-pointer items-center overflow-hidden rounded-md py-1 pl-2 pr-7 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
 const THREAD_CARD_BUTTON_CLASSES =
   `absolute right-1 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-1.5 rounded-md border border-line px-2 py-1 text-left transition-colors hover:bg-surface-2 ${INK_FOCUS_CLASSES}`
@@ -64,7 +71,6 @@ const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_D
 const COPY_CONNECTOR_PATH = 'M5 3 C4.6 10 4.8 16 5.6 19.2 C8.5 20 13 19.7 17 19.4'
 const COPY_THINKING_DOT_CLASSES = 'size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none'
 const THREADS_LABEL = 'Threads'
-const DONE_THREADS_LABEL = 'Concluídas'
 const THREAD_PORTRAIT_SIZE = 16
 const THREAD_DOT: Partial<Record<ThreadStatus, { classes: string; label: string }>> = {
   working: { classes: 'bg-ok motion-safe:animate-pulse', label: 'trabalhando' },
@@ -154,12 +160,29 @@ function isCopyThinking(copyId: string): boolean {
 
 const threads = useThreads()
 const unread = useUnread()
-const doneThreadsOpen = ref(false)
-const splitList = computed(() => splitThreads(threads.threads))
-// A thread aberta nunca fica escondida atrás do grupo recolhido.
-const showsDoneThreads = computed(
-  () => doneThreadsOpen.value || splitList.value.done.some((thread) => threadShown(thread.itemId)),
+const sidebarTab = ref<'canais' | 'agentes'>(
+  feed.screen.kind === 'agent' || feed.screen.kind === 'copy' ? 'agentes' : 'canais',
 )
+watch(
+  () => feed.screen.kind,
+  (kind) => {
+    if (kind === 'agent' || kind === 'copy') sidebarTab.value = 'agentes'
+    else if (kind === 'channel' || kind === 'thread' || kind === 'triage') sidebarTab.value = 'canais'
+  },
+)
+const threadCategories = computed(() => categorizeThreads(threads.threads))
+const categoryOpenOverrides = ref<Partial<Record<ThreadCategoryKey, boolean>>>({})
+
+function isCategoryOpen(category: { key: ThreadCategoryKey; defaultOpen: boolean; items: { itemId: string }[] }): boolean {
+  const override = categoryOpenOverrides.value[category.key]
+  if (override !== undefined) return override
+  if (category.items.some((thread) => threadShown(thread.itemId))) return true
+  return category.defaultOpen
+}
+
+function toggleCategory(key: ThreadCategoryKey, currentOpen: boolean): void {
+  categoryOpenOverrides.value = { ...categoryOpenOverrides.value, [key]: !currentOpen }
+}
 
 // O item aberto já está à vista: a bolinha só aparece nos outros.
 function indicatorOf(screen: ConversationScreen, shown: boolean): UnreadState {
@@ -168,6 +191,18 @@ function indicatorOf(screen: ConversationScreen, shown: boolean): UnreadState {
 
 function triageShown(): boolean {
   return feed.screen.kind === 'triage'
+}
+
+function logsShown(): boolean {
+  return feed.screen.kind === 'logs'
+}
+
+const errorLogCount = computed(() =>
+  feed.feed.filter((entry) => entry.type === 'error' || entry.type === 'usage-limit-failed').length,
+)
+
+function threadAgentShown(itemId: string, agent: Agent): boolean {
+  return feed.screen.kind === 'thread' && feed.screen.itemId === itemId && feed.screen.agent === agent
 }
 
 function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
@@ -180,6 +215,11 @@ function threadShown(itemId: string): boolean {
 
 function openThreadCard(itemId: string): void {
   backlog.open(itemId)
+}
+
+function shortThreadId(thread: { itemId: string; publicId?: string }): string | null {
+  const raw = (thread.publicId ?? thread.itemId).trim()
+  return raw.length > 0 && raw.length <= 12 ? raw : null
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
@@ -223,7 +263,37 @@ function closeChannelDialog(): void {
       <span aria-hidden="true">{{ stripCollapsed ? '▾' : '▴' }}</span>
     </button>
     <UiHandDivider class="absolute inset-y-0 right-0 h-full max-md:hidden" />
-    <div :class="['flex min-h-0 flex-col', stripCollapsed && 'max-md:hidden']">
+    <div :class="['flex min-h-0 flex-1 flex-col', stripCollapsed && 'max-md:hidden']">
+      <div
+        role="tablist"
+        aria-label="Alternar entre canais e agentes"
+        class="mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-md border border-line bg-surface-2 p-0.5"
+      >
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="sidebarTab === 'canais'"
+          class="cursor-pointer rounded-sm px-2 py-1 text-tiny font-semibold transition-colors"
+          :class="sidebarTab === 'canais' ? 'bg-surface text-ink shadow-seg' : 'text-muted hover:text-ink'"
+          data-testid="sidebar-tab-canais"
+          @click="sidebarTab = 'canais'"
+        >
+          Canais / Threads
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="sidebarTab === 'agentes'"
+          class="cursor-pointer rounded-sm px-2 py-1 text-tiny font-semibold transition-colors"
+          :class="sidebarTab === 'agentes' ? 'bg-surface text-ink shadow-seg' : 'text-muted hover:text-ink'"
+          data-testid="sidebar-tab-agentes"
+          @click="sidebarTab = 'agentes'"
+        >
+          Agentes ({{ roster.agents.length }})
+        </button>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+      <template v-if="sidebarTab === 'canais'">
       <div class="mb-1 flex flex-wrap items-center justify-between gap-1.5">
         <h2 class="text-small font-semibold text-muted">Canais</h2>
         <UiChip kind="add" :label="`+ ${NEW_CHANNEL_LABEL}`" @press="openChannelDialog()" />
@@ -232,12 +302,15 @@ function closeChannelDialog(): void {
         <li>
           <button
             type="button"
-            :class="[CHANNEL_CLASSES, channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+            :class="[CHANNEL_CLASSES, 'gap-1.5', channelShown(GENERAL_CHANNEL_NAME) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
             :aria-label="`Abrir canal #${GENERAL_CHANNEL_NAME}`"
             :aria-pressed="channelShown(GENERAL_CHANNEL_NAME)"
             @click="feed.showScreen({ kind: 'channel', channel: GENERAL_CHANNEL_NAME })"
           >
-            #{{ GENERAL_CHANNEL_NAME }}
+            <svg viewBox="0 0 16 16" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="GENERAL_ICON_PATH" />
+            </svg>
+            {{ GENERAL_CHANNEL_NAME }}
             <UnreadDot
               :state="indicatorOf({ kind: 'channel', channel: GENERAL_CHANNEL_NAME }, channelShown(GENERAL_CHANNEL_NAME))"
               class="ml-auto"
@@ -253,10 +326,31 @@ function closeChannelDialog(): void {
             :aria-pressed="triageShown()"
             @click="feed.showScreen(TRIAGE_SCREEN)"
           >
-            <UiIcon :path="HOURGLASS_ICON_PATH" class="h-3.5 w-3.5 shrink-0" />
+            <svg viewBox="0 0 16 16" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="TRIAGE_ICON_PATH" />
+            </svg>
             {{ TRIAGE_CHANNEL_NAME }}
             <UnreadDot :state="indicatorOf(TRIAGE_SCREEN, triageShown())" class="ml-auto" />
             <UiHandLine v-if="triageShown()" draw :class="CHANNEL_MARK_CLASSES" />
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            :class="[CHANNEL_CLASSES, 'gap-1.5', logsShown() ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+            aria-label="Abrir canal #logs"
+            :aria-pressed="logsShown()"
+            data-testid="channel-logs"
+            @click="feed.showScreen(LOGS_SCREEN)"
+          >
+            <svg viewBox="0 0 16 16" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path :d="LOGS_ICON_PATH" />
+            </svg>
+            <span class="truncate">{{ LOGS_CHANNEL_NAME }}</span>
+            <span v-if="errorLogCount > 0" class="ml-auto rounded-full bg-danger/15 px-1.5 text-tiny font-semibold text-danger tabular-nums">
+              {{ errorLogCount }}
+            </span>
+            <UiHandLine v-if="logsShown()" draw :class="CHANNEL_MARK_CLASSES" />
           </button>
         </li>
         <li v-for="channel in channels.channels" :key="channel.id" class="group relative">
@@ -274,75 +368,63 @@ function closeChannelDialog(): void {
           <ChannelMenu :name="channel.name" @edit="openChannelDialog(channel)" @remove="removeChannel(channel)" />
         </li>
       </ul>
-      <template v-if="threads.threads.length > 0">
+      <template v-if="threadCategories.length > 0">
         <h2 class="mb-1 mt-0.5 text-small font-semibold text-muted">{{ THREADS_LABEL }}</h2>
-        <ul class="mb-1.5 flex flex-col gap-0.5">
-          <li v-for="thread in splitList.active" :key="thread.itemId" class="group relative">
-            <button
-              type="button"
-              :class="[CHANNEL_CLASSES, 'flex items-center gap-1.5', threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
-              :aria-label="`Abrir thread ${thread.title}`"
-              :aria-pressed="threadShown(thread.itemId)"
-              @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
-            >
-              <UiIcon
-                v-if="thread.isTriaging || !thread.assignee"
-                :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
-                :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
-              />
-              <AgentPortrait v-else :who="thread.assignee" :size="THREAD_PORTRAIT_SIZE" class="shrink-0" />
-              <span class="shrink-0 font-mono text-tiny font-semibold text-muted">{{ thread.publicId ?? thread.itemId }}</span>
-              <span class="min-w-0 truncate">{{ thread.title }}</span>
-              <span
-                v-if="THREAD_DOT[thread.status]"
-                class="ml-auto size-1.5 shrink-0 rounded-full"
-                :class="THREAD_DOT[thread.status]?.classes"
-                :title="THREAD_DOT[thread.status]?.label"
-                role="img"
-                :aria-label="THREAD_DOT[thread.status]?.label"
-              />
-              <UnreadDot
-                :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))"
-                :class="THREAD_DOT[thread.status] ? '' : 'ml-auto'"
-              />
-              <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
-            </button>
-            <button
-              type="button"
-              :class="THREAD_CARD_BUTTON_CLASSES"
-              :title="`${OPEN_CARD_LABEL}: ${thread.title}`"
-              :aria-label="`${OPEN_CARD_LABEL}: ${thread.title}`"
-              @click="openThreadCard(thread.itemId)"
-            >
-              <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
-            </button>
-          </li>
-        </ul>
-        <template v-if="splitList.done.length > 0">
+        <div v-for="category in threadCategories" :key="category.key" class="mb-1.5">
           <button
             type="button"
-            class="mb-1 flex w-fit cursor-pointer items-center gap-1 text-small font-semibold text-muted hover:text-ink"
+            class="mb-0.5 flex w-fit cursor-pointer items-center gap-1 text-small font-semibold text-muted hover:text-ink"
             :class="INK_FOCUS_CLASSES"
-            :aria-expanded="showsDoneThreads"
-            aria-controls="done-threads"
-            data-testid="done-threads-toggle"
-            @click="doneThreadsOpen = !doneThreadsOpen"
+            :aria-expanded="isCategoryOpen(category)"
+            :aria-controls="`threads-${category.key}`"
+            :data-testid="`threads-toggle-${category.key}`"
+            @click="toggleCategory(category.key, isCategoryOpen(category))"
           >
-            <span aria-hidden="true">{{ showsDoneThreads ? '▾' : '▸' }}</span>
-            {{ DONE_THREADS_LABEL }} ({{ splitList.done.length }})
+            <span aria-hidden="true">{{ isCategoryOpen(category) ? '▾' : '▸' }}</span>
+            <span>{{ category.label }} ({{ category.items.length }})</span>
           </button>
-          <ul v-show="showsDoneThreads" id="done-threads" class="mb-1.5 flex flex-col gap-0.5">
-            <li v-for="thread in splitList.done" :key="thread.itemId" class="group relative">
+          <ul v-show="isCategoryOpen(category)" :id="`threads-${category.key}`" class="flex flex-col gap-0.5">
+            <li v-for="thread in category.items" :key="`${category.key}-${thread.itemId}`" class="group relative">
               <button
                 type="button"
-                :class="[CHANNEL_CLASSES, 'flex items-center gap-1.5 text-muted', threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES]"
+                :class="[
+                  CHANNEL_CLASSES,
+                  'flex items-center gap-1.5',
+                  category.key === 'done' && 'text-muted',
+                  threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES,
+                ]"
                 :aria-label="`Abrir thread ${thread.title}`"
                 :aria-pressed="threadShown(thread.itemId)"
                 @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
               >
-                <UiIcon :path="THREAD_ICON_PATH" class="h-3.5 w-3.5 shrink-0" />
-                <span class="shrink-0 font-mono text-tiny font-semibold text-muted">{{ thread.publicId ?? thread.itemId }}</span>
-                <span class="min-w-0 truncate">{{ thread.title }}</span>
+                <UiIcon
+                  v-if="thread.isTriaging || !thread.assignee || category.key === 'done'"
+                  :path="thread.isTriaging ? HOURGLASS_ICON_PATH : THREAD_ICON_PATH"
+                  class="h-3.5 w-3.5 shrink-0"
+                />
+                <AgentPortrait v-else :who="thread.assignee" :size="THREAD_PORTRAIT_SIZE" class="shrink-0" />
+                <span v-if="shortThreadId(thread)" class="max-w-16 shrink-0 truncate font-mono text-tiny font-semibold text-muted">{{ shortThreadId(thread) }}</span>
+                <span class="min-w-0 flex-1 truncate">{{ thread.title }}</span>
+                <span
+                  v-if="category.key !== 'done' && thread.exchangeCount > 0"
+                  class="shrink-0 rounded-sm bg-surface-2 px-1 text-[10px] font-medium text-muted tabular-nums"
+                  :title="`${thread.exchangeCount} mensagens entre agentes`"
+                >
+                  ↔{{ thread.exchangeCount }}
+                </span>
+                <span
+                  v-if="category.key !== 'done' && THREAD_DOT[thread.status]"
+                  class="ml-auto size-1.5 shrink-0 rounded-full"
+                  :class="THREAD_DOT[thread.status]?.classes"
+                  :title="THREAD_DOT[thread.status]?.label"
+                  role="img"
+                  :aria-label="THREAD_DOT[thread.status]?.label"
+                />
+                <UnreadDot
+                  v-if="category.key !== 'done'"
+                  :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))"
+                  :class="THREAD_DOT[thread.status] ? '' : 'ml-auto'"
+                />
                 <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
               </button>
               <button
@@ -354,12 +436,33 @@ function closeChannelDialog(): void {
               >
                 <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
               </button>
+              <ul
+                v-if="category.key !== 'done' && (thread.participants.length > 1 || threadShown(thread.itemId)) && thread.participants.length > 0"
+                class="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-line pl-2"
+              >
+                <li v-for="participant in thread.participants" :key="`${thread.itemId}-${participant}`">
+                  <button
+                    type="button"
+                    class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left text-tiny transition-colors"
+                    :class="threadAgentShown(thread.itemId, participant) ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:bg-surface-2 hover:text-ink'"
+                    @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId, agent: participant })"
+                  >
+                    <AgentPortrait :who="participant" :size="14" class="shrink-0" />
+                    <span class="min-w-0 flex-1 truncate">{{ agentName(participant) }}</span>
+                    <span
+                      v-if="feed.stateOf(participant) === 'thinking' || feed.stateOf(participant) === 'sending'"
+                      class="size-1.5 shrink-0 rounded-full bg-ok animate-pulse"
+                    />
+                  </button>
+                </li>
+              </ul>
             </li>
           </ul>
-        </template>
+        </div>
       </template>
       <UiNotice v-if="channelError" class="mb-2" :text="channelError" @close="channelError = null" />
-      <UiHandLine class="my-1.5 h-1.5 w-full text-line" />
+      </template>
+      <template v-else>
       <div class="mb-1 flex items-center justify-between gap-1.5">
         <h2 class="text-small font-semibold text-muted">Agentes</h2>
         <AgentPicker
@@ -495,6 +598,8 @@ function closeChannelDialog(): void {
           </ul>
         </li>
       </ul>
+      </template>
+      </div>
     </div>
   </aside>
   <ChannelDialog v-if="creating" :key="editing?.id" :channel="editing ?? undefined" @close="closeChannelDialog" />
