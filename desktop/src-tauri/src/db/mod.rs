@@ -40,6 +40,8 @@ pub use backlog::{
     CardResult, GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
     BOARD_COLUMNS,
 };
+#[cfg(test)]
+pub use backlog::{MicroTask, ScriptBlock};
 pub use channels::Channel;
 pub use connection::{Db, DbState};
 pub use error::{DbError, DbProblem};
@@ -70,7 +72,7 @@ pub use usage_analytics::{
     NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,
 };
 pub use work_steps::{
-    load_recent_work_steps_safe, work_steps_session_key, NewTurnWorkSteps,
+    load_recent_work_steps_safe, work_steps_session_key, NewTurnWorkSteps, TurnWorkStepsRecord,
 };
 #[cfg(test)]
 pub use settings::{

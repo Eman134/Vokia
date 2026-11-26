@@ -734,6 +734,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("learning", "apply_learning_suggestion", "Aplica uma sugestão pendente de memória (sem sobrescrever memórias manuais/fixadas) ou grava/atualiza SKILL.md válido em .vokia/skills/<slug>/SKILL.md ou global. Parâmetros: id, scope (opcional: project|global).", "Para aprovar e aplicar uma sugestão de memória ou skill.", schema_apply_learning_suggestion),
     exposed("learning", "dismiss_learning_suggestion", "Descarta uma sugestão pendente de aprendizado. Parâmetro: id.", "Para rejeitar uma sugestão de memória ou skill.", schema_id),
     exposed("learning", "list_project_memories", "Lista as memórias registradas de um projeto, incluindo origem (manual/pinned/review/auto). Parâmetro: projectId.", "Para consultar memórias persistidas do projeto.", schema_project_id),
+    exposed("learning", "get_context_graph", "Monta o grafo de contexto do projeto com arquivos ativos/recentes, cards em andamento/revisão, artefatos vinculados, riscos de conflito e otimizações sugeridas. Parâmetro: projectId.", "Para visualizar o grafo de contexto e detectar conflitos ou otimizações de fluxo.", schema_project_id),
 ];
 
 #[derive(Deserialize, Default)]
@@ -1172,6 +1173,10 @@ async fn run(
             parse_args(arguments)?,
         )),
         "list_project_memories" => json_result(learning::list_project_memories_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "get_context_graph" => json_result(learning::get_context_graph_exec(
             app,
             parse_args(arguments)?,
         )),

@@ -48,6 +48,48 @@ export interface ReviewOutcome {
   model?: string
 }
 
+export type ContextGraphNodeKind = 'file' | 'card' | 'artifact'
+export type ContextGraphEdgeKind = 'task_path' | 'conflict_risk' | 'artifact_link'
+export type ContextGraphOptimizationKind = 'conflict' | 'context' | 'artifact' | 'order'
+
+export interface ContextGraphNode {
+  id: string
+  kind: ContextGraphNodeKind
+  label: string
+  subtitle?: string
+  path?: string
+  status?: string
+  artifactKind?: string
+  cardId?: string
+  agents: string[]
+  cardIds: string[]
+  conflictRisk: boolean
+}
+
+export interface ContextGraphEdge {
+  id: string
+  source: string
+  target: string
+  kind: ContextGraphEdgeKind
+  label?: string
+}
+
+export interface ContextGraphOptimization {
+  id: string
+  kind: ContextGraphOptimizationKind
+  badge: string
+  message: string
+  files: string[]
+  cardIds: string[]
+}
+
+export interface ContextGraph {
+  projectId: number
+  nodes: ContextGraphNode[]
+  edges: ContextGraphEdge[]
+  optimizations: ContextGraphOptimization[]
+}
+
 export function listLearningSuggestions(
   projectId?: number,
   status?: SuggestionStatus,
@@ -80,6 +122,12 @@ export function runMemoryReview(projectId: number): Promise<ReviewOutcome> {
 
 export function listProjectMemories(projectId: number): Promise<ProjectMemory[]> {
   return invoke<ProjectMemory[]>('list_project_memories', {
+    args: { projectId },
+  })
+}
+
+export function getContextGraph(projectId: number): Promise<ContextGraph> {
+  return invoke<ContextGraph>('get_context_graph', {
     args: { projectId },
   })
 }
