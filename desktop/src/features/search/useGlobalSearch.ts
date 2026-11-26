@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { PAGE_LABELS, type AppPage } from '../../shell/railNav'
+import { PAGE_LABELS, type AppPage, type RailPage } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import { useRail } from '../../shell/useRail'
 import { useBacklog } from '../backlog/useBacklog'
@@ -8,6 +8,7 @@ import { MEMORY_FACTS } from '../memory/memoriaSample'
 import { useProjects } from '../projects/useProjects'
 import { useProviders } from '../providers/useProviders'
 import { SETTINGS_SECTIONS } from '../settings/configuracoesSample'
+import { PAGE_ACTIONS } from '../team/pageActions'
 import { useFeed } from '../team/useFeed'
 import { normalizeName, useRoster } from '../team/useRoster'
 import {
@@ -322,7 +323,43 @@ export const useGlobalSearch = defineStore('global-search', () => {
       }
     })
 
-    return [...quickActions, ...pageItems, ...settingsItems]
+    const currentRailPage: RailPage | null =
+      currentPage === 'novo-projeto' || currentPage === 'onboarding' ? null : currentPage
+    const contextPageActions: Array<PaletteItem & { priority: number }> =
+      currentRailPage === null
+        ? []
+        : PAGE_ACTIONS[currentRailPage]
+            .filter((action) => action.id !== 'novo-projeto' && action.id !== 'novo-pedido')
+            .map((action, idx) => ({
+              key: `action:page:${currentRailPage}:${action.id}`,
+              group: 'actions' as const,
+              badge: PAGE_LABELS[currentRailPage],
+              title: action.label,
+              subtitle: `Ação da página ${PAGE_LABELS[currentRailPage]} (⌥${idx + 1})`,
+              keywords: `${action.label} ${PAGE_LABELS[currentRailPage]} ${currentRailPage} acao pagina`,
+              target: { kind: 'action' as const, actionId: `page:${action.id}:${action.size ?? ''}` },
+              priority: idx,
+            }))
+
+    const pinAction: Array<PaletteItem & { priority: number }> =
+      projects.projects.length > 1 && projects.selected && projects.selected.path.trim() !== ''
+        ? [
+            {
+              key: 'action:toggle-pin-project',
+              group: 'actions',
+              badge: 'Projeto',
+              title: projects.selected.pinned
+                ? `Desafixar ${projects.selected.name}`
+                : `Fixar ${projects.selected.name}`,
+              subtitle: 'Manter projeto acessível como padrão entre trocas',
+              keywords: `fixar desafixar pin projeto ${projects.selected.name}`,
+              target: { kind: 'action', actionId: 'toggle-pin-project' },
+              priority: 3,
+            },
+          ]
+        : []
+
+    return [...contextPageActions, ...quickActions, ...pinAction, ...pageItems, ...settingsItems]
       .sort((a, b) => a.priority - b.priority)
       .map(({ priority: _priority, ...item }) => item)
   })
@@ -795,6 +832,13 @@ export const useGlobalSearch = defineStore('global-search', () => {
       case 'action':
         if (target.actionId === 'new-request') backlog.startRequest()
         else if (target.actionId === 'toggle-rail') rail.toggle()
+        else if (target.actionId === 'toggle-pin-project' && projects.selected) {
+          void projects.pin(projects.selected.pinned ? null : projects.selected.id)
+        } else if (target.actionId.startsWith('page:')) {
+          const [, actionId, size] = target.actionId.split(':')
+          if (size === 'feature') backlog.startRequest()
+          else if (actionId === 'novo-projeto') navigation.goTo('novo-projeto')
+        }
         return
       case 'page':
         navigation.goTo(target.page)

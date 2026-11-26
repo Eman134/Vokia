@@ -22,6 +22,7 @@ import CommandMenu from '../CommandMenu.vue'
 import { useComposerMenus } from './useComposerMenus'
 import AttachmentChips from '../../attachments/AttachmentChips.vue'
 import type { useComposerAttachments } from '../../attachments/useComposerAttachments'
+import AgentPicker from '../../agents/AgentPicker.vue'
 import UiButton from '../../../ui/UiButton.vue'
 
 const ATTACH_LABEL = 'Anexar arquivo'
@@ -61,6 +62,27 @@ const projectsStore = useProjects()
 const draft = defineModel<string>('draft', { required: true })
 const confirmed = defineModel<Set<Agent>>('confirmed', { required: true })
 const deliveryMode = defineModel<'auto' | 'now' | 'queue'>('deliveryMode', { default: 'auto' })
+const agentPickerOpen = defineModel<boolean>('agentPickerOpen', { default: false })
+const selectedMentionRecipient = computed<Agent | null>(() => mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null)
+const queuedCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const entry of requests.queue) {
+    counts[entry.to] = (counts[entry.to] ?? 0) + 1
+  }
+  return counts
+})
+const recipientTooltip = computed(() =>
+  selectedMentionRecipient.value
+    ? `Destinatário: ${roster.nameOf(selectedMentionRecipient.value)} (trocar agente)`
+    : 'Escolher agente destinatário',
+)
+function queueCountLabel(count: number): string {
+  return `${count} na fila`
+}
+function onPickRecipient(agentId: Agent | null): void {
+  if (!agentId) return
+  void nextTick(() => selectRecipient(agentId))
+}
 const showDeliveryToggle = computed(() => {
   const trimmed = draft.value.trim()
   if (trimmed === '' || trimmed.startsWith('/btw')) return false
@@ -253,6 +275,42 @@ defineExpose({ isFocused, selectRecipient })
         <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
       </svg>
     </UiButton>
+    <AgentPicker
+      v-if="roster.agents.length > 0"
+      v-model:open="agentPickerOpen"
+      :model-value="selectedMentionRecipient"
+      :counts="queuedCounts"
+      :count-label="queueCountLabel"
+      :disabled="locked"
+      busy-first
+      placement="top"
+      floating="absolute"
+      trigger-variant="ghost"
+      :trigger-class="selectedMentionRecipient ? 'h-6.5 max-w-26 gap-1 px-1.5 text-muted hover:text-ink' : 'size-6.5 justify-center !px-0 text-muted hover:text-ink'"
+      label="Escolher agente destinatário"
+      :title="recipientTooltip"
+      test-id="action-bar-agent-picker"
+      @select="onPickRecipient"
+    >
+      <template #trigger="{ agent }">
+        <AgentPortrait v-if="agent" :who="agent.id" :size="15" class="shrink-0" />
+        <svg
+          v-else
+          class="size-3.5 shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+        </svg>
+        <span v-if="agent" class="truncate text-caption font-medium text-ink">{{ agent.name }}</span>
+      </template>
+    </AgentPicker>
     <AttachmentChips
       :attachments="attachments.attachments.value"
       :saving="attachments.saving.value"

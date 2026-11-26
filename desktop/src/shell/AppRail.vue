@@ -46,6 +46,7 @@ const SEARCH_LABEL = 'Buscar'
 const SEARCH_SHORTCUT = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'
 const SEARCH_KBD = 'ml-auto rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-tiny text-faint'
 const NEW_PROJECT_ICON = 'M8 3v10M3 8h10'
+const PIN_GLYPH_PATH = 'M5.5 2.5h5M6 2.5v4L4.5 9h7L10 6.5v-4M8 9v5'
 const SETTINGS_ICON =
   'M8 5.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 1 0 0-4.4z M8 3.2 L8.67 3.25 L9.6 1.6 L10.89 2.07 L10.54 3.93 L11.39 4.61 L11.83 5.11 L13.66 4.6 L14.24 5.85 L12.68 6.92 L12.8 8 L12.75 8.67 L14.4 9.6 L13.93 10.89 L12.07 10.54 L11.39 11.39 L10.89 11.83 L11.4 13.66 L10.15 14.24 L9.08 12.68 L8 12.8 L7.33 12.75 L6.4 14.4 L5.11 13.93 L5.46 12.07 L4.61 11.39 L4.17 10.89 L2.34 11.4 L1.76 10.15 L3.32 9.08 L3.2 8 L3.25 7.33 L1.6 6.4 L2.07 5.11 L3.93 5.46 L4.61 4.61 L5.11 4.17 L4.6 2.34 L5.85 1.76 L6.92 3.32 Z'
 const PANEL_ICON = 'M2 2.5h12v11H2zM6 2.5v11'
@@ -80,6 +81,23 @@ const itemSize = computed(() => [ITEM, expanded.value && ITEM_EXPANDED_PAD])
 const togglePath = computed(() => `${PANEL_ICON} ${expanded.value ? PANEL_COLLAPSE_ARROW : PANEL_EXPAND_ARROW}`)
 const toggleLabel = computed(() => (expanded.value ? 'Recolher menu' : 'Expandir menu'))
 const hasSingleProject = computed(() => projectsStore.projects.length === 1)
+const pinBusyId = ref<number | null>(null)
+
+function canPinProject(project: Project): boolean {
+  return projectsStore.projects.length > 1 && project.path.trim() !== ''
+}
+
+async function togglePinProject(project: Project): Promise<void> {
+  if (pinBusyId.value !== null) return
+  pinBusyId.value = project.id
+  try {
+    await projectsStore.pin(project.pinned ? null : project.id)
+  } catch (cause) {
+    feed.feed.push({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) })
+  } finally {
+    pinBusyId.value = null
+  }
+}
 
 function isActive(page: AppPage) {
   return page === railPage.value
@@ -180,20 +198,41 @@ function toggleProject(project: Project) {
       :class="[GROUP, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
     >
       <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
-        <button
-          type="button"
-          :class="[itemSize, ITEM_OFF, isOpen(project.name) && 'bg-surface-2']"
-          :aria-label="project.name"
-          :aria-expanded="isOpen(project.name)"
-          :aria-controls="groupId(project.name)"
-          :title="project.name"
-          @click="toggleProject(project)"
-        >
-          <span :class="ICON_BOX">
-            <ProjectIcon :icon="project.symbol" :color="projectColorOf(project)" :class="PROJECT_BADGE" />
-          </span>
-          <span v-if="expanded" :class="PROJECT_LABEL">{{ project.name }}</span>
-        </button>
+        <div class="group/proj relative flex items-center">
+          <button
+            type="button"
+            :class="[itemSize, ITEM_OFF, isOpen(project.name) && 'bg-surface-2', expanded && 'w-full', expanded && canPinProject(project) && 'pr-8']"
+            :aria-label="project.name"
+            :aria-expanded="isOpen(project.name)"
+            :aria-controls="groupId(project.name)"
+            :title="project.name"
+            @click="toggleProject(project)"
+          >
+            <span :class="ICON_BOX">
+              <ProjectIcon :icon="project.symbol" :color="projectColorOf(project)" :class="PROJECT_BADGE" />
+            </span>
+            <span v-if="expanded" :class="PROJECT_LABEL">{{ project.name }}</span>
+          </button>
+          <button
+            v-if="expanded && canPinProject(project)"
+            type="button"
+            data-testid="rail-project-pin"
+            :disabled="pinBusyId === project.id"
+            :class="[
+              'absolute right-1.5 grid size-6 place-items-center rounded-sm transition-opacity',
+              INK_FOCUS_CLASSES,
+              project.pinned
+                ? 'text-accent opacity-100 hover:bg-hover'
+                : 'text-faint opacity-0 group-hover/proj:opacity-100 focus-visible:opacity-100 hover:bg-hover hover:text-ink',
+            ]"
+            :aria-label="project.pinned ? `Desafixar ${project.name}` : `Fixar ${project.name}`"
+            :title="project.pinned ? `Desafixar ${project.name}` : `Fixar ${project.name}`"
+            :aria-pressed="project.pinned"
+            @click.stop="togglePinProject(project)"
+          >
+            <UiIcon :path="PIN_GLYPH_PATH" :size="13" />
+          </button>
+        </div>
         <div
           :id="groupId(project.name)"
           :class="[SUBLIST, isOpen(project.name) ? SUBLIST_OPEN : SUBLIST_CLOSED]"

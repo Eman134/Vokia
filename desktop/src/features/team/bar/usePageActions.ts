@@ -1,11 +1,11 @@
-import { computed, onMounted, onUnmounted, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { ACTION_SHORTCUT_MODIFIER, PAGE_ACTIONS, type ComposeSize, type PageAction } from '../pageActions'
 import type { RailPage } from '../../../shell/railNav'
 import { useNavigation } from '../../../shell/useNavigation'
 
 const ACTION_SHORTCUT_CODES = ['Digit1', 'Digit2']
 
-export function usePageActions(actionMenuOpen: Ref<boolean>, onCompose: (size: ComposeSize) => void) {
+export function usePageActions(onCompose: (size: ComposeSize) => void) {
   const navigation = useNavigation()
   const railPage = computed<RailPage | null>(() =>
     navigation.page === 'novo-projeto' || navigation.page === 'onboarding' ? null : navigation.page,
@@ -15,7 +15,6 @@ export function usePageActions(actionMenuOpen: Ref<boolean>, onCompose: (size: C
   )
 
   function runAction(action: PageAction): void {
-    actionMenuOpen.value = false
     if (action.size !== undefined) {
       onCompose(action.size)
     }

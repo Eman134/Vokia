@@ -101,7 +101,7 @@ onUnmounted(() => {
       ref="triggerRef"
       variant="quiet"
       size="sm"
-      class="relative w-7 px-0"
+      class="relative gap-1.5 px-2 max-sm:w-7 max-sm:px-0"
       :class="[
         current.warn && WARN_CLASSES,
         mode === 'bypass' && 'ring-1 ring-warn/70',
@@ -119,6 +119,7 @@ onUnmounted(() => {
       <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path :d="current.icon" />
       </svg>
+      <span class="whitespace-nowrap text-caption font-medium max-sm:hidden">{{ current.label }}</span>
       <span
         v-if="mode === 'bypass'"
         class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warn animate-pulse motion-reduce:animate-none"

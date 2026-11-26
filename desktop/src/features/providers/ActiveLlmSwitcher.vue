@@ -137,7 +137,7 @@ function handleOpenBackup(): void {
     <UiButton
       variant="quiet"
       size="sm"
-      class="w-7 px-0"
+      class="gap-1.5 px-2 max-sm:w-7 max-sm:px-0"
       aria-label="Selecionar provedor, modelo e esforço"
       :title="activeTooltip"
       aria-haspopup="dialog"
@@ -145,22 +145,27 @@ function handleOpenBackup(): void {
       data-testid="active-llm-switcher"
       @press="togglePicker()"
     >
-      <span class="relative inline-flex items-center">
+      <span class="relative inline-flex items-center gap-1.5">
         <svg
-          width="16"
-          height="16"
+          width="15"
+          height="15"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          stroke-width="1.4"
+          stroke-width="1.5"
           stroke-linecap="round"
           stroke-linejoin="round"
+          class="shrink-0"
           aria-hidden="true"
         >
           <rect x="4" y="4" width="16" height="16" rx="2" />
           <rect x="9" y="9" width="6" height="6" />
           <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
         </svg>
+        <span
+          v-if="activeModelLabel || activeProviderLabel"
+          class="max-w-28 truncate text-caption font-medium max-sm:hidden"
+        >{{ activeModelLabel || activeProviderLabel }}</span>
         <span
           v-if="activeLlm.overrides.length > 0"
           class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warn-text"
