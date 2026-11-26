@@ -1779,6 +1779,15 @@ pub(super) fn record_turn_work_steps(
     };
     if let Some(db) = exchange.app.state::<DbState>().db() {
         let _ = db.insert_turn_work_steps(&record);
+        if let Some(card_id) = exchange.item_id {
+            crate::commands::learning::prepopulate_triage_graph_from_work_steps(
+                db,
+                exchange.key.project_id,
+                card_id,
+                speaker.as_str(),
+                &formatted.block,
+            );
+        }
     }
 }
 

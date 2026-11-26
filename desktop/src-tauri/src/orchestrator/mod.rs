@@ -14,6 +14,7 @@ mod goal;
 mod loop_guard;
 mod markers;
 pub mod memory_review;
+pub mod repo_scan;
 mod plan_stages;
 mod project_context;
 mod prompts;

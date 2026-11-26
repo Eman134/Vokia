@@ -184,3 +184,16 @@ export function memoryGraphSave(args: {
 }): Promise<ProjectMemory> {
   return invoke<ProjectMemory>('memory_graph_save', { args })
 }
+
+export interface ScanProjectGraphOutcome {
+  status: string
+  projectId: number
+  agent: string
+  createdMemories: number
+  linkedFiles: number
+  summary: string
+}
+
+export function scanProjectGraph(projectId: number): Promise<ScanProjectGraphOutcome> {
+  return invoke<ScanProjectGraphOutcome>('scan_project_graph', { projectId })
+}

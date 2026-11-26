@@ -15,6 +15,7 @@ import {
   getContextGraph,
   memoryGraphQuery,
   memoryGraphSave,
+  scanProjectGraph,
   type ContextGraphEdge,
   type ContextGraphNode,
   type ContextGraphOptimization,
@@ -50,7 +51,25 @@ const draftFact = ref('')
 const draftCategory = ref<'decisao' | 'macro' | 'mapa-arquivos'>('decisao')
 const draftKeywords = ref('')
 const saving = ref(false)
+const scanningRepo = ref(false)
 const saveFeedback = ref<string | null>(null)
+
+async function runRepoScan(): Promise<void> {
+  if (!props.projectId || scanningRepo.value) return
+  scanningRepo.value = true
+  error.value = null
+  saveFeedback.value = null
+  try {
+    const outcome = await scanProjectGraph(props.projectId)
+    saveFeedback.value = `Varredura concluída por ${outcome.agent}: ${outcome.createdMemories} memórias e ${outcome.linkedFiles} arquivos conectados.`
+    await learning.load(props.projectId)
+    await load()
+  } catch (err) {
+    error.value = `Falha na varredura do repositório: ${String(err)}`
+  } finally {
+    scanningRepo.value = false
+  }
+}
 
 const NODE_COLOR: Record<ContextGraphNode['kind'], string> = {
   decision: 'var(--color-mark-pink)',
@@ -278,9 +297,21 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
           <p v-if="error" class="text-caption text-danger">{{ error }}</p>
 
           <div class="rounded-md border border-line bg-surface-2">
-            <div class="flex items-center justify-between border-b border-line px-3.5 py-2 text-meta text-muted">
+            <div class="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2 text-meta text-muted">
               <span>Grafo relacionado ({{ nodes.length }} nós · {{ edges.length }} conexões)</span>
-              <span v-if="loading">Carregando...</span>
+              <div class="flex items-center gap-2">
+                <span v-if="loading">Carregando...</span>
+                <UiButton
+                  v-if="projectId"
+                  variant="quiet"
+                  size="sm"
+                  :disabled="scanningRepo"
+                  data-testid="modal-scan-repo"
+                  @press="runRepoScan"
+                >
+                  {{ scanningRepo ? 'Mapeando repositório...' : 'Mapear repositório' }}
+                </UiButton>
+              </div>
             </div>
             <div v-if="nodes.length === 0 && !loading" class="p-4 text-caption text-muted">
               Nenhum nó conectado ainda para este contexto.

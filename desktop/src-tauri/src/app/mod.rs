@@ -171,7 +171,8 @@ pub(crate) fn run() {
             commands::learning::save_project_memory,
             commands::learning::get_context_graph,
             commands::learning::memory_graph_query,
-            commands::learning::memory_graph_save
+            commands::learning::memory_graph_save,
+            commands::learning::scan_project_graph
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

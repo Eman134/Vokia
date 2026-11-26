@@ -175,7 +175,7 @@ fn now_millis_i64() -> i64 {
         .map_or(0, |d| d.as_millis() as i64)
 }
 
-fn emit_learning_changed(app: &AppHandle, project_id: i64) {
+pub(crate) fn emit_learning_changed(app: &AppHandle, project_id: i64) {
     let db_state = app.state::<DbState>();
     let pending_count = db_state
         .db()
@@ -1294,6 +1294,117 @@ pub(crate) fn save_memory_graph_fact(
         .ok_or_else(|| "Memória salva não encontrada.".to_string())
 }
 
+pub(crate) fn prepopulate_triage_graph_from_work_steps(
+    db: &Db,
+    project_id: i64,
+    card_id: &str,
+    _agent: &str,
+    block: &str,
+) {
+    let now_ms = now_millis_i64();
+    let card_node = format!("card:{card_id}");
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("files") || trimmed.starts_with("arquivos") {
+            if let Some((_, rest)) = trimmed.split_once(':') {
+                for token in rest.split(',') {
+                    let path = token
+                        .trim()
+                        .trim_start_matches("read ")
+                        .trim_start_matches("edit ")
+                        .trim_start_matches("write ")
+                        .trim();
+                    if !path.is_empty() && (path.contains('/') || path.contains('\\') || path.contains('.')) {
+                        let _ = db.upsert_memory_edge(
+                            project_id,
+                            &card_node,
+                            &format!("file:{path}"),
+                            "task_path",
+                            now_ms,
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(backlog) = db.list_backlog(project_id) {
+        if let Some(card) = backlog.items.iter().find(|i| i.id == card_id) {
+            let text = format!("{} {}", card.title, card.priority.as_deref().unwrap_or(""));
+            for kw in extract_domain_keywords(&text, 4) {
+                let _ = db.upsert_memory_edge(
+                    project_id,
+                    &card_node,
+                    &format!("keyword:{kw}"),
+                    "has_keyword",
+                    now_ms,
+                );
+            }
+        }
+    }
+}
+
+pub(crate) fn prepopulate_card_graph_from_plan(
+    db: &Db,
+    project_id: i64,
+    card_id: &str,
+    agent: &str,
+    plan: &crate::db::ItemPlanInput,
+) {
+    let backlog = match db.list_backlog(project_id) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let Some(card) = backlog.items.iter().find(|i| i.id == card_id) else {
+        return;
+    };
+    let is_high_prio = card
+        .priority
+        .as_deref()
+        .map(|p| matches!(p.trim().to_ascii_lowercase().as_str(), "alta" | "high" | "p0" | "p1" | "urgente"))
+        .unwrap_or(false);
+    let mut files: Vec<String> = Vec::new();
+    for m in &card.micro {
+        for f in &m.script.files {
+            if !f.trim().is_empty() && !files.contains(f) {
+                files.push(f.clone());
+            }
+        }
+    }
+    let summary_part = plan
+        .proposal
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| plan.plan.as_ref().map(|p| p.name.as_str()))
+        .unwrap_or(&card.title);
+    let prio_tag = card
+        .priority
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|p| format!(" (prioridade: {p})"))
+        .unwrap_or_default();
+    let fact = format!("Triagem {card_id}{prio_tag}: {summary_part}");
+    if fact.chars().count() >= 12 {
+        let keywords = extract_domain_keywords(&format!("{} {}", card.title, summary_part), 5);
+        let _ = save_memory_graph_fact(
+            db,
+            MemoryGraphSaveArgs {
+                project_id,
+                fact,
+                category: Some(if is_high_prio { "decisao" } else { "triagem" }.to_string()),
+                files,
+                card_id: Some(card_id.to_string()),
+                author: Some(plan.agent.clone().unwrap_or_else(|| agent.to_string())),
+                wing: Some("orquestracao".to_string()),
+                room: Some("triagem".to_string()),
+                supersede_id: None,
+                keywords,
+            },
+        );
+    }
+}
+
 pub(crate) fn build_compact_memory_context(
     db: &Db,
     project_id: i64,
@@ -1312,10 +1423,27 @@ pub(crate) fn build_compact_memory_context(
         return String::new();
     }
     let mut lines: Vec<String> = vec!["[memória e grafo do projeto — camadas]".to_string()];
+    if let Some(target_card) = item_id {
+        if let Ok(backlog) = db.list_backlog(project_id) {
+            if let Some(card) = backlog.items.iter().find(|i| i.id == target_card) {
+                let prio = card.priority.as_deref().unwrap_or("normal");
+                lines.push(format!("[prioridade da task] {target_card} ({prio}): {}", card.title));
+            }
+        }
+        let card_mems: Vec<&ProjectMemory> = memories
+            .iter()
+            .filter(|m| m.source == target_card || m.fact.contains(target_card))
+            .take(3)
+            .collect();
+        for mem in card_mems {
+            lines.push(format!("- [contexto triagem] {}", mem.fact.trim()));
+        }
+    }
     let mut prioritized: Vec<&ProjectMemory> = memories
         .iter()
         .filter(|m| {
             m.pinned
+                || m.source == "decisao"
                 || m.source == "macro"
                 || m.source == "arquitetura"
                 || m.source == "mapa-arquivos"
@@ -1440,6 +1568,14 @@ pub fn memory_graph_save(
     let saved = memory_graph_save_exec(&app, args)?;
     emit_learning_changed(&app, saved.project_id);
     Ok(saved)
+}
+
+#[tauri::command]
+pub async fn scan_project_graph(
+    app: AppHandle,
+    project_id: i64,
+) -> Result<crate::orchestrator::repo_scan::ScanProjectGraphOutcome, String> {
+    crate::orchestrator::repo_scan::scan_project_graph_for_project(&app, project_id).await
 }
 
 #[cfg(test)]
@@ -1732,5 +1868,52 @@ mod tests {
         assert!(compact.contains("[núcleo]"));
         assert!(compact.contains("[palavras-chave]"));
         assert!(compact.contains("memory_graph_query"));
+    }
+
+    #[test]
+    fn triage_work_steps_and_plan_prepopulate_card_graph_and_prioritize_context() {
+        let dir = TempDbDir::new();
+        let db = dir.open();
+        let project_id = create_test_project(&db, "triage-graph");
+
+        let mut card = make_active_card(
+            "TRI-1",
+            "Corrigir fila de notificacoes",
+            "axiom",
+            "Backlog",
+            vec!["src/notify/queue.rs"],
+        );
+        card.priority = Some("alta".to_string());
+        db.save_backlog_item(project_id, &card).unwrap();
+
+        prepopulate_triage_graph_from_work_steps(
+            &db,
+            project_id,
+            "TRI-1",
+            "axiom",
+            "[work steps]\nfiles (ok): read src/notify/worker.rs\n[end work steps]",
+        );
+        prepopulate_card_graph_from_plan(
+            &db,
+            project_id,
+            "TRI-1",
+            "axiom",
+            &crate::db::ItemPlanInput {
+                state: "proposto".to_string(),
+                proposal: Some("Priorizar retry exponencial na fila".to_string()),
+                plan: None,
+                agent: Some("axiom".to_string()),
+                public_id: Some("TRI-1".to_string()),
+            },
+        );
+
+        let edges = db.list_memory_edges(project_id).unwrap();
+        assert!(edges
+            .iter()
+            .any(|e| e.source_node == "card:TRI-1" && e.target_node == "file:src/notify/worker.rs"));
+
+        let compact = build_compact_memory_context(&db, project_id, Some("TRI-1"), Some("kairo"), 2200);
+        assert!(compact.contains("[prioridade da task] TRI-1 (alta)"));
+        assert!(compact.contains("[contexto triagem]"));
     }
 }

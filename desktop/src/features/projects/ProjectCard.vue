@@ -7,8 +7,8 @@ import { projectColorOf } from './projectColors'
 import { EDIT_LABEL, EMPTY_PATH_TEXT, OPEN_LABEL } from './projetosCopy'
 import type { Project } from './projectsApi'
 
-const props = defineProps<{ project: Project }>()
-const emit = defineEmits<{ open: []; edit: []; pin: [] }>()
+const props = defineProps<{ project: Project; scanning?: boolean }>()
+const emit = defineEmits<{ open: []; edit: []; pin: []; graph: []; scan: [] }>()
 
 const FOLDER_ORIGIN_LABEL = 'Pasta'
 const GITHUB_ORIGIN_PREFIX = 'GitHub'
@@ -50,6 +50,30 @@ const originLabel = computed(() =>
     <div :class="FOOTER_CLASSES">
       <UiBadge status="backlog" :label="originLabel" />
       <span class="ml-auto" />
+      <UiButton
+        variant="quiet"
+        size="sm"
+        class="gap-1.5"
+        data-testid="project-card-graph"
+        @press="emit('graph')"
+      >
+        <svg class="size-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="4" cy="4" r="2" />
+          <circle cx="12" cy="4.5" r="2" />
+          <circle cx="8" cy="12" r="2" />
+          <path d="M5.7 5.1L7 10.2M10.3 5.5L8.9 10.2M6 4.1l4 .3" />
+        </svg>
+        Grafo
+      </UiButton>
+      <UiButton
+        variant="quiet"
+        size="sm"
+        data-testid="project-card-scan"
+        :disabled="scanning || project.path.trim() === ''"
+        @press="emit('scan')"
+      >
+        {{ scanning ? 'Mapeando...' : 'Mapear grafo' }}
+      </UiButton>
       <UiButton
         variant="quiet"
         size="sm"

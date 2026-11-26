@@ -1347,7 +1347,16 @@ fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> Too
         let state = app.state::<DbState>();
         let db = state.require().map_err(|error| refusal_or_system(&error))?;
         match db.save_item_plan(binding.project_id, &args.item_id, &args.plan) {
-            Ok(approved) => approved,
+            Ok(approved) => {
+                crate::commands::learning::prepopulate_card_graph_from_plan(
+                    db,
+                    binding.project_id,
+                    &args.item_id,
+                    binding.agent.as_str(),
+                    &args.plan,
+                );
+                approved
+            }
             Err(error) => return Err(refusal_or_system(&error)),
         }
     };

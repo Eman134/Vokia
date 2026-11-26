@@ -10,6 +10,8 @@ import { useFeed } from '../team/useFeed'
 import { useConsole } from '../console/useConsole'
 import ProjectCard from './ProjectCard.vue'
 import ProjectEditForm from './ProjectEditForm.vue'
+import ContextGraphModal from '../memory/ContextGraphModal.vue'
+import { scanProjectGraph } from '../memory/learningApi'
 import { NEW_PROJECT_LABEL, PROJECTS_TITLE } from './projetosCopy'
 import {
   isProjectError,
@@ -28,8 +30,12 @@ const projectsStore = useProjects()
 const feed = useFeed()
 const consoleStore = useConsole()
 const failure = ref<string | null>(null)
+const scanNotice = ref<string | null>(null)
 const editingId = ref<number | null>(null)
+const graphProjectId = ref<number | null>(null)
+const scanningProjectId = ref<number | null>(null)
 const editing = computed(() => projectsStore.projects.find((project) => project.id === editingId.value) ?? null)
+const graphProject = computed(() => projectsStore.projects.find((project) => project.id === graphProjectId.value) ?? null)
 
 function describe(cause: unknown): string {
   if (isProjectError(cause)) return cause.message
@@ -73,6 +79,21 @@ async function togglePin(project: Project) {
   }
 }
 
+async function scanProject(project: Project) {
+  if (scanningProjectId.value !== null) return
+  scanningProjectId.value = project.id
+  failure.value = null
+  scanNotice.value = null
+  try {
+    const outcome = await scanProjectGraph(project.id)
+    scanNotice.value = `Grafo de ${project.name} atualizado por ${outcome.agent}: ${outcome.createdMemories} memórias e ${outcome.linkedFiles} arquivos conectados.`
+  } catch (cause) {
+    failure.value = describe(cause)
+  } finally {
+    scanningProjectId.value = null
+  }
+}
+
 onMounted(async () => {
   try {
     await projectsStore.load()
@@ -91,6 +112,7 @@ onMounted(async () => {
     </UiPageHeader>
 
     <UiNotice v-if="failure" :text="failure" @close="failure = null" />
+    <UiNotice v-if="scanNotice" :text="scanNotice" @close="scanNotice = null" />
 
     <UiEmpty v-if="projectsStore.loaded && projectsStore.projects.length === 0" :title="NO_PROJECTS_TEXT" />
 
@@ -99,11 +121,23 @@ onMounted(async () => {
         v-for="project in projectsStore.projects"
         :key="project.id"
         :project="project"
+        :scanning="scanningProjectId === project.id"
         @open="open(project)"
         @edit="editingId = project.id"
         @pin="togglePin(project)"
+        @graph="graphProjectId = project.id"
+        @scan="scanProject(project)"
       />
     </div>
+    <ContextGraphModal
+      :open="graphProject !== null"
+      :project-id="graphProject?.id ?? null"
+      :title="graphProject ? `Grafo · ${graphProject.name}` : 'Grafo do projeto'"
+      query=""
+      context-text=""
+      :meta-summary="graphProject?.path"
+      @close="graphProjectId = null"
+    />
     <ProjectEditForm
       v-if="editing"
       :project="editing"

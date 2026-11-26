@@ -497,6 +497,64 @@ pub(crate) async fn ask_with_fallback(
     message: &str,
     role: &str,
 ) -> Result<Reply, FlowError> {
+    ask_with_fallback_in_access(
+        app,
+        state,
+        default_cli,
+        agent,
+        profile,
+        message,
+        role,
+        Access::TextOnly,
+        0,
+    )
+    .await
+}
+
+pub(crate) async fn ask_project_readonly_with_fallback(
+    app: &AppHandle,
+    state: &AppState,
+    default_cli: &Path,
+    agent: &Agent,
+    profile: &AgentProfile,
+    project_id: i64,
+    project_dir: &Path,
+    message: &str,
+    role: &str,
+) -> Result<Reply, FlowError> {
+    let access = Access::Project(crate::claude::ProjectAccess {
+        dir: project_dir,
+        attachments: project_dir,
+        extra_dirs: &[],
+        level: crate::permissions::PermissionLevel::Leitura,
+        builtin_tools: true,
+    });
+    ask_with_fallback_in_access(
+        app,
+        state,
+        default_cli,
+        agent,
+        profile,
+        message,
+        role,
+        access,
+        project_id,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn ask_with_fallback_in_access(
+    app: &AppHandle,
+    state: &AppState,
+    default_cli: &Path,
+    agent: &Agent,
+    profile: &AgentProfile,
+    message: &str,
+    role: &str,
+    access: Access<'_>,
+    project_id: i64,
+) -> Result<Reply, FlowError> {
     let providers = app.state::<ProviderRegistry>();
     let global_active = load_global_active_llm(app);
     let global_fallback = load_global_fallback(app);
@@ -517,8 +575,8 @@ pub(crate) async fn ask_with_fallback(
 
     let mut last_error: Option<FlowError> = None;
     for candidate in candidates {
-        let res: Result<Reply, FlowError> = match candidate.provider.protocol {
-            ProviderProtocol::ClaudeLive => {
+        let res: Result<Reply, FlowError> = match (candidate.provider.protocol, access) {
+            (ProviderProtocol::ClaudeLive, Access::TextOnly) => {
                 let (program, _) =
                     resolve_program_for(agent, &candidate.command, default_cli)?;
                 claude::ask(&program, message, role, &candidate.model)
@@ -539,7 +597,7 @@ pub(crate) async fn ask_with_fallback(
                     app,
                     broker: &broker,
                     agent: agent.clone(),
-                    project_id: 0,
+                    project_id,
                     item_id: None,
                     granted: &granted,
                     grant_per_session: false,
@@ -548,7 +606,7 @@ pub(crate) async fn ask_with_fallback(
                 let console = ConsoleSink::new(
                     app,
                     crate::session_key::SessionKey {
-                        project_id: 0,
+                        project_id,
                         agent: agent.clone(),
                     },
                     None,
@@ -562,7 +620,7 @@ pub(crate) async fn ask_with_fallback(
                 );
                 adapter
                     .run_fresh(
-                        Access::TextOnly,
+                        access,
                         gate,
                         &pid,
                         &call,
