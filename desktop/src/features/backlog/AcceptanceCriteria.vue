@@ -5,9 +5,13 @@ import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import { DEFAULT_JITTER, sketchCheck } from '../../ui/sketch/sketchPath'
 import type { BacklogCriterion } from './backlogTypes'
 
-defineProps<{
-  criteria: readonly BacklogCriterion[]
-}>()
+withDefaults(
+  defineProps<{
+    criteria: readonly BacklogCriterion[]
+    title?: string
+  }>(),
+  { title: 'Critérios de aceite' },
+)
 
 const emit = defineEmits<{
   toggle: [id: string]
@@ -25,7 +29,7 @@ const STRIKE_CLASSES = 'pointer-events-none absolute inset-x-0 top-1/2 h-2 -tran
 
 <template>
   <section data-testid="acceptance-criteria">
-    <h3 class="mb-1.5 text-label font-semibold text-ink">Critérios de aceite</h3>
+    <h3 class="mb-1.5 text-label font-semibold text-ink">{{ title }}</h3>
     <ul class="flex flex-col gap-1">
       <li v-for="criterion in criteria" :key="criterion.id">
         <button

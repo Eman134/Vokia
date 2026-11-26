@@ -13,6 +13,7 @@ import { useDecisions } from '../decisions/useDecisions'
 import { COLUMN_LABEL, DEFAULT_COLUMN, UNLINKABLE_COLUMNS, type TaskCardAction, type BacklogItem } from './backlogTypes'
 import BacklogPlanActions from './BacklogPlanActions.vue'
 import { useBacklog } from './useBacklog'
+import { useRunItem } from './useRunItem'
 import { parseProposal } from './planProposal'
 import PlanAdjustForm from './PlanAdjustForm.vue'
 import PlanAgentCast from './PlanAgentCast.vue'
@@ -54,6 +55,12 @@ const lotsLabel = (count: number, estimate: string): string => {
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
+const runItem = useRunItem()
+
+function acceptAndRun(itemId: string): void {
+  itemPlan.accept(itemId)
+  void runItem.run(itemId)
+}
 const connection = useConnection()
 
 const roster = useRoster()
@@ -190,7 +197,8 @@ function onCardAction(action: TaskCardAction): void {
         <MarkdownText v-if="current.proposal" :text="current.proposal" />
       </template>
       <div class="flex flex-wrap gap-2">
-        <UiButton variant="approve" size="lg" @press="itemPlan.accept(item.id)">Aceitar e vincular</UiButton>
+        <UiButton variant="approve" size="lg" @press="itemPlan.accept(item.id)">Aprovar plano</UiButton>
+        <UiButton variant="primary" size="lg" @press="acceptAndRun(item.id)">Aprovar e implementar</UiButton>
         <UiButton variant="quiet" size="lg" :aria-expanded="adjusting" @press="adjusting = !adjusting">Ajustar</UiButton>
         <UiConfirm
           label="Descartar"

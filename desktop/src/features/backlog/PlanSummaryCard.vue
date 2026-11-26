@@ -7,6 +7,7 @@ import { PLAN_HINT, type BacklogItem, type BacklogState } from './backlogTypes'
 import PlanAdjustForm from './PlanAdjustForm.vue'
 import { planSummaryLabel, type PlanBreakdown } from './planBreakdown'
 import { useItemPlan } from './useItemPlan'
+import { useRunItem } from './useRunItem'
 
 const props = defineProps<{
   item: BacklogItem
@@ -22,14 +23,18 @@ const PROGRESS_META_CLASSES = 'text-caption text-muted'
 const DISCARD_MESSAGE = 'Apaga o plano proposto e o artefato.'
 
 const itemPlan = useItemPlan()
+const runItem = useRunItem()
 const adjusting = ref(false)
 const approving = ref(false)
 
-function approve(): void {
+function approve(andImplement = false): void {
   if (approving.value) return
   approving.value = true
   try {
     itemPlan.accept(props.item.id)
+    if (andImplement) {
+      void runItem.run(props.item.id)
+    }
   } finally {
     approving.value = false
   }
@@ -66,9 +71,18 @@ function sendAdjust(text: string): void {
         size="lg"
         :disabled="approving"
         data-testid="plan-accept"
-        @press="approve"
+        @press="approve(false)"
       >
-        Aprovar
+        Aprovar plano
+      </UiButton>
+      <UiButton
+        variant="primary"
+        size="lg"
+        :disabled="approving"
+        data-testid="plan-accept-and-run"
+        @press="approve(true)"
+      >
+        Aprovar e implementar
       </UiButton>
       <UiButton variant="quiet" size="lg" data-testid="plan-adjust-toggle" @press="adjusting = !adjusting">
         Ajustar

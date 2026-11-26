@@ -21,6 +21,7 @@ import {
 import { returnTask } from './backlogApi'
 import { useFeed } from '../team/useFeed'
 import { useProjects } from '../projects/useProjects'
+import { fetchPlanArtifact, setArtifactCriterion, type PlanArtifactDetail } from '../artifacts/artifactApi'
 import ContextGraphModal from '../memory/ContextGraphModal.vue'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagLabel, tagMarkerTone } from './tags'
 import {
@@ -149,6 +150,48 @@ const breakdown = computed(() =>
     : undefined,
 )
 const planState = computed(() => (item.value ? itemPlan.stateFor(item.value) : 'vazio'))
+const planArtifact = ref<PlanArtifactDetail | null>(null)
+let planArtifactSeq = 0
+
+async function loadPlanArtifact(): Promise<void> {
+  const current = item.value
+  const projectId = backlog.loadedProjectId
+  if (!current || projectId === null || (planState.value !== 'proposto' && planState.value !== 'vinculado')) {
+    planArtifact.value = null
+    return
+  }
+  const seq = (planArtifactSeq += 1)
+  try {
+    const fresh = await fetchPlanArtifact(projectId, current.id)
+    if (seq === planArtifactSeq && item.value?.id === current.id) {
+      planArtifact.value = fresh
+    }
+  } catch {
+    if (seq === planArtifactSeq) planArtifact.value = null
+  }
+}
+
+watch(
+  [() => item.value?.id, planState, () => backlog.items],
+  () => {
+    void loadPlanArtifact()
+  },
+  { immediate: true },
+)
+
+async function togglePlanCriterion(criterionId: string): Promise<void> {
+  const projectId = backlog.loadedProjectId
+  const current = planArtifact.value
+  const target = current?.criteria.find((c) => c.id === criterionId)
+  if (projectId === null || !current || !target) return
+  const done = !target.done
+  target.done = done
+  try {
+    await setArtifactCriterion(projectId, current.id, criterionId, done)
+  } catch {
+    target.done = !done
+  }
+}
 // Sem plano ou com a proposta esperando o usuário, o selo só repetiria o que o conteúdo do modal já mostra.
 const showStateBadge = computed(() => planState.value !== 'vazio' && planState.value !== 'proposto')
 const planText = computed(() => (planState.value === 'triagem' ? TRIAGE_PLAN_TEXT : undefined))
@@ -480,6 +523,14 @@ watch(
             :breakdown="breakdown"
             :leader="leaderName"
             @open-stage="openStage"
+          />
+
+          <AcceptanceCriteria
+            v-if="planArtifact?.criteria.length"
+            title="Critérios do plano"
+            :criteria="planArtifact.criteria"
+            data-testid="plan-criteria-in-card"
+            @toggle="togglePlanCriterion"
           />
 
           <AcceptanceCriteria

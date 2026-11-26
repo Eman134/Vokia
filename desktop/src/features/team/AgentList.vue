@@ -4,16 +4,16 @@ import AgentPortrait from './AgentPortrait.vue'
 import AgentProjectIcons from './AgentProjectIcons.vue'
 import AgentPicker from '../agents/AgentPicker.vue'
 import { PORTRAIT_SIZES } from './portraitArt'
-import { categorizeThreads, type ThreadCategoryKey, type ThreadStatus } from './threadStatus'
+import { categorizeThreads, type ThreadCategoryKey } from './threadStatus'
 import { useRoster } from './useRoster'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
-import { useThreads } from './useThreads'
+import { useThreads, type TaskThread } from './useThreads'
+import ThreadTreeNode from './ThreadTreeNode.vue'
 import { useRequests } from './useRequests'
 import { presenceOf } from './agentStateStyle'
 import { useChannels } from '../channels/useChannels'
 import { GENERAL_CHANNEL_NAME, LOGS_CHANNEL_NAME, TRIAGE_CHANNEL_NAME } from '../channels/channelRouting'
-import { agentName } from './agents'
 import UnreadDot from '../channels/UnreadDot.vue'
 import type { UnreadState } from '../channels/unread'
 import { useUnread } from '../channels/useUnread'
@@ -25,8 +25,6 @@ import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
-import { useBacklog } from '../backlog/useBacklog'
-import { useRunItem } from '../backlog/useRunItem'
 import { useProjects } from '../projects/useProjects'
 import UiChip from '../../ui/UiChip.vue'
 import UiHandDivider from '../../ui/UiHandDivider.vue'
@@ -38,11 +36,6 @@ import UiNotice from '../../ui/UiNotice.vue'
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const TRIAGE_SCREEN: ConversationScreen = { kind: 'triage' }
 const LOGS_SCREEN: ConversationScreen = { kind: 'logs' }
-const OPEN_CARD_LABEL = 'Abrir task'
-const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
-const OPEN_CARD_ICON_SIZE = 13
-const START_THREAD_LABEL = 'Iniciar task'
-const START_THREAD_ICON_PATH = 'M5 3.5l7.5 4.5L5 12.5z'
 const THREAD_CATEGORY_ICON: Record<ThreadCategoryKey, string> = {
   recent: 'M8 3.5a4.5 4.5 0 1 0 4.5 4.5A4.5 4.5 0 0 0 8 3.5z M8 5.5v2.7l1.8 1.1',
   'needs-you': 'M8 2.5l5.5 10.5h-11z M8 6.5v3 M8 11v.4',
@@ -71,19 +64,12 @@ const UNSELECTED_CLASSES = 'hover:bg-surface-2'
 const PORTRAIT_CIRCLE_CLASSES = 'pointer-events-none absolute -inset-1 size-[calc(100%+0.5rem)] text-ink-pen'
 const CHANNEL_MARK_CLASSES = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-2 w-[calc(100%-2.75rem)]`
 const CHANNEL_CLASSES = `relative flex w-full min-w-0 cursor-pointer items-center overflow-hidden rounded-md py-1 pl-2 pr-7 text-left text-label text-ink ${INK_FOCUS_CLASSES}`
-const THREAD_CARD_BUTTON_CLASSES =
-  `absolute right-1 top-1/2 grid size-5 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-muted transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none ${INK_FOCUS_CLASSES}`
 const COPY_CLASSES = `flex w-full cursor-pointer items-start gap-1.5 rounded-md border border-line px-2 py-1 text-left transition-colors hover:bg-surface-2 ${INK_FOCUS_CLASSES}`
 // COPY_CLASSES já fixa border-line; o `!` faz a tinta vencer.
 const COPY_SELECTED_CLASSES = `border-[1.5px]! border-ink! bg-surface-2 ${HAND_DRAWN_RADIUS}`
 const COPY_CONNECTOR_PATH = 'M5 3 C4.6 10 4.8 16 5.6 19.2 C8.5 20 13 19.7 17 19.4'
 const COPY_THINKING_DOT_CLASSES = 'size-1 rounded-full bg-current animate-pulse motion-reduce:animate-none'
 const THREADS_LABEL = 'Threads'
-const THREAD_PORTRAIT_SIZE = 16
-const THREAD_DOT: Partial<Record<ThreadStatus, { classes: string; label: string }>> = {
-  working: { classes: 'bg-ok motion-safe:animate-pulse', label: 'trabalhando' },
-  'needs-you': { classes: 'bg-danger motion-safe:animate-pulse', label: 'precisa de você' },
-}
 const COPIES_LIST_LABEL = 'Cópias'
 const COPY_NOUN_SINGULAR = 'cópia'
 const COPY_NOUN_PLURAL = 'cópias'
@@ -96,8 +82,6 @@ const control = useAgentControl()
 const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
-const backlog = useBacklog()
-const runItem = useRunItem()
 const creating = ref(false)
 const editing = ref<Channel | null>(null)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
@@ -181,10 +165,14 @@ watch(
 const threadCategories = computed(() => categorizeThreads(threads.threads))
 const categoryOpenOverrides = ref<Partial<Record<ThreadCategoryKey, boolean>>>({})
 
-function isCategoryOpen(category: { key: ThreadCategoryKey; defaultOpen: boolean; items: { itemId: string }[] }): boolean {
+function hasShownThread(thread: TaskThread): boolean {
+  return threadShown(thread.itemId) || thread.subthreads.some(hasShownThread)
+}
+
+function isCategoryOpen(category: { key: ThreadCategoryKey; defaultOpen: boolean; items: TaskThread[] }): boolean {
   const override = categoryOpenOverrides.value[category.key]
   if (override !== undefined) return override
-  if (category.items.some((thread) => threadShown(thread.itemId))) return true
+  if (category.items.some(hasShownThread)) return true
   return category.defaultOpen
 }
 
@@ -209,25 +197,12 @@ const errorLogCount = computed(() =>
   feed.feed.filter((entry) => entry.type === 'error' || entry.type === 'usage-limit-failed').length,
 )
 
-function threadAgentShown(itemId: string, agent: Agent): boolean {
-  return feed.screen.kind === 'thread' && feed.screen.itemId === itemId && feed.screen.agent === agent
-}
-
 function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
   return feed.screen.kind === 'channel' && feed.screen.channel === target
 }
 
 function threadShown(itemId: string): boolean {
   return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
-}
-
-function openThreadCard(itemId: string): void {
-  backlog.open(itemId)
-}
-
-function shortThreadId(thread: { itemId: string; publicId?: string }): string | null {
-  const raw = (thread.publicId ?? thread.itemId).trim()
-  return raw.length > 0 && raw.length <= 12 ? raw : null
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
@@ -393,90 +368,12 @@ function closeChannelDialog(): void {
             <span>{{ category.label }} ({{ category.items.length }})</span>
           </button>
           <ul v-show="isCategoryOpen(category)" :id="`threads-${category.key}`" class="flex flex-col gap-0.5">
-            <li v-for="thread in category.items" :key="`${category.key}-${thread.itemId}`" class="group relative">
-              <button
-                type="button"
-                :class="[
-                  CHANNEL_CLASSES,
-                  'flex items-center gap-1.5',
-                  runItem.canRun(thread.itemId) && 'pr-12',
-                  category.key === 'done' && 'text-muted',
-                  threadShown(thread.itemId) ? SELECTED_TEXT_CLASSES : UNSELECTED_CLASSES,
-                ]"
-                :aria-label="`Abrir thread ${thread.title}`"
-                :aria-pressed="threadShown(thread.itemId)"
-                @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
-              >
-                <AgentPortrait
-                  v-if="thread.assignee && category.key !== 'done'"
-                  :who="thread.assignee"
-                  :size="THREAD_PORTRAIT_SIZE"
-                  class="shrink-0"
-                />
-                <span v-if="shortThreadId(thread)" class="max-w-16 shrink-0 truncate font-mono text-tiny font-semibold text-muted">{{ shortThreadId(thread) }}</span>
-                <span class="min-w-0 flex-1 truncate">{{ thread.title }}</span>
-                <span
-                  v-if="category.key !== 'done' && thread.exchangeCount > 0"
-                  class="shrink-0 rounded-sm bg-surface-2 px-1 text-[10px] font-medium text-muted tabular-nums"
-                  :title="`${thread.exchangeCount} mensagens entre agentes`"
-                >
-                  ↔{{ thread.exchangeCount }}
-                </span>
-                <span
-                  v-if="category.key !== 'done' && THREAD_DOT[thread.status]"
-                  class="ml-auto size-1.5 shrink-0 rounded-full"
-                  :class="THREAD_DOT[thread.status]?.classes"
-                  :title="THREAD_DOT[thread.status]?.label"
-                  role="img"
-                  :aria-label="THREAD_DOT[thread.status]?.label"
-                />
-                <UnreadDot
-                  v-if="category.key !== 'done'"
-                  :state="indicatorOf({ kind: 'thread', itemId: thread.itemId }, threadShown(thread.itemId))"
-                  :class="THREAD_DOT[thread.status] ? '' : 'ml-auto'"
-                />
-                <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
-              </button>
-              <button
-                v-if="runItem.canRun(thread.itemId)"
-                type="button"
-                :class="[THREAD_CARD_BUTTON_CLASSES, 'right-6 text-ok hover:text-ok']"
-                :title="`${START_THREAD_LABEL}: ${thread.title}`"
-                :aria-label="`${START_THREAD_LABEL}: ${thread.title}`"
-                @click.stop="void runItem.run(thread.itemId)"
-              >
-                <UiIcon :path="START_THREAD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
-              </button>
-              <button
-                type="button"
-                :class="THREAD_CARD_BUTTON_CLASSES"
-                :title="`${OPEN_CARD_LABEL}: ${thread.title}`"
-                :aria-label="`${OPEN_CARD_LABEL}: ${thread.title}`"
-                @click="openThreadCard(thread.itemId)"
-              >
-                <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
-              </button>
-              <ul
-                v-if="category.key !== 'done' && (thread.participants.length > 1 || threadShown(thread.itemId)) && thread.participants.length > 0"
-                class="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-line pl-2"
-              >
-                <li v-for="participant in thread.participants" :key="`${thread.itemId}-${participant}`">
-                  <button
-                    type="button"
-                    class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left text-tiny transition-colors"
-                    :class="threadAgentShown(thread.itemId, participant) ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:bg-surface-2 hover:text-ink'"
-                    @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId, agent: participant })"
-                  >
-                    <AgentPortrait :who="participant" :size="14" class="shrink-0" />
-                    <span class="min-w-0 flex-1 truncate">{{ agentName(participant) }}</span>
-                    <span
-                      v-if="feed.stateOf(participant) === 'thinking' || feed.stateOf(participant) === 'sending'"
-                      class="size-1.5 shrink-0 rounded-full bg-ok animate-pulse"
-                    />
-                  </button>
-                </li>
-              </ul>
-            </li>
+            <ThreadTreeNode
+              v-for="thread in category.items"
+              :key="`${category.key}-${thread.itemId}`"
+              :thread="thread"
+              :category-key="category.key"
+            />
           </ul>
         </div>
       </template>

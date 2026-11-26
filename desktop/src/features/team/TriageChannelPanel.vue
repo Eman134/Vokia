@@ -6,13 +6,20 @@ import { isUnassigned, type BacklogItem } from '../backlog/backlogTypes'
 import { STATE_BADGE, STATE_CHIP } from '../backlog/backlogLabels'
 import { useBacklog } from '../backlog/useBacklog'
 import { useItemPlan } from '../backlog/useItemPlan'
+import { useRunItem } from '../backlog/useRunItem'
 import { useTriage } from '../backlog/useTriage'
 import { agentName } from './agents'
 import MarkdownText from './MarkdownText.vue'
 
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
+const runItem = useRunItem()
 const triage = useTriage()
+
+function approveAndRun(itemId: string): void {
+  itemPlan.accept(itemId)
+  void runItem.run(itemId)
+}
 
 const adjustingId = ref<string | null>(null)
 const adjustDrafts = ref<Record<string, string>>({})
@@ -128,8 +135,11 @@ function sendAdjustment(itemId: string): void {
       </div>
 
       <div v-if="stateOf(item) === 'proposto'" class="flex flex-wrap items-center gap-1.5">
-        <UiButton variant="primary" size="sm" @press="itemPlan.accept(item.id)">
+        <UiButton variant="approve" size="sm" @press="itemPlan.accept(item.id)">
           Aprovar plano
+        </UiButton>
+        <UiButton variant="primary" size="sm" @press="approveAndRun(item.id)">
+          Aprovar e implementar
         </UiButton>
         <UiButton variant="quiet" size="sm" @press="toggleAdjust(item.id)">
           Pedir alterações

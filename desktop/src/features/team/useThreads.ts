@@ -14,6 +14,7 @@ export interface TaskThread {
   publicId?: string
   title: string
   column: BacklogColumn
+  parentId?: string
   assignee: Agent | null
   participants: Agent[]
   lastActivity: number
@@ -21,6 +22,7 @@ export interface TaskThread {
   exchangeCount: number
   isTriaging?: boolean
   status: ThreadStatus
+  subthreads: TaskThread[]
 }
 
 export const useThreads = defineStore('threads', () => {
@@ -67,42 +69,83 @@ export const useThreads = defineStore('threads', () => {
         .map((permission) => permission.agent),
     )
 
-    return backlog.items
-      .flatMap((item): TaskThread[] => {
-        const column = item.column ?? 'Backlog'
-        const bucket = byItem.get(item.id)
-        const isTriaging = backlog.triagingIds.has(item.id)
-        if (!showsAsThread({ column, isTriaging, messageCount: bucket?.messageCount ?? 0, lastActivity: bucket?.lastActivity ?? 0 })) return []
-        const participants = [...(bucket?.participants ?? [])]
-        const working = feed.activeAgentsForItems(new Set([item.id]))
-        const status = threadStatus({
-          column,
-          isTriaging,
-          hasOpenQuestion: decisions.pending.some((decision) => decision.itemId === item.id && decision.projectId === projectId),
-          hasPendingPermission: [...working].some((agent) => waitingOnYou.has(agent)),
-          hasWorkingAgent: working.size > 0,
-        })
-        return [
-          {
-            itemId: item.id,
-            publicId: item.publicId,
-            title: item.title,
-            column,
-            assignee: participants.at(-1) ?? null,
-            participants,
-            lastActivity: bucket?.lastActivity ?? 0,
-            messageCount: bucket?.messageCount ?? 0,
-            exchangeCount: bucket?.exchangeCount ?? 0,
-            isTriaging,
-            status,
-          },
-        ]
+    const nodeById = new Map<string, TaskThread>()
+    for (const item of backlog.items) {
+      const column = item.column ?? 'Backlog'
+      const bucket = byItem.get(item.id)
+      const isTriaging = backlog.triagingIds.has(item.id)
+      const participants = [...(bucket?.participants ?? [])]
+      const working = feed.activeAgentsForItems(new Set([item.id]))
+      const status = threadStatus({
+        column,
+        isTriaging,
+        hasOpenQuestion: decisions.pending.some((decision) => decision.itemId === item.id && decision.projectId === projectId),
+        hasPendingPermission: [...working].some((agent) => waitingOnYou.has(agent)),
+        hasWorkingAgent: working.size > 0,
       })
+      nodeById.set(item.id, {
+        itemId: item.id,
+        publicId: item.publicId,
+        title: item.title,
+        column,
+        parentId: item.parent,
+        assignee: participants.at(-1) ?? null,
+        participants,
+        lastActivity: bucket?.lastActivity ?? 0,
+        messageCount: bucket?.messageCount ?? 0,
+        exchangeCount: bucket?.exchangeCount ?? 0,
+        isTriaging,
+        status,
+        subthreads: [],
+      })
+    }
+
+    const roots: TaskThread[] = []
+    for (const node of nodeById.values()) {
+      const parent = node.parentId ? nodeById.get(node.parentId) : undefined
+      if (parent) {
+        parent.subthreads.push(node)
+      } else {
+        roots.push(node)
+      }
+    }
+
+    function rollup(node: TaskThread): number {
+      let maxActivity = node.lastActivity
+      for (const sub of node.subthreads) {
+        const subMax = rollup(sub)
+        if (subMax > maxActivity) maxActivity = subMax
+      }
+      node.lastActivity = maxActivity
+      return maxActivity
+    }
+    for (const root of roots) {
+      rollup(root)
+    }
+
+    return roots
+      .filter((root) =>
+        showsAsThread({
+          column: root.column,
+          isTriaging: Boolean(root.isTriaging),
+          messageCount: root.messageCount,
+          lastActivity: root.lastActivity,
+        }),
+      )
       .sort((a, b) => b.lastActivity - a.lastActivity)
   })
 
+  function findInTree(list: readonly TaskThread[], itemId: string): TaskThread | undefined {
+    for (const thread of list) {
+      if (thread.itemId === itemId) return thread
+      const nested = findInTree(thread.subthreads, itemId)
+      if (nested) return nested
+    }
+    return undefined
+  }
+
   function find(itemId: string): TaskThread | undefined {
-    return threads.value.find((thread) => thread.itemId === itemId)
+    return findInTree(threads.value, itemId)
   }
 
   return { threads, find }

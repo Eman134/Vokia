@@ -353,7 +353,7 @@ const graphModalMeta = computed(() => {
         <span
           v-if="usageCost || usageSplit"
           data-testid="message-usage-detail"
-          class="flex items-center gap-2"
+          :class="USAGE_REVEAL_CLASSES"
         >
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />
