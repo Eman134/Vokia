@@ -12,9 +12,8 @@ const open = defineModel<boolean>('open', { required: true })
 
 const LABEL_PREFIX = 'Modo de execução:'
 const LIST_LABEL = 'Modo de execução'
-const WARN_CLASSES = 'bg-warn-soft text-warn-text'
 const OPTION_CLASSES = `flex w-full cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-2 text-left ${INK_FOCUS_CLASSES}`
-const ICON_CLASSES = 'size-3.5 shrink-0'
+const ICON_CLASSES = 'size-4 shrink-0'
 
 const store = useExecutionMode()
 const projects = useProjects()
@@ -101,10 +100,10 @@ onUnmounted(() => {
       ref="triggerRef"
       variant="quiet"
       size="sm"
-      class="relative gap-1.5 px-2 max-sm:w-7 max-sm:px-0"
+      class="relative w-7 px-0"
       :class="[
-        current.warn && WARN_CLASSES,
-        mode === 'bypass' && 'ring-1 ring-warn/70',
+        current.colorClass,
+        current.warn && 'bg-danger/12 ring-1 ring-danger/60',
         modeAnimating && 'mode-shake',
       ]"
       :aria-label="buttonLabel"
@@ -116,13 +115,12 @@ onUnmounted(() => {
       data-testid="execution-mode-selector"
       @press="open = !open"
     >
-      <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path :d="current.icon" />
       </svg>
-      <span class="whitespace-nowrap text-caption font-medium max-sm:hidden">{{ current.label }}</span>
       <span
         v-if="mode === 'bypass'"
-        class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warn animate-pulse motion-reduce:animate-none"
+        class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-danger animate-pulse motion-reduce:animate-none"
         aria-hidden="true"
       />
     </UiButton>
@@ -146,10 +144,10 @@ onUnmounted(() => {
             @click="select(option)"
           >
             <span
-              class="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-sm"
-              :class="EXECUTION_MODE_INFO[option].warn ? WARN_CLASSES : 'text-ink'"
+              class="mt-0.5 inline-flex size-5.5 shrink-0 items-center justify-center rounded-sm"
+              :class="EXECUTION_MODE_INFO[option].softClass"
             >
-              <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path :d="EXECUTION_MODE_INFO[option].icon" />
               </svg>
             </span>

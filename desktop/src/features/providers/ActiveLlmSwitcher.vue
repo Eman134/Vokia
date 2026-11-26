@@ -137,7 +137,7 @@ function handleOpenBackup(): void {
     <UiButton
       variant="quiet"
       size="sm"
-      class="gap-1.5 px-2 max-sm:w-7 max-sm:px-0"
+      class="w-7 px-0"
       aria-label="Selecionar provedor, modelo e esforço"
       :title="activeTooltip"
       aria-haspopup="dialog"
@@ -145,27 +145,22 @@ function handleOpenBackup(): void {
       data-testid="active-llm-switcher"
       @press="togglePicker()"
     >
-      <span class="relative inline-flex items-center gap-1.5">
+      <span class="relative inline-flex items-center">
         <svg
-          width="15"
-          height="15"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          stroke-width="1.5"
+          stroke-width="1.55"
           stroke-linecap="round"
           stroke-linejoin="round"
-          class="shrink-0"
           aria-hidden="true"
         >
-          <rect x="4" y="4" width="16" height="16" rx="2" />
-          <rect x="9" y="9" width="6" height="6" />
-          <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+          <path d="M5.2 4.4 Q12 3.8 18.8 4.5 Q19.5 12 18.9 19.3 Q12 19.9 4.9 19.2 Q4.3 12 5.2 4.4" />
+          <path d="M9.4 9.2 Q12 8.8 14.7 9.3 Q15 12 14.6 14.8 Q12 15.1 9.2 14.7 Q8.9 12 9.4 9.2" />
+          <path d="M9.2 1.6 Q9 2.9 9.3 4.2 M14.8 1.5 Q15.1 2.8 14.7 4.3 M9.1 19.6 Q9.4 21 9 22.3 M14.7 19.7 Q14.4 21 14.9 22.4 M19.4 9.1 Q20.9 8.9 22.3 9.3 M19.3 14.7 Q20.9 15 22.4 14.6 M1.6 9.3 Q3 8.9 4.5 9.2 M1.7 14.8 Q3.1 14.5 4.4 14.9" />
         </svg>
-        <span
-          v-if="activeModelLabel || activeProviderLabel"
-          class="max-w-28 truncate text-caption font-medium max-sm:hidden"
-        >{{ activeModelLabel || activeProviderLabel }}</span>
         <span
           v-if="activeLlm.overrides.length > 0"
           class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warn-text"
