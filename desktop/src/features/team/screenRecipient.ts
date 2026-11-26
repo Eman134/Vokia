@@ -98,7 +98,7 @@ export function screenPlaceholder(
   }
   if (screen.kind === 'logs') return 'Canal #logs (somente leitura)'
   if (screen.kind === 'agent') return `Mensagem para ${nameOf(screen.agent)}`
-  if (screen.kind === 'copy') return `Mensagem para ${nameOf(screen.baseAgent)} · Cópia ${screen.number}`
+  if (screen.kind === 'copy') return `Mensagem para ${nameOf(screen.baseAgent)} ${screen.number}`
   const channel = screenChannel(page, screen, channels)
   if (channel !== null) {
     const to = channelRecipient(channel, rosterOrder)

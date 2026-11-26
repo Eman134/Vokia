@@ -17,7 +17,7 @@ const items = useQueueItems()
 
 const title = computed(() => {
   if (feed.screen.kind === 'agent') return AGENT_TITLE_PREFIX + agentName(feed.screen.agent)
-  if (feed.screen.kind === 'copy') return `${AGENT_TITLE_PREFIX}${agentName(feed.screen.baseAgent)} · Cópia ${feed.screen.number}`
+  if (feed.screen.kind === 'copy') return `${AGENT_TITLE_PREFIX}${agentName(feed.screen.baseAgent)} ${feed.screen.number}`
   return TEAM_TITLE
 })
 </script>

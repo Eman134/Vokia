@@ -14,7 +14,7 @@ const requests = useRequests()
 
 // Sem fila o botão e o popover somem; sem isto o pai ficaria com a barra expandida por um aberto invisível.
 watch(
-  () => requests.queue.length,
+  () => requests.projectQueue.length,
   (length) => {
     if (length === 0) {
       open.value = false
@@ -24,19 +24,19 @@ watch(
 </script>
 
 <template>
-  <div v-if="requests.queue.length > 0" class="relative">
+  <div v-if="requests.projectQueue.length > 0" class="relative">
     <UiButton
       variant="quiet"
       size="sm"
       class="gap-1.5"
-      :aria-label="QUEUE_BUTTON_LABEL(requests.queue.length)"
-      :title="QUEUE_BUTTON_LABEL(requests.queue.length)"
+      :aria-label="QUEUE_BUTTON_LABEL(requests.projectQueue.length)"
+      :title="QUEUE_BUTTON_LABEL(requests.projectQueue.length)"
       aria-haspopup="dialog"
       :aria-expanded="open"
       @press="open = !open"
     >
       <UiIcon :path="QUEUE_ICON_PATH" :size="QUEUE_ICON_SIZE" />
-      <span>{{ requests.queue.length }}</span>
+      <span>{{ requests.projectQueue.length }}</span>
     </UiButton>
     <QueuePopover v-if="open" @close="open = false" />
   </div>

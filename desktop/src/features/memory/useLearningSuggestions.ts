@@ -127,6 +127,7 @@ export const useLearningSuggestions = defineStore('learningSuggestions', () => {
     unlisten = await listen<VokiaEvent>(VOKIA_EVENT, (event) => {
       const payload = event.payload
       if (payload.type !== 'learning-suggestions-changed') return
+      if (activeProjectId.value !== undefined && payload.projectId !== activeProjectId.value) return
       void load(activeProjectId.value ?? payload.projectId)
       if (payload.newCount > 0) {
         const balloons = useBalloons()

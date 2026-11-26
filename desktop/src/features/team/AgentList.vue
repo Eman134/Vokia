@@ -77,7 +77,6 @@ const THREAD_DOT: Partial<Record<ThreadStatus, { classes: string; label: string 
   'needs-you': { classes: 'bg-danger motion-safe:animate-pulse', label: 'precisa de você' },
 }
 const COPIES_LIST_LABEL = 'Cópias'
-const COPY_MARK_TEXT = 'Cópia'
 const COPY_NOUN_SINGULAR = 'cópia'
 const COPY_NOUN_PLURAL = 'cópias'
 
@@ -568,7 +567,7 @@ function closeChannelDialog(): void {
                 </svg>
                 <span class="flex min-w-0 flex-1 flex-col">
                   <span class="flex items-center justify-between gap-2">
-                    <span class="text-label font-semibold text-ink">{{ COPY_MARK_TEXT }} {{ copy.number }}</span>
+                    <span class="text-label font-semibold text-ink">{{ agent.name }} {{ copy.number }}</span>
                     <span
                       v-if="isCopyThinking(copy.id)"
                       class="inline-flex shrink-0 items-center gap-0.5 text-ink-pen"

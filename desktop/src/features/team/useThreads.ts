@@ -60,8 +60,12 @@ export const useThreads = defineStore('threads', () => {
       ensureBucket(itemId).participants.add(agent)
     }
 
-    const waitingOnYou = new Set(feed.permissions.map((permission) => permission.agent))
     const projectId = projects.selected?.id
+    const waitingOnYou = new Set(
+      feed.permissions
+        .filter((permission) => permission.projectId === null || permission.projectId === projectId)
+        .map((permission) => permission.agent),
+    )
 
     return backlog.items
       .flatMap((item): TaskThread[] => {

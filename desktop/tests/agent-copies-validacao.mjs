@@ -82,7 +82,7 @@ test('screenRecipient direciona mensagens e placeholder para copyId', () => {
   })
 
   const nameOf = (id) => (id === 'vexa' ? 'Vexa' : id)
-  assert.equal(screenPlaceholder('conversas', COPY_SCREEN, nameOf), 'Mensagem para Vexa · Cópia 2')
+  assert.equal(screenPlaceholder('conversas', COPY_SCREEN, nameOf), 'Mensagem para Vexa 2')
 })
 
 test('pendingAgents filtra estado apenas da instância selecionada', () => {
@@ -92,7 +92,7 @@ test('pendingAgents filtra estado apenas da instância selecionada', () => {
 
   const pending = [
     { id: 'vexa', name: 'Vexa', role: 'Frontend', kind: 'specialist' },
-    { id: 'vexa-2', name: 'Vexa · Cópia 2', role: 'Frontend', kind: 'specialist' },
+    { id: 'vexa-2', name: 'Vexa 2', role: 'Frontend', kind: 'specialist' },
   ]
   assert.deepEqual(
     filterPendingAgentsForScreen(pending, COPY_SCREEN, { channels: [] }).map((a) => a.id),

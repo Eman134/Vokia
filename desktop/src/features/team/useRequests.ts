@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Agent, VokiaRequestSettled } from './events'
 import { DEFAULT_RECIPIENT, findNamedAgent } from './agents'
@@ -431,9 +431,15 @@ export const useRequests = defineStore('requests', () => {
     return true
   }
 
+  const projectQueue = computed(() => {
+    const projectId = projects.selected?.id
+    return projectId === undefined ? [] : queue.value.filter((request) => request.projectId === projectId)
+  })
+
   return {
     pendingMention,
     queue,
+    projectQueue,
     queuedFor,
     requestMention,
     takePendingMention,

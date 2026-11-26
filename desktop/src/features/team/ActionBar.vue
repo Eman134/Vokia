@@ -82,7 +82,7 @@ const inlinePermission = computed(() =>
   showsInlinePermission({
     flowActive: flow.active,
     expanded: expanded.value,
-    pendingCount: feed.permissions.length,
+    pendingCount: feed.projectPermissions.length,
     hasContent: hasDraft.value,
   }),
 )
@@ -104,10 +104,10 @@ const layoutKey = computed(() =>
     statusStore.statusText,
     decisions.pendingCount,
     learningSuggestions.pendingCount,
-    requests.queue.length,
+    requests.projectQueue.length,
     control.pausedList.length,
     usageLimit.visible,
-    feed.permissions.length,
+    feed.projectPermissions.length,
     feed.activeAgents.length,
     attachments.attachments.value.length,
     attachments.saving.value,

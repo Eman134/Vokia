@@ -146,6 +146,9 @@ export const useFeed = defineStore('feed', () => {
   }
   const activeAgents = computed<AgentProfile[]>(() => selectActiveAgents(roster.agents, states.value))
   const channels = useChannels()
+  const projectPermissions = computed(() =>
+    permissions.value.filter((permission) => isSelectedProject(permission.projectId)),
+  )
   const timeline = computed<TimelineItem[]>(() => {
     const current = screen.value
     if (current.kind === 'triage') {
@@ -165,8 +168,14 @@ export const useFeed = defineStore('feed', () => {
       }
       await projects.load()
       await restorePauses()
-      if (projects.selected !== null) {
-        feed.value = await loadHistory(projects.selected.id)
+      const selectedId = projects.selected?.id
+      if (selectedId !== undefined) {
+        const history = await loadHistory(selectedId)
+        if (projects.selected?.id === selectedId) {
+          feed.value = history
+        }
+      } else {
+        feed.value = []
       }
     } catch (error) {
       feed.value.push({
@@ -227,10 +236,16 @@ export const useFeed = defineStore('feed', () => {
     requestSettledHandler = handler
   }
 
+  function isSelectedProject(projectId: number | null | undefined): boolean {
+    return projectId === null || projectId === undefined || projectId === (projects.selected?.id ?? null)
+  }
+
   function apply(event: VokiaEvent): void {
     switch (event.type) {
       case 'message':
-        feed.value.push(event)
+        if (isSelectedProject(event.projectId)) {
+          feed.value.push(event)
+        }
         if (event.isError && event.from !== 'user' && event.text === 'Limite esgotado') {
           useUsageLimit().suggestFromLimitMessage(event.from)
         }
@@ -265,7 +280,7 @@ export const useFeed = defineStore('feed', () => {
         break
       case 'permission-closed': {
         const closed = permissions.value.find((permission) => permission.id === event.id)
-        if (closed) {
+        if (closed && isSelectedProject(event.projectId)) {
           feed.value.push({
             type: 'permission-result',
             agent: closed.agent,
@@ -278,13 +293,15 @@ export const useFeed = defineStore('feed', () => {
         break
       }
       case 'permission-by-rule':
-        feed.value.push({
-          type: 'permission-result',
-          agent: event.agent,
-          detail: event.detail,
-          outcome: event.mode ?? 'project-rule',
-          time: Date.now(),
-        })
+        if (isSelectedProject(event.projectId)) {
+          feed.value.push({
+            type: 'permission-result',
+            agent: event.agent,
+            detail: event.detail,
+            outcome: event.mode ?? 'project-rule',
+            time: Date.now(),
+          })
+        }
         break
       case 'execution-mode-changed':
         useExecutionMode().apply(event)
@@ -478,7 +495,10 @@ export const useFeed = defineStore('feed', () => {
     () => projects.selected?.id,
     (projectId, previous) => {
       showScreen(GENERAL_SCREEN)
-      if (previous !== undefined && projectId !== undefined) void restoreHistory()
+      if (previous !== undefined) {
+        feed.value = []
+        if (projectId !== undefined) void restoreHistory()
+      }
     },
   )
 
@@ -502,6 +522,7 @@ export const useFeed = defineStore('feed', () => {
     screen,
     showScreen,
     permissions,
+    projectPermissions,
     activity,
     lastProject,
     pausesLoaded,

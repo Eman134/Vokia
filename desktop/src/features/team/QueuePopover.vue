@@ -25,7 +25,7 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 watch(
-  () => requests.queue.length,
+  () => requests.projectQueue.length,
   (length) => {
     if (length === 0) {
       emit('close')
@@ -43,7 +43,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <div class="w-80 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-1.5 shadow-paper">
       <p class="px-2 py-1.5 text-caption text-muted">{{ QUEUE_POPOVER_TITLE }}</p>
       <ol :aria-label="QUEUE_POPOVER_TITLE" class="flex flex-col gap-1">
-        <li v-for="(request, index) in requests.queue" :key="request.id" class="rounded-md px-2 py-1.5">
+        <li v-for="(request, index) in requests.projectQueue" :key="request.id" class="rounded-md px-2 py-1.5">
           <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
             <AgentPortrait :who="request.to" :size="PORTRAIT_SIZES.mention" />
             {{ agentName(request.to) }}
@@ -64,7 +64,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <UiButton
                 variant="quiet"
                 size="sm"
-                :disabled="index === requests.queue.length - 1"
+                :disabled="index === requests.projectQueue.length - 1"
                 :aria-label="`${QUEUE_DOWN} pedido para ${agentName(request.to)}`"
                 @press="requests.moveQueued(request.id, 'down')"
               >

@@ -15,14 +15,14 @@ const feed = useFeed()
 </script>
 
 <template>
-  <span v-if="feed.permissions[0]" data-testid="permission-inline" :class="STICKY_CLASSES">
-    <AgentPortrait :who="feed.permissions[0].agent" :size="PORTRAIT_SIZE" class="shrink-0" />
-    <span class="min-w-0 flex-1 truncate text-label text-ink" :title="feed.permissions[0].detail">
-      {{ agentName(feed.permissions[0].agent) }} quer: {{ feed.permissions[0].detail }}
+  <span v-if="feed.projectPermissions[0]" data-testid="permission-inline" :class="STICKY_CLASSES">
+    <AgentPortrait :who="feed.projectPermissions[0].agent" :size="PORTRAIT_SIZE" class="shrink-0" />
+    <span class="min-w-0 flex-1 truncate text-label text-ink" :title="feed.projectPermissions[0].detail">
+      {{ agentName(feed.projectPermissions[0].agent) }} quer: {{ feed.projectPermissions[0].detail }}
     </span>
-    <span v-if="feed.permissions.length > 1" class="shrink-0 text-caption text-muted">
-      1 de {{ feed.permissions.length }}
+    <span v-if="feed.projectPermissions.length > 1" class="shrink-0 text-caption text-muted">
+      1 de {{ feed.projectPermissions.length }}
     </span>
-    <PermissionActions :permission="feed.permissions[0]" :button-class="STAMP_CLASSES" />
+    <PermissionActions :permission="feed.projectPermissions[0]" :button-class="STAMP_CLASSES" />
   </span>
 </template>

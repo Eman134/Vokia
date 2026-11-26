@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useBalloons } from '../balloon/useBalloons'
+import { useProjects } from '../projects/useProjects'
 import type { Agent, VokiaDecision } from '../team/events'
 import { answerDecision } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
@@ -42,6 +43,7 @@ const DECISION_PENDING_TITLE = 'Decisão pendente'
 export const useDecisions = defineStore('decisions', () => {
   const feed = useFeed()
   const balloons = useBalloons()
+  const projects = useProjects()
   const pending = ref<VokiaDecision[]>([])
   const resolved = ref<ResolvedEntry[]>([])
   const answerLog = ref<AnswerLogEntry[]>([])
@@ -50,8 +52,12 @@ export const useDecisions = defineStore('decisions', () => {
   const open = ref(false)
   const awaiting = new Map<number, Awaiting>()
 
+  function belongsToSelectedProject(projectId: number | null): boolean {
+    return projectId === null || projectId === (projects.selected?.id ?? null)
+  }
+
   const cards = computed<PanelCard[]>(() => [
-    ...feed.permissions.map((permission) => ({
+    ...feed.projectPermissions.map((permission) => ({
       key: `permissao-${permission.id}`,
       kind: 'permissao' as const,
       agent: permission.agent,
@@ -61,16 +67,18 @@ export const useDecisions = defineStore('decisions', () => {
       decisionId: null,
       permissionId: permission.id,
     })),
-    ...pending.value.map((decision) => ({
-      key: `decisao-${decision.id}`,
-      kind: decision.kind,
-      agent: decision.agent,
-      title: decision.title,
-      detail: decision.detail,
-      options: decision.options,
-      decisionId: decision.id,
-      permissionId: null,
-    })),
+    ...pending.value
+      .filter((decision) => belongsToSelectedProject(decision.projectId))
+      .map((decision) => ({
+        key: `decisao-${decision.id}`,
+        kind: decision.kind,
+        agent: decision.agent,
+        title: decision.title,
+        detail: decision.detail,
+        options: decision.options,
+        decisionId: decision.id,
+        permissionId: null,
+      })),
   ])
   const pendingCount = computed(() => cards.value.length)
 
@@ -78,7 +86,7 @@ export const useDecisions = defineStore('decisions', () => {
     if (!pending.value.some((decision) => decision.id === event.id)) {
       pending.value.push(event)
       // Com o painel aberto a decisão já está à vista.
-      if (!open.value) {
+      if (!open.value && belongsToSelectedProject(event.projectId)) {
         balloons.alert(DECISION_PENDING_TITLE, event.title)
       }
     }

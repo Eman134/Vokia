@@ -108,7 +108,7 @@ const screenLabel = computed(() => {
     return agentName(feed.screen.agent)
   }
   if (feed.screen.kind === 'copy') {
-    return `${agentName(feed.screen.baseAgent)} · Cópia ${feed.screen.number}`
+    return `${agentName(feed.screen.baseAgent)} ${feed.screen.number}`
   }
   if (feed.screen.kind === 'channel') {
     const name = channelName(feed.screen.channel)
