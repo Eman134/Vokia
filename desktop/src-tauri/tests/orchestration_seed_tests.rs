@@ -627,7 +627,7 @@ fn recusa_de_comando_invalido_vazio_espacos_aspas_abertas_e_flags_reservadas() {
 #[test]
 fn presets_contem_claude_codex_opencode_e_antigravity_com_defaults_e_modelos_corretos() {
     let presets = crate::agents::presets();
-    assert_eq!(presets.len(), 4);
+    assert_eq!(presets.len(), 5);
 
     let claude = presets.iter().find(|p| p.id == "claude").expect("preset claude");
     assert_eq!(claude.default_command, "claude");

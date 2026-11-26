@@ -53,6 +53,7 @@ pub enum ProviderProtocol {
     ClaudeLive,
     CodexAppServer,
     CodexJsonl,
+    Acp,
     OpenCodeJson,
     AntigravityStream,
     GenericCli,
@@ -370,7 +371,8 @@ impl ProviderConfig {
         match self.protocol {
             ProviderProtocol::ClaudeLive
             | ProviderProtocol::CodexAppServer
-            | ProviderProtocol::CodexJsonl => ToolTransport::McpNative,
+            | ProviderProtocol::CodexJsonl
+            | ProviderProtocol::Acp => ToolTransport::McpNative,
             ProviderProtocol::OpenCodeJson
             | ProviderProtocol::AntigravityStream
             | ProviderProtocol::GenericCli => ToolTransport::VokiaCli,
@@ -531,10 +533,16 @@ impl ProviderRegistry {
     }
 
     pub fn get(&self, id: &str) -> Result<ProviderConfig, ProviderError> {
-        self.list()?
-            .into_iter()
-            .find(|provider| provider.id == id)
-            .ok_or_else(|| ProviderError::UnknownProvider(id.to_string()))
+        let list = self.list()?;
+        if let Some(found) = list.iter().find(|provider| provider.id == id) {
+            return Ok(found.clone());
+        }
+        if id == "gemini" {
+            if let Some(alias) = list.into_iter().find(|provider| provider.id == "antigravity") {
+                return Ok(alias);
+            }
+        }
+        Err(ProviderError::UnknownProvider(id.to_string()))
     }
 
     pub fn presets(&self) -> Result<Vec<CliPreset>, ProviderError> {
@@ -916,24 +924,25 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             label: "OpenCode".to_string(),
             enabled: true,
             disabled_reason: None,
-            protocol: ProviderProtocol::OpenCodeJson,
+            protocol: ProviderProtocol::Acp,
             default_command: "opencode".to_string(),
             default_model: "openai/gpt-6-astra".to_string(),
             models: vec_str(&[
+                "opencode/big-pickle",
                 "openai/gpt-6-astra",
                 "openai/gpt-5.6-luna",
                 "openai/gpt-5.4-mini",
             ]),
-            free_models: Vec::new(),
+            free_models: vec_str(&["opencode/big-pickle"]),
             tiers: ModelTiers {
                 basic: "openai/gpt-5.4-mini".to_string(),
                 intermediate: "openai/gpt-5.6-luna".to_string(),
                 advanced: "openai/gpt-6-astra".to_string(),
             },
-            supports_mcp: false,
-            tool_transport: Some(ToolTransport::VokiaCli),
+            supports_mcp: true,
+            tool_transport: Some(ToolTransport::McpNative),
             has_native_web_search: false,
-            supports_sandbox: false,
+            supports_sandbox: true,
             reserved_flags: vec_str(&[
                 "--pure",
                 "--format",
@@ -1039,7 +1048,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             label: "Gemini".to_string(),
             enabled: true,
             disabled_reason: None,
-            protocol: ProviderProtocol::AntigravityStream,
+            protocol: ProviderProtocol::Acp,
             default_command: "agy".to_string(),
             default_model: "gemini-4-hydrogen-medium".to_string(),
             models: vec_str(&[
@@ -1054,8 +1063,8 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 intermediate: "gemini-4-argon-medium".to_string(),
                 advanced: "gemini-4-hydrogen-medium".to_string(),
             },
-            supports_mcp: false,
-            tool_transport: Some(ToolTransport::VokiaCli),
+            supports_mcp: true,
+            tool_transport: Some(ToolTransport::McpNative),
             has_native_web_search: true,
             supports_sandbox: true,
             reserved_flags: vec_str(&[
@@ -1162,6 +1171,67 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             display_order: Some(4),
             builtin_seed: true,
         },
+        ProviderConfig {
+            id: "gemini-cli".to_string(),
+            label: "Gemini CLI".to_string(),
+            enabled: true,
+            disabled_reason: None,
+            protocol: ProviderProtocol::Acp,
+            default_command: "gemini".to_string(),
+            default_model: "gemini-2.5-pro".to_string(),
+            models: vec_str(&["gemini-2.5-pro", "gemini-2.5-flash"]),
+            free_models: Vec::new(),
+            tiers: ModelTiers {
+                basic: "gemini-2.5-flash".to_string(),
+                intermediate: "gemini-2.5-pro".to_string(),
+                advanced: "gemini-2.5-pro".to_string(),
+            },
+            supports_mcp: true,
+            tool_transport: Some(ToolTransport::McpNative),
+            has_native_web_search: true,
+            supports_sandbox: true,
+            reserved_flags: vec_str(&["--model", "--experimental-acp"]),
+            rate_limit_patterns: default_rate_limit_patterns(),
+            model_unavailable_patterns: vec_str(&[
+                "model_not_found",
+                "does not have access to",
+                "not available for your account",
+                "model is not supported",
+            ]),
+            discovery: None,
+            generic: None,
+            model_grouping: ModelGroupingMode::Flat,
+            effort: None,
+            auth_probe: Some(ProviderAuthProbe {
+                env_vars: vec_str(&["GEMINI_API_KEY"]),
+                credential_files: vec_str(&[".gemini/oauth_creds.json"]),
+                free_without_login: false,
+            }),
+            auth_flows: vec![ProviderAuthFlowSpec {
+                id: "api-key".to_string(),
+                kind: AuthFlowKind::ApiKey,
+                label: "Chave GEMINI_API_KEY".to_string(),
+                description: Some("Armazenada no cofre seguro do SO.".to_string()),
+                command_args: Vec::new(),
+                env_var: Some("GEMINI_API_KEY".to_string()),
+                sensitive: true,
+                supports_app_server_rpc: false,
+            }],
+            logout: None,
+            env_presets: vec![ProviderEnvPreset {
+                key: "GEMINI_API_KEY".to_string(),
+                label: "Chave de API Gemini".to_string(),
+                placeholder: Some("AIza...".to_string()),
+                sensitive: true,
+                description: Some("Armazenada no cofre seguro do sistema operacional.".to_string()),
+            }],
+            auth_diagnostics: Some(default_auth_diagnostics()),
+            install_hint: Some("npm install -g @google/gemini-cli".to_string()),
+            connect_hint: Some("gemini".to_string()),
+            badge_code: Some("GC".to_string()),
+            display_order: Some(5),
+            builtin_seed: true,
+        },
     ]
 }
 
@@ -1261,6 +1331,10 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
         if let Some(seed) = seeds.iter().find(|s| s.id == provider.id) {
             if !has_native_field && provider.has_native_web_search != seed.has_native_web_search {
                 provider.has_native_web_search = seed.has_native_web_search;
+                updated = true;
+            }
+            if provider.id == "antigravity" && provider.label.eq_ignore_ascii_case("Antigravity") {
+                provider.label = seed.label.clone();
                 updated = true;
             }
             if provider.effort.is_none() && seed.effort.is_some() {

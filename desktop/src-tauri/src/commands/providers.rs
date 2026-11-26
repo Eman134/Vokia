@@ -600,16 +600,22 @@ pub(crate) async fn discover_provider_models_exec(
     let provider = providers.get(&id).map_err(|error| error.to_string())?;
     let cached = provider.models.clone();
 
-    let live_result: Result<Vec<String>, String> = if provider.protocol
-        == ProviderProtocol::CodexAppServer
-    {
+    let live_result: Result<Vec<String>, String> = if matches!(
+        provider.protocol,
+        ProviderProtocol::CodexAppServer | ProviderProtocol::Acp
+    ) {
         let rpc_models = match resolve_program(&provider.default_command) {
             Ok((program_path, base_args)) => {
                 if let Some(state) = app.try_state::<AppState>() {
                     state
                         .sessions
                         .adapters()
-                        .discover_models(provider.protocol, &program_path, &base_args)
+                        .discover_models_for_provider(
+                            provider.protocol,
+                            &program_path,
+                            &base_args,
+                            Some(&provider),
+                        )
                         .await
                         .transpose()
                 } else {
@@ -1137,7 +1143,7 @@ fn build_test_args(
                 args.extend(["-p".to_string(), prompt.to_string()]);
             }
         }
-        ProviderProtocol::ClaudeLive | ProviderProtocol::CodexAppServer => {}
+        ProviderProtocol::ClaudeLive | ProviderProtocol::CodexAppServer | ProviderProtocol::Acp => {}
     }
     args
 }

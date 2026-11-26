@@ -42,8 +42,24 @@ fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconheci
 
     assert!(matches!(claude, ProviderAdapter::Claude(_)));
     assert!(matches!(codex, ProviderAdapter::CodexAppServer(_)));
-    assert!(matches!(opencode, ProviderAdapter::OpenCode(_)));
-    assert!(matches!(antigravity, ProviderAdapter::Antigravity(_)));
+    assert!(matches!(opencode, ProviderAdapter::Acp(_)));
+    assert!(matches!(antigravity, ProviderAdapter::Acp(_)));
+
+    let mut opencode_legacy_cfg = providers.get("opencode").unwrap();
+    opencode_legacy_cfg.protocol = crate::providers::ProviderProtocol::OpenCodeJson;
+    opencode_legacy_cfg.supports_mcp = false;
+    opencode_legacy_cfg.tool_transport = Some(crate::providers::ToolTransport::VokiaCli);
+    let opencode_legacy = ProviderAdapter::from_config(opencode_legacy_cfg);
+    assert!(matches!(opencode_legacy, ProviderAdapter::OpenCode(_)));
+    assert!(!opencode_legacy.supports_live_session());
+
+    let mut agy_legacy_cfg = providers.get("antigravity").unwrap();
+    agy_legacy_cfg.protocol = crate::providers::ProviderProtocol::AntigravityStream;
+    agy_legacy_cfg.supports_mcp = false;
+    agy_legacy_cfg.tool_transport = Some(crate::providers::ToolTransport::VokiaCli);
+    let agy_legacy = ProviderAdapter::from_config(agy_legacy_cfg);
+    assert!(matches!(agy_legacy, ProviderAdapter::Antigravity(_)));
+    assert!(!agy_legacy.supports_live_session());
 
     let mut codex_jsonl_cfg = providers.get("codex").unwrap();
     codex_jsonl_cfg.protocol = crate::providers::ProviderProtocol::CodexJsonl;
@@ -59,13 +75,13 @@ fn provider_adapter_from_cli_reconhece_os_quatro_provedores_e_rejeita_desconheci
 
     assert!(claude.supports_mcp());
     assert!(codex.supports_mcp());
-    assert!(!opencode.supports_mcp());
-    assert!(!antigravity.supports_mcp());
+    assert!(opencode.supports_mcp());
+    assert!(antigravity.supports_mcp());
 
     assert!(claude.supports_live_session());
     assert!(codex.supports_live_session());
-    assert!(!opencode.supports_live_session());
-    assert!(!antigravity.supports_live_session());
+    assert!(opencode.supports_live_session());
+    assert!(antigravity.supports_live_session());
 }
 
 #[test]
@@ -540,13 +556,14 @@ fn llm1_seed_de_providers_json_em_diretorio_vazio_cria_quatro_provedores_iniciai
     assert!(providers_file.exists(), "providers.json deve ser criado no seed");
 
     let list = registry.list().expect("carregar lista de provedores");
-    assert_eq!(list.len(), 4, "deve semear exatamente 4 provedores");
+    assert_eq!(list.len(), 5, "deve semear exatamente 5 provedores");
 
     let ids: Vec<&str> = list.iter().map(|p| p.id.as_str()).collect();
     assert!(ids.contains(&"claude"));
     assert!(ids.contains(&"codex"));
     assert!(ids.contains(&"opencode"));
     assert!(ids.contains(&"antigravity"));
+    assert!(ids.contains(&"gemini-cli"));
 
     for provider in &list {
         assert!(!provider.default_command.trim().is_empty());
@@ -570,7 +587,7 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let registry = crate::providers::ProviderRegistry::load(&dir);
-    assert_eq!(registry.list().unwrap().len(), 4);
+    assert_eq!(registry.list().unwrap().len(), 5);
 
     let custom = crate::providers::ProviderConfig {
         id: "meu-llm-custom".to_string(),
@@ -626,9 +643,9 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
     let saved = registry.save_provider(custom.clone()).expect("salvar custom provider");
     assert_eq!(saved.id, "meu-llm-custom");
 
-    // Verifica que agora tem 5 provedores
+    // Verifica que agora tem 6 provedores
     let list = registry.list().unwrap();
-    assert_eq!(list.len(), 5);
+    assert_eq!(list.len(), 6);
     assert!(list.iter().any(|p| p.id == "meu-llm-custom"));
 
     // Recarrega em nova instância e confirma persistência em providers.json
@@ -1193,7 +1210,7 @@ fn mdl1_modelo_especifico_em_active_llm_propaga_para_ember_e_lider_e_faz_fallbac
     assert_eq!(ember_candidates[0].model, "openai/gpt-5.4-mini");
     assert_eq!(
         ember_candidates[0].provider.effective_tool_transport(),
-        crate::providers::ToolTransport::VokiaCli
+        crate::providers::ToolTransport::McpNative
     );
     assert_eq!(ember_candidates[1].cli, "claude");
     assert_eq!(ember_candidates[1].model, "haiku");
@@ -1301,12 +1318,14 @@ fn llm4_resolve_candidates_filtra_ember_mcp_sandbox_liberado_e_cooldown_tracker(
         &[],
         Some(PermissionLevel::Liberado),
     );
-    // opencode descartado pois supports_sandbox == false; resta claude
-    assert_eq!(liberado_candidates.len(), 1);
-    assert_eq!(liberado_candidates[0].cli, "claude");
+    // opencode via ACP agora suporta sandbox/aprovações em modo Liberado, junto com claude
+    assert_eq!(liberado_candidates.len(), 2);
+    assert_eq!(liberado_candidates[0].cli, "opencode");
+    assert_eq!(liberado_candidates[1].cli, "claude");
 
     // 3. CooldownTracker:
-    // Se marcamos cooldown para (claude, haiku), ele é ignorado
+    // Se marcamos cooldown para (opencode, openai/gpt-6-astra) e (claude, haiku), ambos são ignorados
+    crate::orchestrator::fallback::mark_cooldown(&state, "opencode", "openai/gpt-6-astra");
     crate::orchestrator::fallback::mark_cooldown(&state, "claude", "haiku");
     let after_cooldown = crate::orchestrator::fallback::resolve_candidates(
         &axiom,

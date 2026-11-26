@@ -318,6 +318,7 @@ impl SessionPool {
                 ProviderProtocol::ClaudeLive
                 | ProviderProtocol::CodexAppServer
                 | ProviderProtocol::CodexJsonl
+                | ProviderProtocol::Acp
                 | ProviderProtocol::AntigravityStream
                 | ProviderProtocol::OpenCodeJson
                 | ProviderProtocol::GenericCli => {

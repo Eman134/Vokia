@@ -2,6 +2,7 @@ mod protocol;
 mod registry;
 mod server;
 mod slot;
+pub mod stdio_relay;
 pub(crate) mod tools;
 
 use std::fmt;
@@ -15,6 +16,9 @@ pub use registry::{random_hex, Binding, RandomnessUnavailable};
 #[cfg(test)]
 pub use registry::Token;
 pub use server::{McpConfigFile, McpServer, McpSession};
+pub use stdio_relay::{
+    McpRelayManager, RelayEndpoint, RelaySessionGuard, StdioMcpServerConfig, VokiaMcpBridge,
+};
 pub use tools::ToolScope;
 pub use slot::{Delegation, DelegationIntent, ExchangeOutcome, ExchangeSlot, SlotDecision};
 

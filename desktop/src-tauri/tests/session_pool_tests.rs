@@ -469,8 +469,8 @@ fn preload_candidate_respeita_has_tools_do_ember_e_sandbox_em_liberado() {
     );
     let candidate_liberado = candidate_liberado.expect("candidato em nível Liberado");
     assert_eq!(
-        candidate_liberado.cli, "claude",
-        "opencode (sem sandbox) deve ser filtrado no nível Liberado"
+        candidate_liberado.cli, "opencode",
+        "opencode via ACP agora suporta nível Liberado com sandbox/aprovações"
     );
     assert!(candidate_liberado.provider.supports_sandbox);
 

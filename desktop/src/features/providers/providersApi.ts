@@ -137,6 +137,7 @@ export type ProviderProtocol =
   | 'claude-live'
   | 'codex-app-server'
   | 'codex-jsonl'
+  | 'acp'
   | 'open-code-json'
   | 'antigravity-stream'
   | 'generic-cli'

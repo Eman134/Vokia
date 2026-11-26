@@ -1,3 +1,4 @@
+pub(crate) mod acp;
 mod antigravity;
 mod claude;
 mod codex;
@@ -39,22 +40,29 @@ use super::session_pool::NO_PID;
 #[derive(Default)]
 pub(crate) struct AdapterRuntimePool {
     codex: codex_app_server::CodexIdleSessions,
+    acp: acp::AcpRuntimePool,
 }
 
 impl AdapterRuntimePool {
     pub(crate) async fn reap_idle(&self, is_externally_busy: impl Fn(&SessionKey) -> bool) {
         let _ = self
             .codex
+            .reap_idle(Instant::now(), &is_externally_busy)
+            .await;
+        let _ = self
+            .acp
             .reap_idle(Instant::now(), is_externally_busy)
             .await;
     }
 
     pub(crate) async fn archive_project(&self, project_id: i64) {
         let _ = self.codex.archive_project(project_id).await;
+        self.acp.archive_project(project_id).await;
     }
 
     pub(crate) async fn archive_agent(&self, agent: &Agent) {
         let _ = self.codex.archive_agent(agent).await;
+        self.acp.archive_agent(agent).await;
     }
 
     pub(crate) async fn archive_worktree(
@@ -67,14 +75,19 @@ impl AdapterRuntimePool {
             .codex
             .archive_worktree(project_id, item_id, worktree_path)
             .await;
+        self.acp
+            .archive_worktree(project_id, item_id, worktree_path)
+            .await;
     }
 
     pub(crate) async fn archive_all(&self) {
         let _ = self.codex.archive_all().await;
+        self.acp.archive_all().await;
     }
 
     pub(crate) fn shutdown_all(&self) {
         self.codex.shutdown_all_sync();
+        self.acp.shutdown_all_sync();
     }
 
     pub(crate) async fn steer_turn(
@@ -82,7 +95,15 @@ impl AdapterRuntimePool {
         key: &SessionKey,
         message: &str,
     ) -> Result<bool, FlowError> {
-        self.codex
+        if self
+            .codex
+            .steer_turn(key, message)
+            .await
+            .map_err(FlowError::Claude)?
+        {
+            return Ok(true);
+        }
+        self.acp
             .steer_turn(key, message)
             .await
             .map_err(FlowError::Claude)
@@ -90,22 +111,58 @@ impl AdapterRuntimePool {
 
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) async fn interrupt_turn(&self, key: &SessionKey) -> Result<bool, FlowError> {
-        self.codex
+        if self
+            .codex
+            .interrupt_turn(key)
+            .await
+            .map_err(FlowError::Claude)?
+        {
+            return Ok(true);
+        }
+        self.acp
             .interrupt_turn(key)
             .await
             .map_err(FlowError::Claude)
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn acp_session_status(&self, key: &SessionKey) -> acp::AcpSessionStatus {
+        self.acp.session_status(key)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn restart_acp_session(&self, key: &SessionKey) -> bool {
+        self.acp.restart_session(key).await
+    }
+
+    #[allow(dead_code)]
     pub(crate) async fn discover_models(
         &self,
         protocol: ProviderProtocol,
         program: &Path,
         user_args: &[String],
     ) -> Result<Option<Vec<String>>, String> {
+        self.discover_models_for_provider(protocol, program, user_args, None)
+            .await
+    }
+
+    pub(crate) async fn discover_models_for_provider(
+        &self,
+        protocol: ProviderProtocol,
+        program: &Path,
+        user_args: &[String],
+        provider: Option<&ProviderConfig>,
+    ) -> Result<Option<Vec<String>>, String> {
         match protocol {
             ProviderProtocol::CodexAppServer => self
                 .codex
                 .list_models(program, user_args)
+                .await
+                .map(Some)
+                .map_err(|err| err.to_string()),
+            ProviderProtocol::Acp => self
+                .acp
+                .discover_models(program, user_args, provider)
                 .await
                 .map(Some)
                 .map_err(|err| err.to_string()),
@@ -142,6 +199,10 @@ pub(crate) async fn test_persistent_provider(
         ProviderProtocol::CodexAppServer => Some(
             codex_app_server::test_connection(program, user_args, model, config, limit).await,
         ),
+        ProviderProtocol::Acp => {
+            let pool = acp::AcpRuntimePool::default();
+            Some(pool.test_connection(program, user_args, model, config, limit).await)
+        }
         _ => None,
     }
 }
@@ -151,6 +212,7 @@ pub(in crate::orchestrator) enum ProviderAdapter {
     Claude(ProviderConfig),
     CodexAppServer(ProviderConfig),
     Codex(ProviderConfig),
+    Acp(ProviderConfig),
     OpenCode(ProviderConfig),
     Antigravity(ProviderConfig),
     Generic(Box<ProviderConfig>),
@@ -162,6 +224,7 @@ impl ProviderAdapter {
             ProviderProtocol::ClaudeLive => Self::Claude(config),
             ProviderProtocol::CodexAppServer => Self::CodexAppServer(config),
             ProviderProtocol::CodexJsonl => Self::Codex(config),
+            ProviderProtocol::Acp => Self::Acp(config),
             ProviderProtocol::OpenCodeJson => Self::OpenCode(config),
             ProviderProtocol::AntigravityStream => Self::Antigravity(config),
             ProviderProtocol::GenericCli => Self::Generic(Box::new(config)),
@@ -183,6 +246,7 @@ impl ProviderAdapter {
             Self::Claude(config)
             | Self::CodexAppServer(config)
             | Self::Codex(config)
+            | Self::Acp(config)
             | Self::OpenCode(config)
             | Self::Antigravity(config) => config,
             Self::Generic(config) => config,
@@ -207,7 +271,7 @@ impl ProviderAdapter {
     }
 
     pub(in crate::orchestrator) fn supports_live_session(&self) -> bool {
-        matches!(self, Self::Claude(_) | Self::CodexAppServer(_))
+        matches!(self, Self::Claude(_) | Self::CodexAppServer(_) | Self::Acp(_))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -273,6 +337,52 @@ impl ProviderAdapter {
                 held.provider_key = Some((provider.id.clone(), call.model.clone()));
                 Ok(Some(reply))
             }
+            (Self::Acp(provider), _) => {
+                let stored = store.load().ok().flatten();
+                let persisted_session_id = stored.as_deref().and_then(|raw| {
+                    decode_provider_session(raw, &provider.id, &call.model, call.item_id())
+                });
+                let mcp_session = super::agent_session::open_mcp_headless(call)
+                    .map_err(|err| FlowError::Claude(err.with_cli(&provider.id)))?;
+                if let Some(session) = &mcp_session {
+                    call.begin_mcp_slot(session);
+                }
+                let result = runtimes
+                    .acp
+                    .run_persistent_turn(
+                        console.session_key().clone(),
+                        call.item_id().map(str::to_string),
+                        &call.program,
+                        &call.user_args,
+                        &call.role,
+                        &call.model,
+                        access,
+                        &prompts.opening,
+                        &prompts.follow_up,
+                        persisted_session_id.as_deref(),
+                        Some(provider),
+                        mcp_session.as_ref(),
+                        Vec::new(),
+                        Some(&gate),
+                        &held.pid,
+                        Some(console),
+                    )
+                    .await;
+                if let Some(session) = &mcp_session {
+                    call.finish_mcp_slot(session);
+                }
+                let reply = result.map_err(|err| FlowError::Claude(err.with_cli(&provider.id)))?;
+                if let Some(session_id) = reply.session_id.as_deref() {
+                    store.save(&encode_provider_session(
+                        &provider.id,
+                        &call.model,
+                        call.item_id(),
+                        session_id,
+                    ))?;
+                }
+                held.provider_key = Some((provider.id.clone(), call.model.clone()));
+                Ok(Some(reply))
+            }
             _ => Ok(None),
         }
     }
@@ -306,6 +416,33 @@ impl ProviderAdapter {
                         message,
                         Some(provider),
                         mcp_session.as_ref(),
+                        Some(&gate),
+                        pid,
+                        Some(console),
+                    )
+                    .await;
+                if let Some(session) = &mcp_session {
+                    call.finish_mcp_slot(session);
+                }
+                result.map_err(|err| err.with_cli(&provider.id))
+            }
+            Self::Acp(provider) => {
+                let mcp_session = super::agent_session::open_mcp_headless(call)?;
+                if let Some(session) = &mcp_session {
+                    call.begin_mcp_slot(session);
+                }
+                let result = runtimes
+                    .acp
+                    .run_ephemeral_turn(
+                        &call.program,
+                        &call.user_args,
+                        &call.role,
+                        &call.model,
+                        access,
+                        message,
+                        Some(provider),
+                        mcp_session.as_ref(),
+                        Vec::new(),
                         Some(&gate),
                         pid,
                         Some(console),

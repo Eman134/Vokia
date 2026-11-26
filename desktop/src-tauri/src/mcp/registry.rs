@@ -15,6 +15,10 @@ const TOKEN_BYTES: usize = 32;
 pub struct Token(String);
 
 impl Token {
+    pub(crate) fn from_raw(raw: String) -> Self {
+        Self(raw)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -77,7 +81,7 @@ impl Sessions {
     }
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     left.len() == right.len()
         && left
             .iter()

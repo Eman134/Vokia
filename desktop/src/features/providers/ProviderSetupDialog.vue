@@ -22,6 +22,7 @@ import { SETUP_ADD_PROVIDER_TOKEN, useProviders } from './useProviders'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 const PROTOCOL_OPTIONS: readonly { label: string; value: ProviderProtocol }[] = [
   { label: 'Generic CLI', value: 'generic-cli' },
+  { label: 'ACP (Agent Client Protocol)', value: 'acp' },
   { label: 'Claude Live', value: 'claude-live' },
   { label: 'Codex App Server', value: 'codex-app-server' },
   { label: 'Codex JSONL', value: 'codex-jsonl' },
