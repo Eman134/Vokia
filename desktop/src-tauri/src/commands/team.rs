@@ -467,7 +467,6 @@ pub(crate) async fn ask_btw_exec(
     if question.is_empty() {
         return Err("Informe uma pergunta após /btw.".to_string());
     }
-    let _ = args.project_id;
     let team = app
         .state::<AgentRegistry>()
         .team()
@@ -483,17 +482,57 @@ pub(crate) async fn ask_btw_exec(
         .cli
         .as_deref()
         .map_err(|problem| problem.reason.clone())?;
+
+    let context_block = if let Some(pid) = args.project_id {
+        if let Some(db) = app.state::<DbState>().db() {
+            let mem_ctx = crate::commands::learning::build_compact_memory_context(
+                db,
+                pid,
+                None,
+                Some(profile.id.as_str()),
+                1400,
+            );
+            let recent_msgs = db
+                .list_messages_for_review(pid, 0, 6)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|m| {
+                    let snippet: String = m.text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(180).collect();
+                    format!("- {} -> {}: {snippet}", m.from_agent, m.to_agent)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let mut parts = Vec::new();
+            if !mem_ctx.is_empty() {
+                parts.push(mem_ctx);
+            }
+            if !recent_msgs.is_empty() {
+                parts.push(format!("[conversa recente]\n{recent_msgs}"));
+            }
+            parts.join("\n\n")
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     let role = format!(
         "Responda de forma direta e concisa à pergunta paralela (/btw) do usuário sem executar ferramentas nem alterar arquivos.\nPapel do agente {}: {}",
         profile.name, profile.role
     );
+    let prompt = if context_block.is_empty() {
+        question.to_string()
+    } else {
+        format!("{context_block}\n\n[pergunta /btw]\n{question}")
+    };
     let reply = orchestrator::fallback::ask_with_fallback(
         app,
         &state,
         default_cli,
         &profile.id,
         &profile,
-        question,
+        &prompt,
         &role,
     )
     .await

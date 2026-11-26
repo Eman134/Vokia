@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { DEFAULT_RECIPIENT } from '../agents'
 import { mentionSpans } from '../composerMentions'
 import { expandCommand, parseLocalCommand } from '../slashCommands'
-import { askBtw } from '../teamApi'
+import { useBtw } from './useBtw'
 import { agentName } from '../agents'
 import { useProjects } from '../../projects/useProjects'
 import { useTriage } from '../../backlog/useTriage'
@@ -64,16 +64,11 @@ export function useComposerSubmit() {
       )
       draft.value = ''
       confirmed.value = new Set()
-      try {
-        const res = await askBtw({
-          projectId: projects.selected?.id ?? null,
-          agent: dest.to,
-          question: localCommand.arg,
-        })
-        feed.notify(`/btw (${agentName(res.agent)}): ${localCommand.arg}\n${res.answer}`)
-      } catch (error) {
-        feed.feed.push({ type: 'error', message: String(error) })
-      }
+      void useBtw().ask({
+        projectId: projects.selected?.id ?? null,
+        agent: dest.to,
+        question: localCommand.arg,
+      })
       return
     }
     if (localCommand?.action === 'setup') {

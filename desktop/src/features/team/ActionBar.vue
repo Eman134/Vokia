@@ -15,6 +15,7 @@ import PausedAgents from './PausedAgents.vue'
 import UsageLimitNotice from './UsageLimitNotice.vue'
 import FlowSteps from './FlowSteps.vue'
 import Balloon from '../balloon/Balloon.vue'
+import BtwWindow from './bar/BtwWindow.vue'
 import { useDelegationNotices } from '../balloon/useDelegationNotices'
 import { useErrorNotices } from '../balloon/useErrorNotices'
 import PanelShell from '../panel/PanelShell.vue'
@@ -22,10 +23,12 @@ import { BAR_COLLAPSE_TOTAL_MS, BAR_FADE_CLASSES, BAR_SPRING, BAR_WRAP_CLASSES, 
 import ComposerField from './bar/ComposerField.vue'
 import ExecutionModeSelector from './bar/ExecutionModeSelector.vue'
 import DecisionsButton from './bar/DecisionsButton.vue'
+import MemorySuggestionsButton from './bar/MemorySuggestionsButton.vue'
 import OfflineNotice from './bar/OfflineNotice.vue'
 import QueueButton from './bar/QueueButton.vue'
 import StatusRing from './bar/StatusRing.vue'
 import ActiveLlmSwitcher from '../providers/ActiveLlmSwitcher.vue'
+import { useLearningSuggestions } from '../memory/useLearningSuggestions'
 import { useComposerSubmit } from './bar/useComposerSubmit'
 import { hasComposerContent, showsInlinePermission } from './bar/inlinePermission'
 import { usePageActions } from './bar/usePageActions'
@@ -55,6 +58,7 @@ const collapsing = ref(false)
 let collapseTimer: ReturnType<typeof setTimeout> | undefined
 const focusWithin = ref(false)
 const queueOpen = ref(false)
+const memoryOpen = ref(false)
 const menuOpen = ref(false)
 const llmSwitcherOpen = ref(false)
 const modeOpen = ref(false)
@@ -69,6 +73,7 @@ const interacting = computed(
     focusWithin.value ||
     menuOpen.value ||
     queueOpen.value ||
+    memoryOpen.value ||
     llmSwitcherOpen.value ||
     modeOpen.value ||
     agentPickerOpen.value,
@@ -88,6 +93,7 @@ const requests = useRequests()
 const decisions = useDecisions()
 const control = useAgentControl()
 const usageLimit = useUsageLimit()
+const learningSuggestions = useLearningSuggestions()
 useErrorNotices()
 useDelegationNotices()
 // Com layoutDependency o Motion só remede quando esta chave muda: hover, fluxo e conteúdo dos filhos entram aqui.
@@ -99,6 +105,7 @@ const layoutKey = computed(() =>
     flow.step,
     statusStore.statusText,
     decisions.pendingCount,
+    learningSuggestions.pendingCount,
     requests.queue.length,
     control.pausedList.length,
     usageLimit.visible,
@@ -127,6 +134,7 @@ watch(interacting, (active) => {
 watch(menuOpen, (open) => {
   if (open) {
     queueOpen.value = false
+    memoryOpen.value = false
     llmSwitcherOpen.value = false
     modeOpen.value = false
     agentPickerOpen.value = false
@@ -135,6 +143,16 @@ watch(menuOpen, (open) => {
 
 watch(queueOpen, (open) => {
   if (open) {
+    memoryOpen.value = false
+    llmSwitcherOpen.value = false
+    modeOpen.value = false
+    agentPickerOpen.value = false
+  }
+})
+
+watch(memoryOpen, (open) => {
+  if (open) {
+    queueOpen.value = false
     llmSwitcherOpen.value = false
     modeOpen.value = false
     agentPickerOpen.value = false
@@ -144,6 +162,7 @@ watch(queueOpen, (open) => {
 watch(llmSwitcherOpen, (open) => {
   if (open) {
     queueOpen.value = false
+    memoryOpen.value = false
     modeOpen.value = false
     agentPickerOpen.value = false
   }
@@ -152,6 +171,7 @@ watch(llmSwitcherOpen, (open) => {
 watch(modeOpen, (open) => {
   if (open) {
     queueOpen.value = false
+    memoryOpen.value = false
     llmSwitcherOpen.value = false
     agentPickerOpen.value = false
   }
@@ -160,6 +180,7 @@ watch(modeOpen, (open) => {
 watch(agentPickerOpen, (open) => {
   if (open) {
     queueOpen.value = false
+    memoryOpen.value = false
     llmSwitcherOpen.value = false
     modeOpen.value = false
   }
@@ -217,6 +238,7 @@ function onPointerLeave(): void {
 <template>
   <div v-if="connection.online" :class="BAR_FADE_CLASSES" aria-hidden="true" data-testid="action-bar-fade" />
   <div v-if="connection.online" :class="[BAR_WRAP_CLASSES, NARROW_WRAP_CLASS]">
+    <BtwWindow />
     <Balloon />
     <PanelShell />
     <motion.form
@@ -237,7 +259,7 @@ function onPointerLeave(): void {
       <UsageLimitNotice />
       <FlowSteps v-if="flow.active" />
       <div class="flex shrink-0 items-center gap-0.5 empty:hidden">
-        <ExecutionModeSelector v-if="canAsk && !flow.active && !inlinePermission" v-model:open="modeOpen" />
+        <ExecutionModeSelector v-if="canAsk && expanded && !flow.active && !inlinePermission" v-model:open="modeOpen" />
         <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
       </div>
       <ComposerField
@@ -253,6 +275,7 @@ function onPointerLeave(): void {
         :attachments="attachments"
         @menu-open="menuOpen = $event"
       />
+      <MemorySuggestionsButton v-model:open="memoryOpen" />
       <DecisionsButton :expanded="expanded" />
       <QueueButton v-model:open="queueOpen" />
     </motion.form>
