@@ -193,7 +193,7 @@ const details = computed(() => {
     ['Prioridade', current.priority],
     ['Estimativa', current.estimate],
     ['Custo', usage.value.turns > 0 ? (formatCostUsd(usage.value.costUsd) ?? undefined) : undefined],
-    ['Tempo', usage.value.turns > 0 ? (formatThinkingDuration(usage.value.workMs) ?? undefined) : undefined],
+    ['Tempo', usage.value.workMs > 0 ? (formatThinkingDuration(usage.value.workMs) ?? undefined) : undefined],
   ]
   return rows.filter((row): row is [string, string] => Boolean(row[1]))
 })

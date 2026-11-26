@@ -38,6 +38,8 @@ pub struct TurnUsage {
     pub context_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 pub struct Reply {

@@ -292,6 +292,7 @@ pub(super) async fn run_turns(
         };
         let turn_duration_ms = turn_started.elapsed().as_millis() as u64;
         if let Some(ref mut turn_usage) = usage {
+            turn_usage.duration_ms = Some(turn_duration_ms);
             record_turn_usage(
                 exchange,
                 &turn.speaker,

@@ -373,7 +373,7 @@ export const useFeed = defineStore('feed', () => {
 
   function recordState({ agent, state, itemId, projectId }: VokiaAgentState): void {
     if (projectId === null) {
-      if ((globalStates.value[agent] ?? 'idle') !== state) {
+      if ((globalStates.value[agent] ?? 'idle') !== state || globalStateItem.value[agent] !== itemId) {
         globalStateSince.value[agent] = Date.now()
       }
       globalStates.value[agent] = state
@@ -385,7 +385,7 @@ export const useFeed = defineStore('feed', () => {
       return
     }
     const key = projectAgentKey(projectId, agent)
-    if ((statesByKey.value[key] ?? 'idle') !== state) {
+    if ((statesByKey.value[key] ?? 'idle') !== state || stateItemByKey.value[key] !== itemId) {
       stateSinceByKey.value[key] = Date.now()
     }
     statesByKey.value[key] = state

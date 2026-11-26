@@ -1793,6 +1793,7 @@ impl CodexTurnCollector {
                 is_fallback: None,
                 context_tokens: self.context_tokens,
                 context_window: self.context_window,
+                duration_ms: None,
             });
         }
     }
@@ -1850,6 +1851,7 @@ impl CodexTurnCollector {
                 is_fallback: None,
                 context_tokens: self.context_tokens,
                 context_window: self.context_window,
+                duration_ms: None,
             })
         } else {
             self.last_turn_usage.map(|mut u| {

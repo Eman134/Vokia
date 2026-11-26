@@ -107,6 +107,7 @@ export interface TurnUsage {
   isFallback?: boolean
   contextTokens?: number
   contextWindow?: number
+  durationMs?: number
 }
 
 export interface VokiaMessage {
