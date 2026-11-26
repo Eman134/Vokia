@@ -273,6 +273,7 @@ fn label_for_tool_with_home(name: &str, input: &Value, home: Option<&str>) -> Op
             let path = first_str(&[
                 input.get("file_path"),
                 input.get("path"),
+                input.get("Path"),
                 input.get("target_file"),
                 input.get("AbsolutePath"),
                 input.get("filename"),
@@ -296,6 +297,7 @@ fn label_for_tool_with_home(name: &str, input: &Value, home: Option<&str>) -> Op
             let path = first_str(&[
                 input.get("file_path"),
                 input.get("path"),
+                input.get("Path"),
                 input.get("target_file"),
                 input.get("TargetFile"),
                 input.get("notebook_path"),
@@ -308,6 +310,7 @@ fn label_for_tool_with_home(name: &str, input: &Value, home: Option<&str>) -> Op
         "glob" | "listfiles" | "list_files" | "list_dir" | "ls" | "find_by_name" | "file_search" => {
             let path = first_str(&[
                 input.get("path"),
+                input.get("Path"),
                 input.get("dir"),
                 input.get("directory"),
                 input.get("DirectoryPath"),

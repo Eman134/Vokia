@@ -480,3 +480,17 @@ fn maestro_recebe_a_secao_do_papel_uma_unica_vez_via_base() {
         }
     });
 }
+
+#[test]
+fn prompts_diferenciam_citacao_de_nome_e_delegacao_explicita_ou_arroba() {
+    with_test_context(|team, profile| {
+        for mode in [ToolPromptMode::Mcp, ToolPromptMode::VokiaCli, ToolPromptMode::None] {
+            let prompt = role(profile, None, "Roster.", None, "Contexto.", mode, ToolScope::Coordinator, None);
+            assert!(prompt.contains("@"), "{prompt}");
+            assert!(prompt.contains("citar o nome"), "{prompt}");
+        }
+        let interp = interpreter_role(team, None, None);
+        assert!(interp.contains("@"), "{interp}");
+        assert!(interp.contains("citar o nome"), "{interp}");
+    });
+}

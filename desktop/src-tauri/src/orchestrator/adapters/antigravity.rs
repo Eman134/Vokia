@@ -5,7 +5,8 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command_for_provider, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
+    base_command_for_provider, classify_provider_error, Access, ClaudeError, Reply, ToolActivity,
+    ToolCategory, ToolStatus, TurnActivity, TurnUsage,
 };
 use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
@@ -144,6 +145,7 @@ pub(super) async fn run_turn(
                         activity.plan = (!plan.is_empty()).then_some(plan.clone());
                         console.turn_plan(plan);
                     }
+                    record_antigravity_step_tool(&mut activity, step, step_type);
                     activity.current_step_label =
                         crate::orchestrator::step_labels::label_for_antigravity_step(step);
                     console.live_activity(activity.clone());
@@ -164,6 +166,14 @@ pub(super) async fn run_turn(
                                 activity.plan = (!plan.is_empty()).then_some(plan.clone());
                                 console.turn_plan(plan);
                             }
+                            upsert_antigravity_tool(
+                                &mut activity,
+                                call_id,
+                                name,
+                                &block["input"],
+                                ToolStatus::Running,
+                                None,
+                            );
                             activity.current_step_label =
                                 crate::orchestrator::step_labels::label_for_tool(name, &block["input"]);
                             updated = true;
@@ -181,6 +191,24 @@ pub(super) async fn run_turn(
                             if let Some(id) = block.get("tool_use_id").and_then(Json::as_str) {
                                 let is_error =
                                     block.get("is_error").and_then(Json::as_bool) == Some(true);
+                                let result_text = block
+                                    .get("content")
+                                    .and_then(Json::as_str)
+                                    .map(str::to_string)
+                                    .or_else(|| block.get("content").map(|v| v.to_string()));
+                                if let Some(existing) =
+                                    activity.tools.iter_mut().find(|tool| tool.call_id == id)
+                                {
+                                    existing.status = if is_error {
+                                        ToolStatus::Failed
+                                    } else {
+                                        ToolStatus::Ok
+                                    };
+                                    if result_text.is_some() {
+                                        existing.result = result_text;
+                                    }
+                                    console.live_activity(activity.clone());
+                                }
                                 if let Some(plan) =
                                     crate::orchestrator::turn_plan::fold_claude_plan_result(
                                         &mut plan_state,
@@ -212,6 +240,11 @@ fn extract_antigravity_step_plan(
     state: &mut crate::orchestrator::turn_plan::ClaudePlanState,
     step: &Json,
 ) -> Option<crate::orchestrator::turn_plan::TurnPlan> {
+    let (call_id, name, input) = extract_antigravity_step_tool(step)?;
+    extract_tool_plan(state, call_id, name, &input)
+}
+
+fn extract_antigravity_step_tool(step: &Json) -> Option<(&str, &str, Json)> {
     let name = step
         .get("tool_name")
         .or_else(|| step.get("name"))
@@ -236,10 +269,130 @@ fn extract_antigravity_step_plan(
         .and_then(Json::as_str)
         .and_then(|s| serde_json::from_str::<Json>(s).ok());
     let input = parsed_string
-        .as_ref()
-        .or(raw_input)
-        .unwrap_or(&Json::Null);
-    extract_tool_plan(state, call_id, name, input)
+        .or_else(|| raw_input.cloned())
+        .unwrap_or(Json::Null);
+    Some((call_id, name, input))
+}
+
+fn record_antigravity_step_tool(activity: &mut TurnActivity, step: &Json, step_type: &str) {
+    let status = match step
+        .get("status")
+        .and_then(Json::as_str)
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "completed" | "done" | "ok" | "success" => ToolStatus::Ok,
+        "failed" | "error" => ToolStatus::Failed,
+        _ => ToolStatus::Ok,
+    };
+    let result = step
+        .get("output")
+        .or_else(|| step.get("result"))
+        .and_then(|v| v.as_str().map(str::to_string).or_else(|| Some(v.to_string())));
+
+    if let Some((call_id, name, input)) = extract_antigravity_step_tool(step) {
+        upsert_antigravity_tool(activity, call_id, name, &input, status, result);
+        return;
+    }
+    if step_type == "command" {
+        if let Some(cmd) = step.get("command").and_then(Json::as_str) {
+            let call_id = step.get("id").and_then(Json::as_str).unwrap_or("");
+            upsert_antigravity_tool(
+                activity,
+                call_id,
+                "run_command",
+                &serde_json::json!({ "command": cmd }),
+                status,
+                result,
+            );
+        }
+    } else if step_type == "web_search" {
+        if let Some(query) = step.get("query").and_then(Json::as_str) {
+            let call_id = step.get("id").and_then(Json::as_str).unwrap_or("");
+            upsert_antigravity_tool(
+                activity,
+                call_id,
+                "web_search",
+                &serde_json::json!({ "query": query }),
+                status,
+                result,
+            );
+        }
+    }
+}
+
+fn upsert_antigravity_tool(
+    activity: &mut TurnActivity,
+    call_id: &str,
+    name: &str,
+    input: &Json,
+    status: ToolStatus,
+    result: Option<String>,
+) {
+    let lower = name.to_ascii_lowercase();
+    let category = if lower.starts_with("mcp__vokia__") {
+        ToolCategory::App
+    } else if lower.starts_with("mcp__") {
+        ToolCategory::Mcp
+    } else if lower.contains("command") || lower == "bash" || lower == "shell" {
+        ToolCategory::Command
+    } else if lower.contains("edit") || lower.contains("write") {
+        ToolCategory::Edit
+    } else if lower.contains("read") {
+        ToolCategory::Read
+    } else if lower.contains("list") || lower == "glob" {
+        ToolCategory::List
+    } else if lower.contains("web") {
+        ToolCategory::Web
+    } else if lower.contains("grep") || lower.contains("search") {
+        ToolCategory::Search
+    } else {
+        ToolCategory::Other
+    };
+    let target = input
+        .get("command")
+        .or_else(|| input.get("CommandLine"))
+        .or_else(|| input.get("file_path"))
+        .or_else(|| input.get("path"))
+        .or_else(|| input.get("Path"))
+        .or_else(|| input.get("TargetFile"))
+        .or_else(|| input.get("query"))
+        .or_else(|| input.get("url"))
+        .and_then(Json::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(name)
+        .to_string();
+
+    if !call_id.is_empty() {
+        if let Some(existing) = activity.tools.iter_mut().find(|t| t.call_id == call_id) {
+            existing.status = status;
+            if result.is_some() {
+                existing.result = result;
+            }
+            return;
+        }
+    }
+    activity.tools.push(ToolActivity {
+        call_id: if call_id.is_empty() {
+            format!("agy-{}", activity.tools.len() + 1)
+        } else {
+            call_id.to_string()
+        },
+        name: name.to_string(),
+        category,
+        target,
+        status,
+        description: None,
+        added: None,
+        removed: None,
+        change: None,
+        duration_ms: None,
+        detail: None,
+        result,
+        exit_code: None,
+    });
 }
 
 fn extract_tool_plan(

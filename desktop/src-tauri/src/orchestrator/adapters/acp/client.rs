@@ -604,72 +604,7 @@ async fn handle_incoming_rpc(
                     }
                 }
                 "tool_call" | "tool_call_update" => {
-                    let call_id = update
-                        .get("toolCallId")
-                        .or_else(|| update.get("id"))
-                        .and_then(Json::as_str)
-                        .unwrap_or("tool")
-                        .to_string();
-                    let name = update
-                        .get("title")
-                        .or_else(|| update.get("name"))
-                        .or_else(|| update.get("toolName"))
-                        .and_then(Json::as_str)
-                        .unwrap_or("tool");
-                    let raw_input = update
-                        .get("rawInput")
-                        .or_else(|| update.get("input"))
-                        .unwrap_or(&Json::Null);
-                    let status = parse_acp_tool_status(
-                        update.get("status").and_then(Json::as_str),
-                    );
-                    let category = infer_tool_category(
-                        update.get("kind").and_then(Json::as_str),
-                        name,
-                    );
-                    let target = extract_tool_target(raw_input, name);
-
-                    if let Some(&idx) = tool_index.get(&call_id) {
-                        if let Some(existing) = activity.tools.get_mut(idx) {
-                            existing.status = status;
-                            if let Some(out) = extract_tool_output(update) {
-                                existing.result = Some(out);
-                            }
-                        }
-                    } else {
-                        let idx = activity.tools.len();
-                        tool_index.insert(call_id.clone(), idx);
-                        activity.tools.push(ToolActivity {
-                            call_id: call_id.clone(),
-                            name: name.to_string(),
-                            category,
-                            target: target.clone(),
-                            status,
-                            description: None,
-                            added: None,
-                            removed: None,
-                            change: None,
-                            duration_ms: None,
-                            detail: None,
-                            result: extract_tool_output(update),
-                            exit_code: None,
-                        });
-                    }
-
-                    if status == ToolStatus::Ok || status == ToolStatus::Failed {
-                        let status_str = if status == ToolStatus::Ok { "ok" } else { "failed" };
-                        match category {
-                            ToolCategory::Command => {
-                                work_steps.record_command(&target, None, status_str, None);
-                            }
-                            _ => {
-                                work_steps.record_tool(None, name, status_str);
-                            }
-                        }
-                    }
-
-                    activity.current_step_label = label_for_tool(name, raw_input)
-                        .or_else(|| Some(name.to_string()));
+                    apply_tool_call_update(update, activity, tool_index, work_steps);
                     if let Some(c) = console {
                         c.live_activity(activity.clone());
                     }
@@ -982,8 +917,103 @@ fn extract_content_text(update: &Json) -> Option<String> {
     None
 }
 
+fn apply_tool_call_update(
+    update: &Json,
+    activity: &mut TurnActivity,
+    tool_index: &mut HashMap<String, usize>,
+    work_steps: &mut WorkStepCollector,
+) {
+    let call_id = update
+        .get("toolCallId")
+        .or_else(|| update.get("id"))
+        .and_then(Json::as_str)
+        .unwrap_or("tool")
+        .to_string();
+    let name = update
+        .get("name")
+        .or_else(|| update.get("toolName"))
+        .or_else(|| update.get("title"))
+        .and_then(Json::as_str)
+        .unwrap_or("tool");
+    let raw_input_val = update
+        .get("rawInput")
+        .or_else(|| update.get("args"))
+        .or_else(|| update.get("input"))
+        .or_else(|| update.get("arguments"));
+    let parsed_input = raw_input_val
+        .and_then(Json::as_str)
+        .and_then(|s| serde_json::from_str::<Json>(s).ok());
+    let raw_input = parsed_input
+        .as_ref()
+        .or(raw_input_val)
+        .unwrap_or(&Json::Null);
+    let status = parse_acp_tool_status(update.get("status").and_then(Json::as_str));
+    let category = infer_tool_category(update.get("kind").and_then(Json::as_str), name);
+    let location_path = update
+        .pointer("/locations/0/path")
+        .and_then(Json::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let target = extract_tool_target(raw_input, location_path.unwrap_or(name));
+
+    if let Some(&idx) = tool_index.get(&call_id) {
+        if let Some(existing) = activity.tools.get_mut(idx) {
+            existing.status = status;
+            if existing.name == "tool" && name != "tool" {
+                existing.name = name.to_string();
+                existing.category = category;
+            }
+            if (existing.target == existing.name || existing.target == "tool") && target != name {
+                existing.target = target.clone();
+            }
+            if let Some(out) = extract_tool_output(update) {
+                existing.result = Some(out);
+            }
+        }
+    } else {
+        let idx = activity.tools.len();
+        tool_index.insert(call_id, idx);
+        activity.tools.push(ToolActivity {
+            call_id: update
+                .get("toolCallId")
+                .or_else(|| update.get("id"))
+                .and_then(Json::as_str)
+                .unwrap_or("tool")
+                .to_string(),
+            name: name.to_string(),
+            category,
+            target: target.clone(),
+            status,
+            description: None,
+            added: None,
+            removed: None,
+            change: None,
+            duration_ms: None,
+            detail: None,
+            result: extract_tool_output(update),
+            exit_code: None,
+        });
+    }
+
+    if status == ToolStatus::Ok || status == ToolStatus::Failed {
+        let status_str = if status == ToolStatus::Ok { "ok" } else { "failed" };
+        match category {
+            ToolCategory::Command => {
+                work_steps.record_command(&target, None, status_str, None);
+            }
+            _ => {
+                work_steps.record_tool(None, name, status_str);
+            }
+        }
+    }
+
+    activity.current_step_label = label_for_tool(name, raw_input)
+        .or_else(|| update.get("title").and_then(Json::as_str).map(str::to_string))
+        .or_else(|| Some(name.to_string()));
+}
+
 fn extract_tool_output(update: &Json) -> Option<String> {
-    update
+    if let Some(out) = update
         .get("rawOutput")
         .or_else(|| update.get("output"))
         .and_then(|v| {
@@ -991,15 +1021,41 @@ fn extract_tool_output(update: &Json) -> Option<String> {
                 .map(str::to_string)
                 .or_else(|| Some(v.to_string()))
         })
+    {
+        return Some(out);
+    }
+    update
+        .get("content")
+        .and_then(Json::as_array)
+        .and_then(|arr| {
+            let texts: Vec<&str> = arr
+                .iter()
+                .filter_map(|item| {
+                    item.pointer("/content/text")
+                        .or_else(|| item.get("text"))
+                        .and_then(Json::as_str)
+                })
+                .collect();
+            (!texts.is_empty()).then(|| texts.join("\n"))
+        })
 }
 
 fn extract_tool_target(input: &Json, fallback: &str) -> String {
     input
         .get("command")
+        .or_else(|| input.get("CommandLine"))
         .or_else(|| input.get("file_path"))
         .or_else(|| input.get("path"))
+        .or_else(|| input.get("Path"))
+        .or_else(|| input.get("target_file"))
+        .or_else(|| input.get("TargetFile"))
+        .or_else(|| input.get("AbsolutePath"))
+        .or_else(|| input.get("directory"))
+        .or_else(|| input.get("DirectoryPath"))
         .or_else(|| input.get("query"))
+        .or_else(|| input.get("Query"))
         .or_else(|| input.get("url"))
+        .or_else(|| input.get("Url"))
         .and_then(Json::as_str)
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -1018,6 +1074,7 @@ fn parse_acp_tool_status(raw: Option<&str>) -> ToolStatus {
 fn infer_tool_category(kind: Option<&str>, name: &str) -> ToolCategory {
     match kind.unwrap_or("").trim().to_ascii_lowercase().as_str() {
         "read" => ToolCategory::Read,
+        "list" => ToolCategory::List,
         "edit" | "delete" | "move" => ToolCategory::Edit,
         "execute" | "command" | "bash" => ToolCategory::Command,
         "search" => ToolCategory::Search,
@@ -1034,6 +1091,14 @@ fn infer_tool_category(kind: Option<&str>, name: &str) -> ToolCategory {
                 ToolCategory::Edit
             } else if lower.contains("read") {
                 ToolCategory::Read
+            } else if lower.contains("list_dir") || lower.contains("find_by_name") || lower == "glob" {
+                ToolCategory::List
+            } else if lower.contains("grep") || lower.contains("search_web") || lower.contains("web_search") {
+                if lower.contains("web") {
+                    ToolCategory::Web
+                } else {
+                    ToolCategory::Search
+                }
             } else {
                 ToolCategory::Other
             }
@@ -1092,3 +1157,47 @@ fn extract_usage_from_result(
 }
 
 pub type SharedAcpSession = Arc<AsyncMutex<AcpSessionHandle>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agy_acp_tool_call_e_update_preenchem_tools_target_e_step_label() {
+        let mut activity = TurnActivity::default();
+        let mut tool_index = HashMap::new();
+        let mut work_steps = WorkStepCollector::new();
+
+        let start = json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_1",
+            "name": "read_file",
+            "args": { "Path": "C:\\repo\\desktop\\package.json", "StartLine": 1, "EndLine": 1 },
+            "status": "in_progress",
+            "kind": "read",
+            "title": "File desktop/package.json"
+        });
+        apply_tool_call_update(&start, &mut activity, &mut tool_index, &mut work_steps);
+
+        assert_eq!(activity.tools.len(), 1);
+        assert_eq!(activity.tools[0].name, "read_file");
+        assert_eq!(activity.tools[0].category, ToolCategory::Read);
+        assert_eq!(activity.tools[0].target, "C:\\repo\\desktop\\package.json");
+        assert_eq!(activity.tools[0].status, ToolStatus::Running);
+        assert_eq!(activity.current_step_label.as_deref(), Some("Lendo package.json"));
+
+        let finish = json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_1",
+            "name": "run_command",
+            "args": { "CommandLine": "cargo test" },
+            "status": "completed",
+            "kind": "execute",
+            "rawOutput": "ok"
+        });
+        apply_tool_call_update(&finish, &mut activity, &mut tool_index, &mut work_steps);
+        assert_eq!(activity.tools.len(), 1);
+        assert_eq!(activity.tools[0].status, ToolStatus::Ok);
+        assert_eq!(activity.tools[0].result.as_deref(), Some("ok"));
+    }
+}
