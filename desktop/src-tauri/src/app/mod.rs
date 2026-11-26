@@ -151,7 +151,13 @@ pub(crate) fn run() {
             commands::command_search::command_search,
             commands::history::history_search,
             commands::history::history_read,
-            commands::web_search::web_search
+            commands::web_search::web_search,
+            // learning
+            commands::learning::run_memory_review,
+            commands::learning::list_learning_suggestions,
+            commands::learning::apply_learning_suggestion,
+            commands::learning::dismiss_learning_suggestion,
+            commands::learning::list_project_memories
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -159,6 +165,7 @@ pub(crate) fn run() {
         .setup(|app| {
             bootstrap::setup(app)?;
             orchestrator::spawn_delegation_watchdog(app.handle().clone());
+            orchestrator::spawn_memory_review_idle_watcher(app.handle().clone());
             Ok(())
         })
         .on_window_event(shell::hide_main_window_on_close)

@@ -10,6 +10,7 @@ mod channels;
 mod connection;
 mod error;
 pub mod history;
+pub mod learning;
 mod messages;
 mod migrations;
 mod orchestration;
@@ -55,10 +56,14 @@ pub(crate) use orchestration::{
 pub use projects::{NewProject, Project, ORIGIN_FOLDER, ORIGIN_GITHUB};
 pub use queued_requests::{PersistedFlowJob, QueuedRequestRecord};
 pub use runs::{InterruptedRun, RunHandoff, RunMessage, RunProgress};
+pub use learning::{
+    LearningSuggestion, MemoryOriginType, NewLearningSuggestion, NewProjectMemory, ProjectMemory,
+    ReviewMessageEntry, SkillScope, SuggestionKind, SuggestionOperation, SuggestionStatus,
+};
 pub use settings::{
-    GRANT_SESSION, SETTING_ACTIVE_LLM, SETTING_AUTO_TRIAGE, SETTING_CONTINUATION_ENABLED,
-    SETTING_CONTINUATION_MAX_COUNT, SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT,
-    SETTING_WEB_SEARCH,
+    GRANT_SESSION, LEARNING_MODE_ASK, LEARNING_MODE_AUTO, LEARNING_MODE_OFF, SETTING_ACTIVE_LLM,
+    SETTING_AUTO_TRIAGE, SETTING_CONTINUATION_ENABLED, SETTING_CONTINUATION_MAX_COUNT,
+    SETTING_LLM_FALLBACK, SETTING_PERMISSION_GRANT, SETTING_WEB_SEARCH,
 };
 pub use usage_analytics::{
     NewUsageRecord, UsageAnalyticsQuery, UsageAnalyticsResponse,
@@ -67,4 +72,6 @@ pub use work_steps::{
     load_recent_work_steps_safe, work_steps_session_key, NewTurnWorkSteps,
 };
 #[cfg(test)]
-pub use settings::SETTING_AUTO_PAUSE_ON_LIMIT;
+pub use settings::{
+    SETTING_AUTO_PAUSE_ON_LIMIT, SETTING_LEARNING_MODE, SETTING_LEARNING_TURN_CADENCE,
+};

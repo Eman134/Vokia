@@ -305,6 +305,12 @@ pub(super) async fn run_turns(
             activity.as_ref(),
             usage.as_ref().and_then(|u| u.provider.as_deref()),
         );
+        super::memory_review::on_turn_completed_for_learning(
+            app,
+            project_id,
+            &turn.speaker,
+            *item_id,
+        );
         let turn_executed_action = executed_action_tool(activity.as_ref());
         if has_verification_evidence(activity.as_ref()) {
             chain_verified = true;

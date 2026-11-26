@@ -6,6 +6,7 @@ pub(crate) mod channels;
 pub(crate) mod command_search;
 pub(crate) mod execution_mode;
 pub(crate) mod history;
+pub(crate) mod learning;
 pub(crate) mod orchestration;
 pub(crate) mod projects;
 pub(crate) mod providers;

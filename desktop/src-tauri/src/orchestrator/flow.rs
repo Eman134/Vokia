@@ -1806,6 +1806,14 @@ pub(super) fn spawn_stage_request(app: &AppHandle, project_id: i64, item_id: &st
 // Card que foi para Done: limpa o worktree e a branch dele em segundo plano. Falha ou motivo de manter viram
 // registro na atividade do card; a conclusão do card não espera nem depende disso.
 pub(crate) fn schedule_done_cleanup(app: &AppHandle, project_id: i64, item_id: &str) {
+    super::memory_review::schedule_memory_review(
+        app,
+        project_id,
+        super::memory_review::ReviewTrigger::CardDone,
+        None,
+        Some(item_id.to_string()),
+        None,
+    );
     let app = app.clone();
     let item = item_id.to_string();
     tauri::async_runtime::spawn(async move {

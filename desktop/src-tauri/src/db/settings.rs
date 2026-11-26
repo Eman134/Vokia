@@ -16,6 +16,13 @@ pub const SETTING_WEB_SEARCH: &str = "web_search";
 pub const SETTING_AUTO_PAUSE_ON_LIMIT: &str = "auto_pause_on_limit";
 pub const SETTING_CONTINUATION_ENABLED: &str = "continuationEnabled";
 pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
+pub const SETTING_LEARNING_MODE: &str = "learning_mode";
+pub const SETTING_LEARNING_TURN_CADENCE: &str = "learning_turn_cadence";
+pub const LEARNING_MODE_ASK: &str = "ask";
+pub const LEARNING_MODE_OFF: &str = "off";
+pub const LEARNING_MODE_AUTO: &str = "auto";
+const LEARNING_MODE_VALUES: &[&str] = &[LEARNING_MODE_ASK, LEARNING_MODE_OFF, LEARNING_MODE_AUTO];
+const LEARNING_CADENCE_VALUES: &[&str] = &["10", "20", "40", "0"];
 const CONTINUATION_MAX_COUNT_MIN: u32 = 0;
 const CONTINUATION_MAX_COUNT_MAX: u32 = 50;
 const BOOL_VALUES: &[&str] = &["true", "false"];
@@ -71,6 +78,14 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
             max: CONTINUATION_MAX_COUNT_MAX,
         },
     ),
+    (
+        SETTING_LEARNING_MODE,
+        SettingRule::OneOf(LEARNING_MODE_VALUES),
+    ),
+    (
+        SETTING_LEARNING_TURN_CADENCE,
+        SettingRule::OneOf(LEARNING_CADENCE_VALUES),
+    ),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
@@ -79,6 +94,8 @@ const SETTING_DEFAULTS: &[(&str, &str)] = &[
     (SETTING_AUTO_PAUSE_ON_LIMIT, "false"),
     (SETTING_CONTINUATION_ENABLED, "true"),
     (SETTING_CONTINUATION_MAX_COUNT, "5"),
+    (SETTING_LEARNING_MODE, LEARNING_MODE_ASK),
+    (SETTING_LEARNING_TURN_CADENCE, "20"),
 ];
 
 impl Db {
@@ -138,6 +155,22 @@ impl Db {
             .get(SETTING_CONTINUATION_MAX_COUNT)
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(5))
+    }
+
+    pub fn learning_mode(&self) -> Result<String, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_LEARNING_MODE)
+            .cloned()
+            .unwrap_or_else(|| LEARNING_MODE_ASK.to_string()))
+    }
+
+    pub fn learning_turn_cadence(&self) -> Result<u32, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_LEARNING_TURN_CADENCE)
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(20))
     }
 }
 

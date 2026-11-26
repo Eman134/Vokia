@@ -359,4 +359,10 @@ pub enum VokiaEvent {
         reason: String,
     },
     ProvidersChanged,
+    #[serde(rename_all = "camelCase")]
+    LearningSuggestionsChanged {
+        project_id: i64,
+        pending_count: usize,
+        new_count: usize,
+    },
 }

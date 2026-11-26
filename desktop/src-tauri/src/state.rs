@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -32,6 +32,7 @@ pub struct AppState {
     pub usage: UsageEngine,
     pub turn_plans: TurnPlanStore,
     pub continuations: ContinuationRegistry,
+    pub memory_review_active: AtomicBool,
 }
 
 impl AppState {
@@ -51,6 +52,7 @@ impl AppState {
             usage: UsageEngine::default(),
             turn_plans: TurnPlanStore::default(),
             continuations: ContinuationRegistry::default(),
+            memory_review_active: AtomicBool::new(false),
         }
     }
 }

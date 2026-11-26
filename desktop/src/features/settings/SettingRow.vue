@@ -23,6 +23,8 @@ import {
   AUTO_PAUSE_ON_LIMIT_SETTING_KEY,
   CONTINUATION_ENABLED_SETTING_KEY,
   CONTINUATION_MAX_COUNT_SETTING_KEY,
+  LEARNING_MODE_SETTING_KEY,
+  LEARNING_TURN_CADENCE_SETTING_KEY,
   eraseAllData,
   fetchSettings,
   saveSetting,
@@ -70,6 +72,27 @@ const continuationEnabled = ref(DEFAULT_CONTINUATION_ENABLED)
 const continuationEnabledError = ref<string | null>(null)
 const continuationMaxCount = ref(DEFAULT_CONTINUATION_MAX_COUNT)
 const continuationMaxCountError = ref<string | null>(null)
+const LEARNING_MODES = ['ask', 'off', 'auto'] as const
+type LearningModeChoice = (typeof LEARNING_MODES)[number]
+const DEFAULT_LEARNING_MODE: LearningModeChoice = 'ask'
+const LEARNING_MODE_OPTIONS: readonly { label: string; value: LearningModeChoice }[] = [
+  { label: 'Perguntar antes', value: 'ask' },
+  { label: 'Desligado', value: 'off' },
+  { label: 'Automático', value: 'auto' },
+]
+const LEARNING_CADENCES = ['10', '20', '40', '0'] as const
+type LearningCadenceChoice = (typeof LEARNING_CADENCES)[number]
+const DEFAULT_LEARNING_CADENCE: LearningCadenceChoice = '20'
+const LEARNING_CADENCE_OPTIONS: readonly { label: string; value: LearningCadenceChoice }[] = [
+  { label: '10', value: '10' },
+  { label: '20', value: '20' },
+  { label: '40', value: '40' },
+  { label: 'Desligado', value: '0' },
+]
+const learningMode = ref<LearningModeChoice>(DEFAULT_LEARNING_MODE)
+const learningModeError = ref<string | null>(null)
+const learningCadence = ref<LearningCadenceChoice>(DEFAULT_LEARNING_CADENCE)
+const learningCadenceError = ref<string | null>(null)
 const erasing = ref(false)
 const eraseError = ref<string | null>(null)
 
@@ -195,6 +218,54 @@ async function commitContinuationMaxCount(event: Event): Promise<void> {
   }
 }
 
+async function loadLearningMode(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[LEARNING_MODE_SETTING_KEY]
+    if (LEARNING_MODES.some((m) => m === stored)) {
+      learningMode.value = stored as LearningModeChoice
+    }
+  } catch (error) {
+    learningModeError.value = `Não foi possível ler o modo de revisão: ${String(error)}`
+  }
+}
+
+async function chooseLearningMode(next: string): Promise<void> {
+  if (!LEARNING_MODES.some((m) => m === next)) return
+  const prev = learningMode.value
+  learningMode.value = next as LearningModeChoice
+  try {
+    await saveSetting(LEARNING_MODE_SETTING_KEY, next)
+    learningModeError.value = null
+  } catch (error) {
+    learningMode.value = prev
+    learningModeError.value = `Não foi possível salvar o modo de revisão: ${String(error)}`
+  }
+}
+
+async function loadLearningCadence(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[LEARNING_TURN_CADENCE_SETTING_KEY]
+    if (LEARNING_CADENCES.some((c) => c === stored)) {
+      learningCadence.value = stored as LearningCadenceChoice
+    }
+  } catch (error) {
+    learningCadenceError.value = `Não foi possível ler a cadência de revisão: ${String(error)}`
+  }
+}
+
+async function chooseLearningCadence(next: string): Promise<void> {
+  if (!LEARNING_CADENCES.some((c) => c === next)) return
+  const prev = learningCadence.value
+  learningCadence.value = next as LearningCadenceChoice
+  try {
+    await saveSetting(LEARNING_TURN_CADENCE_SETTING_KEY, next)
+    learningCadenceError.value = null
+  } catch (error) {
+    learningCadence.value = prev
+    learningCadenceError.value = `Não foi possível salvar a cadência de revisão: ${String(error)}`
+  }
+}
+
 onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
     void loadGrant()
@@ -207,6 +278,12 @@ onMounted(() => {
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'continuation-max-count') {
     void loadContinuationMaxCount()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'learning-mode') {
+    void loadLearningMode()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'learning-turn-cadence') {
+    void loadLearningCadence()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'execution-mode' && modeProjectId.value !== null) {
     void executionMode.load(modeProjectId.value)
@@ -346,6 +423,26 @@ function toOptions(labels: readonly string[]) {
           <span class="text-caption text-muted">turnos</span>
         </div>
         <p v-if="continuationMaxCountError" role="alert" :class="ERROR_CLASSES">{{ continuationMaxCountError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'learning-mode'" :class="STACK_CLASSES">
+        <UiSegmented
+          :options="LEARNING_MODE_OPTIONS"
+          :model-value="learningMode"
+          label="Modo de revisão automática"
+          data-testid="learning-mode-segmented"
+          @update:model-value="chooseLearningMode"
+        />
+        <p v-if="learningModeError" role="alert" :class="ERROR_CLASSES">{{ learningModeError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'learning-turn-cadence'" :class="STACK_CLASSES">
+        <UiSegmented
+          :options="LEARNING_CADENCE_OPTIONS"
+          :model-value="learningCadence"
+          label="Cadência de turnos para revisão"
+          data-testid="learning-turn-cadence-segmented"
+          @update:model-value="chooseLearningCadence"
+        />
+        <p v-if="learningCadenceError" role="alert" :class="ERROR_CLASSES">{{ learningCadenceError }}</p>
       </div>
       <div v-else-if="item.control.kind === 'erase-data'" :class="ERASE_CLASSES">
         <UiConfirm

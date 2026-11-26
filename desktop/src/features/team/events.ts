@@ -28,6 +28,7 @@ export type CommandDomain =
   | 'usage'
   | 'analytics'
   | 'search'
+  | 'learning'
 
 export type ToolDetail =
   | { kind: 'read'; from: number; to: number }
@@ -478,6 +479,13 @@ export interface VokiaProvidersChanged {
   type: 'providers-changed'
 }
 
+export interface VokiaLearningSuggestionsChanged {
+  type: 'learning-suggestions-changed'
+  projectId: number
+  pendingCount: number
+  newCount: number
+}
+
 export type VokiaEvent =
   | VokiaMessage
   | VokiaAgentState
@@ -509,6 +517,7 @@ export type VokiaEvent =
   | VokiaModelUnavailable
   | VokiaProviderDisabled
   | VokiaProvidersChanged
+  | VokiaLearningSuggestionsChanged
 
 export interface CliProblem {
   reason: string

@@ -238,6 +238,56 @@ const TURN_WORK_STEPS_SCHEMA: &str = "
         WHERE card_id IS NOT NULL;
 ";
 
+// Memórias duráveis do projeto e fila de sugestões de aprendizado (098).
+const LEARNING_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS project_memories (
+        id TEXT NOT NULL,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        fact TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'review',
+        origin_type TEXT NOT NULL DEFAULT 'review' CHECK (origin_type IN ('manual','pinned','review','auto')),
+        pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+        author TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (project_id, id)
+    );
+    CREATE INDEX IF NOT EXISTS project_memories_by_project
+        ON project_memories(project_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS learning_suggestions (
+        id TEXT PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('memory','skill')),
+        operation TEXT NOT NULL CHECK (operation IN ('add','update','forget','create')),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','dismissed')),
+        target_memory_id TEXT,
+        skill_slug TEXT,
+        skill_scope TEXT NOT NULL DEFAULT 'project' CHECK (skill_scope IN ('project','global')),
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        previous_content TEXT,
+        rationale TEXT NOT NULL DEFAULT '',
+        source_agent TEXT,
+        source_card_id TEXT,
+        provider_id TEXT,
+        model TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS learning_suggestions_by_project_status
+        ON learning_suggestions(project_id, status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS learning_review_state (
+        project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        last_reviewed_message_id INTEGER NOT NULL DEFAULT 0,
+        turns_since_review INTEGER NOT NULL DEFAULT 0,
+        last_turn_at INTEGER NOT NULL DEFAULT 0,
+        last_review_at INTEGER NOT NULL DEFAULT 0
+    );
+";
+
 // Planos antigos viram artefato, mas não ganham etapas: o item pode já ter sido executado (P3).
 const PLANS_WITHOUT_ARTIFACT_SQL: &str = "SELECT saved.project_id, saved.item_id, saved.text, saved.agent, card.title \
     FROM item_plans AS saved \
@@ -951,6 +1001,32 @@ const SEARCH_ARTIFACTS_BACKFILL_SQL: &str = "
     FROM artifact_documents;
 ";
 
+const SEARCH_MEMORIES_FTS_SQL: &str = "
+    CREATE VIRTUAL TABLE IF NOT EXISTS search_memories_fts USING fts5(
+        fact,
+        source,
+        tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER IF NOT EXISTS search_memories_ai AFTER INSERT ON project_memories BEGIN
+        INSERT INTO search_memories_fts(rowid, fact, source)
+        VALUES (NEW.rowid, COALESCE(NEW.fact, ''), COALESCE(NEW.source, ''));
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_memories_au AFTER UPDATE ON project_memories BEGIN
+        DELETE FROM search_memories_fts WHERE rowid = OLD.rowid;
+        INSERT INTO search_memories_fts(rowid, fact, source)
+        VALUES (NEW.rowid, COALESCE(NEW.fact, ''), COALESCE(NEW.source, ''));
+    END;
+    CREATE TRIGGER IF NOT EXISTS search_memories_ad AFTER DELETE ON project_memories BEGIN
+        DELETE FROM search_memories_fts WHERE rowid = OLD.rowid;
+    END;
+";
+
+const SEARCH_MEMORIES_BACKFILL_SQL: &str = "
+    INSERT INTO search_memories_fts(rowid, fact, source)
+    SELECT rowid, COALESCE(fact, ''), COALESCE(source, '')
+    FROM project_memories;
+";
+
 fn ensure_fts_index(
     tx: &Transaction,
     table_name: &str,
@@ -995,6 +1071,12 @@ fn migrate_search_fts(tx: &Transaction) -> rusqlite::Result<()> {
         "search_artifacts_fts",
         SEARCH_ARTIFACTS_FTS_SQL,
         SEARCH_ARTIFACTS_BACKFILL_SQL,
+    )?;
+    ensure_fts_index(
+        tx,
+        "search_memories_fts",
+        SEARCH_MEMORIES_FTS_SQL,
+        SEARCH_MEMORIES_BACKFILL_SQL,
     )?;
     Ok(())
 }
@@ -1043,6 +1125,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(QUEUED_REQUESTS_SCHEMA)?;
     tx.execute_batch(USAGE_RECORDS_SCHEMA)?;
     tx.execute_batch(TURN_WORK_STEPS_SCHEMA)?;
+    tx.execute_batch(LEARNING_SCHEMA)?;
     ensure_column(&tx, "backlog_items", "archived_at", "TEXT")?;
     ensure_column(&tx, "orch_handoffs", "event", "TEXT")?;
     ensure_column(&tx, "backlog_items", "branch", "TEXT")?;

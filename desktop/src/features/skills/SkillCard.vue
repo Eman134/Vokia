@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import UiBadge from '../../ui/UiBadge.vue'
 import UiChip from '../../ui/UiChip.vue'
 import { SKILL_FROM_MEMORY_LABEL, type SkillSample } from './skillsSample'
 
@@ -25,7 +24,12 @@ defineProps<{ skill: SkillSample }>()
       </svg>
       <h2 :class="NAME_CLASSES">{{ skill.name }}</h2>
       <span v-if="skill.origin" :class="ORIGIN_CLASSES">{{ skill.origin }}</span>
-      <UiBadge v-else-if="skill.fromMemory" class="ml-auto" status="lote" :label="SKILL_FROM_MEMORY_LABEL" />
+      <span
+        v-else-if="skill.fromMemory"
+        class="ml-auto inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-tiny font-semibold text-accent"
+      >
+        {{ SKILL_FROM_MEMORY_LABEL }}
+      </span>
     </header>
     <p :class="DESCRIPTION_CLASSES">{{ skill.description }}</p>
     <div v-if="skill.tags" class="flex flex-wrap gap-1.5">

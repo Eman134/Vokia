@@ -9,6 +9,8 @@ type SettingsControl =
   | { kind: 'auto-pause-on-limit' }
   | { kind: 'continuation-enabled' }
   | { kind: 'continuation-max-count' }
+  | { kind: 'learning-mode' }
+  | { kind: 'learning-turn-cadence' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
   | { kind: 'select'; options: readonly string[] }
@@ -383,9 +385,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
     ],
   },
   {
-    title: 'Memória e grafo',
-    description: 'o que o time aprende e o mapa que liga código e artefatos',
+    title: 'Memória e Skills',
+    description: 'revisão assíncrona de memórias, sugestões de skills e grafo do projeto',
     items: [
+      {
+        kind: 'row',
+        label: 'Revisão automática de memórias e skills',
+        hint: 'extrai aprendizados duráveis em segundo plano usando modelo leve',
+        control: { kind: 'learning-mode' },
+      },
+      {
+        kind: 'row',
+        label: 'Cadência por turnos concluídos',
+        hint: 'dispara revisão em background a cada N turnos (além de card concluído, ociosidade e limpeza)',
+        control: { kind: 'learning-turn-cadence' },
+      },
       {
         kind: 'row',
         label: 'Confirmar antes de guardar um fato',

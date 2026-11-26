@@ -193,8 +193,19 @@ pub(crate) async fn clear_conversation_exec(
         return Err(DbError::ProjectBusy.to_string());
     }
     stop_project_work(&app_state, args.project_id).await;
+    let review_snapshot = orchestrator::capture_review_snapshot(db, args.project_id);
     db.clear_messages(args.project_id)
         .map_err(|error| error.to_string())?;
+    if !review_snapshot.messages.is_empty() || !review_snapshot.work_steps.is_empty() {
+        orchestrator::schedule_memory_review(
+            app,
+            args.project_id,
+            orchestrator::ReviewTrigger::ClearConversation,
+            None,
+            None,
+            Some(review_snapshot),
+        );
+    }
     attachments::purge_sent_files(app, db, args.project_id);
     orchestrator::forget_project(&app_state, args.project_id);
     Ok(())

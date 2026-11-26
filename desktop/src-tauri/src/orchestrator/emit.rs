@@ -298,7 +298,7 @@ fn mark_delegations_activated(app: &AppHandle, project_id: i64, agent: &Agent) -
     Ok(())
 }
 
-pub(super) fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {
+pub(crate) fn emit(app: &AppHandle, event: VokiaEvent) -> Result<(), FlowError> {
     Ok(app.emit(EVENT_NAME, event)?)
 }
 

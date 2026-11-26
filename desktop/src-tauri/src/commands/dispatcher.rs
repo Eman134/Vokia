@@ -10,7 +10,7 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, command_search, execution_mode, history,
-    orchestration, projects, providers, roles, search, settings, team, turn_plan, usage,
+    learning, orchestration, projects, providers, roles, search, settings, team, turn_plan, usage,
     usage_analytics, web_search,
 };
 
@@ -549,6 +549,38 @@ fn schema_history_read() -> Value {
     )
 }
 
+fn schema_run_memory_review() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id do projeto" },
+            "agent": { "type": "string", "description": "Agente opcional associado à revisão" },
+            "cardId": { "type": "string", "description": "Card opcional associado à revisão" },
+            "trigger": { "type": "string", "description": "Gatilho opcional (manual, card-done, turn-cadence, idle, clear-conversation)" },
+        }),
+        &["projectId"],
+    )
+}
+
+fn schema_list_learning_suggestions() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Filtro opcional por projeto" },
+            "status": { "type": "string", "enum": ["pending", "applied", "dismissed"], "description": "Filtro opcional por estado" },
+        }),
+        &[],
+    )
+}
+
+fn schema_apply_learning_suggestion() -> Value {
+    obj_schema(
+        json!({
+            "id": { "type": "string", "description": "Id da sugestão de aprendizado" },
+            "scope": { "type": "string", "enum": ["project", "global"], "description": "Escopo opcional para gravação de SKILL.md (project ou global)" },
+        }),
+        &["id"],
+    )
+}
+
 const COMMANDS: &[CommandMeta] = &[
     exposed("team", "cli_problem", "Problema detectado ao localizar a CLI do Claude, se houver.", "Para diagnosticar por que nenhum agente consegue rodar: devolve o problema ao localizar a CLI do Claude, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto. Parâmetros: projectId, to, text; opcionais: itemId, channelId, attachments, steer (boolean para corrigir um turno ativo sem esperar o término).", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
@@ -675,6 +707,11 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("search", "history_search", "Busca no histórico local de mensagens do projeto atual (FTS5 com fallback LIKE), respeitando o último marcador de reset de contexto. Parâmetros: projectId (no MCP usa o projeto vinculado), query, agent (opcional), channelId (opcional), cardId/itemId (opcional), limit (padrão 5, máx 10). Excertos de até 400 chars e resposta total até 8.000 chars com messageId e timestamp.", "Para recuperar decisões ou detalhes discutidos em turnos antigos da própria conversa ou card após compactação ou troca de provedor.", schema_history_search),
     exposed("search", "history_read", "Lê mensagens recentes, uma mensagem específica por messageId ou página anterior a um cursor/beforeMessageId dentro do projeto atual. Parâmetros: projectId, messageId, beforeMessageId/cursor, limit (padrão 10, máx 20), offset, agent, channelId, cardId/itemId, includeWorkSteps, workStepsOffset. Respeita teto de 16.000 chars serializados e devolve nextOffset, nextCursor e nextWorkStepsOffset.", "Para ler na íntegra uma mensagem antiga encontrada por history_search, paginar turnos anteriores ou inspecionar blocos [work steps] sob demanda.", schema_history_read),
     exposed("search", "web_search", "Pesquisa na web via provedor auxiliar com busca nativa ou conector MCP configurado em Configurações › Pesquisa. Parâmetros: query (obrigatório), projectId (opcional). Devolve summary conciso, lista de sources com URLs verificáveis, backend utilizado e stepLabel.", "Para provedores sem busca web nativa (ex.: OpenCode ou CLI customizada) pesquisarem documentação e referências atualizadas na web.", schema_web_search),
+    exposed("learning", "run_memory_review", "Dispara revisão assíncrona de memórias e sugestão de skills para um projeto usando ModelTier::Basic, respeitando limites de uso (75%) e modo configurado. Parâmetros: projectId, agent (opcional), cardId (opcional), trigger (opcional).", "Para revisar aprendizados duráveis e sugerir memórias ou SKILL.md após entrega de card ou sob demanda.", schema_run_memory_review),
+    exposed("learning", "list_learning_suggestions", "Lista sugestões de memória e SKILL.md geradas pela revisão assíncrona. Parâmetros opcionais: projectId, status (pending|applied|dismissed).", "Para consultar sugestões pendentes ou histórico de aprendizados.", schema_list_learning_suggestions),
+    exposed("learning", "apply_learning_suggestion", "Aplica uma sugestão pendente de memória (sem sobrescrever memórias manuais/fixadas) ou grava/atualiza SKILL.md válido em .vokia/skills/<slug>/SKILL.md ou global. Parâmetros: id, scope (opcional: project|global).", "Para aprovar e aplicar uma sugestão de memória ou skill.", schema_apply_learning_suggestion),
+    exposed("learning", "dismiss_learning_suggestion", "Descarta uma sugestão pendente de aprendizado. Parâmetro: id.", "Para rejeitar uma sugestão de memória ou skill.", schema_id),
+    exposed("learning", "list_project_memories", "Lista as memórias registradas de um projeto, incluindo origem (manual/pinned/review/auto). Parâmetro: projectId.", "Para consultar memórias persistidas do projeto.", schema_project_id),
 ];
 
 #[derive(Deserialize, Default)]
@@ -1067,6 +1104,26 @@ async fn run(
         "web_search" => json_result(
             web_search::web_search_exec(app, bound_project_id, parse_args(arguments)?).await,
         ),
+
+        "run_memory_review" => {
+            json_result(learning::run_memory_review_exec(app, parse_args(arguments)?).await)
+        }
+        "list_learning_suggestions" => json_result(learning::list_learning_suggestions_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "apply_learning_suggestion" => json_result(learning::apply_learning_suggestion_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "dismiss_learning_suggestion" => json_result(learning::dismiss_learning_suggestion_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "list_project_memories" => json_result(learning::list_project_memories_exec(
+            app,
+            parse_args(arguments)?,
+        )),
 
         _ => Err(format!("Comando sem despacho registrado: {name}")),
     }

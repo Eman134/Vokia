@@ -14,6 +14,8 @@ export const AUTO_PAUSE_ON_LIMIT_SETTING_KEY = 'auto_pause_on_limit'
 export const CONTINUATION_ENABLED_SETTING_KEY = 'continuationEnabled'
 export const CONTINUATION_MAX_COUNT_SETTING_KEY = 'continuationMaxCount'
 export const WEB_SEARCH_SETTING_KEY = 'web_search'
+export const LEARNING_MODE_SETTING_KEY = 'learning_mode'
+export const LEARNING_TURN_CADENCE_SETTING_KEY = 'learning_turn_cadence'
 
 export type WebSearchMode = 'auxiliary_provider' | 'mcp_connector' | 'disabled'
 

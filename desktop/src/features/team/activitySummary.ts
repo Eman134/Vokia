@@ -147,6 +147,7 @@ const DOMAIN_ICON: Record<CommandDomain, RowIconKind> = {
   usage: 'provider',
   analytics: 'settings',
   search: 'search',
+  learning: 'artifact',
 }
 
 const FILE_CATEGORIES: readonly ToolCategory[] = ['read', 'edit']
