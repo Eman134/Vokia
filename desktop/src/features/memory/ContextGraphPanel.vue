@@ -75,12 +75,19 @@ const hoveredNodeId = ref<string | null>(null)
 const activeKindFilter = ref<ContextGraphNodeKind | 'all'>('all')
 const expandedOptId = ref<string | null>(null)
 
-// Pan & zoom state for the organic constellation view
+// Pan, zoom & node drag state for the organic constellation view
+const svgRef = ref<SVGSVGElement | null>(null)
+const graphGroupRef = ref<SVGGElement | null>(null)
 const zoom = ref(1)
 const panX = ref(0)
 const panY = ref(0)
 const isPanning = ref(false)
 const panStart = ref({ x: 0, y: 0 })
+const draggedPositions = ref<Record<string, { x: number; y: number }>>({})
+const draggingNodeId = ref<string | null>(null)
+const dragOffset = ref({ x: 0, y: 0 })
+const dragStartClient = ref({ x: 0, y: 0 })
+const didDragNode = ref(false)
 
 async function loadGraph(projectId: number | undefined): Promise<void> {
   if (projectId === undefined) {
@@ -93,6 +100,7 @@ async function loadGraph(projectId: number | undefined): Promise<void> {
     graph.value = await getContextGraph(projectId)
     selectedNodeId.value = null
     expandedOptId.value = null
+    draggedPositions.value = {}
     resetView()
   } catch (err) {
     error.value = `Não foi possível montar o grafo: ${String(err)}`
@@ -106,6 +114,7 @@ function resetView(): void {
   zoom.value = 1
   panX.value = 0
   panY.value = 0
+  draggedPositions.value = {}
 }
 
 function adjustZoom(delta: number): void {
@@ -117,6 +126,29 @@ function onWheel(e: WheelEvent): void {
   adjustZoom(e.deltaY < 0 ? 0.12 : -0.12)
 }
 
+function clientToGraphPoint(clientX: number, clientY: number): { x: number; y: number } | null {
+  const svg = svgRef.value
+  const group = graphGroupRef.value
+  if (!svg || !group) return null
+  const ctm = group.getScreenCTM()
+  if (!ctm) return null
+  const pt = svg.createSVGPoint()
+  pt.x = clientX
+  pt.y = clientY
+  const transformed = pt.matrixTransform(ctm.inverse())
+  return { x: transformed.x, y: transformed.y }
+}
+
+function startNodeDrag(e: PointerEvent, sim: SimNode): void {
+  if (e.button !== 0) return
+  const pt = clientToGraphPoint(e.clientX, e.clientY)
+  if (!pt) return
+  draggingNodeId.value = sim.node.id
+  dragOffset.value = { x: sim.x - pt.x, y: sim.y - pt.y }
+  dragStartClient.value = { x: e.clientX, y: e.clientY }
+  didDragNode.value = false
+}
+
 function startPan(e: PointerEvent): void {
   if ((e.target as HTMLElement)?.closest('[data-graph-node]')) return
   isPanning.value = true
@@ -124,13 +156,42 @@ function startPan(e: PointerEvent): void {
 }
 
 function movePan(e: PointerEvent): void {
+  if (draggingNodeId.value !== null) {
+    const dx = e.clientX - dragStartClient.value.x
+    const dy = e.clientY - dragStartClient.value.y
+    if (!didDragNode.value && dx * dx + dy * dy > 16) {
+      didDragNode.value = true
+    }
+    if (didDragNode.value) {
+      const pt = clientToGraphPoint(e.clientX, e.clientY)
+      if (pt) {
+        draggedPositions.value = {
+          ...draggedPositions.value,
+          [draggingNodeId.value]: {
+            x: pt.x + dragOffset.value.x,
+            y: pt.y + dragOffset.value.y,
+          },
+        }
+      }
+    }
+    return
+  }
   if (!isPanning.value) return
   panX.value = e.clientX - panStart.value.x
   panY.value = e.clientY - panStart.value.y
 }
 
 function endPan(): void {
+  draggingNodeId.value = null
   isPanning.value = false
+}
+
+function onNodeClick(id: string): void {
+  if (didDragNode.value) {
+    didDragNode.value = false
+    return
+  }
+  toggleNode(id)
 }
 
 watch(
@@ -179,17 +240,22 @@ const simulatedNodes = computed<SimNode[]>(() => {
   const H = 500
   const cx = W / 2
   const cy = H / 2
+  const spread = Math.max(1, Math.sqrt(nodes.length / 10))
+  const minX = cx - 330 * spread
+  const maxX = cx + 330 * spread
+  const minY = cy - 195 * spread
+  const maxY = cy + 195 * spread
 
   const sim: SimNode[] = nodes.map((node, i) => {
     const angle = (2 * Math.PI * i) / Math.max(1, nodes.length)
     const ring =
-      node.kind === 'card'
+      (node.kind === 'card'
         ? 110
         : node.kind === 'keyword'
           ? 165
           : node.kind === 'decision' || node.kind === 'memory'
             ? 200
-            : 235
+            : 235) * Math.min(1.6, spread)
     const degree = degreeMap.get(node.id) ?? 0
     return {
       node,
@@ -222,9 +288,9 @@ const simulatedNodes = computed<SimNode[]>(() => {
           distSq = 2
         }
         const dist = Math.sqrt(distSq)
-        const minSep = 115
-        const sepBoost = dist < minSep ? (minSep - dist) * 0.25 : 0
-        const force = ((14000 / distSq) + sepBoost) * cooling
+        const minSep = 125
+        const sepBoost = dist < minSep ? (minSep - dist) * 0.3 : 0
+        const force = ((14500 / distSq) + sepBoost) * cooling
         const fx = (dx / dist) * force
         const fy = (dy / dist) * force
         a.vx -= fx
@@ -244,7 +310,7 @@ const simulatedNodes = computed<SimNode[]>(() => {
       const dx = b.x - a.x
       const dy = b.y - a.y
       const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy))
-      const ideal = 145
+      const ideal = 155
       const force = ((dist - ideal) * 0.045) * cooling
       const fx = (dx / dist) * force
       const fy = (dy / dist) * force
@@ -258,17 +324,66 @@ const simulatedNodes = computed<SimNode[]>(() => {
     for (const s of sim) {
       s.vx += (cx - s.x) * 0.008 * cooling
       s.vy += (cy - s.y) * 0.008 * cooling
-      s.x = Math.max(76, Math.min(W - 76, s.x + s.vx * 0.65))
-      s.y = Math.max(58, Math.min(H - 58, s.y + s.vy * 0.65))
+      s.x = Math.max(minX, Math.min(maxX, s.x + s.vx * 0.65))
+      s.y = Math.max(minY, Math.min(maxY, s.y + s.vy * 0.65))
       s.vx *= 0.55
       s.vy *= 0.55
     }
   }
 
+  // Hard collision-resolution pass considering both node circles and label bounding boxes
+  const halfWidth = (s: SimNode) => {
+    const labelLen = Math.min(28, s.node.label.length)
+    return Math.max(s.radius + 14, (labelLen * 6.2 + 20) / 2)
+  }
+  const halfHeight = (s: SimNode) => s.radius + 20
+
+  for (let pass = 0; pass < 40; pass++) {
+    let moved = false
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = sim[i]
+        const b = sim[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        if (dx === 0 && dy === 0) {
+          dx = (i % 2 === 0 ? 1 : -1) * 0.5
+          dy = (j % 2 === 0 ? 1 : -1) * 0.5
+        }
+        const overlapX = halfWidth(a) + halfWidth(b) - Math.abs(dx)
+        const overlapY = halfHeight(a) + halfHeight(b) - Math.abs(dy)
+        if (overlapX > 0 && overlapY > 0) {
+          moved = true
+          if (overlapX < overlapY) {
+            const push = (overlapX / 2) + 0.5
+            const sign = dx >= 0 ? 1 : -1
+            a.x -= sign * push
+            b.x += sign * push
+          } else {
+            const push = (overlapY / 2) + 0.5
+            const sign = dy >= 0 ? 1 : -1
+            a.y -= sign * push
+            b.y += sign * push
+          }
+        }
+      }
+    }
+    if (!moved) break
+  }
+
   return sim
 })
 
-const simMap = computed(() => new Map(simulatedNodes.value.map((s) => [s.node.id, s])))
+const displayedNodes = computed<SimNode[]>(() => {
+  const overrides = draggedPositions.value
+  if (Object.keys(overrides).length === 0) return simulatedNodes.value
+  return simulatedNodes.value.map((s) => {
+    const pos = overrides[s.node.id]
+    return pos ? { ...s, x: pos.x, y: pos.y } : s
+  })
+})
+
+const simMap = computed(() => new Map(displayedNodes.value.map((s) => [s.node.id, s])))
 
 function hashSeed(id: string): number {
   let h = 2166136261
@@ -509,11 +624,12 @@ function nodeColor(node: ContextGraphNode): string {
 
         <!-- Excalidraw Hand-Drawn SVG Constellation -->
         <svg
+          ref="svgRef"
           viewBox="0 0 800 500"
           class="h-full w-full"
           preserveAspectRatio="xMidYMid meet"
         >
-          <g :transform="`translate(${400 + panX}, ${250 + panY}) scale(${zoom}) translate(-400, -250)`">
+          <g ref="graphGroupRef" :transform="`translate(${400 + panX}, ${250 + panY}) scale(${zoom}) translate(-400, -250)`">
             <path
               v-for="item in positionedEdges"
               :key="item.edge.id"
@@ -527,14 +643,16 @@ function nodeColor(node: ContextGraphNode): string {
             />
 
             <g
-              v-for="sim in simulatedNodes"
+              v-for="sim in displayedNodes"
               :key="sim.node.id"
               data-graph-node
-              class="cursor-pointer transition-opacity duration-150"
+              :class="draggingNodeId === sim.node.id ? 'cursor-grabbing' : 'cursor-grab'"
+              class="transition-opacity duration-150"
               :style="{ opacity: nodeOpacity(sim.node.id) }"
+              @pointerdown.stop="startNodeDrag($event, sim)"
               @mouseenter="hoveredNodeId = sim.node.id"
               @mouseleave="hoveredNodeId = null"
-              @click.stop="toggleNode(sim.node.id)"
+              @click.stop="onNodeClick(sim.node.id)"
             >
               <!-- Pastel hand-painted fill dab (slightly offset like Excalidraw hachure/marker) -->
               <g :transform="`translate(${sim.x - nodeSketchOffset(sim) + 1.5}, ${sim.y - nodeSketchOffset(sim) + 2})`">

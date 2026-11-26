@@ -170,6 +170,40 @@ const positionedNodes = computed(() => {
       s.vy *= 0.55
     }
   }
+  const halfW = (s: (typeof sim)[number]) => Math.max(s.radius + 10, (Math.min(22, s.node.label.length) * 5.6 + 14) / 2)
+  const halfH = (s: (typeof sim)[number]) => s.radius + 16
+  for (let pass = 0; pass < 30; pass++) {
+    let moved = false
+    for (let i = 0; i < sim.length; i++) {
+      for (let j = i + 1; j < sim.length; j++) {
+        const a = sim[i]
+        const b = sim[j]
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        if (dx === 0 && dy === 0) {
+          dx = 0.5
+          dy = 0.5
+        }
+        const ox = halfW(a) + halfW(b) - Math.abs(dx)
+        const oy = halfH(a) + halfH(b) - Math.abs(dy)
+        if (ox > 0 && oy > 0) {
+          moved = true
+          if (ox < oy) {
+            const push = (ox / 2) + 0.5
+            const sign = dx >= 0 ? 1 : -1
+            a.x = Math.max(46, Math.min(W - 46, a.x - sign * push))
+            b.x = Math.max(46, Math.min(W - 46, b.x + sign * push))
+          } else {
+            const push = (oy / 2) + 0.5
+            const sign = dy >= 0 ? 1 : -1
+            a.y = Math.max(32, Math.min(H - 36, a.y - sign * push))
+            b.y = Math.max(32, Math.min(H - 36, b.y + sign * push))
+          }
+        }
+      }
+    }
+    if (!moved) break
+  }
   return sim
 })
 
