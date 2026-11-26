@@ -14,7 +14,7 @@ import { peekFlowDraft } from '../orchestration/useFlowDraft'
 import { useOrchestration } from '../orchestration/useOrchestration'
 import { MAP_TITLE } from './teamMapLayers'
 
-const PAGE_CLASSES = `flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden ${PAGE_INSET_CLASSES}`
+const PAGE_BASE_CLASSES = `flex min-h-0 min-w-0 flex-1 flex-col gap-5 ${PAGE_INSET_CLASSES}`
 
 const orchestration = useOrchestration()
 const selectedTeamId = ref<string | null>(null)
@@ -45,19 +45,19 @@ function discardAndLeave(): void {
 </script>
 
 <template>
-  <section :class="PAGE_CLASSES">
-    <UiPageHeader :title="selectedTeam ? MAP_TITLE : VIEW_COPY.teamsTitle" />
+  <section :class="[PAGE_BASE_CLASSES, selectedTeam ? 'overflow-hidden' : 'overflow-y-auto']">
+    <UiPageHeader :title="selectedTeam ? MAP_TITLE : VIEW_COPY.teamsTitle" class="shrink-0" />
     <UiEmpty v-if="orchestration.snapshot === null" :title="VIEW_COPY.loadingTeams" />
     <template v-else-if="selectedTeam">
-      <div class="flex min-w-0 items-center gap-3">
+      <div class="flex min-w-0 shrink-0 items-center gap-3">
         <UiButton variant="quiet" size="sm" @press="backToTeams">{{ VIEW_COPY.backToTeams }}</UiButton>
         <h2 class="min-w-0 truncate text-control font-bold text-ink">{{ selectedTeam.name }}</h2>
       </div>
       <OrchestrationView :key="selectedTeam.id" :team-id="selectedTeam.id" />
     </template>
     <template v-else>
-      <TeamsList @open="selectedTeamId = $event" />
-      <AgentActivityPanel :agents="placedAgents" />
+      <TeamsList class="shrink-0" @open="selectedTeamId = $event" />
+      <AgentActivityPanel class="shrink-0" :agents="placedAgents" />
     </template>
     <ModalPanel v-if="confirmingLeave" :title="VIEW_COPY.discardTitle" @close="confirmingLeave = false">
       <div class="flex justify-end gap-2">

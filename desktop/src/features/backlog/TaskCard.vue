@@ -45,7 +45,7 @@ const DONE_COLUMN: BacklogColumn = 'Done'
 const AVATAR_SIZE = 22
 const MAX_VISIBLE_TAGS = 3
 const CARD_CLASSES =
-  'relative flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-sm border border-line bg-surface px-3 py-2.5'
+  'relative flex min-w-0 cursor-pointer flex-col gap-1 rounded-sm border border-line bg-surface px-2 py-2 lg:gap-1.5 lg:px-3 lg:py-2.5'
 const ID_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-tiny font-bold tracking-wide text-ink'
 const TAG_CLASSES = 'max-w-[110px] truncate rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 text-tiny text-muted'
 
@@ -100,35 +100,36 @@ const percent = computed(() => {
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
     </header>
 
-    <p v-if="item.parent" class="truncate text-meta text-muted">↳ {{ item.parent }}</p>
-    <h3 class="min-w-0 truncate text-body leading-[1.3] font-bold text-ink" :title="item.title">
+    <p v-if="item.parent" class="hidden truncate text-meta text-muted lg:block">↳ {{ item.parent }}</p>
+    <h3 class="min-w-0 line-clamp-2 text-caption lg:text-body leading-[1.3] font-bold text-ink" :title="item.title">
       {{ item.title }}
     </h3>
-    <div v-if="visibleTags.length > 0" class="flex flex-wrap items-center gap-1" data-testid="card-tags">
+    <div v-if="visibleTags.length > 0" class="hidden flex-wrap items-center gap-1 lg:flex" data-testid="card-tags">
       <span v-for="tag in visibleTags" :key="tag" :class="TAG_CLASSES" :title="tag">{{ tag }}</span>
       <span v-if="extraTagsCount > 0" class="text-tiny text-muted">+{{ extraTagsCount }}</span>
     </div>
-    <p v-if="usageText" class="text-meta text-muted" data-testid="card-usage">{{ usageText }}</p>
+    <p v-if="usageText" class="hidden text-meta text-muted xl:block" data-testid="card-usage">{{ usageText }}</p>
     <AttachmentPreviewList
       v-if="descriptionContent.attachments.length > 0"
       :attachments="descriptionContent.attachments"
       compact
+      class="hidden lg:flex"
       data-testid="card-attachments"
     />
     <p v-if="item.error" role="alert" class="text-caption font-semibold text-danger">
       Erro ao ler este item: {{ item.error.reason }}
     </p>
 
-    <div class="mt-auto flex items-center gap-2 pt-0.5">
-      <BacklogPlanActions v-if="action" :action="action" @action="emit('action', $event)" />
+    <div class="mt-auto flex items-center gap-1.5 pt-0.5 lg:gap-2">
+      <BacklogPlanActions v-if="action" :action="action" class="hidden lg:flex" @action="emit('action', $event)" />
       <span class="ml-auto shrink-0" :title="ownerName">
         <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
         <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />
       </span>
     </div>
 
-    <div v-if="progress" class="flex flex-col gap-1.25">
-      <p v-if="progress.showText" class="flex justify-between text-meta text-muted">
+    <div v-if="progress" class="flex flex-col gap-1">
+      <p v-if="progress.showText" class="hidden justify-between text-meta text-muted xl:flex">
         <span>{{ item.children?.total }} micro-tarefas · {{ progress.filled }} feitas</span>
         <span>{{ percent }}%</span>
       </p>

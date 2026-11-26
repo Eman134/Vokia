@@ -45,16 +45,16 @@ const SEARCH_INPUT_CLASSES =
   'h-8 w-full min-w-[200px] flex-1 rounded-md border border-line bg-surface px-2.5 text-caption text-ink placeholder:text-muted focus:border-ink focus:outline-none sm:max-w-xs'
 const FILTER_SELECT_CLASSES =
   'h-8 cursor-pointer rounded-md border border-line bg-surface px-2 text-caption text-ink focus:border-ink focus:outline-none'
-const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 flex items-center justify-between gap-2 bg-bg pb-1'
+const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 flex items-center justify-between gap-1 bg-bg pb-1'
 const COLUMN_SORT_SELECT_CLASSES =
-  'h-6 max-w-[115px] cursor-pointer rounded-sm border border-line bg-surface px-1.5 text-tiny text-muted hover:text-ink focus:border-ink focus:outline-none'
-const COLUMN_TITLE_CLASSES = 'relative flex w-fit items-baseline gap-2 pb-1.5 text-card-title text-ink'
-const COLUMN_COUNT_CLASSES = 'text-caption text-muted'
+  'h-5.5 max-w-[74px] xl:max-w-[115px] shrink-0 cursor-pointer rounded-sm border border-line bg-surface px-1 text-tiny text-muted hover:text-ink focus:border-ink focus:outline-none'
+const COLUMN_TITLE_CLASSES = 'relative flex min-w-0 w-fit items-baseline gap-1.5 whitespace-nowrap pb-1 text-small lg:text-card-title text-ink'
+const COLUMN_COUNT_CLASSES = 'text-tiny lg:text-caption text-muted'
 const COLUMN_UNDERLINE_CLASSES = 'pointer-events-none absolute inset-x-0 bottom-0 h-1.5'
 const EMPTY_COLUMN_CLASSES = 'font-hand text-annotation text-faint'
 const GRID_SCROLL_CLASSES = 'min-w-0 md:min-h-0 md:flex-1'
-const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-2 md:h-full md:grid-cols-[repeat(5,minmax(0,1fr))] md:items-stretch'
-const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-2.5 md:min-h-0 md:overflow-y-auto md:pb-bar-clearance md:pr-1'
+const GRID_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-1.5 lg:gap-2.5 md:h-full md:grid-cols-5 md:items-stretch'
+const COLUMN_CLASSES = 'flex min-w-0 flex-col gap-1.5 lg:gap-2.5 md:min-h-0 md:overflow-y-auto md:pb-bar-clearance md:pr-0.5'
 const BOARD_AREA_CLASSES = 'flex min-h-0 flex-1 flex-col'
 const EMPTY_BOARD_CLASSES = 'flex flex-1 items-center justify-center'
 
@@ -105,11 +105,21 @@ const ALL_FILTER_VALUE = '__all__'
 const UNASSIGNED_FILTER_VALUE = '__unassigned__'
 
 const dismissedError = ref(false)
+const filtersOpen = ref(false)
 const searchQuery = ref('')
 const featureFilter = ref<string>(ALL_FEATURES_VALUE)
 const ownerFilter = ref<string>(ALL_FILTER_VALUE)
 const tagFilter = ref<string>(ALL_FILTER_VALUE)
 const typeFilter = ref<string>(ALL_FILTER_VALUE)
+
+const activeFilterCount = computed(() => {
+  let n = 0
+  if (featureFilter.value !== ALL_FEATURES_VALUE) n += 1
+  if (ownerFilter.value !== ALL_FILTER_VALUE) n += 1
+  if (tagFilter.value !== ALL_FILTER_VALUE) n += 1
+  if (typeFilter.value !== ALL_FILTER_VALUE) n += 1
+  return n
+})
 const columnSort = ref<Record<BacklogColumn, ColumnSortKey>>({
   Backlog: 'default',
   Ready: 'default',
@@ -269,31 +279,80 @@ watch(
         aria-label="Buscar cards no backlog"
         data-testid="backlog-search"
       />
-      <UiSegmented v-if="featureOptions.length > 1" v-model="featureFilter" :options="featureOptions" label="Feature" />
-      <select v-model="ownerFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por responsável" data-testid="filter-owner">
-        <option :value="ALL_FILTER_VALUE">Responsável: todos</option>
-        <option :value="UNASSIGNED_FILTER_VALUE">Sem responsável</option>
-        <option v-for="owner in ownerOptions" :key="owner.value" :value="owner.value">
-          {{ owner.label }}
-        </option>
-      </select>
-      <select v-if="tagOptions.length > 0" v-model="tagFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por etiqueta" data-testid="filter-tag">
-        <option :value="ALL_FILTER_VALUE">Etiqueta: todas</option>
-        <option v-for="tag in tagOptions" :key="tag" :value="tag">{{ tag }}</option>
-      </select>
-      <select v-model="typeFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por tipo" data-testid="filter-type">
-        <option :value="ALL_FILTER_VALUE">Tipo: todos</option>
-        <option value="task">Tasks</option>
-        <option value="feature">Features</option>
-      </select>
-      <button
-        v-if="hasActiveFilters"
-        type="button"
-        class="h-8 cursor-pointer rounded-md border border-line bg-surface-2 px-2.5 text-caption text-muted hover:text-ink"
-        @click="clearFilters"
-      >
-        Limpar
-      </button>
+      <div class="relative lg:hidden">
+        <button
+          type="button"
+          class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-caption text-ink hover:bg-hover"
+          aria-label="Filtros"
+          :aria-expanded="filtersOpen"
+          data-testid="backlog-filters-toggle"
+          @click="filtersOpen = !filtersOpen"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 3h12l-4.5 5.2v4l-3 1.3V8.2L2 3Z" />
+          </svg>
+          <span>Filtros</span>
+          <span v-if="activeFilterCount > 0" class="rounded-full bg-accent px-1.5 text-tiny font-semibold text-accent-ink">
+            {{ activeFilterCount }}
+          </span>
+        </button>
+        <div
+          v-if="filtersOpen"
+          class="absolute right-0 top-full z-30 mt-1.5 flex w-64 flex-col gap-2 rounded-md border border-line bg-surface p-3 shadow-paper"
+        >
+          <UiSegmented v-if="featureOptions.length > 1" v-model="featureFilter" :options="featureOptions" label="Feature" wrap />
+          <select v-model="ownerFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por responsável">
+            <option :value="ALL_FILTER_VALUE">Responsável: todos</option>
+            <option :value="UNASSIGNED_FILTER_VALUE">Sem responsável</option>
+            <option v-for="owner in ownerOptions" :key="owner.value" :value="owner.value">{{ owner.label }}</option>
+          </select>
+          <select v-if="tagOptions.length > 0" v-model="tagFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por etiqueta">
+            <option :value="ALL_FILTER_VALUE">Etiqueta: todas</option>
+            <option v-for="tag in tagOptions" :key="tag" :value="tag">{{ tag }}</option>
+          </select>
+          <select v-model="typeFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por tipo">
+            <option :value="ALL_FILTER_VALUE">Tipo: todos</option>
+            <option value="task">Tasks</option>
+            <option value="feature">Features</option>
+          </select>
+          <button
+            v-if="hasActiveFilters"
+            type="button"
+            class="h-7 cursor-pointer rounded-md border border-line bg-surface-2 px-2 text-caption text-muted hover:text-ink"
+            @click="clearFilters(); filtersOpen = false"
+          >
+            Limpar filtros
+          </button>
+        </div>
+      </div>
+
+      <div class="hidden lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+        <UiSegmented v-if="featureOptions.length > 1" v-model="featureFilter" :options="featureOptions" label="Feature" />
+        <select v-model="ownerFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por responsável" data-testid="filter-owner">
+          <option :value="ALL_FILTER_VALUE">Responsável: todos</option>
+          <option :value="UNASSIGNED_FILTER_VALUE">Sem responsável</option>
+          <option v-for="owner in ownerOptions" :key="owner.value" :value="owner.value">
+            {{ owner.label }}
+          </option>
+        </select>
+        <select v-if="tagOptions.length > 0" v-model="tagFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por etiqueta" data-testid="filter-tag">
+          <option :value="ALL_FILTER_VALUE">Etiqueta: todas</option>
+          <option v-for="tag in tagOptions" :key="tag" :value="tag">{{ tag }}</option>
+        </select>
+        <select v-model="typeFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por tipo" data-testid="filter-type">
+          <option :value="ALL_FILTER_VALUE">Tipo: todos</option>
+          <option value="task">Tasks</option>
+          <option value="feature">Features</option>
+        </select>
+        <button
+          v-if="hasActiveFilters"
+          type="button"
+          class="h-8 cursor-pointer rounded-md border border-line bg-surface-2 px-2.5 text-caption text-muted hover:text-ink"
+          @click="clearFilters"
+        >
+          Limpar
+        </button>
+      </div>
       <span v-if="topLevelItems.length > 0" class="ml-auto text-tiny text-muted tabular-nums">
         {{ visibleItems.length }} de {{ topLevelItems.length }}
       </span>
@@ -327,7 +386,7 @@ watch(
                 </option>
               </select>
             </div>
-            <span v-if="!backlog.loading && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
+            <span v-if="!backlog.loading && !isEmptyBoard && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
             <TaskCard
               v-for="item in column.cards"
               :key="item.id"

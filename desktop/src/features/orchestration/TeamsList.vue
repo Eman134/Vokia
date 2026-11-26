@@ -91,7 +91,7 @@ onUnmounted(() => window.removeEventListener('pointerdown', onPointerDown))
 </script>
 
 <template>
-  <section class="flex min-h-0 min-w-0 flex-col gap-4">
+  <section class="flex min-w-0 flex-col gap-4">
     <div class="flex justify-end">
       <UiButton variant="primary" size="lg" @press="openCreate">{{ VIEW_COPY.newTeam }}</UiButton>
     </div>

@@ -38,9 +38,9 @@ const EMPTY_TEXT =
   'Nenhum turno concluído foi encontrado para os filtros selecionados. Ajuste o período ou remova filtros para ver o histórico.'
 const ALL_VALUE = '__all__'
 
-const PAGE_CLASSES = `flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
-const CARD_CLASSES = 'flex flex-col gap-1.5 rounded-md border border-line bg-surface p-4'
-const SECTION_CARD_CLASSES = 'flex flex-col gap-3 rounded-md border border-line bg-surface p-4'
+const PAGE_CLASSES = `min-w-0 flex-1 overflow-y-auto ${PAGE_INSET_CLASSES}`
+const CARD_CLASSES = 'flex min-w-0 flex-col gap-1.5 rounded-md border border-line bg-surface p-4'
+const SECTION_CARD_CLASSES = 'flex min-w-0 flex-col gap-3 rounded-md border border-line bg-surface p-4'
 const DATE_INPUT_CLASSES = `h-9 rounded-md border border-line bg-surface px-2.5 text-control text-ink transition-colors hover:border-faint ${INK_FOCUS_CLASSES}`
 
 const CHART_METRIC_OPTIONS: readonly { label: string; value: ChartMetric }[] = [
@@ -388,6 +388,7 @@ onMounted(async () => {
 
 <template>
   <section :class="PAGE_CLASSES">
+    <div class="flex min-w-0 flex-col gap-5">
     <UiPageHeader :title="PAGE_TITLE" :subtitle="PAGE_SUBTITLE">
       <template #actions>
         <UiBadge status="lote" :label="COST_BADGE_LABEL" />
@@ -397,26 +398,28 @@ onMounted(async () => {
       </template>
     </UiPageHeader>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <UiSegmented v-model="periodModel" :options="PERIOD_OPTIONS" label="Período das estatísticas" wrap />
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <UiSegmented v-model="periodModel" :options="PERIOD_OPTIONS" label="Período das estatísticas" wrap />
 
-      <div v-if="period === 'custom'" class="flex flex-wrap items-center gap-2">
-        <label class="flex items-center gap-1.5 text-caption text-muted">
-          <span>De</span>
-          <input v-model="draftFrom" type="date" aria-label="Data inicial" :class="DATE_INPUT_CLASSES" />
-        </label>
-        <label class="flex items-center gap-1.5 text-caption text-muted">
-          <span>Até</span>
-          <input v-model="draftTo" type="date" aria-label="Data final" :class="DATE_INPUT_CLASSES" />
-        </label>
-        <UiButton variant="primary" size="lg" :disabled="loading || !draftFrom || !draftTo" @press="applyCustom">
-          Aplicar
-        </UiButton>
+        <div v-if="period === 'custom'" class="flex flex-wrap items-center gap-2">
+          <label class="flex items-center gap-1.5 text-caption text-muted">
+            <span>De</span>
+            <input v-model="draftFrom" type="date" aria-label="Data inicial" :class="DATE_INPUT_CLASSES" />
+          </label>
+          <label class="flex items-center gap-1.5 text-caption text-muted">
+            <span>Até</span>
+            <input v-model="draftTo" type="date" aria-label="Data final" :class="DATE_INPUT_CLASSES" />
+          </label>
+          <UiButton variant="primary" size="lg" :disabled="loading || !draftFrom || !draftTo" @press="applyCustom">
+            Aplicar
+          </UiButton>
+        </div>
       </div>
 
-      <div class="ml-auto flex flex-wrap items-center gap-2">
-        <UiSelect v-model="projectModel" :options="projectOptions" label="Filtrar por projeto" class="w-44" />
-        <UiSelect v-model="providerModel" :options="providerOptions" label="Filtrar por provedor" class="w-44" />
+      <div class="flex flex-wrap items-center gap-2">
+        <UiSelect v-model="projectModel" :options="projectOptions" label="Filtrar por projeto" class="w-44 max-w-full" />
+        <UiSelect v-model="providerModel" :options="providerOptions" label="Filtrar por provedor" class="w-44 max-w-full" />
       </div>
     </div>
 
@@ -672,5 +675,6 @@ onMounted(async () => {
         </UiTable>
       </section>
     </template>
+    </div>
   </section>
 </template>

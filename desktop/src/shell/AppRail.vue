@@ -28,10 +28,10 @@ import { useFeed } from '../features/team/useFeed'
 
 const NEW_PROJECT_PAGE: AppPage = 'novo-projeto'
 
-const ITEM = `group relative flex h-9.5 cursor-pointer items-center rounded-md whitespace-nowrap text-left ${INK_FOCUS_CLASSES}`
+const ITEM = `group relative flex h-9.5 [@media(max-height:860px)]:h-8.5 [@media(max-height:740px)]:h-7.5 cursor-pointer items-center rounded-md whitespace-nowrap text-left ${INK_FOCUS_CLASSES}`
 const ITEM_EXPANDED_PAD = 'pr-2.5'
 // Caixa fixa do ícone: mantém x e y do ícone iguais nos dois modos do trilho.
-const ICON_BOX = 'grid size-9.5 flex-none place-items-center'
+const ICON_BOX = 'grid size-9.5 [@media(max-height:860px)]:size-8.5 [@media(max-height:740px)]:size-7.5 flex-none place-items-center'
 const PROJECT_BADGE = 'size-4.5 flex-none'
 // SVG não estica por left/right como uma div: a largura precisa ser explícita para o traço não vazar do botão.
 const ACTIVE_MARK = `${HAND_MARK_CLASSES} text-ink-pen! bottom-0.5 left-2.5 w-[calc(100%-1.25rem)]`
@@ -139,14 +139,14 @@ function toggleProject(project: Project) {
 
 <template>
   <div
-    :class="`relative flex h-full shrink-0 flex-col items-start gap-3 bg-paper px-4.75 py-5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
+    :class="`relative flex h-full shrink-0 flex-col items-start gap-3 bg-paper px-4.75 py-5 [@media(max-height:860px)]:gap-2 [@media(max-height:860px)]:py-3.5 [@media(max-height:740px)]:gap-1.5 [@media(max-height:740px)]:px-3.5 [@media(max-height:740px)]:py-2.5 font-sans transition-[width] motion-reduce:transition-none ${RAIL_MOTION}`"
     :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
   >
     <UiHandDivider class="absolute inset-y-0 right-0 h-full text-line!" />
-    <div class="flex shrink-0 items-center gap-2.5 pl-1.25">
+    <div class="flex shrink-0 items-center gap-2.5 pl-1.25 [@media(max-height:740px)]:pl-0.5">
       <button
         type="button"
-        :class="`grid size-10 flex-none place-items-center rounded-md text-ink [--logo-cut:var(--color-paper)] ${INK_FOCUS_CLASSES}`"
+        :class="`grid size-10 [@media(max-height:860px)]:size-9 [@media(max-height:740px)]:size-8 flex-none place-items-center rounded-md text-ink [--logo-cut:var(--color-paper)] ${INK_FOCUS_CLASSES}`"
         aria-label="Vokia, início"
         title="Vokia"
         @click="navigation.goTo(PROJECT_LIST_PAGE)"
@@ -156,10 +156,11 @@ function toggleProject(project: Project) {
       <span v-if="expanded" class="order-2 text-lead text-ink">Vokia</span>
     </div>
 
+    <div class="flex min-h-0 w-full flex-1 flex-col gap-3 [@media(max-height:860px)]:gap-2 [@media(max-height:740px)]:gap-1.5 overflow-y-auto pr-0.5">
     <button
       type="button"
       data-testid="rail-global-search"
-      :class="[itemSize, ITEM_OFF, expanded && 'w-full']"
+      :class="[itemSize, ITEM_OFF, 'shrink-0', expanded && 'w-full']"
       :aria-label="`${SEARCH_LABEL} (${SEARCH_SHORTCUT})`"
       :title="`${SEARCH_LABEL} (${SEARCH_SHORTCUT})`"
       @click="globalSearch.openDialog()"
@@ -195,7 +196,7 @@ function toggleProject(project: Project) {
     <nav
       v-if="projectsStore.projects.length > 0"
       aria-label="Projetos"
-      :class="[GROUP, 'min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', expanded && 'w-full']"
+      :class="[GROUP, 'shrink-0', expanded && 'w-full']"
     >
       <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
         <div class="group/proj relative flex items-center">
@@ -276,8 +277,9 @@ function toggleProject(project: Project) {
         </button>
       </nav>
     </div>
+    </div>
 
-    <div class="mt-auto flex shrink-0 flex-col items-start gap-1 pl-1.5">
+    <div class="mt-auto flex shrink-0 flex-col items-start gap-1 pl-0.5">
       <button
         type="button"
         :class="[itemSize, isActive('config') ? ITEM_ON : ITEM_OFF]"
