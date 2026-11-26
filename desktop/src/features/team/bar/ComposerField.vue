@@ -286,16 +286,14 @@ defineExpose({ isFocused, selectRecipient })
       placement="top"
       floating="absolute"
       trigger-variant="ghost"
-      :trigger-class="selectedMentionRecipient ? 'h-6.5 max-w-26 gap-1 px-1.5 text-muted hover:text-ink' : 'size-6.5 justify-center !px-0 text-muted hover:text-ink'"
+      :trigger-class="selectedMentionRecipient ? 'size-6.5 justify-center !px-0 text-accent' : 'size-6.5 justify-center !px-0 text-muted hover:text-ink'"
       label="Escolher agente destinatário"
       :title="recipientTooltip"
       test-id="action-bar-agent-picker"
       @select="onPickRecipient"
     >
-      <template #trigger="{ agent }">
-        <AgentPortrait v-if="agent" :who="agent.id" :size="15" class="shrink-0" />
+      <template #trigger>
         <svg
-          v-else
           class="size-3.5 shrink-0"
           viewBox="0 0 24 24"
           fill="none"
@@ -308,7 +306,6 @@ defineExpose({ isFocused, selectRecipient })
           <circle cx="12" cy="12" r="4" />
           <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
         </svg>
-        <span v-if="agent" class="truncate text-caption font-medium text-ink">{{ agent.name }}</span>
       </template>
     </AgentPicker>
     <AttachmentChips
