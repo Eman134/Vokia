@@ -27,6 +27,18 @@ const rootRef = ref<HTMLElement>()
 const triggerRef = ref<{ $el: HTMLElement } | null>(null)
 const optionRefs = ref<HTMLElement[]>([])
 const listId = useId()
+const modeAnimating = ref(false)
+let modeAnimTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(mode, (next, prev) => {
+  if (prev === undefined || next === prev) return
+  modeAnimating.value = true
+  if (modeAnimTimer !== null) clearTimeout(modeAnimTimer)
+  modeAnimTimer = setTimeout(() => {
+    modeAnimating.value = false
+    modeAnimTimer = null
+  }, 650)
+})
 
 watch(
   projectId,
@@ -77,6 +89,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (modeAnimTimer !== null) clearTimeout(modeAnimTimer)
   window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('mousedown', onDocumentMouseDown)
 })
@@ -88,8 +101,12 @@ onUnmounted(() => {
       ref="triggerRef"
       variant="quiet"
       size="sm"
-      class="w-7 px-0"
-      :class="current.warn && WARN_CLASSES"
+      class="relative w-7 px-0"
+      :class="[
+        current.warn && WARN_CLASSES,
+        mode === 'bypass' && 'ring-1 ring-warn/70',
+        modeAnimating && 'mode-shake',
+      ]"
       :aria-label="buttonLabel"
       :title="buttonLabel"
       aria-haspopup="listbox"
@@ -102,6 +119,11 @@ onUnmounted(() => {
       <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path :d="current.icon" />
       </svg>
+      <span
+        v-if="mode === 'bypass'"
+        class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-warn animate-pulse motion-reduce:animate-none"
+        aria-hidden="true"
+      />
     </UiButton>
     <div v-if="open" class="absolute left-0 bottom-full z-40 pb-2">
       <ul
@@ -141,3 +163,33 @@ onUnmounted(() => {
     <BypassWarning v-model:open="warningOpen" @accept="acceptWarning" />
   </div>
 </template>
+
+<style scoped>
+@keyframes mode-shake {
+  0%, 100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-2px) rotate(-6deg);
+  }
+  40% {
+    transform: translateX(2px) rotate(6deg);
+  }
+  60% {
+    transform: translateX(-1.5px) rotate(-4deg);
+  }
+  80% {
+    transform: translateX(1.5px) rotate(4deg);
+  }
+}
+
+.mode-shake {
+  animation: mode-shake 0.45s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mode-shake {
+    animation: none;
+  }
+}
+</style>

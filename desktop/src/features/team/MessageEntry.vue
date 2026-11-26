@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
@@ -125,7 +125,8 @@ const EXCHANGE_ARROW_PATH = sketchArrow(
   EXCHANGE_ARROW_SEED,
   DEFAULT_JITTER,
 )
-const EXCHANGE_TEXT_CLASSES = 'max-w-full sm:max-w-xs text-caption text-muted'
+const EXCHANGE_TEXT_CLASSES = 'max-w-full sm:max-w-xl text-left text-caption text-ink'
+const EXCHANGE_BUBBLE_CLASSES = 'w-fit max-w-full sm:max-w-xl rounded-md border border-line bg-surface-2/60 px-3 py-1.5 text-left text-caption text-ink'
 // Caps line length on wide monitors now that the feed spans the whole panel.
 const USER_BUBBLE_MAX_WIDTH_CLASSES = 'max-w-[85%] md:max-w-xl lg:max-w-2xl'
 const USER_TEXT_CLASSES = `w-fit ${USER_BUBBLE_MAX_WIDTH_CLASSES} wrap-break-word px-3 py-1.5`
@@ -151,6 +152,41 @@ function speakerName(speaker: Speaker): string {
 
 function profile(speaker: Speaker): AgentProfile | undefined {
   return roster.profileOf(speaker)
+}
+
+const exchangeExpanded = ref(false)
+
+function formatExchangeSummary(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function exchangeBadge(text: string): string {
+  const lower = text.trimStart().toLowerCase()
+  if (lower.startsWith('triagem')) return 'Triagem'
+  if (lower.startsWith('implemente o lote') || lower.startsWith('lote ')) return 'Etapa'
+  if (lower.startsWith('pedido de plano')) return 'Plano'
+  if (lower.startsWith('pedido de implementação')) return 'Implementação'
+  if (lower.startsWith('pedido de revisão') || lower.startsWith('revis')) return 'Revisão'
+  return 'Delegação'
+}
+
+function exchangeHeadline(text: string): string {
+  const firstLine = text.trim().split('\n')[0] ?? ''
+  return firstLine.replace(/^#+\s*/, '').trim()
+}
+
+function hasLongExchangeBody(text: string): boolean {
+  return text.length > 160 || text.includes('\n')
+}
+
+function exchangeTooltipText(): string {
+  if (props.entry.type !== 'message') return ''
+  const header = `${speakerName(props.entry.from)} → ${speakerName(props.entry.to)} · ${TIME_FORMAT.format(props.entry.time)}`
+  const metaParts: string[] = []
+  if (thinkingDuration.value) metaParts.push(`Duração: ${thinkingDuration.value}`)
+  if (usageTooltip.value) metaParts.push(usageTooltip.value)
+  const body = formatExchangeSummary(props.entry.text)
+  return [header, metaParts.join(' · '), body ? `\n${body}` : ''].filter(Boolean).join('\n')
 }
 </script>
 
@@ -206,49 +242,102 @@ function profile(speaker: Speaker): AgentProfile | undefined {
       />
     </div>
   </div>
-  <UiTooltip
+  <div
     v-else-if="entry.type === 'message' && isBetweenAgents(entry)"
-    class="flex min-w-0 flex-col items-center gap-1 text-center"
-    :text="[TIME_FORMAT.format(entry.time), thinkingDuration ? `Pensou: ${thinkingDuration}` : '', entry.text, usageTooltip].filter(Boolean).join('\n')"
+    class="group flex min-w-0 flex-col items-center gap-1.5 text-center"
     data-testid="agent-exchange"
   >
-    <div class="flex min-w-0 items-center gap-x-2">
-      <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
-        <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
-        {{ speakerName(entry.from) }}
-        <TemporaryOverrideBadge
-          v-if="entry.from !== 'user' && agentUsage?.isFallback"
-          :override="overrides.byAgent(entry.from) ?? {
-            cli: agentUsage.provider ?? '',
-            model: agentUsage.model ?? '',
-            originalCli: '',
-            originalModel: '',
-            reason: 'usage-limit',
-          }"
-          :restoring="Boolean(overrides.restoring[entry.from])"
-          @restore="overrides.restore(entry.from)"
+    <UiTooltip
+      class="inline-flex max-w-full flex-col items-center gap-1.5"
+      :text="exchangeTooltipText()"
+    >
+      <div class="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
+        <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
+          <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
+          {{ speakerName(entry.from) }}
+          <TemporaryOverrideBadge
+            v-if="entry.from !== 'user' && agentUsage?.isFallback"
+            :override="overrides.byAgent(entry.from) ?? {
+              cli: agentUsage.provider ?? '',
+              model: agentUsage.model ?? '',
+              originalCli: '',
+              originalModel: '',
+              reason: 'usage-limit',
+            }"
+            :restoring="Boolean(overrides.restoring[entry.from])"
+            @restore="overrides.restore(entry.from)"
+          />
+        </span>
+        <svg
+          class="shrink-0 text-muted"
+          :width="EXCHANGE_ARROW_WIDTH"
+          :height="EXCHANGE_ARROW_HEIGHT"
+          :viewBox="`0 0 ${EXCHANGE_ARROW_WIDTH} ${EXCHANGE_ARROW_HEIGHT}`"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path :d="EXCHANGE_ARROW_PATH" :stroke-width="EXCHANGE_ARROW_STROKE" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
+          <AgentPortrait :who="entry.to" :size="META_AVATAR_SIZE" />
+          {{ speakerName(entry.to) }}
+        </span>
+        <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+        <span v-if="usageModel" data-testid="message-usage" class="text-xs text-muted">· {{ usageModel }}</span>
+        <span
+          v-if="thinkingDuration"
+          data-testid="message-thinking-duration"
+          class="inline-flex items-center gap-1 text-xs text-muted tabular-nums"
+          :title="`Pensou por ${thinkingDuration}`"
+        >
+          <span aria-hidden="true">·</span>
+          <svg
+            viewBox="0 0 24 24"
+            class="size-3 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path :d="THINKING_ICON_PATH" />
+          </svg>
+          <span>{{ thinkingDuration }}</span>
+        </span>
+        <span
+          v-if="usageCost || usageSplit"
+          data-testid="message-usage-detail"
+          class="flex items-center gap-2"
+        >
+          <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
+          <TokenUsageChart :usage="entry.usage" />
+        </span>
+      </div>
+      <ul v-if="protocolRow" :class="[EXCHANGE_TEXT_CLASSES, 'flex min-w-0 flex-col']">
+        <ActivityRow :row="protocolRow" />
+      </ul>
+      <div v-else :class="EXCHANGE_BUBBLE_CLASSES">
+        <div class="mb-1 flex flex-wrap items-center gap-1.5 text-tiny">
+          <span class="rounded-sm bg-surface px-1.5 py-0.5 font-semibold text-ink">{{ exchangeBadge(entry.text) }}</span>
+          <span v-if="entry.itemId" class="rounded-sm bg-surface px-1.5 py-0.5 font-mono font-semibold text-muted">{{ entry.itemId }}</span>
+          <span class="min-w-0 flex-1 truncate font-medium text-ink">{{ exchangeHeadline(entry.text) }}</span>
+          <button
+            v-if="hasLongExchangeBody(entry.text)"
+            type="button"
+            class="shrink-0 cursor-pointer text-tiny font-medium text-accent hover:underline"
+            @click.stop="exchangeExpanded = !exchangeExpanded"
+          >
+            {{ exchangeExpanded ? 'Recolher' : 'Ver tudo' }}
+          </button>
+        </div>
+        <MarkdownText
+          :class="exchangeExpanded ? 'wrap-break-word text-muted' : 'line-clamp-2 wrap-break-word text-muted'"
+          :text="entry.text"
         />
-      </span>
-      <svg
-        class="shrink-0 text-muted"
-        :width="EXCHANGE_ARROW_WIDTH"
-        :height="EXCHANGE_ARROW_HEIGHT"
-        :viewBox="`0 0 ${EXCHANGE_ARROW_WIDTH} ${EXCHANGE_ARROW_HEIGHT}`"
-        fill="none"
-        stroke="currentColor"
-        aria-hidden="true"
-      >
-        <path :d="EXCHANGE_ARROW_PATH" :stroke-width="EXCHANGE_ARROW_STROKE" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
-        <AgentPortrait :who="entry.to" :size="META_AVATAR_SIZE" />
-        {{ speakerName(entry.to) }}
-      </span>
-    </div>
-    <ul v-if="protocolRow" :class="[EXCHANGE_TEXT_CLASSES, 'flex min-w-0 flex-col']">
-      <ActivityRow :row="protocolRow" />
-    </ul>
-    <span v-else :class="[EXCHANGE_TEXT_CLASSES, 'truncate']">{{ entry.text }}</span>
+      </div>
+    </UiTooltip>
     <div v-if="entry.activity || entry.usage?.isFallback" class="flex w-full flex-col gap-1">
       <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
@@ -267,7 +356,7 @@ function profile(speaker: Speaker): AgentProfile | undefined {
         :message-time="entry.time"
       />
     </div>
-  </UiTooltip>
+  </div>
   <div v-else-if="entry.type === 'message'" class="group flex min-w-0 items-start gap-2">
     <span class="mt-0.5 flex shrink-0" aria-hidden="true">
       <AgentPortrait :who="entry.from" :size="AVATAR_SIZE" />

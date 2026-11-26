@@ -90,6 +90,7 @@ export const PLAN_HINT: Record<BacklogState, string> = {
 
 export interface BacklogItem {
   id: string
+  publicId?: string
   title: string
   type: 'task' | 'feature'
   state: BacklogState

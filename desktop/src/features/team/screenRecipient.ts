@@ -38,6 +38,12 @@ export function screenChannel(
   return channels.find((channel) => channel.id === screen.channel) ?? null
 }
 
+export interface TriageTarget {
+  itemId: string
+  agent: Agent | null
+  label?: string
+}
+
 export function screenDestination(
   page: AppPage | null,
   screen: ConversationScreen,
@@ -45,12 +51,20 @@ export function screenDestination(
   rosterOrder: readonly Agent[],
   mention: Agent | null,
   threadAssignee: Agent | null = null,
+  triageTarget: TriageTarget | null = null,
 ): ScreenDestination {
   if (page === CONVERSATIONS_PAGE && screen.kind === 'thread') {
     return {
       to: mention ?? threadAssignee ?? DEFAULT_RECIPIENT,
       channelId: null,
       itemId: screen.itemId,
+    }
+  }
+  if (page === CONVERSATIONS_PAGE && screen.kind === 'triage' && triageTarget !== null) {
+    return {
+      to: mention ?? triageTarget.agent ?? DEFAULT_RECIPIENT,
+      channelId: null,
+      itemId: triageTarget.itemId,
     }
   }
   const channel = screenChannel(page, screen, channels)
@@ -71,6 +85,7 @@ export function screenPlaceholder(
   channels: readonly Channel[] = [],
   rosterOrder: readonly Agent[] = [],
   threadTitle?: string,
+  triageTarget?: TriageTarget | null,
 ): string | undefined {
   if (page !== CONVERSATIONS_PAGE) return undefined
   if (screen.kind === 'thread') {
@@ -83,6 +98,12 @@ export function screenPlaceholder(
     const to = channelRecipient(channel, rosterOrder)
     return to === null ? `Mensagem para #${channel.name}` : `Mensagem para #${channel.name} · vai para ${nameOf(to)}`
   }
-  if (screen.kind === 'triage') return TRIAGE_SCREEN_PLACEHOLDER
+  if (screen.kind === 'triage') {
+    if (triageTarget) {
+      const targetName = triageTarget.agent ? nameOf(triageTarget.agent) : 'líder da triagem'
+      return `Conversar com ${targetName} sobre ${triageTarget.label ?? triageTarget.itemId}`
+    }
+    return TRIAGE_SCREEN_PLACEHOLDER
+  }
   return screen.kind === 'channel' && screen.channel === GENERAL_CHANNEL_NAME ? GENERAL_SCREEN_PLACEHOLDER : undefined
 }

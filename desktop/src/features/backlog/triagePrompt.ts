@@ -87,6 +87,7 @@ export function buildTriagePrompt(
     `- Para atribuir direto, chame a ferramenta backlog_set_responsible com item_id "${item.id}" e agent com o id entre parênteses abaixo.`,
     '- Para delegar, use o fluxo de delegação do time. Você só delega: quem grava o responsável é a ferramenta.',
     `- Ao gravar plano via save_item_plan, use ${PLAN_PROTOCOL_HINT}`,
+    '- Na triagem, defina também um public_id bem curto para o card (ex: FIL01 para filtros, ANIM01 para animações, máx. 8 caracteres) ao chamar save_item_plan ou backlog_set_responsible.',
     '',
     'Times e camadas deste projeto:',
     ...teamLines,

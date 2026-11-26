@@ -25,6 +25,7 @@ export const useDelegationNotices = defineStore('delegationNotices', () => {
   const balloons = useBalloons()
   const announced = new WeakSet<object>()
   const delegatorOf = new Map<Agent, Agent>()
+  const startedAtMs = Date.now()
 
   function isReturn(message: VokiaMessage & { from: Agent; to: Agent }): boolean {
     return delegatorOf.get(message.from) === message.to
@@ -36,6 +37,7 @@ export const useDelegationNotices = defineStore('delegationNotices', () => {
       for (const entry of feed.feed) {
         if (entry.type !== 'message' || announced.has(entry)) continue
         announced.add(entry)
+        if (entry.time < startedAtMs) continue
         if (entry.isError || !isBetweenAgents(entry) || !isAgent(entry.from) || !isAgent(entry.to)) continue
         const message = { ...entry, from: entry.from, to: entry.to }
         if (message.from === message.to) continue

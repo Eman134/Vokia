@@ -10,6 +10,7 @@ import { useFeed } from './useFeed'
 
 export interface TaskThread {
   itemId: string
+  publicId?: string
   title: string
   column: BacklogColumn
   assignee: Agent | null
@@ -77,6 +78,7 @@ export const useThreads = defineStore('threads', () => {
         return [
           {
             itemId: item.id,
+            publicId: item.publicId,
             title: item.title,
             column,
             assignee: participants.at(-1) ?? null,

@@ -183,7 +183,22 @@ export function useComposerSubmit() {
     }
     const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
     const threads = useThreads()
+    const backlog = useBacklog()
+    const triage = useTriage()
     const threadAssignee = feed.screen.kind === 'thread' ? (threads.find(feed.screen.itemId)?.assignee ?? null) : null
+    const triageItem =
+      feed.screen.kind === 'triage'
+        ? (backlog.items.find((item) => item.id === triage.selectedTriageId && backlog.triagingIds.has(item.id)) ??
+          backlog.items.find((item) => backlog.triagingIds.has(item.id)) ??
+          null)
+        : null
+    const triageTarget = triageItem
+      ? {
+          itemId: triageItem.id,
+          agent: isUnassigned(triageItem) ? null : triageItem.who,
+          label: triageItem.publicId ?? triageItem.id,
+        }
+      : null
     const { to, channelId, itemId } = screenDestination(
       navigation.page,
       feed.screen,
@@ -191,6 +206,7 @@ export function useComposerSubmit() {
       roster.agents.map((profile) => profile.id),
       mention,
       threadAssignee,
+      triageTarget,
     )
     const expandedCommand = expandCommand(text)
     const pending = draft.value

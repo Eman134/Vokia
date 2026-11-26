@@ -43,17 +43,18 @@ const emit = defineEmits<{ open: []; action: [action: TaskCardAction] }>()
 const DONE_SEGMENTS = 1
 const DONE_COLUMN: BacklogColumn = 'Done'
 const AVATAR_SIZE = 22
-const KEY_POINTS_LIMIT = 3
+const MAX_VISIBLE_TAGS = 3
 const CARD_CLASSES =
-  'relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-sm border border-line bg-surface px-3.25 py-3'
-// Proposta é um post-it dentro da ficha: o texto escuro vale nos dois temas porque o amarelo é pastel nos dois.
-const PROPOSAL_CLASSES = 'flex flex-col gap-1.5 rounded-sm bg-sticky px-2.5 py-2 text-mark-ink shadow-seg'
-
-const ID_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-meta font-semibold text-muted'
+  'relative flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-sm border border-line bg-surface px-3 py-2.5'
+const ID_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-tiny font-bold tracking-wide text-ink'
+const TAG_CLASSES = 'max-w-[110px] truncate rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 text-tiny text-muted'
 
 const roster = useRoster()
 const itemUsage = useItemUsage(() => props.item.id)
 const usageText = computed(() => formatItemUsage(itemUsage.value))
+const displayId = computed(() => props.item.publicId ?? props.item.id)
+const visibleTags = computed(() => props.item.tags.slice(0, MAX_VISIBLE_TAGS))
+const extraTagsCount = computed(() => Math.max(0, props.item.tags.length - MAX_VISIBLE_TAGS))
 const descriptionContent = computed(() => extractAttachments(props.item.description ?? ''))
 
 const chip = computed(
@@ -91,20 +92,23 @@ const percent = computed(() => {
     @click="emit('open')"
   >
     <UiSketchBox v-if="item.error" tone="danger" class="pointer-events-none absolute inset-0" />
-    <header v-if="isFeature || isAutoClosed" class="flex items-center gap-2">
+    <header class="flex flex-wrap items-center gap-1.5">
+      <span class="size-2 shrink-0 rounded-full" :class="BADGE_DOT[chip.status]" :title="chip.label" aria-hidden="true" />
+      <span class="sr-only">{{ chip.label }}:</span>
+      <span :class="ID_CLASSES" data-testid="card-id">{{ displayId }}</span>
       <UiMarker v-if="isFeature" tone="blue" class="text-tiny font-semibold">feature</UiMarker>
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
     </header>
 
     <p v-if="item.parent" class="truncate text-meta text-muted">↳ {{ item.parent }}</p>
-    <h3 class="flex items-start gap-2 text-body leading-[1.3] font-bold text-ink">
-      <span class="mt-1.25 size-2 shrink-0 rounded-full" :class="BADGE_DOT[chip.status]" :title="chip.label" aria-hidden="true" />
-      <span class="sr-only">{{ chip.label }}:</span>
-      <span :class="ID_CLASSES" data-testid="card-id">{{ item.id }}</span>
-      <span class="min-w-0 wrap-break-word">{{ item.title }}</span>
+    <h3 class="min-w-0 truncate text-body leading-[1.3] font-bold text-ink" :title="item.title">
+      {{ item.title }}
     </h3>
+    <div v-if="visibleTags.length > 0" class="flex flex-wrap items-center gap-1" data-testid="card-tags">
+      <span v-for="tag in visibleTags" :key="tag" :class="TAG_CLASSES" :title="tag">{{ tag }}</span>
+      <span v-if="extraTagsCount > 0" class="text-tiny text-muted">+{{ extraTagsCount }}</span>
+    </div>
     <p v-if="usageText" class="text-meta text-muted" data-testid="card-usage">{{ usageText }}</p>
-    <p v-if="descriptionContent.text" class="line-clamp-2 wrap-break-word text-caption leading-[1.45] text-muted">{{ descriptionContent.text }}</p>
     <AttachmentPreviewList
       v-if="descriptionContent.attachments.length > 0"
       :attachments="descriptionContent.attachments"
@@ -114,14 +118,6 @@ const percent = computed(() => {
     <p v-if="item.error" role="alert" class="text-caption font-semibold text-danger">
       Erro ao ler este item: {{ item.error.reason }}
     </p>
-    <p v-if="planLine" class="line-clamp-2 wrap-break-word whitespace-pre-wrap text-caption text-ink">{{ planLine }}</p>
-    <div v-if="proposal" :class="PROPOSAL_CLASSES">
-      <p v-if="proposal.summary" class="line-clamp-2 wrap-break-word text-caption leading-[1.45]">{{ proposal.summary }}</p>
-      <p class="text-meta">{{ proposal.lots.length }} etapas<template v-if="proposal.estimate"> · {{ proposal.estimate }}</template></p>
-      <ul v-if="proposal.lots.length" class="flex list-disc flex-col gap-0.5 pl-3.5 text-meta">
-        <li v-for="lot in proposal.lots.slice(0, KEY_POINTS_LIMIT)" :key="lot.n" class="truncate">{{ lot.title }}</li>
-      </ul>
-    </div>
 
     <div class="mt-auto flex items-center gap-2 pt-0.5">
       <BacklogPlanActions v-if="action" :action="action" @action="emit('action', $event)" />

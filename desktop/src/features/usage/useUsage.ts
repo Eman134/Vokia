@@ -66,15 +66,13 @@ export const useUsage = defineStore('usage', () => {
   }
 
   const providerList = computed<ProviderPlanUsage[]>(() =>
-    Object.values(providers.value)
-      .filter((entry) => allWindowsOf(entry).length > 0)
-      .sort((a, b) => a.providerId.localeCompare(b.providerId)),
+    Object.values(providers.value).sort((a, b) => a.providerId.localeCompare(b.providerId)),
   )
 
   const latestUpdatedAtMs = computed<number | null>(() => {
     let latest: number | null = null
     for (const entry of providerList.value) {
-      if (latest === null || entry.updatedAtMs > latest) {
+      if (entry.updatedAtMs > 0 && (latest === null || entry.updatedAtMs > latest)) {
         latest = entry.updatedAtMs
       }
     }
@@ -115,7 +113,7 @@ export const useUsage = defineStore('usage', () => {
     }
   })
 
-  const visible = computed(() => providerList.value.length > 0)
+  const visible = computed(() => providerList.value.some((entry) => allWindowsOf(entry).length > 0))
 
   const fiveHour = computed<number | null>(() => {
     const critical = mostCritical.value
@@ -138,7 +136,7 @@ export const useUsage = defineStore('usage', () => {
     }),
   )
 
-  const openable = computed(() => visible.value || startupError.value !== null)
+  const openable = computed(() => providerList.value.length > 0 || startupError.value !== null)
 
   const ariaLabel = computed(() => {
     if (providerList.value.length === 0) {

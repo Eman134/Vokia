@@ -24,8 +24,6 @@ import type { Agent } from './events'
 import { useAgentControl } from '../panel/useAgentControl'
 import { SAME_FOLDER_TEXT, worktreeFolder, type AgentCopy } from './agentCopies'
 import { useAgentCopies } from './useAgentCopies'
-import type { AppPage } from '../../shell/railNav'
-import { useNavigation } from '../../shell/useNavigation'
 import { useBacklog } from '../backlog/useBacklog'
 import { useProjects } from '../projects/useProjects'
 import UiChip from '../../ui/UiChip.vue'
@@ -38,9 +36,8 @@ import UiNotice from '../../ui/UiNotice.vue'
 
 const NEW_CHANNEL_LABEL = 'Novo canal'
 const TRIAGE_SCREEN: ConversationScreen = { kind: 'triage' }
-const BACKLOG_PAGE: AppPage = 'backlog'
-const OPEN_CARD_LABEL = 'Abrir card no backlog'
-const OPEN_CARD_ICON_PATH = 'M6.5 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3M9.5 2.5h4v4M13.5 2.5L7.5 8.5'
+const OPEN_CARD_LABEL = 'Abrir task'
+const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
 const OPEN_CARD_ICON_SIZE = 13
 const THREAD_ICON_PATH = 'M8 10h8M8 14h5M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 3v-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z'
 const HOURGLASS_ICON_PATH = 'M6 2h12v4l-4 4 4 4v4H6v-4l4-4-4-4V2Z'
@@ -87,7 +84,6 @@ const channels = useChannels()
 const agentCopies = useAgentCopies()
 const projects = useProjects()
 const backlog = useBacklog()
-const navigation = useNavigation()
 const creating = ref(false)
 const editing = ref<Channel | null>(null)
 // Abaixo de md a lista vira faixa no topo, recolhida até o usuário abri-la.
@@ -184,7 +180,6 @@ function threadShown(itemId: string): boolean {
 
 function openThreadCard(itemId: string): void {
   backlog.open(itemId)
-  navigation.goTo(BACKLOG_PAGE)
 }
 
 async function removeChannel(channel: Channel): Promise<void> {
@@ -296,6 +291,7 @@ function closeChannelDialog(): void {
                 :class="['h-3.5 w-3.5 shrink-0', thread.isTriaging && 'animate-spin [animation-duration:4s] motion-reduce:animate-none']"
               />
               <AgentPortrait v-else :who="thread.assignee" :size="THREAD_PORTRAIT_SIZE" class="shrink-0" />
+              <span class="shrink-0 font-mono text-tiny font-semibold text-muted">{{ thread.publicId ?? thread.itemId }}</span>
               <span class="min-w-0 truncate">{{ thread.title }}</span>
               <span
                 v-if="THREAD_DOT[thread.status]"
@@ -345,6 +341,7 @@ function closeChannelDialog(): void {
                 @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
               >
                 <UiIcon :path="THREAD_ICON_PATH" class="h-3.5 w-3.5 shrink-0" />
+                <span class="shrink-0 font-mono text-tiny font-semibold text-muted">{{ thread.publicId ?? thread.itemId }}</span>
                 <span class="min-w-0 truncate">{{ thread.title }}</span>
                 <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
               </button>

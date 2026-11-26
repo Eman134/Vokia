@@ -9,9 +9,8 @@ import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import { useNavigation } from '../../shell/useNavigation'
 import { useProjects } from '../projects/useProjects'
+import { useRoster } from '../team/useRoster'
 import TaskCard from './TaskCard.vue'
-import TaskItemModal from './TaskItemModal.vue'
-import PlanDialog from './PlanDialog.vue'
 import { colorVar } from './backlogLabels'
 import {
   ALL_FEATURES_LABEL,
@@ -28,6 +27,7 @@ import {
 import {
   COLUMN_LABEL,
   DEFAULT_COLUMN,
+  isUnassigned,
   type TaskCardAction,
   type BacklogColumn,
   type BacklogItem,
@@ -40,8 +40,14 @@ import { useRunItem } from './useRunItem'
 // Do md para cima a página não rola: cada coluna rola sozinha, e o cabeçalho e o "Novo pedido" ficam à vista.
 // A folga da barra de ação sai da página e vai para o fim de cada coluna.
 const PAGE_CLASSES = `flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto md:overflow-hidden ${PAGE_INSET_CLASSES} md:pb-0`
-const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2.5'
-const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 bg-bg pb-1'
+const FILTER_ROW_CLASSES = 'flex flex-wrap items-center gap-2'
+const SEARCH_INPUT_CLASSES =
+  'h-8 w-full min-w-[200px] flex-1 rounded-md border border-line bg-surface px-2.5 text-caption text-ink placeholder:text-muted focus:border-ink focus:outline-none sm:max-w-xs'
+const FILTER_SELECT_CLASSES =
+  'h-8 cursor-pointer rounded-md border border-line bg-surface px-2 text-caption text-ink focus:border-ink focus:outline-none'
+const COLUMN_HEADER_CLASSES = 'sticky top-0 z-10 flex items-center justify-between gap-2 bg-bg pb-1'
+const COLUMN_SORT_SELECT_CLASSES =
+  'h-6 max-w-[115px] cursor-pointer rounded-sm border border-line bg-surface px-1.5 text-tiny text-muted hover:text-ink focus:border-ink focus:outline-none'
 const COLUMN_TITLE_CLASSES = 'relative flex w-fit items-baseline gap-2 pb-1.5 text-card-title text-ink'
 const COLUMN_COUNT_CLASSES = 'text-caption text-muted'
 const COLUMN_UNDERLINE_CLASSES = 'pointer-events-none absolute inset-x-0 bottom-0 h-1.5'
@@ -64,6 +70,7 @@ const itemPlan = useItemPlan()
 const runItem = useRunItem()
 const navigation = useNavigation()
 const projectsStore = useProjects()
+const roster = useRoster()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 function tryOpenPendingCard(): void {
@@ -82,17 +89,130 @@ function columnOf(item: BacklogItem): BacklogColumn {
   return item.column ?? (item.stage ? STAGE_COLUMN[item.stage] : DEFAULT_COLUMN)
 }
 
+type ColumnSortKey = 'default' | 'title-asc' | 'title-desc' | 'id-asc' | 'id-desc' | 'priority' | 'progress'
+
+const SORT_OPTIONS: { value: ColumnSortKey; label: string }[] = [
+  { value: 'default', label: 'Padrão' },
+  { value: 'id-desc', label: 'Mais recentes' },
+  { value: 'id-asc', label: 'ID (A–Z)' },
+  { value: 'title-asc', label: 'Título (A–Z)' },
+  { value: 'title-desc', label: 'Título (Z–A)' },
+  { value: 'priority', label: 'Prioridade' },
+  { value: 'progress', label: 'Progresso' },
+]
+
+const ALL_FILTER_VALUE = '__all__'
+const UNASSIGNED_FILTER_VALUE = '__unassigned__'
+
 const dismissedError = ref(false)
+const searchQuery = ref('')
 const featureFilter = ref<string>(ALL_FEATURES_VALUE)
+const ownerFilter = ref<string>(ALL_FILTER_VALUE)
+const tagFilter = ref<string>(ALL_FILTER_VALUE)
+const typeFilter = ref<string>(ALL_FILTER_VALUE)
+const columnSort = ref<Record<BacklogColumn, ColumnSortKey>>({
+  Backlog: 'default',
+  Ready: 'default',
+  'In progress': 'default',
+  'In review': 'default',
+  Done: 'default',
+})
+
 const featureOptions = computed(() => [
   { label: ALL_FEATURES_LABEL, value: ALL_FEATURES_VALUE },
   ...[...new Set(backlog.items.map((item) => item.feature).filter((feature): feature is string => Boolean(feature)))]
     .sort((a, b) => a.localeCompare(b, 'pt-BR'))
     .map((feature) => ({ label: feature, value: feature })),
 ])
-const visibleItems = computed(() =>
-  backlog.items.filter((item) => featureFilter.value === ALL_FEATURES_VALUE || item.feature === featureFilter.value),
+
+const ownerOptions = computed(() => {
+  const seen = new Map<string, string>()
+  for (const item of backlog.items) {
+    if (!item.parent && !isUnassigned(item) && !seen.has(item.who)) {
+      seen.set(item.who, roster.profileOf(item.who)?.name ?? item.who)
+    }
+  }
+  return [...seen.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'))
+    .map(([value, label]) => ({ value, label }))
+})
+
+const tagOptions = computed(() =>
+  [...new Set(backlog.items.filter((item) => !item.parent).flatMap((item) => item.tags))].sort((a, b) =>
+    a.localeCompare(b, 'pt-BR'),
+  ),
 )
+
+const hasActiveFilters = computed(
+  () =>
+    searchQuery.value.trim() !== '' ||
+    featureFilter.value !== ALL_FEATURES_VALUE ||
+    ownerFilter.value !== ALL_FILTER_VALUE ||
+    tagFilter.value !== ALL_FILTER_VALUE ||
+    typeFilter.value !== ALL_FILTER_VALUE,
+)
+
+function clearFilters(): void {
+  searchQuery.value = ''
+  featureFilter.value = ALL_FEATURES_VALUE
+  ownerFilter.value = ALL_FILTER_VALUE
+  tagFilter.value = ALL_FILTER_VALUE
+  typeFilter.value = ALL_FILTER_VALUE
+}
+
+const topLevelItems = computed(() => backlog.items.filter((item) => !item.parent))
+
+const visibleItems = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  return topLevelItems.value.filter((item) => {
+    if (featureFilter.value !== ALL_FEATURES_VALUE && item.feature !== featureFilter.value) return false
+    if (ownerFilter.value === UNASSIGNED_FILTER_VALUE && !isUnassigned(item)) return false
+    if (ownerFilter.value !== ALL_FILTER_VALUE && ownerFilter.value !== UNASSIGNED_FILTER_VALUE && item.who !== ownerFilter.value) return false
+    if (tagFilter.value !== ALL_FILTER_VALUE && !item.tags.includes(tagFilter.value)) return false
+    if (typeFilter.value !== ALL_FILTER_VALUE && item.type !== typeFilter.value) return false
+    if (!query) return true
+    const ownerName = isUnassigned(item) ? '' : (roster.profileOf(item.who)?.name ?? item.who)
+    return (
+      item.id.toLowerCase().includes(query) ||
+      (item.publicId?.toLowerCase().includes(query) ?? false) ||
+      item.title.toLowerCase().includes(query) ||
+      (item.feature?.toLowerCase().includes(query) ?? false) ||
+      ownerName.toLowerCase().includes(query) ||
+      item.tags.some((tag) => tag.toLowerCase().includes(query))
+    )
+  })
+})
+
+function priorityRank(priority: string | undefined): number {
+  const p = priority?.trim().toLowerCase() ?? ''
+  if (p === 'alta' || p === 'high' || p === 'p0' || p === 'p1') return 0
+  if (p === 'media' || p === 'média' || p === 'medium' || p === 'p2') return 1
+  if (p === 'baixa' || p === 'low' || p === 'p3') return 2
+  return 3
+}
+
+function progressRatio(item: BacklogItem): number {
+  if (!item.children || item.children.total === 0) return -1
+  return item.children.done / item.children.total
+}
+
+function sortCards(cards: BacklogItem[], key: ColumnSortKey): BacklogItem[] {
+  if (key === 'default') return cards
+  const copy = [...cards]
+  copy.sort((a, b) => {
+    const aId = a.publicId ?? a.id
+    const bId = b.publicId ?? b.id
+    if (key === 'title-asc') return a.title.localeCompare(b.title, 'pt-BR')
+    if (key === 'title-desc') return b.title.localeCompare(a.title, 'pt-BR')
+    if (key === 'id-asc') return aId.localeCompare(bId, 'pt-BR', { numeric: true })
+    if (key === 'id-desc') return bId.localeCompare(aId, 'pt-BR', { numeric: true })
+    if (key === 'priority') return priorityRank(a.priority) - priorityRank(b.priority)
+    if (key === 'progress') return progressRatio(b) - progressRatio(a)
+    return 0
+  })
+  return copy
+}
+
 const isEmptyBoard = computed(() => !backlog.loading && !backlog.loadError && backlog.items.length === 0 && projectName.value !== '')
 watch(featureOptions, (options) => {
   if (!options.some((option) => option.value === featureFilter.value)) featureFilter.value = ALL_FEATURES_VALUE
@@ -115,7 +235,10 @@ function onOpenCard(itemId: string): void {
 const columns = computed(() =>
   COLUMN_META.map((column) => ({
     ...column,
-    cards: visibleItems.value.filter((item) => !item.parent && columnOf(item) === column.name),
+    cards: sortCards(
+      visibleItems.value.filter((item) => columnOf(item) === column.name),
+      columnSort.value[column.name],
+    ),
   })),
 )
 
@@ -138,7 +261,42 @@ watch(
     </UiPageHeader>
 
     <div :class="FILTER_ROW_CLASSES">
-      <UiSegmented v-model="featureFilter" :options="featureOptions" label="Feature" />
+      <input
+        v-model="searchQuery"
+        type="search"
+        :class="SEARCH_INPUT_CLASSES"
+        placeholder="Buscar por ID, título, etiqueta ou responsável…"
+        aria-label="Buscar cards no backlog"
+        data-testid="backlog-search"
+      />
+      <UiSegmented v-if="featureOptions.length > 1" v-model="featureFilter" :options="featureOptions" label="Feature" />
+      <select v-model="ownerFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por responsável" data-testid="filter-owner">
+        <option :value="ALL_FILTER_VALUE">Responsável: todos</option>
+        <option :value="UNASSIGNED_FILTER_VALUE">Sem responsável</option>
+        <option v-for="owner in ownerOptions" :key="owner.value" :value="owner.value">
+          {{ owner.label }}
+        </option>
+      </select>
+      <select v-if="tagOptions.length > 0" v-model="tagFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por etiqueta" data-testid="filter-tag">
+        <option :value="ALL_FILTER_VALUE">Etiqueta: todas</option>
+        <option v-for="tag in tagOptions" :key="tag" :value="tag">{{ tag }}</option>
+      </select>
+      <select v-model="typeFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por tipo" data-testid="filter-type">
+        <option :value="ALL_FILTER_VALUE">Tipo: todos</option>
+        <option value="task">Tasks</option>
+        <option value="feature">Features</option>
+      </select>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        class="h-8 cursor-pointer rounded-md border border-line bg-surface-2 px-2.5 text-caption text-muted hover:text-ink"
+        @click="clearFilters"
+      >
+        Limpar
+      </button>
+      <span v-if="topLevelItems.length > 0" class="ml-auto text-tiny text-muted tabular-nums">
+        {{ visibleItems.length }} de {{ topLevelItems.length }}
+      </span>
     </div>
 
     <UiNotice v-if="backlog.loadError && !dismissedError" :text="LOAD_ERROR_PREFIX + backlog.loadError" @close="dismissedError = true" />
@@ -158,6 +316,16 @@ watch(
                 <span :class="COLUMN_COUNT_CLASSES">{{ column.cards.length }}</span>
                 <UiHandLine :class="COLUMN_UNDERLINE_CLASSES" :style="{ color: colorVar(column.colorToken) }" />
               </div>
+              <select
+                v-model="columnSort[column.name]"
+                :class="COLUMN_SORT_SELECT_CLASSES"
+                :aria-label="`Ordenar ${COLUMN_LABEL[column.name]}`"
+                :data-testid="`sort-${column.name}`"
+              >
+                <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
             </div>
             <span v-if="!backlog.loading && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
             <TaskCard
@@ -179,8 +347,5 @@ watch(
         <UiEmpty :title="EMPTY_BOARD_TITLE" :text="EMPTY_BOARD_TEXT" />
       </div>
     </div>
-
-    <TaskItemModal />
-    <PlanDialog />
   </section>
 </template>

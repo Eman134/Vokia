@@ -43,6 +43,7 @@ import UiNotice from '../../ui/UiNotice.vue'
 import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import { useFollowEnd } from '../../ui/useFollowEnd'
 import ConversationComposer from './ConversationComposer.vue'
+import TriageChannelPanel from './TriageChannelPanel.vue'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 import { useTurnPlans } from './useTurnPlans'
@@ -390,6 +391,7 @@ watch(
     <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <template v-if="!filaAberta">
       <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
+      <TriageChannelPanel v-if="feed.screen.kind === 'triage'" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />

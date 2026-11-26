@@ -53,7 +53,19 @@ export const useBacklog = defineStore('backlog', () => {
 
   const openItem = computed(() => items.value.find((item) => item.id === openId.value) ?? null)
   const triagingIds = computed<ReadonlySet<string>>(
-    () => new Set(items.value.filter((item) => item.triageStep !== undefined).map((item) => item.id)),
+    () =>
+      new Set(
+        items.value
+          .filter(
+            (item) =>
+              item.column !== 'Done' &&
+              (item.triageStep !== undefined ||
+                item.state === 'triagem' ||
+                item.state === 'gerando' ||
+                item.state === 'proposto'),
+          )
+          .map((item) => item.id),
+      ),
   )
 
   function find(id: string): BacklogItem | undefined {

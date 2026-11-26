@@ -13,11 +13,15 @@ function finitePositive(value: number | undefined): number {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : 0
 }
 
-// Soma custo e tempo de trabalho de todas as mensagens do item, de qualquer agente; só turnos com uso ou duração contam.
+function matchesItem(entryItemId: string | undefined, itemId: string): boolean {
+  return entryItemId === itemId || (entryItemId?.startsWith(`${itemId}.`) ?? false)
+}
+
+// Soma custo e tempo de trabalho de todas as mensagens do item (e suas etapas delegadas), de qualquer agente; só turnos com uso ou duração contam.
 export function itemUsageIn(feed: readonly FeedEntry[], itemId: string): ItemUsage {
   const total = { costUsd: 0, workMs: 0, turns: 0 }
   for (const entry of feed) {
-    if (entry.type !== 'message' || entry.itemId !== itemId) continue
+    if (entry.type !== 'message' || !matchesItem(entry.itemId, itemId)) continue
     const cost = finitePositive(entry.usage?.costUsd)
     const work = finitePositive(entry.activity?.thinkingMs)
     if (cost === 0 && work === 0) continue

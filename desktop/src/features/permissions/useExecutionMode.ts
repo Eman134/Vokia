@@ -1,13 +1,11 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { useBalloons } from '../balloon/useBalloons'
 import type { VokiaExecutionModeChanged } from '../team/events'
 import { fetchExecutionMode, saveExecutionMode } from './executionModeApi'
 import { DEFAULT_EXECUTION_MODE, EXECUTION_MODE_INFO, type ExecutionMode } from './executionModes'
 
 // A chave antiga continua valendo: quem já aceitou o aviso do bypass não o vê de novo.
 const WARNING_ACK_KEY = 'vokia.bypass.warning-acknowledged'
-const CHANGED_TITLE_PREFIX = 'Modo de execução:'
 
 function readAcknowledged(): boolean {
   try {
@@ -53,14 +51,9 @@ export const useExecutionMode = defineStore('execution-mode', () => {
     }
   }
 
-  // O evento do backend é a fonte da verdade e o único que dispara o balão: vale para qualquer origem da mudança.
+  // O evento do backend é a fonte da verdade: vale para qualquer origem da mudança.
   function apply(event: VokiaExecutionModeChanged): void {
-    const changed = modeOf(event.projectId) !== event.mode
     modeByProject.value[event.projectId] = event.mode
-    if (changed) {
-      const info = EXECUTION_MODE_INFO[event.mode]
-      useBalloons().alert(`${CHANGED_TITLE_PREFIX} ${info.label}`, info.description)
-    }
   }
 
   return { modeByProject, warningAcknowledged, error, modeOf, load, set, acknowledgeWarning, apply }

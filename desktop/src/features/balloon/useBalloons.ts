@@ -179,7 +179,17 @@ export const useBalloons = defineStore('balloons', () => {
     panelOpen.value = open
     if (open) {
       clearAllTimers()
-      // Confirmação em curso já executou a ação: fecha o balão em vez de mantê-lo congelado.
+      // Popups temporários (alert, moment, request) são descartados ao abrir o painel e não voltam depois.
+      const remaining: BalloonItem[] = []
+      for (const candidate of items.value) {
+        if (candidate.kind === 'alert' || candidate.kind === 'moment' || candidate.kind === 'request') {
+          hoveredIds.delete(candidate.id)
+          removeConfirmation(candidate.id)
+        } else {
+          remaining.push(candidate)
+        }
+      }
+      items.value = remaining
       const confirmingIds = Object.keys(confirmations.value)
       if (confirmingIds.length > 0) {
         for (const id of confirmingIds) {

@@ -8,6 +8,8 @@ import { useRail } from './shell/useRail'
 import { PAGE_VIEWS } from './shell/pages'
 import ActionBar from './features/team/ActionBar.vue'
 import NewRequestDialog from './features/backlog/NewRequestDialog.vue'
+import TaskItemModal from './features/backlog/TaskItemModal.vue'
+import PlanDialog from './features/backlog/PlanDialog.vue'
 import ProviderSetupDialog from './features/providers/ProviderSetupDialog.vue'
 import GlobalSearchDialog from './features/search/GlobalSearchDialog.vue'
 import { useGlobalSearch } from './features/search/useGlobalSearch'
@@ -88,6 +90,8 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   </div>
   <SplashScreen v-else />
   <NewRequestDialog />
+  <TaskItemModal />
+  <PlanDialog />
   <ProviderSetupDialog />
   <GlobalSearchDialog />
   <UpdatePrompt />

@@ -13,6 +13,7 @@ import UiSelect from '../../ui/UiSelect.vue'
 import UiTable from '../../ui/UiTable.vue'
 import { useProjects } from '../projects/useProjects'
 import { useProviders } from '../providers/useProviders'
+import AgentPortrait from '../team/AgentPortrait.vue'
 import { useRoster } from '../team/useRoster'
 import { formatTokenCount } from '../team/messageUsageFormat'
 import {
@@ -62,6 +63,20 @@ const FALLBACK_BAR_PALETTE = [
   'bg-accent',
   'bg-project-pink',
 ] as const
+
+const PIE_COLORS = [
+  '#3b82f6',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+  '#06b6d4',
+  '#ef4444',
+  '#84cc16',
+] as const
+
+const PIE_RADIUS = 72
+const PIE_CIRCUMFERENCE = 2 * Math.PI * PIE_RADIUS
 
 const INT_FORMAT = new Intl.NumberFormat('pt-BR')
 
@@ -280,6 +295,7 @@ const stackedDays = computed<StackedBarDay[]>(() => {
 
 const agentRows = computed(() =>
   (data.value?.byAgent ?? []).map((row) => ({
+    agentId: row.agentId,
     agent: roster.nameOf(row.agentId),
     turns: INT_FORMAT.format(row.turns),
     input: formatTokenCount(row.inputTokens),
@@ -292,6 +308,40 @@ const agentRows = computed(() =>
     unpriced: row.unpricedTurns > 0 && row.costUsdEstimated === null,
   })),
 )
+
+interface AgentPieSlice {
+  agentId: string
+  name: string
+  tokens: number
+  percent: number
+  color: string
+  dashArray: string
+  dashOffset: number
+}
+
+const agentPieSlices = computed<AgentPieSlice[]>(() => {
+  const rows = (data.value?.byAgent ?? []).filter((r) => r.totalTokens > 0)
+  const total = rows.reduce((sum, r) => sum + r.totalTokens, 0)
+  if (total <= 0) return []
+  let offset = 0
+  return rows.map((row, index) => {
+    const ratio = row.totalTokens / total
+    const length = ratio * PIE_CIRCUMFERENCE
+    const slice: AgentPieSlice = {
+      agentId: row.agentId,
+      name: roster.nameOf(row.agentId),
+      tokens: row.totalTokens,
+      percent: ratio * 100,
+      color: PIE_COLORS[index % PIE_COLORS.length],
+      dashArray: `${length} ${PIE_CIRCUMFERENCE}`,
+      dashOffset: -offset,
+    }
+    offset += length
+    return slice
+  })
+})
+
+const hoveredPieAgent = ref<string | null>(null)
 
 const modelRows = computed(() =>
   (data.value?.byModel ?? []).map((row) => ({
@@ -366,9 +416,32 @@ onMounted(async () => {
 
       <div class="ml-auto flex flex-wrap items-center gap-2">
         <UiSelect v-model="projectModel" :options="projectOptions" label="Filtrar por projeto" class="w-44" />
-        <UiSelect v-model="agentModel" :options="agentOptions" label="Filtrar por agente" class="w-44" />
         <UiSelect v-model="providerModel" :options="providerOptions" label="Filtrar por provedor" class="w-44" />
       </div>
+    </div>
+
+    <div
+      v-if="agentOptions.length > 1"
+      class="flex flex-wrap items-center gap-1.5"
+      role="group"
+      aria-label="Filtrar por agente"
+    >
+      <button
+        v-for="option in agentOptions"
+        :key="option.value"
+        type="button"
+        class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption transition-colors"
+        :class="
+          agentModel === option.value
+            ? 'border-ink bg-ink text-bg font-semibold'
+            : 'border-line bg-surface text-ink hover:bg-hover'
+        "
+        :aria-pressed="agentModel === option.value"
+        @click="agentModel = option.value"
+      >
+        <AgentPortrait v-if="option.value !== ALL_VALUE" :who="option.value" :size="18" />
+        <span>{{ option.label }}</span>
+      </button>
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-surface-2 px-3.5 py-2 text-caption text-muted">
@@ -446,59 +519,123 @@ onMounted(async () => {
         são contabilizados normalmente e o custo aparece como <strong>{{ UNPRICED_COST_LABEL }}</strong> (nunca $0.00).
       </div>
 
-      <section :class="SECTION_CARD_CLASSES">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 class="text-lead text-ink">Uso diário por provedor</h2>
-            <p class="text-meta text-muted">
-              Agrupado por dia no fuso {{ data.range.timezone }} ({{ data.range.offset }}).
-            </p>
-          </div>
-          <UiSegmented v-model="chartMetric" :options="CHART_METRIC_OPTIONS" label="Métrica do gráfico" />
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3 text-meta text-muted">
-          <span
-            v-for="(providerId, index) in providerOrder"
-            :key="providerId"
-            class="inline-flex items-center gap-1.5"
-          >
-            <span class="size-2.5 rounded-xs" :class="providerBarClass(providerId, index)" aria-hidden="true" />
-            <span class="text-ink">{{ providerLabel(providerId) }}</span>
-          </span>
-        </div>
-
-        <div
-          v-if="stackedDays.length > 0"
-          class="flex h-48 items-end gap-1.5 overflow-x-auto border-b border-line pt-4 pb-1"
-          role="img"
-          aria-label="Gráfico empilhado de uso diário por provedor"
-        >
-          <div
-            v-for="day in stackedDays"
-            :key="day.date"
-            class="flex h-full min-w-8 flex-1 flex-col items-center justify-end gap-1"
-            :title="day.summaryTooltip"
-          >
-            <div class="flex h-36 w-full max-w-10 flex-col-reverse justify-start gap-px overflow-hidden rounded-t-sm bg-surface-2">
-              <div
-                v-for="segment in day.segments"
-                :key="segment.providerId"
-                class="w-full transition-all"
-                :class="segment.colorClass"
-                :style="{ height: `${segment.heightPercent}%` }"
-                :title="segment.tooltip"
-              />
+      <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section :class="SECTION_CARD_CLASSES">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-lead text-ink">Uso diário por provedor</h2>
+              <p class="text-meta text-muted">
+                Agrupado por dia no fuso {{ data.range.timezone }} ({{ data.range.offset }}).
+              </p>
             </div>
-            <span class="text-tiny tabular-nums text-muted">{{ day.shortLabel }}</span>
+            <UiSegmented v-model="chartMetric" :options="CHART_METRIC_OPTIONS" label="Métrica do gráfico" />
           </div>
-        </div>
-      </section>
+
+          <div class="flex flex-wrap items-center gap-3 text-meta text-muted">
+            <span
+              v-for="(providerId, index) in providerOrder"
+              :key="providerId"
+              class="inline-flex items-center gap-1.5"
+            >
+              <span class="size-2.5 rounded-xs" :class="providerBarClass(providerId, index)" aria-hidden="true" />
+              <span class="text-ink">{{ providerLabel(providerId) }}</span>
+            </span>
+          </div>
+
+          <div
+            v-if="stackedDays.length > 0"
+            class="flex h-48 items-end gap-1.5 overflow-x-auto border-b border-line pt-4 pb-1"
+            role="img"
+            aria-label="Gráfico empilhado de uso diário por provedor"
+          >
+            <div
+              v-for="day in stackedDays"
+              :key="day.date"
+              class="flex h-full min-w-8 flex-1 flex-col items-center justify-end gap-1"
+              :title="day.summaryTooltip"
+            >
+              <div class="flex h-36 w-full max-w-10 flex-col-reverse justify-start gap-px overflow-hidden rounded-t-sm bg-surface-2">
+                <div
+                  v-for="segment in day.segments"
+                  :key="segment.providerId"
+                  class="w-full transition-all"
+                  :class="segment.colorClass"
+                  :style="{ height: `${segment.heightPercent}%` }"
+                  :title="segment.tooltip"
+                />
+              </div>
+              <span class="text-tiny tabular-nums text-muted">{{ day.shortLabel }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section :class="SECTION_CARD_CLASSES">
+          <div>
+            <h2 class="text-lead text-ink">Consumo de tokens por agente</h2>
+            <p class="text-meta text-muted">Distribuição do total de tokens entre os agentes no período.</p>
+          </div>
+          <div v-if="agentPieSlices.length > 0" class="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+            <div class="relative grid size-48 shrink-0 place-items-center">
+              <svg viewBox="0 0 200 200" class="size-48 -rotate-90" role="img" aria-label="Gráfico de pizza de consumo de tokens por agente">
+                <circle
+                  v-for="slice in agentPieSlices"
+                  :key="slice.agentId"
+                  cx="100"
+                  cy="100"
+                  :r="PIE_RADIUS"
+                  fill="none"
+                  :stroke="slice.color"
+                  :stroke-width="hoveredPieAgent === slice.agentId ? 32 : 26"
+                  :stroke-dasharray="slice.dashArray"
+                  :stroke-dashoffset="slice.dashOffset"
+                  class="cursor-pointer transition-all duration-150"
+                  :opacity="hoveredPieAgent && hoveredPieAgent !== slice.agentId ? 0.45 : 1"
+                  @mouseenter="hoveredPieAgent = slice.agentId"
+                  @mouseleave="hoveredPieAgent = null"
+                  @click="agentModel = agentModel === slice.agentId ? ALL_VALUE : slice.agentId"
+                >
+                  <title>{{ slice.name }}: {{ formatTokenCount(slice.tokens) }} ({{ slice.percent.toFixed(1) }}%)</title>
+                </circle>
+              </svg>
+              <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span class="text-tiny text-muted">Total</span>
+                <span class="text-card-title font-semibold tabular-nums text-ink">
+                  {{ formatTokenCount(data.totals.totalTokens) }}
+                </span>
+              </div>
+            </div>
+            <ul class="flex min-w-0 flex-1 flex-col gap-1.5 self-stretch justify-center">
+              <li
+                v-for="slice in agentPieSlices"
+                :key="slice.agentId"
+                class="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-caption transition-colors hover:bg-surface-2"
+                :class="hoveredPieAgent === slice.agentId && 'bg-surface-2'"
+                @mouseenter="hoveredPieAgent = slice.agentId"
+                @mouseleave="hoveredPieAgent = null"
+                @click="agentModel = agentModel === slice.agentId ? ALL_VALUE : slice.agentId"
+              >
+                <span class="size-2.5 shrink-0 rounded-full" :style="{ backgroundColor: slice.color }" aria-hidden="true" />
+                <AgentPortrait :who="slice.agentId" :size="20" class="shrink-0" />
+                <span class="min-w-0 flex-1 truncate font-medium text-ink">{{ slice.name }}</span>
+                <span class="shrink-0 font-mono text-meta tabular-nums text-muted">{{ formatTokenCount(slice.tokens) }}</span>
+                <span class="w-12 shrink-0 text-right text-meta font-semibold tabular-nums text-ink">{{ slice.percent.toFixed(1) }}%</span>
+              </li>
+            </ul>
+          </div>
+          <p v-else class="text-caption text-muted">Sem consumo de tokens por agente no período.</p>
+        </section>
+      </div>
 
       <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section :class="SECTION_CARD_CLASSES">
           <h2 class="text-lead text-ink">Consumo por agente</h2>
           <UiTable :columns="AGENT_COLUMNS" :rows="agentRows" :min-width="460">
+            <template #cell-agent="{ row }">
+              <span class="inline-flex items-center gap-2 font-medium text-ink">
+                <AgentPortrait :who="String(row.agentId)" :size="20" class="shrink-0" />
+                <span>{{ row.agent }}</span>
+              </span>
+            </template>
             <template #cell-cost="{ row }">
               <span :class="row.unpriced ? 'text-muted italic' : ''">{{ row.cost }}</span>
             </template>

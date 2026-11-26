@@ -40,11 +40,31 @@ const connection = useConnection()
 const feed = useFeed()
 const roster = useRoster()
 const backlog = useBacklog()
+const triage = useTriage()
 const channels = useChannels()
 const threads = useThreads()
 const navigation = useNavigation()
 const { draft, submit, attachments } = useComposerSubmit()
 const field = ref<HTMLTextAreaElement>()
+
+const triageItems = computed(() => backlog.items.filter((item) => backlog.triagingIds.has(item.id)))
+const selectedTriageItem = computed(() => {
+  if (feed.screen.kind !== 'triage') return null
+  return (
+    triageItems.value.find((item) => item.id === triage.selectedTriageId) ??
+    triageItems.value[0] ??
+    null
+  )
+})
+const triageTarget = computed(() => {
+  const item = selectedTriageItem.value
+  if (!item) return null
+  return {
+    itemId: item.id,
+    agent: isUnassigned(item) ? null : item.who,
+    label: item.publicId ?? item.id,
+  }
+})
 
 const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const activeThread = computed(() => (feed.screen.kind === 'thread' ? threads.find(feed.screen.itemId) : undefined))
@@ -98,6 +118,7 @@ const placeholder = computed(
       channels.channels,
       rosterOrder.value,
       activeThread.value?.title,
+      triageTarget.value,
     ) ?? FALLBACK_PLACEHOLDER,
 )
 const hasContent = computed(() => draft.value.trim() !== '' || attachments.attachments.value.length > 0)
@@ -147,6 +168,20 @@ async function useChip(id: string): Promise<void> {
       >
         {{ COMMAND_TRIGGER }}{{ command.id }}
       </button>
+    </div>
+    <div v-if="feed.screen.kind === 'triage' && triageItems.length > 0" class="flex items-center gap-2 text-tiny text-muted">
+      <span class="shrink-0 font-medium">Triagem:</span>
+      <select
+        :value="selectedTriageItem?.id ?? ''"
+        class="h-6 max-w-xs cursor-pointer rounded-sm border border-line bg-surface px-1.5 text-tiny text-ink focus:border-ink focus:outline-none"
+        aria-label="Selecionar triagem"
+        data-testid="triage-target-select"
+        @change="triage.selectedTriageId = ($event.target as HTMLSelectElement).value"
+      >
+        <option v-for="item in triageItems" :key="item.id" :value="item.id">
+          {{ item.publicId ?? item.id }} · {{ item.title }}
+        </option>
+      </select>
     </div>
     <div class="relative flex items-end gap-2">
       <CommandMenu

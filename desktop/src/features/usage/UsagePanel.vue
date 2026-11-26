@@ -6,6 +6,7 @@ import type { ProviderPlanUsage, ProviderUsageWindow } from '../team/events'
 import { useUsage } from './useUsage'
 import {
   TONE_TEXT,
+  allWindowsOf,
   clampPercent,
   isUsingCredits,
   mostRestrictiveWindow,
@@ -25,8 +26,15 @@ const emit = defineEmits<{ close: [] }>()
 const PANEL_TITLE = 'Uso dos planos'
 const CREDITS_BADGE_LABEL = 'Usando créditos'
 const READ_FAILED_LABEL = 'última leitura falhou'
+const NO_DATA_BADGE_LABEL = 'sem dados'
+const UNAVAILABLE_BADGE_LABEL = 'indisponível'
+const NO_DATA_TEXT = 'Sem dados de uso disponíveis'
 const ABOVE_PACE_LABEL = 'ritmo alto'
 const REFRESH_LABEL = 'Atualizar'
+
+function hasWindows(provider: ProviderPlanUsage): boolean {
+  return allWindowsOf(provider).length > 0
+}
 
 const navigation = useNavigation()
 const store = useUsage()
@@ -110,16 +118,33 @@ function isAbovePace(window: ProviderUsageWindow): boolean {
             {{ CREDITS_BADGE_LABEL }}
           </span>
           <span
-            v-else
+            v-else-if="hasWindows(provider)"
             class="ml-auto text-tiny font-semibold"
             :class="TONE_TEXT[providerStatus(provider).tone]"
           >
             {{ providerStatus(provider).label }}
           </span>
+          <span
+            v-else-if="provider.readFailed"
+            class="ml-auto text-tiny font-semibold"
+            :class="TONE_TEXT.warn"
+          >
+            {{ UNAVAILABLE_BADGE_LABEL }}
+          </span>
+          <span
+            v-else
+            class="ml-auto text-tiny font-semibold"
+            :class="TONE_TEXT.muted"
+          >
+            {{ NO_DATA_BADGE_LABEL }}
+          </span>
         </div>
 
         <span v-if="provider.readFailed" class="text-tiny text-warn-text">
           {{ READ_FAILED_LABEL }}
+        </span>
+        <span v-else-if="!hasWindows(provider)" class="text-tiny text-muted">
+          {{ NO_DATA_TEXT }}
         </span>
 
         <div

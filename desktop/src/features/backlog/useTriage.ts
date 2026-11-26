@@ -16,6 +16,7 @@ export const useTriage = defineStore('triage', () => {
   const feed = useFeed()
   // Itens que pediram triagem sem líder configurado; só na sessão, para a tela dizer por que seguem sem responsável.
   const withoutLeader = ref<string[]>([])
+  const selectedTriageId = ref<string | null>(null)
 
   function setWithoutLeader(itemId: string, missing: boolean): void {
     const others = withoutLeader.value.filter((id) => id !== itemId)
@@ -42,5 +43,5 @@ export const useTriage = defineStore('triage', () => {
     }
   }
 
-  return { isWithoutLeader, requestTriage }
+  return { isWithoutLeader, requestTriage, selectedTriageId }
 })

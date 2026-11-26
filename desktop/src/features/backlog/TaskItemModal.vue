@@ -284,6 +284,12 @@ function openConversations(): void {
   navigation.goTo('conversas')
 }
 
+function openInTasks(): void {
+  const id = item.value?.id
+  if (!id) return
+  navigation.openCard(id)
+}
+
 function archiveItem(): void {
   const id = item.value!.id
   closeModal()
@@ -337,7 +343,8 @@ watch(
             <UiButton v-if="parentStack.length > 0" variant="quiet" size="sm" data-testid="modal-back-to-parent" @press="goBackToParent">
               ← Voltar ao item
             </UiButton>
-            <span>{{ item.id }}</span>
+            <span class="font-mono font-semibold text-ink">{{ item.publicId ?? item.id }}</span>
+            <span v-if="item.publicId && item.publicId !== item.id" class="font-mono text-tiny text-muted">({{ item.id }})</span>
             <UiBadge v-if="item.type === 'feature'" status="backlog" label="feature" />
             <span v-if="item.feature" class="inline-flex items-center gap-1.5">
               <span class="size-2 rounded-full" :style="{ backgroundColor: colorVar(FEATURE_COLOR[item.feature] ?? DEFAULT_FEATURE_COLOR) }" />
@@ -345,7 +352,22 @@ watch(
             </span>
             <UiBadge v-if="autoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
             <UiBadge v-if="showStateBadge" class="ml-auto" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
-            <UiCloseButton :class="!showStateBadge && 'ml-auto'" @press="closeModal()" />
+            <button
+              v-if="navigation.page !== 'backlog'"
+              type="button"
+              :class="[!showStateBadge && 'ml-auto', 'inline-flex cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny font-medium text-muted hover:text-ink']"
+              title="Abrir na tela de Tasks"
+              data-testid="modal-open-external-tasks"
+              @click="openInTasks()"
+            >
+              <svg viewBox="0 0 16 16" class="size-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6 3H3.5A1.5 1.5 0 0 0 2 4.5v8A1.5 1.5 0 0 0 3.5 14h8a1.5 1.5 0 0 0 1.5-1.5V10" />
+                <path d="M9.5 2H14v4.5" />
+                <path d="M14 2L7.5 8.5" />
+              </svg>
+              <span>Tasks</span>
+            </button>
+            <UiCloseButton :class="!showStateBadge && navigation.page === 'backlog' && 'ml-auto'" @press="closeModal()" />
           </div>
           <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
         </header>
