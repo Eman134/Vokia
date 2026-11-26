@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { listRoles } from '../agents/rolesApi'
 import { fetchOrchestration } from '../orchestration/orchestrationApi'
@@ -8,6 +8,7 @@ import { useRequests } from '../team/useRequests'
 import { useRoster } from '../team/useRoster'
 import { isUnassigned, type BacklogItem } from './backlogTypes'
 import { buildTriagePrompt } from './triagePrompt'
+import { useItemPlan } from './useItemPlan'
 
 export const useTriage = defineStore('triage', () => {
   const projects = useProjects()
@@ -17,6 +18,61 @@ export const useTriage = defineStore('triage', () => {
   // Itens que pediram triagem sem líder configurado; só na sessão, para a tela dizer por que seguem sem responsável.
   const withoutLeader = ref<string[]>([])
   const selectedTriageId = ref<string | null>(null)
+  const queue = ref<string[]>([])
+  const activeId = ref<string | null>(null)
+  let draining = false
+
+  const isBatchActive = computed(() => activeId.value !== null || queue.value.length > 0)
+
+  function isQueued(itemId: string): boolean {
+    return queue.value.includes(itemId)
+  }
+
+  function isRunning(itemId: string): boolean {
+    return activeId.value === itemId
+  }
+
+  function clearBatch(): void {
+    queue.value = []
+    activeId.value = null
+  }
+
+  watch(
+    () => projects.selected?.id,
+    () => {
+      clearBatch()
+    },
+  )
+
+  async function drainBatch(): Promise<void> {
+    if (draining) return
+    draining = true
+    const batchProjectId = projects.selected?.id
+    const itemPlan = useItemPlan()
+    try {
+      while (queue.value.length > 0 && projects.selected?.id === batchProjectId) {
+        const nextId = queue.value[0]
+        queue.value = queue.value.slice(1)
+        activeId.value = nextId
+        try {
+          await itemPlan.requestAndWait(nextId)
+        } catch (error) {
+          feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
+        } finally {
+          if (activeId.value === nextId) activeId.value = null
+        }
+      }
+    } finally {
+      draining = false
+    }
+  }
+
+  function enqueueBatch(itemIds: readonly string[]): void {
+    const fresh = itemIds.filter((id) => id !== activeId.value && !queue.value.includes(id))
+    if (fresh.length === 0) return
+    queue.value = [...queue.value, ...fresh]
+    void drainBatch()
+  }
 
   function setWithoutLeader(itemId: string, missing: boolean): void {
     const others = withoutLeader.value.filter((id) => id !== itemId)
@@ -43,5 +99,16 @@ export const useTriage = defineStore('triage', () => {
     }
   }
 
-  return { isWithoutLeader, requestTriage, selectedTriageId }
+  return {
+    isWithoutLeader,
+    requestTriage,
+    selectedTriageId,
+    queue,
+    activeId,
+    isBatchActive,
+    isQueued,
+    isRunning,
+    enqueueBatch,
+    clearBatch,
+  }
 })

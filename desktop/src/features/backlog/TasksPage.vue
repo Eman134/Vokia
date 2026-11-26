@@ -11,6 +11,12 @@ import { useNavigation } from '../../shell/useNavigation'
 import { useProjects } from '../projects/useProjects'
 import { useRoster } from '../team/useRoster'
 import TaskCard from './TaskCard.vue'
+import BatchTriageBar from './BatchTriageBar.vue'
+import {
+  applySelectionClick,
+  createEmptySelection,
+  reconcileSelection,
+} from './batchSelection'
 import { colorVar } from './backlogLabels'
 import {
   ALL_FEATURES_LABEL,
@@ -31,11 +37,13 @@ import {
   type TaskCardAction,
   type BacklogColumn,
   type BacklogItem,
+  type BacklogState,
   type KanbanStage,
 } from './backlogTypes'
 import { useBacklog } from './useBacklog'
 import { PLAN_TAB_BY_ACTION, useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
+import { useTriage } from './useTriage'
 
 // Do md para cima a página não rola: cada coluna rola sozinha, e o cabeçalho e o "Novo pedido" ficam à vista.
 // A folga da barra de ação sai da página e vai para o fim de cada coluna.
@@ -66,6 +74,7 @@ const STAGE_COLUMN: Record<KanbanStage, BacklogColumn> = {
 const backlog = useBacklog()
 const itemPlan = useItemPlan()
 const runItem = useRunItem()
+const triage = useTriage()
 const navigation = useNavigation()
 const projectsStore = useProjects()
 const roster = useRoster()
@@ -112,8 +121,30 @@ function onSortMenuPointerDown(e: PointerEvent): void {
   openSortColumn.value = null
 }
 
-onMounted(() => window.addEventListener('pointerdown', onSortMenuPointerDown))
-onUnmounted(() => window.removeEventListener('pointerdown', onSortMenuPointerDown))
+function onWindowKeydown(e: KeyboardEvent): void {
+  if (e.key !== 'Escape') return
+  if (openSortColumn.value !== null) {
+    openSortColumn.value = null
+    return
+  }
+  if (filtersOpen.value) {
+    filtersOpen.value = false
+    return
+  }
+  if (selection.value.selected.size > 0 && backlog.openId === null && itemPlan.dialogItemId === null) {
+    batchBarRef.value?.restoreFocusIfInside()
+    clearSelection()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('pointerdown', onSortMenuPointerDown)
+  window.addEventListener('keydown', onWindowKeydown)
+})
+onUnmounted(() => {
+  window.removeEventListener('pointerdown', onSortMenuPointerDown)
+  window.removeEventListener('keydown', onWindowKeydown)
+})
 const searchQuery = ref('')
 const featureFilter = ref<string>(ALL_FEATURES_VALUE)
 const ownerFilter = ref<string>(ALL_FILTER_VALUE)
@@ -260,10 +291,52 @@ const columns = computed(() =>
   })),
 )
 
+const NON_TRIAGEABLE_STATES: readonly BacklogState[] = ['gerando', 'triagem', 'proposto']
+const batchBarRef = ref<InstanceType<typeof BatchTriageBar> | null>(null)
+const selection = ref(createEmptySelection())
+
+function canSelectForTriage(item: BacklogItem): boolean {
+  return !NON_TRIAGEABLE_STATES.includes(itemPlan.stateFor(item)) && !triage.isQueued(item.id)
+}
+
+const backlogCardIds = computed(
+  () =>
+    columns.value
+      .find((column) => column.name === DEFAULT_COLUMN)
+      ?.cards.filter(canSelectForTriage)
+      .map((item) => item.id) ?? [],
+)
+
+function clearSelection(): void {
+  selection.value = createEmptySelection()
+}
+
+function onToggleSelect(itemId: string, shiftKey: boolean): void {
+  selection.value = applySelectionClick({
+    selected: selection.value.selected,
+    anchorId: selection.value.anchorId,
+    orderedIds: backlogCardIds.value,
+    targetId: itemId,
+    shiftKey,
+  })
+}
+
+function onBatchTriage(): void {
+  const orderedSelected = backlogCardIds.value.filter((id) => selection.value.selected.has(id))
+  if (orderedSelected.length === 0) return
+  triage.enqueueBatch(orderedSelected)
+  clearSelection()
+}
+
+watch(backlogCardIds, (ids) => {
+  selection.value = reconcileSelection(selection.value, ids)
+})
+
 watch(
   () => projectsStore.selected?.id,
   () => {
     dismissedError.value = false
+    clearSelection()
   },
 )
 </script>
@@ -431,8 +504,13 @@ watch(
               :state="itemPlan.stateFor(item)"
               :plan-line="itemPlan.lineFor(item)"
               :proposal="itemPlan.proposalFor(item)"
+              :density="column.name === DEFAULT_COLUMN ? 'compact' : 'full'"
+              :selectable="column.name === DEFAULT_COLUMN && canSelectForTriage(item)"
+              :selected="column.name === DEFAULT_COLUMN && selection.selected.has(item.id)"
+              :queued="triage.isQueued(item.id)"
               @open="onOpenCard(item.id)"
               @action="onCardAction(item.id, $event)"
+              @toggle-select="onToggleSelect(item.id, $event)"
             />
             <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
           </section>
@@ -442,5 +520,13 @@ watch(
         <UiEmpty :title="EMPTY_BOARD_TITLE" :text="EMPTY_BOARD_TEXT" />
       </div>
     </div>
+    <BatchTriageBar
+      ref="batchBarRef"
+      :selected-count="selection.selected.size"
+      :queue-count="triage.queue.length"
+      :batch-active="triage.isBatchActive"
+      @triage="onBatchTriage"
+      @clear="clearSelection"
+    />
   </section>
 </template>

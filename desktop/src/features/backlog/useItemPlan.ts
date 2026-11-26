@@ -4,7 +4,7 @@ import type { Agent } from '../team/events'
 import { useRequests, type RunResult } from '../team/useRequests'
 import { useProjects } from '../projects/useProjects'
 import { useDecisions } from '../decisions/useDecisions'
-import { agentName } from '../team/agents'
+import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useBalloons } from '../balloon/useBalloons'
 import { useFeed } from '../team/useFeed'
 import { importPlan, updateItemPlan, type PlanArtifactDetail } from '../artifacts/artifactApi'
@@ -189,7 +189,12 @@ export const useItemPlan = defineStore('itemPlan', () => {
     return projectId
   }
 
-  async function dispatch(item: BacklogItem, agent: Agent, prompt: string): Promise<boolean> {
+  async function dispatch(
+    item: BacklogItem,
+    agent: Agent,
+    prompt: string,
+    onDone?: (result: RunResult) => void,
+  ): Promise<boolean> {
     const projectId = selectedProjectId()
     const itemId = item.id
     states.value[itemId] = { state: 'gerando', agent }
@@ -200,12 +205,16 @@ export const useItemPlan = defineStore('itemPlan', () => {
       onSettled: async (result: RunResult) => {
         // Deixa o watcher do feed processar a resposta antes de decidir pelo atalho.
         await nextTick()
-        if (states.value[itemId] !== tracked) return
-        if (tracked.cancelled || result === 'cancelled' || result === 'paused' || result === 'failed') {
-          reset(itemId)
-          return
+        try {
+          if (states.value[itemId] !== tracked) return
+          if (tracked.cancelled || result === 'cancelled' || result === 'paused' || result === 'failed') {
+            reset(itemId)
+            return
+          }
+          if (result === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
+        } finally {
+          onDone?.(result)
         }
-        if (result === 'finished' && !hasPendingQuestion(itemId)) promoteInterim(itemId)
       },
     })
     if (!accepted && states.value[itemId] === tracked) reset(itemId)
@@ -220,6 +229,25 @@ export const useItemPlan = defineStore('itemPlan', () => {
     if (await dispatch(item, agent, buildPlanPrompt(item, depth))) {
       balloons.alert(PLAN_STARTED_TITLE, `${agentName(agent)} está escrevendo o plano de ${item.title}.`)
     }
+  }
+
+  async function requestAndWait(
+    itemId: string,
+    agent: Agent = DEFAULT_RECIPIENT,
+    depth: PlanDepth = DEFAULT_DEPTH,
+    note = '',
+  ): Promise<RunResult | 'rejected'> {
+    const item = backlog.items.find((current) => current.id === itemId)
+    if (!item) return 'rejected'
+    if (note !== '') backlog.setPlanNote(itemId, note)
+    void triage.requestTriage(item)
+    return new Promise<RunResult | 'rejected'>((resolve) => {
+      dispatch(item, agent, buildPlanPrompt(item, depth), resolve)
+        .then((accepted) => {
+          if (!accepted) resolve('rejected')
+        })
+        .catch(() => resolve('rejected'))
+    })
   }
 
   async function adjust(itemId: string, instruction: string): Promise<void> {
@@ -376,6 +404,7 @@ export const useItemPlan = defineStore('itemPlan', () => {
     closeDialog,
     isReviewed,
     request,
+    requestAndWait,
     hasPendingQuestion,
     promoteInterim,
     adjust,
