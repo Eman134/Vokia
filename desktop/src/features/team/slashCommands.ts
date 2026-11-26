@@ -5,7 +5,7 @@ export interface SlashCommand {
   description: string
   enabled: boolean
   prompt?: string
-  action?: 'setup' | 'triar' | 'iniciar' | 'btw'
+  action?: 'setup' | 'triar' | 'iniciar' | 'btw' | 'pausar' | 'lembrar'
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
@@ -27,8 +27,8 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     enabled: true,
     prompt: 'Faça agora a revisão do que foi feito até aqui. ',
   },
-  { id: 'pausar', description: 'pausar um agente ou o time', enabled: false },
-  { id: 'lembrar', description: 'salvar um fato na memória', enabled: false },
+  { id: 'pausar', description: 'pausar ou retomar um agente ou o time', enabled: true, action: 'pausar' },
+  { id: 'lembrar', description: 'salvar um fato na memória do projeto', enabled: true, action: 'lembrar' },
   { id: 'setup', description: 'configurar ou adicionar um provedor de LLM', enabled: true, action: 'setup' },
   { id: 'triar', description: 'iniciar triagem de um item do backlog', enabled: true, action: 'triar' },
   { id: 'iniciar', description: 'iniciar um item pronto do backlog', enabled: true, action: 'iniciar' },
@@ -45,11 +45,18 @@ export function findCommandTrigger(text: string, caret: number): TriggerMatch | 
 
 export function parseLocalCommand(
   text: string,
-): { action: 'setup' | 'triar' | 'iniciar' | 'btw'; arg: string } | null {
+): { action: 'setup' | 'triar' | 'iniciar' | 'btw' | 'pausar' | 'lembrar'; arg: string } | null {
   const match = COMMAND_PATTERN.exec(text.trim())
   if (match === null) return null
   const cmd = match[1]
-  if (cmd !== 'setup' && cmd !== 'triar' && cmd !== 'iniciar' && cmd !== 'btw') {
+  if (
+    cmd !== 'setup' &&
+    cmd !== 'triar' &&
+    cmd !== 'iniciar' &&
+    cmd !== 'btw' &&
+    cmd !== 'pausar' &&
+    cmd !== 'lembrar'
+  ) {
     return null
   }
   return { action: cmd, arg: (match[2] ?? '').trim() }

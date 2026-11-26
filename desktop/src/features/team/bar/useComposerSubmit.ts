@@ -5,6 +5,11 @@ import { expandCommand, parseLocalCommand } from '../slashCommands'
 import { askBtw } from '../teamApi'
 import { agentName } from '../agents'
 import { useProjects } from '../../projects/useProjects'
+import { useTriage } from '../../backlog/useTriage'
+import { useRunItem } from '../../backlog/useRunItem'
+import { isUnassigned } from '../../backlog/backlogTypes'
+import { useAgentControl } from '../../panel/useAgentControl'
+import { saveProjectMemory } from '../../memory/learningApi'
 import type { Agent } from '../events'
 import { useConnection } from '../useConnection'
 import { useRequests } from '../useRequests'
@@ -78,14 +83,102 @@ export function useComposerSubmit() {
       return
     }
     if (localCommand?.action === 'triar' || localCommand?.action === 'iniciar') {
+      const projectId = projects.selected?.id
+      if (projectId === undefined) {
+        feed.notify('Selecione um projeto antes de executar este comando.')
+        return
+      }
       const backlog = useBacklog()
+      if (backlog.loadedProjectId !== projectId) {
+        await backlog.load(projectId)
+      }
       const targetColumn = localCommand.action === 'triar' ? 'Backlog' : 'Ready'
-      const item = localCommand.arg
-        ? backlog.items.find((i) => i.id === localCommand.arg || i.title.toLowerCase().includes(localCommand.arg.toLowerCase()))
-        : backlog.items.find((i) => i.column === targetColumn)
+      const normalizedArg = localCommand.arg.replace(/^#/, '').trim().toLowerCase()
+      const candidates = backlog.items.filter((i) => i.column === targetColumn)
+      const item = normalizedArg
+        ? candidates.find(
+            (i) => i.id.toLowerCase() === normalizedArg || i.title.toLowerCase().includes(normalizedArg),
+          )
+        : candidates[0]
       draft.value = ''
       confirmed.value = new Set()
-      if (item) backlog.open(item.id)
+      if (!item) {
+        feed.notify(`Nenhum item em ${targetColumn} encontrado${localCommand.arg ? ` para "${localCommand.arg}"` : ''}.`)
+        return
+      }
+      if (localCommand.action === 'triar') {
+        if (!isUnassigned(item)) {
+          backlog.open(item.id)
+          feed.notify(`${item.id} já possui responsável; ficha aberta.`)
+          return
+        }
+        await useTriage().requestTriage(item)
+        feed.notify(`Triagem iniciada para ${item.id} (${item.title}).`)
+      } else {
+        const runItem = useRunItem()
+        if (!runItem.canRun(item.id)) {
+          backlog.open(item.id)
+          feed.notify(`${item.id} não pode ser iniciado agora; ficha aberta.`)
+          return
+        }
+        await runItem.run(item.id)
+        feed.notify(`Execução iniciada para ${item.id} (${item.title}).`)
+      }
+      return
+    }
+    if (localCommand?.action === 'pausar') {
+      const projectId = projects.selected?.id
+      if (projectId === undefined) {
+        feed.notify('Selecione um projeto para pausar ou retomar agentes.')
+        return
+      }
+      const control = useAgentControl()
+      const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null
+      const arg = localCommand.arg.replace(/^@/, '').trim().toLowerCase()
+      draft.value = ''
+      confirmed.value = new Set()
+      if (mention || arg) {
+        const target =
+          mention ??
+          roster.agents.find((a) => a.id.toLowerCase() === arg || a.name.toLowerCase() === arg)?.id
+        if (!target) {
+          feed.notify(`Agente "${localCommand.arg}" não encontrado.`)
+          return
+        }
+        const pausing = !control.isPaused(target, projectId)
+        await (pausing ? control.pause(target) : control.resume(target))
+        feed.notify(`${agentName(target)} ${pausing ? 'pausado' : 'retomado'}.`)
+      } else {
+        const anyActive = roster.agents.some((a) => !control.isPaused(a.id, projectId))
+        for (const a of roster.agents) {
+          if (anyActive && !control.isPaused(a.id, projectId)) {
+            await control.pause(a.id)
+          } else if (!anyActive && control.isPaused(a.id, projectId)) {
+            await control.resume(a.id)
+          }
+        }
+        feed.notify(anyActive ? 'Time pausado neste projeto.' : 'Time retomado neste projeto.')
+      }
+      return
+    }
+    if (localCommand?.action === 'lembrar') {
+      const projectId = projects.selected?.id
+      if (projectId === undefined) {
+        feed.notify('Selecione um projeto para salvar uma memória.')
+        return
+      }
+      if (!localCommand.arg) {
+        feed.notify('Escreva o fato a guardar após /lembrar.')
+        return
+      }
+      draft.value = ''
+      confirmed.value = new Set()
+      try {
+        const saved = await saveProjectMemory(projectId, localCommand.arg)
+        feed.notify(`Memória salva: "${saved.fact}"`)
+      } catch (error) {
+        feed.feed.push({ type: 'error', message: String(error) })
+      }
       return
     }
     const mention = mentionSpans(draft.value, confirmed.value)[0]?.agent ?? null

@@ -6,6 +6,9 @@ import { useNavigation } from '../../shell/useNavigation'
 import AttachmentChips from '../attachments/AttachmentChips.vue'
 import CommandMenu from './CommandMenu.vue'
 import { useBacklog } from '../backlog/useBacklog'
+import { useTriage } from '../backlog/useTriage'
+import { useRunItem } from '../backlog/useRunItem'
+import { isUnassigned } from '../backlog/backlogTypes'
 import { useChannels } from '../channels/useChannels'
 import { agentName } from './agents'
 import { useComposerSubmit } from './bar/useComposerSubmit'
@@ -65,8 +68,25 @@ const taskCommandMatch = computed(() => {
   return { cmd, items }
 })
 
-function selectTaskForCommand(itemId: string): void {
+async function selectTaskForCommand(itemId: string): Promise<void> {
+  const cmd = taskCommandMatch.value?.cmd
   draft.value = ''
+  const item = backlog.items.find((i) => i.id === itemId)
+  if (!item) return
+  if (cmd === 'triar') {
+    if (isUnassigned(item)) {
+      await useTriage().requestTriage(item)
+      feed.notify(`Triagem iniciada para ${item.id} (${item.title}).`)
+      return
+    }
+  } else if (cmd === 'iniciar') {
+    const runItem = useRunItem()
+    if (runItem.canRun(item.id)) {
+      await runItem.run(item.id)
+      feed.notify(`Execução iniciada para ${item.id} (${item.title}).`)
+      return
+    }
+  }
   backlog.open(itemId)
 }
 const placeholder = computed(

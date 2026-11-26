@@ -168,6 +168,7 @@ pub(crate) fn run() {
             commands::learning::apply_learning_suggestion,
             commands::learning::dismiss_learning_suggestion,
             commands::learning::list_project_memories,
+            commands::learning::save_project_memory,
             commands::learning::get_context_graph
         ])
         .plugin(tauri_plugin_updater::Builder::new().build())

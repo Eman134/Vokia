@@ -126,6 +126,12 @@ export function listProjectMemories(projectId: number): Promise<ProjectMemory[]>
   })
 }
 
+export function saveProjectMemory(projectId: number, fact: string): Promise<ProjectMemory> {
+  return invoke<ProjectMemory>('save_project_memory', {
+    args: { projectId, fact },
+  })
+}
+
 export function getContextGraph(projectId: number): Promise<ContextGraph> {
   return invoke<ContextGraph>('get_context_graph', {
     args: { projectId },

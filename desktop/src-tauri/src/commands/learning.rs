@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::db::{
-    ArtifactSummary, BacklogItem, Db, DbState, LearningSuggestion, ProjectMemory, SkillScope,
-    SuggestionStatus, TurnWorkStepsRecord,
+    ArtifactSummary, BacklogItem, Db, DbState, LearningSuggestion, MemoryOriginType,
+    NewProjectMemory, ProjectMemory, SkillScope, SuggestionStatus, TurnWorkStepsRecord,
 };
 use crate::events::VokiaEvent;
 use crate::orchestrator::memory_review::{
@@ -217,6 +217,53 @@ pub(crate) fn list_project_memories_exec(
     let db = db_state.require().map_err(|e| e.to_string())?;
     db.list_project_memories(args.project_id)
         .map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveProjectMemoryArgs {
+    pub project_id: i64,
+    pub fact: String,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+pub(crate) fn save_project_memory_exec(
+    app: &AppHandle,
+    args: SaveProjectMemoryArgs,
+) -> Result<ProjectMemory, String> {
+    let fact = args.fact.trim();
+    if fact.is_empty() {
+        return Err("Informe o fato a salvar após /lembrar.".to_string());
+    }
+    let db_state = app.state::<DbState>();
+    let db = db_state.require().map_err(|e| e.to_string())?;
+    let now_ms = now_millis_i64();
+    let id = format!("mem-manual-{now_ms}");
+    let source = args.source.as_deref().unwrap_or("comando /lembrar");
+    db.insert_project_memory(&NewProjectMemory {
+        id: &id,
+        project_id: args.project_id,
+        fact,
+        source,
+        origin_type: MemoryOriginType::Manual,
+        pinned: true,
+        author: Some("você"),
+        now_ms,
+    })
+    .map_err(|e| e.to_string())?;
+    emit_learning_changed(app, args.project_id);
+    Ok(ProjectMemory {
+        id,
+        project_id: args.project_id,
+        fact: fact.to_string(),
+        source: source.to_string(),
+        origin_type: MemoryOriginType::Manual,
+        pinned: true,
+        author: Some("você".to_string()),
+        created_at: now_ms,
+        updated_at: now_ms,
+    })
 }
 
 pub(crate) fn get_context_graph_exec(
@@ -686,6 +733,14 @@ pub fn list_project_memories(
     args: ListProjectMemoriesArgs,
 ) -> Result<Vec<ProjectMemory>, String> {
     list_project_memories_exec(&app, args)
+}
+
+#[tauri::command]
+pub fn save_project_memory(
+    app: AppHandle,
+    args: SaveProjectMemoryArgs,
+) -> Result<ProjectMemory, String> {
+    save_project_memory_exec(&app, args)
 }
 
 #[tauri::command]
