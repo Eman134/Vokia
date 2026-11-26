@@ -4,16 +4,28 @@ import { useRoster } from '../team/useRoster'
 import {
   autoConfigureProvider,
   buildSetupPrompt,
+  cancelProviderLogin,
   checkProviderStatus,
   deleteProvider,
+  deleteProviderEnv,
   discoverProviderModels,
+  getProviderLoginState,
   inspectCli,
+  listProviderEnv,
   listProviders,
+  logoutProvider,
   saveProvider,
+  setProviderEnabled,
+  setProviderEnv,
+  startProviderLogin,
+  submitProviderLoginCode,
   testProviderConfig,
   type DiscoverModelsResult,
   type InspectCliResult,
   type ProviderConfig,
+  type ProviderEnvVarView,
+  type ProviderLoginState,
+  type ProviderLogoutResult,
   type ProviderStatusSummary,
   type ProviderWithStatus,
   type TestProviderResult,
@@ -76,6 +88,11 @@ export const useProviders = defineStore('providers', () => {
           ...provider,
           installed: match.installed,
           connectionStatus: match.connectionStatus,
+          diagnosticState: match.diagnosticState,
+          version: match.version ?? null,
+          executablePath: match.executablePath ?? null,
+          executableSource: match.executableSource ?? null,
+          errorCategory: match.errorCategory ?? null,
           statusDetail: match.statusDetail ?? null,
           installHint: match.installHint ?? provider.installHint ?? null,
           connectHint: match.connectHint ?? provider.connectHint ?? null,
@@ -166,6 +183,55 @@ export const useProviders = defineStore('providers', () => {
     return testProviderConfig(config, model)
   }
 
+  async function setEnabled(id: string, enabled: boolean, reason?: string | null): Promise<ProviderConfig> {
+    const updated = await setProviderEnabled(id, enabled, reason)
+    await load()
+    return updated
+  }
+
+  function startLogin(id: string, flowId?: string | null, apiKey?: string | null): Promise<ProviderLoginState> {
+    return startProviderLogin(id, flowId, apiKey)
+  }
+
+  function getLoginState(id: string): Promise<ProviderLoginState | null> {
+    return getProviderLoginState(id)
+  }
+
+  function submitLoginCode(id: string, code: string): Promise<ProviderLoginState> {
+    return submitProviderLoginCode(id, code)
+  }
+
+  function cancelLogin(id: string): Promise<ProviderLoginState> {
+    return cancelProviderLogin(id)
+  }
+
+  async function logout(id: string): Promise<ProviderLogoutResult> {
+    const result = await logoutProvider(id)
+    await load()
+    return result
+  }
+
+  function listEnv(id: string): Promise<ProviderEnvVarView[]> {
+    return listProviderEnv(id)
+  }
+
+  async function setEnv(
+    id: string,
+    key: string,
+    value: string,
+    sensitive = false,
+  ): Promise<ProviderEnvVarView> {
+    const view = await setProviderEnv(id, key, value, sensitive)
+    await checkStatus(id).catch(() => {})
+    return view
+  }
+
+  async function deleteEnv(id: string, key: string): Promise<boolean> {
+    const removed = await deleteProviderEnv(id, key)
+    await checkStatus(id).catch(() => {})
+    return removed
+  }
+
   return {
     providers,
     loading,
@@ -188,5 +254,14 @@ export const useProviders = defineStore('providers', () => {
     buildPrompt,
     autoConfigure,
     testConfig,
+    setEnabled,
+    startLogin,
+    getLoginState,
+    submitLoginCode,
+    cancelLogin,
+    logout,
+    listEnv,
+    setEnv,
+    deleteEnv,
   }
 })

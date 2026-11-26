@@ -29,7 +29,11 @@ pub(super) fn report_limits(app: &AppHandle, limits: Option<RateLimits>) -> Resu
     let provider_usage = crate::usage::ProviderPlanUsage::from_claude_rate_limits(limits, updated_at_ms);
     if let Some(state) = app.try_state::<AppState>() {
         state.usage.record_provider_usage(provider_usage.clone());
-        if !provider_usage.is_exhausted(crate::usage::DEFAULT_PAUSE_THRESHOLD) {
+        let exhausted = state
+            .usage
+            .pause_threshold()
+            .is_some_and(|threshold| provider_usage.is_exhausted(threshold));
+        if !exhausted {
             let released = state.usage.confirm_provider_renewed("claude", None);
             if !released.returns.is_empty() {
                 let mut overrides = state

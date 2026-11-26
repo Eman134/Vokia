@@ -25,6 +25,7 @@ import {
   CONTINUATION_MAX_COUNT_SETTING_KEY,
   LEARNING_MODE_SETTING_KEY,
   LEARNING_TURN_CADENCE_SETTING_KEY,
+  USAGE_PAUSE_THRESHOLD_SETTING_KEY,
   eraseAllData,
   fetchSettings,
   saveSetting,
@@ -64,6 +65,16 @@ const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
 const autoPauseOnLimit = ref(false)
 const autoPauseError = ref<string | null>(null)
+const PAUSE_THRESHOLD_CHOICES = ['85', '90', '95', 'off'] as const
+type PauseThresholdChoice = (typeof PAUSE_THRESHOLD_CHOICES)[number]
+const PAUSE_THRESHOLD_OPTIONS: readonly { label: string; value: PauseThresholdChoice }[] = [
+  { label: '85%', value: '85' },
+  { label: '90%', value: '90' },
+  { label: '95%', value: '95' },
+  { label: 'Desligado', value: 'off' },
+]
+const usagePauseThreshold = ref<PauseThresholdChoice>('90')
+const usagePauseThresholdError = ref<string | null>(null)
 const DEFAULT_CONTINUATION_ENABLED = true
 const DEFAULT_CONTINUATION_MAX_COUNT = 5
 const MIN_CONTINUATION_MAX_COUNT = 0
@@ -266,12 +277,38 @@ async function chooseLearningCadence(next: string): Promise<void> {
   }
 }
 
+async function loadUsagePauseThreshold(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[USAGE_PAUSE_THRESHOLD_SETTING_KEY]
+    if (PAUSE_THRESHOLD_CHOICES.some((c) => c === stored)) {
+      usagePauseThreshold.value = stored as PauseThresholdChoice
+    }
+  } catch (error) {
+    usagePauseThresholdError.value = `Não foi possível ler o limiar de pausa: ${String(error)}`
+  }
+}
+
+async function chooseUsagePauseThreshold(next: PauseThresholdChoice): Promise<void> {
+  const prev = usagePauseThreshold.value
+  usagePauseThreshold.value = next
+  try {
+    await saveSetting(USAGE_PAUSE_THRESHOLD_SETTING_KEY, next)
+    usagePauseThresholdError.value = null
+  } catch (error) {
+    usagePauseThreshold.value = prev
+    usagePauseThresholdError.value = `Não foi possível salvar o limiar de pausa: ${String(error)}`
+  }
+}
+
 onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
     void loadGrant()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'auto-pause-on-limit') {
     void loadAutoPauseOnLimit()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'usage-pause-threshold') {
+    void loadUsagePauseThreshold()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'continuation-enabled') {
     void loadContinuationEnabled()
@@ -398,6 +435,16 @@ function toOptions(labels: readonly string[]) {
           @update:model-value="toggleAutoPauseOnLimit"
         />
         <p v-if="autoPauseError" role="alert" :class="ERROR_CLASSES">{{ autoPauseError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'usage-pause-threshold'" :class="STACK_CLASSES">
+        <UiSegmented
+          :options="PAUSE_THRESHOLD_OPTIONS"
+          :model-value="usagePauseThreshold"
+          label="Limiar de pausa automática de cota"
+          data-testid="usage-pause-threshold-segmented"
+          @update:model-value="chooseUsagePauseThreshold"
+        />
+        <p v-if="usagePauseThresholdError" role="alert" :class="ERROR_CLASSES">{{ usagePauseThresholdError }}</p>
       </div>
       <div v-else-if="item.control.kind === 'continuation-enabled'" :class="STACK_CLASSES">
         <UiSwitch

@@ -72,7 +72,7 @@ impl From<&str> for UsageReadError {
 /// Removes explicit secrets and common credential/token patterns so no local
 /// OAuth token or API key ever leaks into logs, error messages, SQLite or UI events.
 pub fn redact_secrets(text: &str, secrets: &[&str]) -> String {
-    let mut sanitized = text.to_string();
+    let mut sanitized = crate::provider_env::redact_registered_secrets(text);
     for secret in secrets {
         let trimmed = secret.trim();
         if !trimmed.is_empty() {

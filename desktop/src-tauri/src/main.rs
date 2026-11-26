@@ -15,6 +15,8 @@ mod orchestrator;
 mod permissions;
 mod plan_proposal;
 mod projects;
+mod provider_auth;
+mod provider_env;
 mod providers;
 mod roles;
 mod session_key;

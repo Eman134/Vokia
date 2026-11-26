@@ -16,6 +16,7 @@ import UserProfileForm from '../profile/UserProfileForm.vue'
 import { useProfileDraft } from '../profile/useProfileDraft'
 import { useUserProfile } from '../profile/useUserProfile'
 import { useActiveLlm, type FallbackChainItem } from '../providers/useActiveLlm'
+import ProviderConnectionCard from '../providers/ProviderConnectionCard.vue'
 import { useProviders } from '../providers/useProviders'
 import type { ModelTier } from '../team/teamApi'
 import SettingRow from './SettingRow.vue'
@@ -239,6 +240,46 @@ async function saveFallbackConfig(): Promise<void> {
             </div>
           </template>
         </section>
+        <section
+          v-if="activeSection === AGENTS_SECTION_TITLE"
+          data-testid="settings-providers-panel"
+          aria-label="Provedores conectados"
+          class="flex flex-col gap-3 rounded-md border border-line bg-surface p-5"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-control font-semibold text-ink">Provedores e conexões</h3>
+              <p class="text-caption text-muted">
+                Conecte, ative/desative, gerencie variáveis de ambiente ou desconecte cada provedor.
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <UiButton
+                variant="quiet"
+                size="sm"
+                @press="providersStore.checkStatus()"
+              >
+                Verificar todos
+              </UiButton>
+              <UiButton
+                variant="quiet"
+                size="sm"
+                @press="providersStore.openAddProvider()"
+              >
+                + Adicionar provedor
+              </UiButton>
+            </div>
+          </div>
+          <div class="flex flex-col gap-3">
+            <ProviderConnectionCard
+              v-for="provider in providersStore.providers"
+              :key="provider.id"
+              :provider="provider"
+              show-settings-controls
+            />
+          </div>
+        </section>
+
         <section
           v-if="activeSection === AGENTS_SECTION_TITLE"
           data-testid="fallback-chain-editor"

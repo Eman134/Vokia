@@ -171,6 +171,7 @@ pub(super) fn tool_summary(name: &str, input: &Value) -> String {
 
 // Melhor esforço: segredos em formato desconhecido podem passar; o console não é persistido.
 fn redact(text: &str) -> String {
+    let text = crate::provider_env::redact_registered_secrets(text);
     let mut out = String::with_capacity(text.len());
     let mut hide_next = false;
     for piece in text.split_inclusive(char::is_whitespace) {

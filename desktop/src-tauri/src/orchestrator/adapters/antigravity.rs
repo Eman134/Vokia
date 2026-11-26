@@ -5,7 +5,7 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
+    base_command_for_provider, classify_provider_error, Access, ClaudeError, Reply, TurnActivity, TurnUsage,
 };
 use crate::mcp::McpSession;
 use crate::permissions::PermissionLevel;
@@ -32,7 +32,7 @@ pub(crate) fn build_command_with_resume(
     _message: &str,
     resume_conversation: Option<&str>,
 ) -> Command {
-    let mut command = base_command(program);
+    let mut command = base_command_for_provider(program, "antigravity");
     command.kill_on_drop(true);
     command.args(user_args);
     command.args([

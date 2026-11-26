@@ -9,12 +9,19 @@ use tokio::time::timeout;
 
 use crate::agents::{Agent, AgentRegistry};
 use crate::claude::{
-    ask as claude_ask, base_command, classify_provider_error, kill_process_tree, ClaudeError,
+    ask as claude_ask, base_command, base_command_for_provider, classify_provider_error,
+    kill_process_tree, ClaudeError,
 };
 use crate::db::{DbState, SETTING_ACTIVE_LLM};
 use crate::orchestrator::fallback::{
     ask_with_fallback, load_global_active_llm, resolve_model_for_provider, LlmTarget,
 };
+use crate::provider_auth::{
+    diagnose_provider_sync, logout_provider as auth_logout_provider,
+    resolve_provider_executable, ExecutableSource, ProviderDiagnosticResult,
+    ProviderDiagnosticState, ProviderLoginManager, ProviderLoginState, ProviderLogoutResult,
+};
+use crate::provider_env::{ProviderEnvRegistry, ProviderEnvVarView};
 use crate::providers::{
     parse_codex_models_cache, parse_json_models, parse_models_lines, validate_reasoning_effort,
     ModelTier, ProviderConfig, ProviderProtocol, ProviderRegistry,
@@ -42,6 +49,15 @@ pub struct ProviderWithStatus {
     pub config: ProviderConfig,
     pub installed: bool,
     pub connection_status: ProviderConnectionStatus,
+    pub diagnostic_state: ProviderDiagnosticState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_source: Option<ExecutableSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_detail: Option<String>,
 }
@@ -53,6 +69,15 @@ pub struct ProviderStatusSummary {
     pub label: String,
     pub installed: bool,
     pub connection_status: ProviderConnectionStatus,
+    pub diagnostic_state: ProviderDiagnosticState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub executable_source: Option<ExecutableSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_category: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,6 +172,40 @@ pub(crate) struct BuildSetupPromptArgs {
 pub(crate) struct TestProviderConfigArgs {
     pub config: ProviderConfig,
     pub model: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StartProviderLoginArgs {
+    pub id: String,
+    #[serde(default)]
+    pub flow_id: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SubmitProviderLoginCodeArgs {
+    pub id: String,
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SetProviderEnvArgs {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    #[serde(default)]
+    pub sensitive: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteProviderEnvArgs {
+    pub id: String,
+    pub key: String,
 }
 
 #[tauri::command]
@@ -259,45 +318,96 @@ pub async fn auto_configure_provider(
     .await
 }
 
+#[tauri::command]
+pub async fn start_provider_login(
+    app: AppHandle,
+    id: String,
+    flow_id: Option<String>,
+    api_key: Option<String>,
+) -> Result<ProviderLoginState, String> {
+    start_provider_login_exec(&app, StartProviderLoginArgs { id, flow_id, api_key }).await
+}
+
+#[tauri::command]
+pub fn get_provider_login_state(
+    app: AppHandle,
+    id: String,
+) -> Result<Option<ProviderLoginState>, String> {
+    get_provider_login_state_exec(&app, ProviderIdArgs { id })
+}
+
+#[tauri::command]
+pub async fn submit_provider_login_code(
+    app: AppHandle,
+    id: String,
+    code: String,
+) -> Result<ProviderLoginState, String> {
+    submit_provider_login_code_exec(&app, SubmitProviderLoginCodeArgs { id, code }).await
+}
+
+#[tauri::command]
+pub fn cancel_provider_login(app: AppHandle, id: String) -> Result<ProviderLoginState, String> {
+    cancel_provider_login_exec(&app, ProviderIdArgs { id })
+}
+
+#[tauri::command]
+pub async fn logout_provider(app: AppHandle, id: String) -> Result<ProviderLogoutResult, String> {
+    logout_provider_exec(&app, ProviderIdArgs { id }).await
+}
+
+#[tauri::command]
+pub fn list_provider_env(app: AppHandle, id: String) -> Result<Vec<ProviderEnvVarView>, String> {
+    list_provider_env_exec(&app, ProviderIdArgs { id })
+}
+
+#[tauri::command]
+pub fn set_provider_env(
+    app: AppHandle,
+    id: String,
+    key: String,
+    value: String,
+    sensitive: bool,
+) -> Result<ProviderEnvVarView, String> {
+    set_provider_env_exec(
+        &app,
+        SetProviderEnvArgs {
+            id,
+            key,
+            value,
+            sensitive,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn delete_provider_env(app: AppHandle, id: String, key: String) -> Result<bool, String> {
+    delete_provider_env_exec(&app, DeleteProviderEnvArgs { id, key })
+}
+
+fn map_diagnostic_to_connection_status(state: ProviderDiagnosticState) -> ProviderConnectionStatus {
+    match state {
+        ProviderDiagnosticState::Connected => ProviderConnectionStatus::Connected,
+        ProviderDiagnosticState::InstalledSignedOut => ProviderConnectionStatus::SignedOut,
+        ProviderDiagnosticState::NotInstalled => ProviderConnectionStatus::Missing,
+        ProviderDiagnosticState::Error => ProviderConnectionStatus::Error,
+    }
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn evaluate_provider_status(
     config: &ProviderConfig,
 ) -> (bool, ProviderConnectionStatus, Option<String>) {
-    if resolve_program(&config.default_command).is_err() {
-        return (
-            false,
-            ProviderConnectionStatus::Missing,
-            Some("CLI não encontrada no PATH.".to_string()),
-        );
-    }
-    let Some(probe) = &config.auth_probe else {
-        return (true, ProviderConnectionStatus::Connected, None);
-    };
-    let has_env = probe.env_vars.iter().any(|name| {
-        std::env::var(name)
-            .ok()
-            .is_some_and(|value| !value.trim().is_empty())
-    });
-    let has_cred_file = probe.credential_files.iter().any(|rel| {
-        resolve_user_path(rel)
-            .ok()
-            .and_then(|path| std::fs::metadata(path).ok())
-            .is_some_and(|meta| meta.is_file() && meta.len() > 0)
-    });
-    if has_env || has_cred_file {
-        return (true, ProviderConnectionStatus::Connected, None);
-    }
-    if probe.free_without_login {
-        return (
-            true,
-            ProviderConnectionStatus::Connected,
-            Some("Modo gratuito disponível sem login.".to_string()),
-        );
-    }
+    let diag = diagnose_provider_sync(config, None);
     (
-        true,
-        ProviderConnectionStatus::SignedOut,
-        Some("CLI instalada, mas sem autenticação detectada.".to_string()),
+        diag.installed,
+        map_diagnostic_to_connection_status(diag.state),
+        diag.detail,
     )
+}
+
+fn diagnose_with_app(app: &AppHandle, config: &ProviderConfig) -> ProviderDiagnosticResult {
+    let env_reg = app.try_state::<ProviderEnvRegistry>();
+    diagnose_provider_sync(config, env_reg.as_deref())
 }
 
 pub(crate) fn list_providers_exec(app: &AppHandle) -> Result<Vec<ProviderWithStatus>, String> {
@@ -308,12 +418,17 @@ pub(crate) fn list_providers_exec(app: &AppHandle) -> Result<Vec<ProviderWithSta
     Ok(list
         .into_iter()
         .map(|config| {
-            let (installed, connection_status, status_detail) = evaluate_provider_status(&config);
+            let diag = diagnose_with_app(app, &config);
             ProviderWithStatus {
                 config,
-                installed,
-                connection_status,
-                status_detail,
+                installed: diag.installed,
+                connection_status: map_diagnostic_to_connection_status(diag.state),
+                diagnostic_state: diag.state,
+                version: diag.version,
+                executable_path: diag.executable_path,
+                executable_source: diag.executable_source,
+                error_category: diag.error_category,
+                status_detail: diag.detail,
             }
         })
         .collect())
@@ -331,7 +446,7 @@ pub(crate) fn check_provider_status_exec(
     Ok(configs
         .into_iter()
         .map(|config| {
-            let (installed, connection_status, status_detail) = evaluate_provider_status(&config);
+            let diag = diagnose_with_app(app, &config);
             let supports_free_without_login = config
                 .auth_probe
                 .as_ref()
@@ -339,9 +454,14 @@ pub(crate) fn check_provider_status_exec(
             ProviderStatusSummary {
                 id: config.id,
                 label: config.label,
-                installed,
-                connection_status,
-                status_detail,
+                installed: diag.installed,
+                connection_status: map_diagnostic_to_connection_status(diag.state),
+                diagnostic_state: diag.state,
+                version: diag.version,
+                executable_path: diag.executable_path,
+                executable_source: diag.executable_source,
+                error_category: diag.error_category,
+                status_detail: diag.detail,
                 install_hint: config.install_hint,
                 connect_hint: config.connect_hint,
                 supports_free_without_login,
@@ -459,9 +579,6 @@ fn delete_provider_impl(
     agents: &AgentRegistry,
     id: &str,
 ) -> Result<(), String> {
-    if id == "claude" {
-        return Err("O provedor padrão 'claude' não pode ser removido.".to_string());
-    }
     let team = agents.team().map_err(|error| error.to_string())?;
     if let Some(in_use) = team.profiles().iter().find(|agent| agent.cli == id) {
         return Err(format!(
@@ -723,7 +840,8 @@ pub(crate) async fn test_provider_config_exec(
                     }
                     _ => None,
                 };
-                let output = run_bounded_process_with_stdin(
+                let output = run_bounded_process_for_provider(
+                    &config.id,
                     &program_path,
                     &args,
                     stdin_prompt,
@@ -842,10 +960,8 @@ fn split_command(command: &str) -> Result<(String, Vec<String>), String> {
 }
 
 fn resolve_program(command: &str) -> Result<(PathBuf, Vec<String>), String> {
-    let (program, args) = split_command(command)?;
-    let path = which::which(&program)
-        .map_err(|_| format!("Executável '{program}' não encontrado no PATH."))?;
-    Ok((path, args))
+    let resolved = resolve_provider_executable(command)?;
+    Ok((resolved.program, resolved.base_args))
 }
 
 fn discover_from_cache_file(
@@ -907,13 +1023,33 @@ async fn run_bounded_process(
     run_bounded_process_with_stdin(program, args, None, limit).await
 }
 
+async fn run_bounded_process_for_provider(
+    provider_id: &str,
+    program: &PathBuf,
+    args: &[String],
+    stdin_text: Option<&str>,
+    limit: Duration,
+) -> Result<std::process::Output, String> {
+    let cmd = base_command_for_provider(program, provider_id);
+    run_bounded_command(cmd, args, stdin_text, limit).await
+}
+
 async fn run_bounded_process_with_stdin(
     program: &PathBuf,
     args: &[String],
     stdin_text: Option<&str>,
     limit: Duration,
 ) -> Result<std::process::Output, String> {
-    let mut cmd = base_command(program);
+    let cmd = base_command(program);
+    run_bounded_command(cmd, args, stdin_text, limit).await
+}
+
+async fn run_bounded_command(
+    mut cmd: tokio::process::Command,
+    args: &[String],
+    stdin_text: Option<&str>,
+    limit: Duration,
+) -> Result<std::process::Output, String> {
     cmd.args(args)
         .stdin(if stdin_text.is_some() {
             Stdio::piped()
@@ -1035,6 +1171,126 @@ fn classify_test_error(
         ClaudeError::Spawn(io_err) => ("other", format!("Falha ao executar CLI: {io_err}")),
         other => ("other", format!("{other:?}")),
     }
+}
+
+pub(crate) async fn start_provider_login_exec(
+    app: &AppHandle,
+    args: StartProviderLoginArgs,
+) -> Result<ProviderLoginState, String> {
+    let config = app
+        .state::<ProviderRegistry>()
+        .get(&args.id)
+        .map_err(|error| error.to_string())?;
+    let manager = app.state::<ProviderLoginManager>();
+    let env_reg = app.state::<ProviderEnvRegistry>();
+    let state = manager
+        .start_login(
+            &config,
+            args.flow_id.as_deref(),
+            args.api_key.as_deref(),
+            &env_reg,
+        )
+        .await?;
+    let _ = app.emit(
+        crate::events::EVENT_NAME,
+        crate::events::VokiaEvent::ProvidersChanged,
+    );
+    Ok(state)
+}
+
+pub(crate) fn get_provider_login_state_exec(
+    app: &AppHandle,
+    args: ProviderIdArgs,
+) -> Result<Option<ProviderLoginState>, String> {
+    Ok(app.state::<ProviderLoginManager>().get_state(&args.id))
+}
+
+pub(crate) async fn submit_provider_login_code_exec(
+    app: &AppHandle,
+    args: SubmitProviderLoginCodeArgs,
+) -> Result<ProviderLoginState, String> {
+    app.state::<ProviderLoginManager>()
+        .submit_code(&args.id, &args.code)
+        .await
+}
+
+pub(crate) fn cancel_provider_login_exec(
+    app: &AppHandle,
+    args: ProviderIdArgs,
+) -> Result<ProviderLoginState, String> {
+    app.state::<ProviderLoginManager>().cancel_login(&args.id)
+}
+
+pub(crate) async fn logout_provider_exec(
+    app: &AppHandle,
+    args: ProviderIdArgs,
+) -> Result<ProviderLogoutResult, String> {
+    let config = app
+        .state::<ProviderRegistry>()
+        .get(&args.id)
+        .map_err(|error| error.to_string())?;
+    let env_reg = app.state::<ProviderEnvRegistry>();
+    let result = auth_logout_provider(&config, &env_reg).await?;
+    if let Some(state) = app.try_state::<AppState>() {
+        state.usage.invalidate_provider(&config.id);
+    }
+    let _ = app.emit(
+        crate::events::EVENT_NAME,
+        crate::events::VokiaEvent::ProvidersChanged,
+    );
+    Ok(result)
+}
+
+pub(crate) fn list_provider_env_exec(
+    app: &AppHandle,
+    args: ProviderIdArgs,
+) -> Result<Vec<ProviderEnvVarView>, String> {
+    let _ = app
+        .state::<ProviderRegistry>()
+        .get(&args.id)
+        .map_err(|error| error.to_string())?;
+    Ok(app.state::<ProviderEnvRegistry>().list_vars(&args.id))
+}
+
+pub(crate) fn set_provider_env_exec(
+    app: &AppHandle,
+    args: SetProviderEnvArgs,
+) -> Result<ProviderEnvVarView, String> {
+    let _ = app
+        .state::<ProviderRegistry>()
+        .get(&args.id)
+        .map_err(|error| error.to_string())?;
+    let view = app.state::<ProviderEnvRegistry>().set_var(
+        &args.id,
+        &args.key,
+        &args.value,
+        args.sensitive,
+    )?;
+    let _ = app.emit(
+        crate::events::EVENT_NAME,
+        crate::events::VokiaEvent::ProvidersChanged,
+    );
+    Ok(view)
+}
+
+pub(crate) fn delete_provider_env_exec(
+    app: &AppHandle,
+    args: DeleteProviderEnvArgs,
+) -> Result<bool, String> {
+    let _ = app
+        .state::<ProviderRegistry>()
+        .get(&args.id)
+        .map_err(|error| error.to_string())?;
+    let removed = app
+        .state::<ProviderEnvRegistry>()
+        .delete_var(&args.id, &args.key)?;
+    if removed {
+        let _ = app.emit(
+            crate::events::EVENT_NAME,
+            crate::events::VokiaEvent::ProvidersChanged,
+        );
+    }
+    Ok(removed)
 }
 
 fn truncate_utf8(input: &str, max_bytes: usize) -> String {

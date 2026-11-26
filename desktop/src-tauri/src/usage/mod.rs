@@ -162,9 +162,13 @@ impl UsageEngine {
         if let Some(filter) = provider_filter {
             providers.retain(|entry| entry.provider_id == filter);
         }
-        let (mut active_limits, mut pending_returns) = {
+        let (mut active_limits, mut pending_returns, pause_threshold) = {
             let gate = self.limit_gate.lock().unwrap_or_else(|e| e.into_inner());
-            (gate.active_limits(now_ms), gate.pending_returns())
+            (
+                gate.active_limits(now_ms),
+                gate.pending_returns(),
+                gate.pause_threshold().unwrap_or(0),
+            )
         };
         if let Some(filter) = provider_filter {
             active_limits.retain(|entry| entry.provider_id == filter);
@@ -177,9 +181,19 @@ impl UsageEngine {
             active_limits,
             pending_returns,
             warn_threshold: DEFAULT_WARN_THRESHOLD,
-            pause_threshold: DEFAULT_PAUSE_THRESHOLD,
+            pause_threshold,
             fetched_at_ms: now_ms,
         }
+    }
+
+    pub fn set_pause_threshold(&self, threshold: Option<u8>) {
+        let mut gate = self.limit_gate.lock().unwrap_or_else(|e| e.into_inner());
+        gate.set_pause_threshold(threshold);
+    }
+
+    pub fn pause_threshold(&self) -> Option<u8> {
+        let gate = self.limit_gate.lock().unwrap_or_else(|e| e.into_inner());
+        gate.pause_threshold()
     }
 
     pub fn is_model_limited(&self, provider_id: &str, model: &str, now_ms: u64) -> bool {
@@ -188,7 +202,7 @@ impl UsageEngine {
     }
 
     /// Verifica de forma agnóstica a provedor se o provedor/modelo está pausado por
-    /// limite de uso (janela >= 90% em 083 ou bloqueio ativo no `UsageLimitGate`),
+    /// limite de uso (janela >= limiar configurado em 083 ou bloqueio ativo no `UsageLimitGate`),
     /// respeitando créditos extras ativos.
     pub fn is_provider_paused_by_limit(
         &self,
@@ -213,9 +227,12 @@ impl UsageEngine {
                 return true;
             }
         }
+        let Some(threshold) = self.pause_threshold() else {
+            return false;
+        };
         self.read_gate
             .get(provider_id)
-            .is_some_and(|usage| usage.is_exhausted(DEFAULT_PAUSE_THRESHOLD))
+            .is_some_and(|usage| usage.is_exhausted(threshold))
     }
 
     pub fn mark_limit_reached(

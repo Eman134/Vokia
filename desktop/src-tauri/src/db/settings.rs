@@ -14,6 +14,7 @@ pub const SETTING_ACTIVE_LLM: &str = "active_llm";
 pub const SETTING_LLM_FALLBACK: &str = "llm_fallback";
 pub const SETTING_WEB_SEARCH: &str = "web_search";
 pub const SETTING_AUTO_PAUSE_ON_LIMIT: &str = "auto_pause_on_limit";
+pub const SETTING_USAGE_PAUSE_THRESHOLD: &str = "usage_pause_threshold";
 pub const SETTING_CONTINUATION_ENABLED: &str = "continuationEnabled";
 pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
 pub const SETTING_LEARNING_MODE: &str = "learning_mode";
@@ -26,6 +27,7 @@ const LEARNING_CADENCE_VALUES: &[&str] = &["10", "20", "40", "0"];
 const CONTINUATION_MAX_COUNT_MIN: u32 = 0;
 const CONTINUATION_MAX_COUNT_MAX: u32 = 50;
 const BOOL_VALUES: &[&str] = &["true", "false"];
+const USAGE_PAUSE_THRESHOLD_VALUES: &[&str] = &["85", "90", "95", "off"];
 pub const GRANT_SESSION: &str = "session";
 pub const GRANT_ONCE: &str = "once";
 const PERMISSION_GRANT_VALUES: &[&str] = &[GRANT_SESSION, GRANT_ONCE];
@@ -68,6 +70,10 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
     (SETTING_WEB_SEARCH, SettingRule::Json),
     (SETTING_AUTO_PAUSE_ON_LIMIT, SettingRule::OneOf(BOOL_VALUES)),
     (
+        SETTING_USAGE_PAUSE_THRESHOLD,
+        SettingRule::OneOf(USAGE_PAUSE_THRESHOLD_VALUES),
+    ),
+    (
         SETTING_CONTINUATION_ENABLED,
         SettingRule::OneOf(BOOL_VALUES),
     ),
@@ -92,6 +98,7 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
 const SETTING_DEFAULTS: &[(&str, &str)] = &[
     (SETTING_PERMISSION_GRANT, GRANT_SESSION),
     (SETTING_AUTO_PAUSE_ON_LIMIT, "false"),
+    (SETTING_USAGE_PAUSE_THRESHOLD, "90"),
     (SETTING_CONTINUATION_ENABLED, "true"),
     (SETTING_CONTINUATION_MAX_COUNT, "5"),
     (SETTING_LEARNING_MODE, LEARNING_MODE_ASK),
@@ -140,6 +147,16 @@ impl Db {
             .is_some_and(|value| value == "true"))
     }
 
+    pub fn usage_pause_threshold(&self) -> Result<Option<u8>, DbError> {
+        let settings = self.load_settings()?;
+        Ok(parse_usage_pause_threshold(
+            settings
+                .get(SETTING_USAGE_PAUSE_THRESHOLD)
+                .map(String::as_str)
+                .unwrap_or("90"),
+        ))
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn continuation_enabled(&self) -> Result<bool, DbError> {
         let settings = self.load_settings()?;
@@ -171,6 +188,15 @@ impl Db {
             .get(SETTING_LEARNING_TURN_CADENCE)
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(20))
+    }
+}
+
+pub fn parse_usage_pause_threshold(raw: &str) -> Option<u8> {
+    match raw.trim() {
+        "off" | "0" => None,
+        "85" => Some(85),
+        "95" => Some(95),
+        _ => Some(90),
     }
 }
 

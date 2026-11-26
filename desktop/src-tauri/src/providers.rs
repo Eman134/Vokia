@@ -155,6 +155,77 @@ pub struct ProviderAuthProbe {
     pub free_without_login: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AuthFlowKind {
+    Browser,
+    DeviceCode,
+    PasteCode,
+    ApiKey,
+    FreeNoLogin,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderAuthFlowSpec {
+    pub id: String,
+    pub kind: AuthFlowKind,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env_var: Option<String>,
+    #[serde(default)]
+    pub sensitive: bool,
+    #[serde(default)]
+    pub supports_app_server_rpc: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderLogoutSpec {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_args: Vec<String>,
+    #[serde(default)]
+    pub shares_terminal_login: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clear_env_vars: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderEnvPreset {
+    pub key: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    #[serde(default)]
+    pub sensitive: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderAuthDiagnosticRules {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub version_args: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unauthorized_401_patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forbidden_403_patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incompatible_patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unauthorized_401_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forbidden_403_hint: Option<String>,
+}
+
 pub const CANONICAL_EFFORT_LEVELS: [&str; 4] = ["low", "medium", "high", "max"];
 const EFFORT_MAX_CHARS: usize = 32;
 
@@ -268,6 +339,14 @@ pub struct ProviderConfig {
     pub effort: Option<ReasoningEffortSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_probe: Option<ProviderAuthProbe>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auth_flows: Vec<ProviderAuthFlowSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logout: Option<ProviderLogoutSpec>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_presets: Vec<ProviderEnvPreset>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_diagnostics: Option<ProviderAuthDiagnosticRules>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -653,6 +732,61 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 ]),
                 free_without_login: false,
             }),
+            auth_flows: vec![
+                ProviderAuthFlowSpec {
+                    id: "browser".to_string(),
+                    kind: AuthFlowKind::Browser,
+                    label: "Entrar no navegador".to_string(),
+                    description: Some("Abre o login OAuth oficial do Claude Code.".to_string()),
+                    command_args: vec_str(&["auth", "login"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "paste-code".to_string(),
+                    kind: AuthFlowKind::PasteCode,
+                    label: "Colar código de autenticação".to_string(),
+                    description: Some("Para sessões headless ou remotas via --claudeai.".to_string()),
+                    command_args: vec_str(&["auth", "login", "--claudeai"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "api-key".to_string(),
+                    kind: AuthFlowKind::ApiKey,
+                    label: "Chave de API (ANTHROPIC_API_KEY)".to_string(),
+                    description: Some("Salva no cofre seguro do SO sem expor ao frontend.".to_string()),
+                    command_args: Vec::new(),
+                    env_var: Some("ANTHROPIC_API_KEY".to_string()),
+                    sensitive: true,
+                    supports_app_server_rpc: false,
+                },
+            ],
+            logout: Some(ProviderLogoutSpec {
+                command_args: vec_str(&["auth", "logout"]),
+                shares_terminal_login: true,
+                warning: Some("Esta CLI compartilha o login do seu terminal. Desconectar encerrará a sessão no terminal também.".to_string()),
+                clear_env_vars: vec_str(&["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]),
+            }),
+            env_presets: vec![
+                ProviderEnvPreset {
+                    key: "ANTHROPIC_BASE_URL".to_string(),
+                    label: "Base URL / Gateway Anthropic".to_string(),
+                    placeholder: Some("https://api.anthropic.com".to_string()),
+                    sensitive: false,
+                    description: Some("Endpoint compatível opcional para proxy ou gateway.".to_string()),
+                },
+                ProviderEnvPreset {
+                    key: "ANTHROPIC_API_KEY".to_string(),
+                    label: "Chave de API Anthropic".to_string(),
+                    placeholder: Some("sk-ant-...".to_string()),
+                    sensitive: true,
+                    description: Some("Armazenada no cofre seguro do sistema operacional.".to_string()),
+                },
+            ],
+            auth_diagnostics: Some(default_auth_diagnostics()),
             install_hint: Some("npm install -g @anthropic-ai/claude-code".to_string()),
             connect_hint: Some("claude auth login".to_string()),
             badge_code: Some("CC".to_string()),
@@ -716,6 +850,61 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 credential_files: vec_str(&[".codex/auth.json", ".codex/credentials.json"]),
                 free_without_login: false,
             }),
+            auth_flows: vec![
+                ProviderAuthFlowSpec {
+                    id: "browser".to_string(),
+                    kind: AuthFlowKind::Browser,
+                    label: "Entrar no navegador".to_string(),
+                    description: Some("Login oficial ChatGPT / OpenAI via navegador.".to_string()),
+                    command_args: vec_str(&["login"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: true,
+                },
+                ProviderAuthFlowSpec {
+                    id: "device-code".to_string(),
+                    kind: AuthFlowKind::DeviceCode,
+                    label: "Código de dispositivo (device code)".to_string(),
+                    description: Some("Exibe link e código curto para autorizar em outro dispositivo.".to_string()),
+                    command_args: vec_str(&["login", "--device-auth"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "api-key".to_string(),
+                    kind: AuthFlowKind::ApiKey,
+                    label: "Chave de API (OPENAI_API_KEY)".to_string(),
+                    description: Some("Salva no cofre seguro do SO sem expor ao frontend.".to_string()),
+                    command_args: Vec::new(),
+                    env_var: Some("OPENAI_API_KEY".to_string()),
+                    sensitive: true,
+                    supports_app_server_rpc: false,
+                },
+            ],
+            logout: Some(ProviderLogoutSpec {
+                command_args: vec_str(&["logout"]),
+                shares_terminal_login: true,
+                warning: Some("Esta CLI compartilha o login do seu terminal. Desconectar encerrará a sessão do Codex no terminal.".to_string()),
+                clear_env_vars: vec_str(&["OPENAI_API_KEY", "CODEX_API_KEY"]),
+            }),
+            env_presets: vec![
+                ProviderEnvPreset {
+                    key: "OPENAI_BASE_URL".to_string(),
+                    label: "Base URL / Gateway OpenAI".to_string(),
+                    placeholder: Some("https://api.openai.com/v1".to_string()),
+                    sensitive: false,
+                    description: Some("Endpoint compatível opcional para gateway.".to_string()),
+                },
+                ProviderEnvPreset {
+                    key: "OPENAI_API_KEY".to_string(),
+                    label: "Chave de API OpenAI".to_string(),
+                    placeholder: Some("sk-...".to_string()),
+                    sensitive: true,
+                    description: Some("Armazenada no cofre seguro do sistema operacional.".to_string()),
+                },
+            ],
+            auth_diagnostics: Some(default_auth_diagnostics()),
             install_hint: Some("npm install -g @openai/codex".to_string()),
             connect_hint: Some("codex login".to_string()),
             badge_code: Some("CX".to_string()),
@@ -784,6 +973,61 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 ]),
                 free_without_login: true,
             }),
+            auth_flows: vec![
+                ProviderAuthFlowSpec {
+                    id: "free-no-login".to_string(),
+                    kind: AuthFlowKind::FreeNoLogin,
+                    label: "Usar modo gratuito (sem login)".to_string(),
+                    description: Some("Modelos gratuitos disponíveis imediatamente sem conta.".to_string()),
+                    command_args: Vec::new(),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "api-key".to_string(),
+                    kind: AuthFlowKind::ApiKey,
+                    label: "Chave OpenCode Go (OPENCODE_API_KEY)".to_string(),
+                    description: Some("Armazenada no cofre seguro do SO; nunca retorna ao frontend.".to_string()),
+                    command_args: Vec::new(),
+                    env_var: Some("OPENCODE_API_KEY".to_string()),
+                    sensitive: true,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "browser".to_string(),
+                    kind: AuthFlowKind::Browser,
+                    label: "Conectar via opencode auth login".to_string(),
+                    description: Some("Inicia o fluxo oficial de autenticação do OpenCode.".to_string()),
+                    command_args: vec_str(&["auth", "login"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+            ],
+            logout: Some(ProviderLogoutSpec {
+                command_args: vec_str(&["auth", "logout"]),
+                shares_terminal_login: true,
+                warning: Some("Remove a chave salva e encerra o login compartilhado do OpenCode no terminal.".to_string()),
+                clear_env_vars: vec_str(&["OPENCODE_API_KEY"]),
+            }),
+            env_presets: vec![
+                ProviderEnvPreset {
+                    key: "OPENCODE_API_KEY".to_string(),
+                    label: "Chave OpenCode Go".to_string(),
+                    placeholder: Some("oc_...".to_string()),
+                    sensitive: true,
+                    description: Some("Armazenada no cofre seguro do sistema operacional.".to_string()),
+                },
+                ProviderEnvPreset {
+                    key: "OPENAI_BASE_URL".to_string(),
+                    label: "Gateway / Base URL".to_string(),
+                    placeholder: Some("https://...".to_string()),
+                    sensitive: false,
+                    description: Some("Endpoint compatível opcional.".to_string()),
+                },
+            ],
+            auth_diagnostics: Some(default_auth_diagnostics()),
             install_hint: Some("npm install -g opencode-ai".to_string()),
             connect_hint: Some("opencode auth login".to_string()),
             badge_code: Some("OC".to_string()),
@@ -857,6 +1101,61 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 ]),
                 free_without_login: false,
             }),
+            auth_flows: vec![
+                ProviderAuthFlowSpec {
+                    id: "browser".to_string(),
+                    kind: AuthFlowKind::Browser,
+                    label: "Entrar com OAuth (acp --login)".to_string(),
+                    description: Some("Fluxo OAuth oficial da CLI Gemini (agy).".to_string()),
+                    command_args: vec_str(&["acp", "--login"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "paste-code".to_string(),
+                    kind: AuthFlowKind::PasteCode,
+                    label: "Colar código OAuth".to_string(),
+                    description: Some("Útil no Windows/headless quando o navegador não retorna ao app.".to_string()),
+                    command_args: vec_str(&["acp", "--login"]),
+                    env_var: None,
+                    sensitive: false,
+                    supports_app_server_rpc: false,
+                },
+                ProviderAuthFlowSpec {
+                    id: "api-key".to_string(),
+                    kind: AuthFlowKind::ApiKey,
+                    label: "Chave GEMINI_API_KEY".to_string(),
+                    description: Some("Armazenada no cofre seguro do SO.".to_string()),
+                    command_args: Vec::new(),
+                    env_var: Some("GEMINI_API_KEY".to_string()),
+                    sensitive: true,
+                    supports_app_server_rpc: false,
+                },
+            ],
+            logout: Some(ProviderLogoutSpec {
+                command_args: vec_str(&["acp", "--logout"]),
+                shares_terminal_login: true,
+                warning: Some("Esta CLI compartilha o login do seu terminal. Desconectar encerrará a sessão Gemini no terminal.".to_string()),
+                clear_env_vars: vec_str(&["GEMINI_API_KEY"]),
+            }),
+            env_presets: vec![
+                ProviderEnvPreset {
+                    key: "AGY_LLM_GATEWAY_URL".to_string(),
+                    label: "Gateway Gemini (AGY_LLM_GATEWAY_URL)".to_string(),
+                    placeholder: Some("https://...".to_string()),
+                    sensitive: false,
+                    description: Some("Gateway opcional para requisições da CLI agy.".to_string()),
+                },
+                ProviderEnvPreset {
+                    key: "GEMINI_API_KEY".to_string(),
+                    label: "Chave de API Gemini".to_string(),
+                    placeholder: Some("AIza...".to_string()),
+                    sensitive: true,
+                    description: Some("Armazenada no cofre seguro do sistema operacional.".to_string()),
+                },
+            ],
+            auth_diagnostics: Some(default_auth_diagnostics()),
             install_hint: Some("Instale a CLI oficial do Gemini (agy)".to_string()),
             connect_hint: Some("agy acp --login".to_string()),
             badge_code: Some("GM".to_string()),
@@ -864,6 +1163,48 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
             builtin_seed: true,
         },
     ]
+}
+
+fn default_auth_diagnostics() -> ProviderAuthDiagnosticRules {
+    ProviderAuthDiagnosticRules {
+        version_args: vec_str(&["--version"]),
+        unauthorized_401_patterns: vec_str(&[
+            "401",
+            "unauthorized",
+            "invalid api key",
+            "invalid_api_key",
+            "authentication_error",
+            "invalid token",
+            "chave inválida",
+        ]),
+        forbidden_403_patterns: vec_str(&[
+            "403",
+            "forbidden",
+            "permission_error",
+            "plan inactive",
+            "plano inativo",
+            "subscription",
+            "billing",
+            "vpn",
+            "access denied",
+        ]),
+        incompatible_patterns: vec_str(&[
+            "settings.json",
+            "database",
+            "migration",
+            "schema version",
+            "newer version",
+            "incompatible",
+            "unsupported version",
+        ]),
+        unauthorized_401_hint: Some(
+            "Credencial recusada (401). Verifique se a chave ou sessão ainda é válida.".to_string(),
+        ),
+        forbidden_403_hint: Some(
+            "Requisição recusada (403): verifique plano ativo, permissões da conta ou rede/VPN."
+                .to_string(),
+        ),
+    }
 }
 
 fn vec_str(items: &[&str]) -> Vec<String> {
@@ -928,6 +1269,22 @@ fn read_or_seed(dir: &Path, file: &Path) -> Result<Vec<ProviderConfig>, Provider
             }
             if provider.auth_probe.is_none() && seed.auth_probe.is_some() {
                 provider.auth_probe = seed.auth_probe.clone();
+                updated = true;
+            }
+            if provider.auth_flows.is_empty() && !seed.auth_flows.is_empty() {
+                provider.auth_flows = seed.auth_flows.clone();
+                updated = true;
+            }
+            if provider.logout.is_none() && seed.logout.is_some() {
+                provider.logout = seed.logout.clone();
+                updated = true;
+            }
+            if provider.env_presets.is_empty() && !seed.env_presets.is_empty() {
+                provider.env_presets = seed.env_presets.clone();
+                updated = true;
+            }
+            if provider.auth_diagnostics.is_none() && seed.auth_diagnostics.is_some() {
+                provider.auth_diagnostics = seed.auth_diagnostics.clone();
                 updated = true;
             }
             if provider.install_hint.is_none() && seed.install_hint.is_some() {
@@ -1021,6 +1378,10 @@ pub fn parse_json_models(json_text: &str, json_path: Option<&str>) -> Result<Vec
         .ok_or_else(|| "Resposta JSON não contém um array de modelos.".to_string())?;
     Ok(extract_model_ids(items))
 }
+
+#[cfg(test)]
+#[path = "../tests/provider_connection_tests.rs"]
+mod provider_connection_tests;
 
 fn extract_model_ids(items: &[serde_json::Value]) -> Vec<String> {
     let mut models = Vec::new();

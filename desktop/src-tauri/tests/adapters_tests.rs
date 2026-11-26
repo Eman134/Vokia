@@ -612,6 +612,10 @@ fn llm1_adicao_de_provedor_customizado_sem_recompilar_e_persistencia() {
         model_grouping: crate::providers::ModelGroupingMode::Flat,
         effort: None,
         auth_probe: None,
+        auth_flows: vec![],
+        logout: None,
+        env_presets: vec![],
+        auth_diagnostics: None,
         install_hint: None,
         connect_hint: None,
         badge_code: None,
@@ -1038,7 +1042,7 @@ fn llm3_delete_provider_claude_recusado() {
     .expect_err("remoção do provedor claude deve ser recusada");
 
     assert!(
-        err.contains("O provedor padrão 'claude' não pode ser removido"),
+        err.contains("está em uso pelo agente"),
         "mensagem inesperada: {err}"
     );
 
@@ -1469,6 +1473,10 @@ fn llm4_update_ember_llm_aceita_mcp_e_recusa_sem_mcp() {
         model_grouping: crate::providers::ModelGroupingMode::Flat,
         effort: None,
         auth_probe: None,
+        auth_flows: vec![],
+        logout: None,
+        env_presets: vec![],
+        auth_diagnostics: None,
         install_hint: None,
         connect_hint: None,
         badge_code: None,
@@ -1678,6 +1686,10 @@ fn req085_evaluate_provider_status_abstract_probe() {
         model_grouping: crate::providers::ModelGroupingMode::Flat,
         effort: None,
         auth_probe: None,
+        auth_flows: vec![],
+        logout: None,
+        env_presets: vec![],
+        auth_diagnostics: None,
         install_hint: Some("install custom".to_string()),
         connect_hint: None,
         badge_code: Some("IN".to_string()),

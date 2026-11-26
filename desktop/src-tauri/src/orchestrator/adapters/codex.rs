@@ -5,7 +5,7 @@ use serde_json::Value as Json;
 use tokio::process::Command;
 
 use crate::claude::{
-    base_command, classify_provider_error, Access, ClaudeError, Reply, ToolActivity, ToolCategory,
+    base_command_for_provider, classify_provider_error, Access, ClaudeError, Reply, ToolActivity, ToolCategory,
     ToolStatus, TurnActivity, TurnUsage,
 };
 use crate::mcp::McpSession;
@@ -21,7 +21,7 @@ pub(crate) fn build_command(
     access: Access<'_>,
     mcp: Option<&McpSession>,
 ) -> Command {
-    let mut command = base_command(program);
+    let mut command = base_command_for_provider(program, "codex");
     command.kill_on_drop(true);
     command.args(user_args);
     command.args(["exec", "--json", "--skip-git-repo-check"]);

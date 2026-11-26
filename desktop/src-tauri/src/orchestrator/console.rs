@@ -134,7 +134,11 @@ impl<'a> ConsoleSink<'a> {
     pub(super) fn provider_usage(&self, usage: crate::usage::ProviderPlanUsage) {
         if let Some(state) = self.app.try_state::<AppState>() {
             state.usage.record_provider_usage(usage.clone());
-            if !usage.is_exhausted(crate::usage::DEFAULT_PAUSE_THRESHOLD) {
+            let exhausted = state
+                .usage
+                .pause_threshold()
+                .is_some_and(|threshold| usage.is_exhausted(threshold));
+            if !exhausted {
                 let released = state.usage.confirm_provider_renewed(&usage.provider_id, None);
                 if !released.returns.is_empty() {
                     let mut overrides = state

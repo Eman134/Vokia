@@ -11,7 +11,7 @@ mod stream;
 
 pub use activity::{ToolActivity, ToolCategory, ToolDetail, ToolStatus, TurnActivity};
 pub use ask::ask;
-pub(crate) use command::{base_command, timeout_for};
+pub(crate) use command::{base_command, base_command_for_provider, timeout_for};
 pub use command::{kill_process_tree, Access, ProjectAccess, DEFAULT_MODEL};
 pub(crate) use connectivity::is_reachable;
 pub use console::{ConsoleKind, ConsoleLine};

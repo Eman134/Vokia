@@ -135,7 +135,7 @@ pub(super) fn agent_command(
     access: Access<'_>,
     mcp: Option<&McpConfigFile>,
 ) -> Command {
-    let mut command = base_command(program);
+    let mut command = base_command_for_provider(program, "claude");
     command.kill_on_drop(true);
     command.env(TOOL_SEARCH_ENV, TOOL_SEARCH_OFF);
     // Argumentos do usuário e mensagem de `-p` vêm antes das opções variádicas
@@ -209,6 +209,12 @@ fn allowed_with_mcp(level: PermissionLevel, mcp: Option<&McpConfigFile>) -> Stri
         .chain(mcp_tools.iter().cloned())
         .collect::<Vec<_>>()
         .join(",")
+}
+
+pub(crate) fn base_command_for_provider(cli: &Path, provider_id: &str) -> Command {
+    let mut command = base_command(cli);
+    crate::provider_env::apply_global_provider_env(provider_id, &mut command);
+    command
 }
 
 pub(crate) fn base_command(cli: &Path) -> Command {

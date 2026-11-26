@@ -7,6 +7,7 @@ type SettingsControl =
   | { kind: 'permission-grant' }
   | { kind: 'execution-mode' }
   | { kind: 'auto-pause-on-limit' }
+  | { kind: 'usage-pause-threshold' }
   | { kind: 'continuation-enabled' }
   | { kind: 'continuation-max-count' }
   | { kind: 'learning-mode' }
@@ -452,9 +453,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
       { kind: 'usage', label: 'Codex · janela de 5 h', detail: '28% · renova em 3 h 10', percent: 28 },
       {
         kind: 'row',
-        label: 'Pausar o time quando passar de',
+        label: 'Pausar o time quando a cota passar de',
         hint: 'retoma sozinho quando a janela renova',
-        control: { kind: 'input', value: '90', unit: '%' },
+        control: { kind: 'usage-pause-threshold' },
       },
       {
         kind: 'row',

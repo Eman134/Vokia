@@ -43,13 +43,30 @@ pub struct ReleasedLimits {
 /// on one provider/model never stalls agents running on another, and records
 /// `usage_limit_return` entries so agents automatically return to their original model
 /// once `resets_at + 30s` (or a 15-min recheck when reset time is unknown) elapses.
-#[derive(Default)]
 pub struct UsageLimitGate {
     limits: HashMap<(String, String), LimitEntry>,
     returns: HashMap<Agent, UsageLimitReturn>,
+    pause_threshold: Option<u8>,
+}
+
+impl Default for UsageLimitGate {
+    fn default() -> Self {
+        Self {
+            limits: HashMap::new(),
+            returns: HashMap::new(),
+            pause_threshold: Some(super::DEFAULT_PAUSE_THRESHOLD),
+        }
+    }
 }
 
 impl UsageLimitGate {
+    pub fn set_pause_threshold(&mut self, threshold: Option<u8>) {
+        self.pause_threshold = threshold;
+    }
+
+    pub fn pause_threshold(&self) -> Option<u8> {
+        self.pause_threshold
+    }
     pub fn compute_release_at_ms(resets_at_secs: Option<u64>, now_ms: u64) -> u64 {
         match resets_at_secs.filter(|&ts| ts > 0) {
             Some(resets_at) => {

@@ -689,12 +689,20 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("providers", "set_active_llm", "Define o LLM ativo global.", "Para alterar provedor (cli), modelo, modelTier e reasoningEffort ativos globalmente.", schema_set_active_llm),
     exposed("providers", "set_provider_enabled", "Ativa ou desativa um provedor.", "Para habilitar ou desabilitar um provedor sem removê-lo do catálogo.", schema_set_provider_enabled),
     exposed("providers", "save_provider", "Grava a configuração de um provedor.", "Para criar ou atualizar a configuração de um provedor; o id usa letras, números, hífen ou sublinhado.", schema_save_provider),
-    exposed("providers", "delete_provider", "Remove um provedor.", "Para remover um provedor; recusado para o claude e para provedores em uso por agentes.", schema_id),
+    exposed("providers", "delete_provider", "Remove um provedor.", "Para remover um provedor; recusado quando estiver em uso por agentes.", schema_id),
     exposed("providers", "discover_provider_models", "Descobre os modelos disponíveis de um provedor.", "Para descobrir os modelos de um provedor antes de escolher um modelo para um agente.", schema_id),
     exposed("providers", "inspect_cli", "Inspeciona uma CLI e devolve seu texto de ajuda.", "Para ler o --help de uma CLI nova antes de configurá-la como provedor.", schema_inspect_cli),
     exposed("providers", "build_setup_prompt", "Monta o prompt para configurar uma CLI como provedor.", "Para montar o prompt que pede a um agente o JSON de configuração de uma CLI.", empty_object_schema),
     exposed("providers", "test_provider_config", "Testa a configuração de um provedor.", "Para testar uma configuração de provedor com uma chamada real antes de salvá-la.", schema_test_provider_config),
     exposed("providers", "auto_configure_provider", "Configura um provedor automaticamente com um agente.", "Para gerar a configuração de um provedor automaticamente a partir da ajuda da CLI.", empty_object_schema),
+    exposed("providers", "start_provider_login", "Inicia o fluxo de autenticação nativo de um provedor (browser, device-code, paste-code, api-key, free-no-login). Parâmetros: id, flowId (opcional), apiKey (opcional).", "Para iniciar login assistido ou salvar chave API de um provedor.", empty_object_schema),
+    exposed("providers", "get_provider_login_state", "Consulta o estado atual do fluxo de login assistido de um provedor (fase, URL, código curto). Parâmetro: id.", "Para acompanhar o progresso de login em navegador ou device-code.", schema_id),
+    exposed("providers", "submit_provider_login_code", "Envia o código de autenticação via stdin ao processo de login do provedor sem registrar em logs. Parâmetros: id, code.", "Para concluir fluxo paste-code.", empty_object_schema),
+    exposed("providers", "cancel_provider_login", "Cancela um login em andamento e encerra o processo auxiliar da CLI. Parâmetro: id.", "Para interromper autenticação em progresso.", schema_id),
+    exposed("providers", "logout_provider", "Desconecta um provedor executando o comando oficial de logout e limpando chaves salvas. Parâmetro: id.", "Para encerrar a sessão de um provedor.", schema_id),
+    exposed("providers", "list_provider_env", "Lista variáveis de ambiente configuradas de um provedor sem expor valores sensíveis (retorna stored: true). Parâmetro: id.", "Para inspecionar variáveis e gateways configurados de um provedor.", schema_id),
+    exposed("providers", "set_provider_env", "Configura variável de ambiente ou gateway opcional de um provedor (bloqueia nomes reservados e protege sensíveis no cofre do SO). Parâmetros: id, key, value, sensitive.", "Para configurar BASE_URL, gateway ou chave opcional de um provedor.", empty_object_schema),
+    exposed("providers", "delete_provider_env", "Remove uma variável de ambiente configurada de um provedor. Parâmetros: id, key.", "Para remover variável de ambiente ou gateway de um provedor.", empty_object_schema),
     exposed("settings", "db_problem", "Problema detectado ao abrir o banco, se houver.", "Para diagnosticar falha ao abrir o banco: devolve o problema, ou nada se estiver tudo certo.", empty_object_schema),
     exposed("settings", "erase_all_data", "Apaga todos os dados; exige { \"confirm\": true }.", "Para apagar todos os dados do Vokia; ação irreversível que só roda com confirm true, e só depois de o usuário pedir.", schema_erase_all_data),
     exposed("settings", "get_settings", "Devolve as configurações gravadas (inclui continuationEnabled e continuationMaxCount).", "Para ler as configurações gravadas antes de alterar alguma (incluindo continuação automática de turnos).", empty_object_schema),
@@ -1066,6 +1074,30 @@ async fn run(
         }
         "auto_configure_provider" => {
             json_result(providers::auto_configure_provider_exec(app, parse_args(arguments)?).await)
+        }
+        "start_provider_login" => {
+            json_result(providers::start_provider_login_exec(app, parse_args(arguments)?).await)
+        }
+        "get_provider_login_state" => {
+            json_result(providers::get_provider_login_state_exec(app, parse_args(arguments)?))
+        }
+        "submit_provider_login_code" => {
+            json_result(providers::submit_provider_login_code_exec(app, parse_args(arguments)?).await)
+        }
+        "cancel_provider_login" => {
+            json_result(providers::cancel_provider_login_exec(app, parse_args(arguments)?))
+        }
+        "logout_provider" => {
+            json_result(providers::logout_provider_exec(app, parse_args(arguments)?).await)
+        }
+        "list_provider_env" => {
+            json_result(providers::list_provider_env_exec(app, parse_args(arguments)?))
+        }
+        "set_provider_env" => {
+            json_result(providers::set_provider_env_exec(app, parse_args(arguments)?))
+        }
+        "delete_provider_env" => {
+            json_result(providers::delete_provider_env_exec(app, parse_args(arguments)?))
         }
 
         "db_problem" => json_ok(settings::db_problem_exec(app)),

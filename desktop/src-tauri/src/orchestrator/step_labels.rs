@@ -481,7 +481,8 @@ pub fn shorten_home(path: &str, home: Option<&str>) -> String {
 }
 
 pub fn redact_secrets(text: &str) -> String {
-    let step1 = redact_url_credentials(text);
+    let step0 = crate::provider_env::redact_registered_secrets(text);
+    let step1 = redact_url_credentials(&step0);
     let step2 = redact_url_query_secrets(&step1);
     redact_tokens_and_assignments(&step2)
 }

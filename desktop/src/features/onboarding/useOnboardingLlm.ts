@@ -12,7 +12,7 @@ export const useOnboardingLlm = defineStore('onboardingLlm', () => {
   const fallbackCli = ref('')
   const initialized = ref(false)
 
-  async function initFromSettings(availableIds: string[]): Promise<void> {
+  async function initFromSettings(connectedIds: string[]): Promise<void> {
     if (initialized.value) return
     try {
       const settings = await fetchSettings()
@@ -41,8 +41,9 @@ export const useOnboardingLlm = defineStore('onboardingLlm', () => {
     } catch {
       // Settings opcionais no onboarding inicial
     }
-    if (!defaultCli.value && availableIds.length > 0) {
-      defaultCli.value = availableIds[0]
+    // Sem provedor padrão obrigatório: só pré-seleciona se houver algum provedor já conectado.
+    if (!defaultCli.value && connectedIds.length > 0) {
+      defaultCli.value = connectedIds[0]
     }
     initialized.value = true
   }

@@ -13,7 +13,7 @@ use tokio::time::timeout;
 
 use crate::agents::{is_agent_or_replica, Agent};
 use crate::claude::{
-    base_command, classify_provider_error, kill_process_tree, timeout_for, Access, ClaudeError,
+    base_command_for_provider, classify_provider_error, kill_process_tree, timeout_for, Access, ClaudeError,
     ConsoleKind, ConsoleLine, PermissionRequest, PermissionVerdict, Reply, ToolActivity,
     ToolCategory, ToolStatus, TurnActivity, TurnUsage,
 };
@@ -189,7 +189,7 @@ pub fn build_app_server_command(
     user_args: &[String],
     mcp: Option<&McpSession>,
 ) -> Command {
-    let mut command = base_command(program);
+    let mut command = base_command_for_provider(program, "codex");
     command.kill_on_drop(true);
     command.args(user_args);
     command.args(token_saving_config_args(user_args));
