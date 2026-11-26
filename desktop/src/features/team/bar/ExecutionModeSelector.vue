@@ -101,11 +101,7 @@ onUnmounted(() => {
       variant="quiet"
       size="sm"
       class="relative w-7 px-0"
-      :class="[
-        current.colorClass,
-        current.warn && 'bg-danger/12 ring-1 ring-danger/60',
-        modeAnimating && 'mode-shake',
-      ]"
+      :class="[current.colorClass, modeAnimating && 'mode-shake']"
       :aria-label="buttonLabel"
       :title="buttonLabel"
       aria-haspopup="listbox"
@@ -115,14 +111,9 @@ onUnmounted(() => {
       data-testid="execution-mode-selector"
       @press="open = !open"
     >
-      <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path :d="current.icon" />
       </svg>
-      <span
-        v-if="mode === 'bypass'"
-        class="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-full bg-danger animate-pulse motion-reduce:animate-none"
-        aria-hidden="true"
-      />
     </UiButton>
     <div v-if="open" class="absolute left-0 bottom-full z-40 pb-2">
       <ul
@@ -144,10 +135,10 @@ onUnmounted(() => {
             @click="select(option)"
           >
             <span
-              class="mt-0.5 inline-flex size-5.5 shrink-0 items-center justify-center rounded-sm"
-              :class="EXECUTION_MODE_INFO[option].softClass"
+              class="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center"
+              :class="EXECUTION_MODE_INFO[option].colorClass"
             >
-              <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path :d="EXECUTION_MODE_INFO[option].icon" />
               </svg>
             </span>
