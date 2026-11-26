@@ -1888,6 +1888,47 @@ async fn done_cleanup(
         .map_err(FlowError::Worktree)
 }
 
+const DEAD_WORKTREE_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
+const DEAD_WORKTREE_INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+// Varredura periódica de worktrees mortos (concluídos, arquivados ou órfãos) em todos os projetos.
+pub(crate) fn spawn_dead_worktree_sweeper(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(DEAD_WORKTREE_INITIAL_DELAY).await;
+        let mut interval = tokio::time::interval(DEAD_WORKTREE_SWEEP_INTERVAL);
+        loop {
+            interval.tick().await;
+            sweep_all_projects(&app).await;
+        }
+    });
+}
+
+async fn sweep_all_projects(app: &AppHandle) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let db_state = app.state::<DbState>();
+    let Some(db) = db_state.db() else {
+        return;
+    };
+    let Ok(projects) = db.list_projects() else {
+        return;
+    };
+    for project in projects {
+        let Ok(snapshot) = db.list_backlog(project.id) else {
+            continue;
+        };
+        let active_ids: std::collections::HashSet<String> = snapshot
+            .items
+            .iter()
+            .filter(|item| item.column.as_deref() != Some("Done"))
+            .map(|item| item.id.clone())
+            .collect();
+        let root = worktree::project_worktrees_dir(&data_dir, project.id);
+        let _ = worktree::sweep_dead_worktrees(Path::new(&project.path), &root, &active_ids).await;
+    }
+}
+
 // Leva a etapa atual da task à tela e aos eventos; sem banco, a etapa simplesmente não sai.
 pub(crate) fn emit_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
     let state = app.state::<DbState>();

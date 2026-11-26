@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex as StdMutex, PoisonError};
@@ -315,6 +315,45 @@ pub async fn cleanup_done(
         )),
         Err(error) => Err(error),
     }
+}
+
+// Varredura de worktrees mortos: poda referências órfãs no git e limpa pastas cujo card já foi concluído, arquivado ou removido.
+pub async fn sweep_dead_worktrees(
+    project_dir: &Path,
+    worktrees_root: &Path,
+    active_item_ids: &HashSet<String>,
+) -> Result<Vec<String>, WorktreeError> {
+    if !project_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let git_path = find_git()?;
+    let _ = git(&git_path, project_dir, &["worktree", "prune"]).await;
+    if !worktrees_root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let active_safe: HashSet<String> = active_item_ids.iter().map(|id| safe_name(id)).collect();
+    let entries = match std::fs::read_dir(worktrees_root) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut removed = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if active_safe.contains(&name) {
+            continue;
+        }
+        if matches!(cleanup_done(project_dir, worktrees_root, &name).await, Ok(CleanupOutcome::Removed)) {
+            removed.push(name);
+        }
+    }
+    let _ = git(&git_path, project_dir, &["worktree", "prune"]).await;
+    Ok(removed)
 }
 
 #[cfg(test)]

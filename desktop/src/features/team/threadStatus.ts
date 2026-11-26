@@ -74,14 +74,20 @@ export function categorizeThreads<
   return categories.filter((category) => category.items.length > 0)
 }
 
-// Triagem fica no canal #triagem; após aprovação (Ready) a task vira thread e após concluída fica visível por um período antes de ser arquivada.
+// Triagem fica no canal #triagem (Backlog); cards em Ready/In progress/In review aparecem em Threads e Done fica visível até arquivar.
 export function showsAsThread(
-  item: { column: BacklogColumn; isTriaging: boolean; messageCount: number; lastActivity?: number },
+  item: {
+    column: BacklogColumn
+    isTriaging: boolean
+    messageCount: number
+    lastActivity?: number
+    hasSubthreadMessages?: boolean
+  },
   now = Date.now(),
 ): boolean {
-  if (item.isTriaging || item.column === 'Backlog') return false
+  if (item.column === 'Backlog') return false
   if (THREAD_COLUMNS.includes(item.column)) return true
-  if (item.column === DONE_COLUMN && item.messageCount > 0) {
+  if (item.column === DONE_COLUMN && (item.messageCount > 0 || item.hasSubthreadMessages)) {
     const last = item.lastActivity ?? 0
     return last === 0 || now - last <= DONE_THREAD_RETENTION_MS
   }

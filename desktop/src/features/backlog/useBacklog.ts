@@ -58,7 +58,7 @@ export const useBacklog = defineStore('backlog', () => {
         items.value
           .filter(
             (item) =>
-              item.column !== 'Done' &&
+              (item.column ?? DEFAULT_COLUMN) === DEFAULT_COLUMN &&
               (item.triageStep !== undefined ||
                 item.state === 'triagem' ||
                 item.state === 'gerando' ||

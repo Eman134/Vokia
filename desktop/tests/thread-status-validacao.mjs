@@ -32,6 +32,7 @@ test('triagem fica fora das threads; Ready aparece e Done arquiva após o tempo'
   assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 3, lastActivity: now - 1000 }, now), true)
   assert.equal(showsAsThread({ column: 'Done', isTriaging: false, messageCount: 3, lastActivity: now - DONE_THREAD_RETENTION_MS - 1 }, now), false)
   assert.equal(showsAsThread({ column: 'In review', isTriaging: false, messageCount: 0 }, now), true)
+  assert.equal(showsAsThread({ column: 'In progress', isTriaging: true, messageCount: 0 }, now), true)
   assert.equal(showsAsThread({ column: 'Backlog', isTriaging: true, messageCount: 0 }, now), false)
   assert.equal(showsAsThread({ column: 'Ready', isTriaging: false, messageCount: 0 }, now), true)
 })

@@ -109,6 +109,9 @@ const answerDrafts = ref<Record<string, string>>({})
 let previousFocus: HTMLElement | null = null
 
 const item = computed(() => backlog.openItem)
+const pendingQuestions = computed(() =>
+  (item.value?.questions ?? []).filter((question) => !question.selected?.trim()),
+)
 const usage = useItemUsage(() => item.value?.id)
 const descriptionContent = computed(() => extractAttachments(item.value?.description ?? ''))
 
@@ -491,9 +494,9 @@ watch(
             />
           </section>
 
-          <section v-if="item.questions?.length" class="flex flex-col gap-3">
+          <section v-if="pendingQuestions.length" class="flex flex-col gap-3">
             <h3 class="text-label font-semibold text-ink">{{ QUESTIONS_TITLE(leaderName) }}</h3>
-            <div v-for="question in item.questions" :key="question.id" class="flex flex-col gap-1.5">
+            <div v-for="question in pendingQuestions" :key="question.id" class="flex flex-col gap-1.5">
               <p class="text-control text-ink">{{ question.text }}</p>
               <div class="flex flex-wrap gap-1.5">
                 <UiChip

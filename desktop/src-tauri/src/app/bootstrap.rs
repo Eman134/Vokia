@@ -90,5 +90,6 @@ pub(crate) fn setup(app: &mut App) -> Result<(), Box<dyn Error>> {
         app.handle().clone(),
     ));
     crate::orchestrator::spawn_idle_reaper(app.handle().clone());
+    crate::orchestrator::spawn_dead_worktree_sweeper(app.handle().clone());
     shell::setup_tray(app)
 }

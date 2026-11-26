@@ -110,17 +110,20 @@ export const useThreads = defineStore('threads', () => {
       }
     }
 
-    function rollup(node: TaskThread): number {
+    function rollup(node: TaskThread): { maxActivity: number; hasMessages: boolean } {
       let maxActivity = node.lastActivity
+      let hasMessages = node.messageCount > 0
       for (const sub of node.subthreads) {
-        const subMax = rollup(sub)
-        if (subMax > maxActivity) maxActivity = subMax
+        const subInfo = rollup(sub)
+        if (subInfo.maxActivity > maxActivity) maxActivity = subInfo.maxActivity
+        if (subInfo.hasMessages) hasMessages = true
       }
       node.lastActivity = maxActivity
-      return maxActivity
+      return { maxActivity, hasMessages }
     }
+    const hasMessagesByRoot = new Map<string, boolean>()
     for (const root of roots) {
-      rollup(root)
+      hasMessagesByRoot.set(root.itemId, rollup(root).hasMessages)
     }
 
     return roots
@@ -130,6 +133,7 @@ export const useThreads = defineStore('threads', () => {
           isTriaging: Boolean(root.isTriaging),
           messageCount: root.messageCount,
           lastActivity: root.lastActivity,
+          hasSubthreadMessages: hasMessagesByRoot.get(root.itemId) ?? false,
         }),
       )
       .sort((a, b) => b.lastActivity - a.lastActivity)

@@ -40,7 +40,7 @@ pub(crate) use turns::with_cache;
 pub use emit::now_millis;
 pub use error::{FlowError, RequestOutcome};
 pub use flow::{answer_decision, handle_request, report_failure};
-pub(crate) use flow::{schedule_done_cleanup, spawn_delegation_watchdog};
+pub(crate) use flow::{schedule_done_cleanup, spawn_dead_worktree_sweeper, spawn_delegation_watchdog};
 pub(crate) use memory_review::{
     capture_review_snapshot, schedule_memory_review, spawn_memory_review_idle_watcher,
     ReviewTrigger,
