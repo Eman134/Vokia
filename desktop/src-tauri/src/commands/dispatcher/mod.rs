@@ -70,6 +70,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("team", "send_request", "Envia um pedido de texto a um agente de um projeto. Parâmetros: projectId, to, text; opcionais: itemId, channelId, attachments, steer (boolean para corrigir um turno ativo sem esperar o término).", "Para enviar um pedido a um agente em nome do usuário. Exige o projeto e o agente destino; use depois de conferir o projeto com list_projects.", empty_object_schema),
     exposed("team", "answer_permission", "Responde a um pedido de permissão pendente. Parâmetros: id, allow, always, root (opcional; com always grava a regra do comando raiz \"<raiz> *\" e vale para qualquer argumento), reason (opcional, só na negação).", "Para aprovar ou negar um pedido de permissão pendente de uma ferramenta; precisa do id do pedido.", empty_object_schema),
     exposed("team", "answer_decision", "Responde a uma decisão pendente do fluxo.", "Para responder uma decisão pendente pedida ao usuário; precisa do id da decisão e do texto da resposta.", empty_object_schema),
+    exposed("team", "dismiss_decision", "Ignora/descarta uma decisão pendente do fluxo sem enviar resposta ao agente.", "Para descartar uma decisão pendente que não precisa de resposta (id).", schema_dismiss_decision),
     exposed("team", "list_agent_pauses", "Lista os agentes pausados por projeto.", "Para saber quais agentes estão pausados em cada projeto antes de delegar trabalho.", empty_object_schema),
     exposed("team", "list_interrupted_runs", "Lista as execuções interrompidas.", "Para ver execuções interrompidas que ainda podem ser retomadas ou descartadas.", empty_object_schema),
     exposed("team", "resume_interrupted_run", "Retoma uma execução interrompida de onde parou, sem reenviar o pedido: entrega ao agente original (ou ao Ember, se já houve delegações) o estado parcial com delegações, mensagens e ferramentas já registradas. Parâmetro: id (de list_interrupted_runs). Devolve o RequestOutcome.", "Para continuar uma execução interrompida; liste antes com list_interrupted_runs e use o id dela.", empty_object_schema),
@@ -318,6 +319,9 @@ async fn run(
         }
         "answer_decision" => {
             json_result(team::answer_decision_exec(app, parse_args(arguments)?).await)
+        }
+        "dismiss_decision" => {
+            json_result(team::dismiss_decision_exec(app, parse_args(arguments)?))
         }
         "list_agent_pauses" => json_result(team::list_agent_pauses_exec(app)),
         "list_interrupted_runs" => json_result(team::list_interrupted_runs_exec(app)),

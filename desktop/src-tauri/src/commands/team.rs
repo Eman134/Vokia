@@ -54,6 +54,12 @@ pub(crate) struct AnswerDecisionArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct DismissDecisionArgs {
+    pub id: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct InterruptedRunArgs {
     pub id: i64,
 }
@@ -204,6 +210,14 @@ pub(crate) async fn answer_decision_exec(
 ) -> Result<(), String> {
     orchestrator::answer_decision(app, &app.state::<AppState>(), args.id, &args.answer)
         .await
+        .map_err(|error| error.to_string())
+}
+
+pub(crate) fn dismiss_decision_exec(
+    app: &AppHandle,
+    args: DismissDecisionArgs,
+) -> Result<(), String> {
+    orchestrator::dismiss_decision(app, &app.state::<AppState>(), args.id)
         .map_err(|error| error.to_string())
 }
 
@@ -401,6 +415,11 @@ pub fn answer_permission(
 #[tauri::command]
 pub async fn answer_decision(app: AppHandle, id: u64, answer: String) -> Result<(), String> {
     answer_decision_exec(&app, AnswerDecisionArgs { id, answer }).await
+}
+
+#[tauri::command]
+pub fn dismiss_decision(app: AppHandle, id: u64) -> Result<(), String> {
+    dismiss_decision_exec(&app, DismissDecisionArgs { id })
 }
 
 #[tauri::command]

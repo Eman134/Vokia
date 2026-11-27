@@ -16,6 +16,7 @@ const CLI_PROBLEM_COMMAND = 'cli_problem'
 const SEND_REQUEST_COMMAND = 'send_request'
 const ANSWER_PERMISSION_COMMAND = 'answer_permission'
 const ANSWER_DECISION_COMMAND = 'answer_decision'
+const DISMISS_DECISION_COMMAND = 'dismiss_decision'
 const CHECK_CONNECTION_COMMAND = 'check_connection'
 const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
 const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
@@ -215,6 +216,10 @@ export function answerPermission(
 
 export function answerDecision(id: number, answer: string): Promise<void> {
   return invoke<void>(ANSWER_DECISION_COMMAND, { id, answer })
+}
+
+export function dismissDecision(id: number): Promise<void> {
+  return invoke<void>(DISMISS_DECISION_COMMAND, { id })
 }
 
 export function listAgentPauses(): Promise<AgentPause[]> {

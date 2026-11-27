@@ -247,6 +247,18 @@ pub async fn answer_decision(
     result.map(|_| ())
 }
 
+pub fn dismiss_decision(app: &AppHandle, state: &AppState, id: u64) -> Result<(), FlowError> {
+    let decision = {
+        let mut decisions = state
+            .decisions
+            .lock()
+            .map_err(|_| FlowError::DecisionsPoisoned)?;
+        decisions.remove(&id).ok_or(FlowError::UnknownDecision)?
+    };
+    reconcile_waiting(app, state, decision.project_id);
+    Ok(())
+}
+
 // Validação final: "Concluir" fecha o card sem falar com agente; "Devolver: <motivo>" volta a task ao líder.
 async fn answer_validation(
     app: &AppHandle,

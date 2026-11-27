@@ -77,6 +77,11 @@ function submitChoice(): void {
   }
   decisions.answer(props.card.decisionId, text, optionMessage(props.card.kind, name.value, text))
 }
+
+function dismissChoice(): void {
+  if (props.card.decisionId === null) return
+  decisions.dismiss(props.card.decisionId, `Decisão de ${name.value} ignorada`)
+}
 </script>
 
 <template>
@@ -103,7 +108,10 @@ function submitChoice(): void {
       </div>
       <UiField v-model="otherText" class="mt-2" :label="OTHER_FIELD_LABEL" @keydown.enter.prevent="submitChoice" />
       <div class="mt-2 flex items-center justify-end gap-2">
-        <span v-if="card.kind === 'escolha' && chosenAnswer === ''" class="text-caption text-muted">{{ CHOOSE_HINT }}</span>
+        <span v-if="card.kind === 'escolha' && chosenAnswer === ''" class="mr-auto text-caption text-muted">{{ CHOOSE_HINT }}</span>
+        <UiButton variant="quiet" size="sm" data-testid="decision-dismiss" @press="dismissChoice">
+          Ignorar
+        </UiButton>
         <UiButton variant="approve" size="sm" :disabled="chosenAnswer === ''" @press="submitChoice">
           {{ card.kind === 'escolha' ? CHOOSE_LABEL : ANSWER_LABEL }}
         </UiButton>
@@ -122,6 +130,9 @@ function submitChoice(): void {
       </UiButton>
       <UiButton v-if="card.kind === 'validacao'" variant="quiet" size="sm" @press="returning = !returning">
         {{ VALIDATION_RETURN_LABEL }}
+      </UiButton>
+      <UiButton v-if="card.decisionId !== null" variant="quiet" size="sm" data-testid="decision-dismiss" @press="dismissChoice">
+        Ignorar
       </UiButton>
     </div>
     <div v-if="card.kind === 'validacao' && returning" class="mt-2 flex items-end gap-2">

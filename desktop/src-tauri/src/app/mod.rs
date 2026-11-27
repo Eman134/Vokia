@@ -19,6 +19,7 @@ pub(crate) fn run() {
             commands::team::send_request,
             commands::team::answer_permission,
             commands::team::answer_decision,
+            commands::team::dismiss_decision,
             commands::team::list_agent_pauses,
             commands::team::list_interrupted_runs,
             commands::team::resume_interrupted_run,

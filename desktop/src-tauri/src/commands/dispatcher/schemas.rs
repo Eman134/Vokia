@@ -556,3 +556,12 @@ pub(super) fn schema_stop_agent_turn() -> Value {
     )
 }
 
+pub(super) fn schema_dismiss_decision() -> Value {
+    obj_schema(
+        json!({
+            "id": { "type": "integer", "description": "Id da decisão pendente a ignorar/descartar" },
+        }),
+        &["id"],
+    )
+}
+

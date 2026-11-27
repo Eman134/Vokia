@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { useBalloons } from '../balloon/useBalloons'
 import { useProjects } from '../projects/useProjects'
 import type { Agent, VokiaDecision } from '../team/events'
-import { answerDecision } from '../team/teamApi'
+import { answerDecision, dismissDecision } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
 import { useLogs } from '../team/useLogs'
 import { UNDO_WINDOW_MS, type CardKind } from './decisionCopy'
@@ -28,7 +28,7 @@ export interface ResolvedEntry {
 
 interface Awaiting {
   decision: VokiaDecision
-  answer: string
+  answer: string | null
   timer: ReturnType<typeof setTimeout>
 }
 
@@ -114,6 +114,17 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.set(id, { decision, answer: text, timer: setTimeout(() => void send(id), UNDO_WINDOW_MS) })
   }
 
+  function dismiss(id: number, message = 'Decisão ignorada'): void {
+    const decision = pending.value.find((candidate) => candidate.id === id)
+    if (decision === undefined) {
+      return
+    }
+    pending.value = pending.value.filter((candidate) => candidate.id !== id)
+    resolved.value.push({ key: `decisao-${id}`, message, decisionId: id, sent: false })
+    logAnswer({ decisionId: id, text: '', kind: 'answered' })
+    awaiting.set(id, { decision, answer: null, timer: setTimeout(() => void send(id), UNDO_WINDOW_MS) })
+  }
+
   async function send(id: number): Promise<void> {
     const entry = awaiting.get(id)
     if (entry === undefined) {
@@ -125,7 +136,11 @@ export const useDecisions = defineStore('decisions', () => {
       record.sent = true
     }
     try {
-      await answerDecision(id, entry.answer)
+      if (entry.answer === null) {
+        await dismissDecision(id)
+      } else {
+        await answerDecision(id, entry.answer)
+      }
     } catch (error) {
       feed.feed.push({ type: 'error', message: String(error) })
     }
@@ -168,5 +183,5 @@ export const useDecisions = defineStore('decisions', () => {
     awaiting.clear()
   }
 
-  return { pending, resolved, answerLog, answerLogTotal, cards, pendingCount, open, apply, answer, undo, answerPermission, setOpen, toggle, stop }
+  return { pending, resolved, answerLog, answerLogTotal, cards, pendingCount, open, apply, answer, dismiss, undo, answerPermission, setOpen, toggle, stop }
 })
