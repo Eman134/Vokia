@@ -23,6 +23,7 @@ pub(crate) fn run() {
             commands::team::resume_interrupted_run,
             commands::team::discard_interrupted_run,
             commands::team::set_agent_paused,
+            commands::team::stop_agent_turn,
             commands::team::list_queued_requests,
             commands::team::enqueue_queued_request,
             commands::team::update_queued_request,

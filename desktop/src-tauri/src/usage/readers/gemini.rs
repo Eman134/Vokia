@@ -58,9 +58,16 @@ pub fn default_antigravity_token_paths() -> Vec<PathBuf> {
         push_unique_path(
             &mut paths,
             gemini_dir
+                .join("antigravity-acp")
+                .join("antigravity-oauth-token"),
+        );
+        push_unique_path(
+            &mut paths,
+            gemini_dir
                 .join("antigravity-cli")
                 .join("antigravity-oauth-token"),
         );
+        push_unique_path(&mut paths, gemini_dir.join("oauth_creds.json"));
     }
     if let Some(home) = home_dir() {
         let gemini_home = home.join(".gemini");
@@ -68,9 +75,16 @@ pub fn default_antigravity_token_paths() -> Vec<PathBuf> {
         push_unique_path(
             &mut paths,
             gemini_home
+                .join("antigravity-acp")
+                .join("antigravity-oauth-token"),
+        );
+        push_unique_path(
+            &mut paths,
+            gemini_home
                 .join("antigravity-cli")
                 .join("antigravity-oauth-token"),
         );
+        push_unique_path(&mut paths, gemini_home.join("oauth_creds.json"));
         push_unique_path(
             &mut paths,
             home.join(".config")

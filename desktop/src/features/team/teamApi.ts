@@ -19,6 +19,7 @@ const ANSWER_DECISION_COMMAND = 'answer_decision'
 const CHECK_CONNECTION_COMMAND = 'check_connection'
 const LIST_AGENT_PAUSES_COMMAND = 'list_agent_pauses'
 const SET_AGENT_PAUSED_COMMAND = 'set_agent_paused'
+const STOP_AGENT_TURN_COMMAND = 'stop_agent_turn'
 const LIST_AGENTS_COMMAND = 'list_agents'
 const AVAILABLE_PROVIDERS_COMMAND = 'available_providers'
 const CREATE_AGENT_COMMAND = 'create_agent'
@@ -222,6 +223,14 @@ export function listAgentPauses(): Promise<AgentPause[]> {
 
 export function setAgentPaused(projectId: number, agent: Agent, paused: boolean): Promise<void> {
   return invoke<void>(SET_AGENT_PAUSED_COMMAND, { projectId, agent, paused })
+}
+
+export function stopAgentTurn(
+  projectId: number,
+  agent: Agent,
+  itemId?: string,
+): Promise<boolean> {
+  return invoke<boolean>(STOP_AGENT_TURN_COMMAND, { projectId, agent, itemId })
 }
 
 export function listQueuedRequests(): Promise<QueuedRequestRecord[]> {

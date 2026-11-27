@@ -9,8 +9,6 @@ import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { HAND_MARK_CLASSES, INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import AgentPortrait from './AgentPortrait.vue'
-import { agentName } from './agents'
-import type { Agent } from './events'
 import type { ThreadCategoryKey, ThreadStatus } from './threadStatus'
 import type { ConversationScreen } from './timeline'
 import { useFeed } from './useFeed'
@@ -64,10 +62,6 @@ function toggleSubthreads(): void {
 
 function threadShown(itemId: string): boolean {
   return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
-}
-
-function threadAgentShown(itemId: string, agent: Agent): boolean {
-  return feed.screen.kind === 'thread' && feed.screen.itemId === itemId && feed.screen.agent === agent
 }
 
 function indicatorOf(screen: ConversationScreen, shown: boolean): UnreadState {
@@ -166,27 +160,6 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
         <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
       </button>
     </div>
-
-    <ul
-      v-if="categoryKey !== 'done' && (thread.participants.length > 1 || threadShown(thread.itemId)) && thread.participants.length > 0"
-      class="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-line pl-2"
-    >
-      <li v-for="participant in thread.participants" :key="`${thread.itemId}-${participant}`">
-        <button
-          type="button"
-          class="flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-left text-tiny transition-colors"
-          :class="threadAgentShown(thread.itemId, participant) ? 'bg-surface-2 font-semibold text-ink' : 'text-muted hover:bg-surface-2 hover:text-ink'"
-          @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId, agent: participant })"
-        >
-          <AgentPortrait :who="participant" :size="14" class="shrink-0" />
-          <span class="min-w-0 flex-1 truncate">{{ agentName(participant) }}</span>
-          <span
-            v-if="feed.stateOf(participant) === 'thinking' || feed.stateOf(participant) === 'sending'"
-            class="size-1.5 shrink-0 rounded-full bg-ok animate-pulse"
-          />
-        </button>
-      </li>
-    </ul>
 
     <ul
       v-if="thread.subthreads.length > 0 && subthreadsOpen"

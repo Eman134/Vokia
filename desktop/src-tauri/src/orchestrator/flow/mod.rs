@@ -632,6 +632,43 @@ pub(crate) async fn stop_task_flow(
     Ok(!active_keys.is_empty() || had_pending)
 }
 
+/// Interrompe imediatamente o turno atual de um agente (sem pausá-lo globalmente) e registra "Parado" na conversa.
+pub(crate) async fn stop_agent_turn(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    agent: &Agent,
+    item_id: Option<&str>,
+) -> Result<bool, FlowError> {
+    state.continuations.cancel_agent(project_id, agent);
+    let key = SessionKey {
+        project_id,
+        agent: agent.clone(),
+    };
+    let interrupted = state.sessions.interrupt_turn(&key).await.unwrap_or(false);
+    let active_item = if let Ok(mut flow) = state.flow.lock() {
+        flow.running.remove(&key)
+    } else {
+        None
+    };
+    let effective_item = item_id.map(str::to_string).or(active_item);
+    let _ = emit_state(
+        app,
+        project_id,
+        agent.clone(),
+        AgentState::Idle,
+        effective_item.as_deref(),
+    );
+    let _ = emit_feed_note(
+        app,
+        project_id,
+        Speaker::from(agent.clone()),
+        "Parado",
+        now_millis()?,
+    );
+    Ok(interrupted)
+}
+
 fn push_pending_job(
     app: &AppHandle,
     pending: &mut VecDeque<QueuedJob>,

@@ -68,6 +68,14 @@ pub(crate) struct SetAgentPausedArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct StopAgentTurnArgs {
+    pub project_id: i64,
+    pub agent: Agent,
+    pub item_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct EnqueueQueuedRequestArgs {
     pub project_id: i64,
     pub to: Agent,
@@ -251,6 +259,22 @@ pub(crate) fn set_agent_paused_exec(
     Ok(())
 }
 
+pub(crate) async fn stop_agent_turn_exec(
+    app: &AppHandle,
+    args: StopAgentTurnArgs,
+) -> Result<bool, String> {
+    ensure_agent_exists(&app.state::<AgentRegistry>(), &args.agent)?;
+    orchestrator::stop_agent_turn(
+        app,
+        &app.state::<AppState>(),
+        args.project_id,
+        &args.agent,
+        args.item_id.as_deref(),
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
 pub(crate) fn list_queued_requests_exec(app: &AppHandle) -> Result<Vec<QueuedRequestRecord>, String> {
     let state = app.state::<DbState>();
     let db = state.require().map_err(|error| error.to_string())?;
@@ -414,6 +438,24 @@ pub fn set_agent_paused(
             paused,
         },
     )
+}
+
+#[tauri::command]
+pub async fn stop_agent_turn(
+    app: AppHandle,
+    project_id: i64,
+    agent: Agent,
+    item_id: Option<String>,
+) -> Result<bool, String> {
+    stop_agent_turn_exec(
+        &app,
+        StopAgentTurnArgs {
+            project_id,
+            agent,
+            item_id,
+        },
+    )
+    .await
 }
 
 #[tauri::command]

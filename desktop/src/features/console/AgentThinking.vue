@@ -9,7 +9,8 @@ import TurnPlanCard from '../team/TurnPlanCard.vue'
 import { useTurnPlans } from '../team/useTurnPlans'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
-import { useAgentControl } from '../panel/useAgentControl'
+import { useProjects } from '../projects/useProjects'
+import { stopAgentTurn } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
 import { currentTurn } from './consoleTurn'
 import { useConsole } from './useConsole'
@@ -26,16 +27,17 @@ const DOT_ANIMATIONS = ['animate-dot-1', 'animate-dot-2', 'animate-dot-3']
 
 const consoleStore = useConsole()
 const turnPlans = useTurnPlans()
-const control = useAgentControl()
+const projects = useProjects()
 const feed = useFeed()
 const stopping = ref(false)
 const now = ref(Date.now())
 
 async function stopAgent(): Promise<void> {
-  if (stopping.value || control.isPaused(props.agent.id)) return
+  const projectId = projects.selected?.id
+  if (stopping.value || projectId === undefined) return
   stopping.value = true
   try {
-    await control.pause(props.agent.id)
+    await stopAgentTurn(projectId, props.agent.id, props.itemId)
   } catch (error) {
     feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
   } finally {

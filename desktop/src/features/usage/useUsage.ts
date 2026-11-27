@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useProviders } from '../providers/useProviders'
 import type {
   PlanUsageSnapshot,
   ProviderPlanUsage,
@@ -65,8 +66,19 @@ export const useUsage = defineStore('usage', () => {
     }
   }
 
+  const providersStore = useProviders()
+  const disabledProviderIds = computed(() => {
+    const disabled = new Set<string>()
+    for (const entry of providersStore.providers) {
+      if (!entry.enabled) disabled.add(entry.id)
+    }
+    return disabled
+  })
+
   const providerList = computed<ProviderPlanUsage[]>(() =>
-    Object.values(providers.value).sort((a, b) => a.providerId.localeCompare(b.providerId)),
+    Object.values(providers.value)
+      .filter((entry) => !disabledProviderIds.value.has(entry.providerId))
+      .sort((a, b) => a.providerId.localeCompare(b.providerId)),
   )
 
   const latestUpdatedAtMs = computed<number | null>(() => {
@@ -221,6 +233,9 @@ export const useUsage = defineStore('usage', () => {
   async function start(): Promise<void> {
     if (running) return
     running = true
+    if (providersStore.providers.length === 0) {
+      void providersStore.load().catch(() => {})
+    }
     try {
       const stopListening = await listenUsageUpdates({
         onProviderUsage: applyProviderUsage,

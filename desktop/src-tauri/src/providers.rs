@@ -1105,6 +1105,7 @@ pub(crate) fn initial_providers() -> Vec<ProviderConfig> {
                 env_vars: vec_str(&["GEMINI_API_KEY"]),
                 credential_files: vec_str(&[
                     ".gemini/antigravity-oauth-token",
+                    ".gemini/antigravity-acp/antigravity-oauth-token",
                     ".gemini/antigravity-cli/antigravity-oauth-token",
                     ".gemini/oauth_creds.json",
                 ]),
