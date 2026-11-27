@@ -19,22 +19,24 @@ export const useTriage = defineStore('triage', () => {
   const withoutLeader = ref<string[]>([])
   const selectedTriageId = ref<string | null>(null)
   const queue = ref<string[]>([])
-  const activeId = ref<string | null>(null)
-  let draining = false
+  const activeIds = ref<string[]>([])
+  const activeId = computed(() => activeIds.value[0] ?? null)
+  const TRIAGE_CONCURRENCY = 3
+  let activeWorkers = 0
 
-  const isBatchActive = computed(() => activeId.value !== null || queue.value.length > 0)
+  const isBatchActive = computed(() => activeIds.value.length > 0 || queue.value.length > 0)
 
   function isQueued(itemId: string): boolean {
     return queue.value.includes(itemId)
   }
 
   function isRunning(itemId: string): boolean {
-    return activeId.value === itemId
+    return activeIds.value.includes(itemId)
   }
 
   function clearBatch(): void {
     queue.value = []
-    activeId.value = null
+    activeIds.value = []
   }
 
   watch(
@@ -44,34 +46,40 @@ export const useTriage = defineStore('triage', () => {
     },
   )
 
-  async function drainBatch(): Promise<void> {
-    if (draining) return
-    draining = true
-    const batchProjectId = projects.selected?.id
-    const itemPlan = useItemPlan()
+  async function runTriageWorker(batchProjectId: number | undefined, itemPlan: ReturnType<typeof useItemPlan>): Promise<void> {
+    activeWorkers += 1
     try {
       while (queue.value.length > 0 && projects.selected?.id === batchProjectId) {
         const nextId = queue.value[0]
         queue.value = queue.value.slice(1)
-        activeId.value = nextId
+        activeIds.value = [...activeIds.value, nextId]
         try {
           await itemPlan.requestAndWait(nextId)
         } catch (error) {
           feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
         } finally {
-          if (activeId.value === nextId) activeId.value = null
+          activeIds.value = activeIds.value.filter((id) => id !== nextId)
         }
       }
     } finally {
-      draining = false
+      activeWorkers -= 1
+    }
+  }
+
+  function drainBatch(): void {
+    const batchProjectId = projects.selected?.id
+    const itemPlan = useItemPlan()
+    const slots = Math.min(TRIAGE_CONCURRENCY, queue.value.length)
+    while (activeWorkers < slots) {
+      void runTriageWorker(batchProjectId, itemPlan)
     }
   }
 
   function enqueueBatch(itemIds: readonly string[]): void {
-    const fresh = itemIds.filter((id) => id !== activeId.value && !queue.value.includes(id))
+    const fresh = itemIds.filter((id) => !activeIds.value.includes(id) && !queue.value.includes(id))
     if (fresh.length === 0) return
     queue.value = [...queue.value, ...fresh]
-    void drainBatch()
+    drainBatch()
   }
 
   function setWithoutLeader(itemId: string, missing: boolean): void {

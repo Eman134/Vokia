@@ -20,8 +20,8 @@ import { ASK_PROJECT_NOTICE, NO_PROJECT_NOTICE, resolveProject } from './project
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
 
-// 'queued' e 'steered' não são desfechos finais: o pedido segue no turno ou aguarda o evento request-settled.
-export type RunResult = Exclude<RequestOutcome, 'queued' | 'steered'> | 'cancelled'
+// 'started', 'queued' e 'steered' não são desfechos finais: o pedido segue em paralelo/turno ou aguarda request-settled.
+export type RunResult = Exclude<RequestOutcome, 'started' | 'queued' | 'steered'> | 'cancelled'
 
 export interface QueuedRequest {
   id: number
@@ -50,8 +50,10 @@ export const useRequests = defineStore('requests', () => {
   const feed = useFeed()
   const connection = useConnection()
   const loaded = ref(false)
-  let draining = false
-  let inFlight: QueuedRequest | null = null
+  // Uma raia por (projeto, agente): agentes e projetos distintos rodam em paralelo sem bloquear uns aos outros.
+  const drainingLanes = new Set<string>()
+  const inFlightByLane = new Map<string, QueuedRequest>()
+  const laneKey = (projectId: number, to: Agent): string => `${projectId}:${to}`
   // Callbacks de pedidos com onSettled, por id, até o término (resposta do comando ou evento request-settled).
   const waiting = new Map<number, (result: RunResult) => void>()
 
@@ -111,8 +113,8 @@ export const useRequests = defineStore('requests', () => {
         request.attachments,
         steer,
       )
-      if (outcome === 'queued') {
-        if (request.onSettled === undefined || waiting.has(request.id)) {
+      if (outcome === 'queued' || outcome === 'started') {
+        if (outcome === 'queued' && (request.onSettled === undefined || waiting.has(request.id))) {
           runCallback(() => request.onQueued?.(request.id))
         }
         return
@@ -135,15 +137,16 @@ export const useRequests = defineStore('requests', () => {
     return !request.editing && !control.isPaused(request.to, request.projectId)
   }
 
-  // Um drain por vez: o backend já roda o fluxo inteiro dentro de send_request, então esperar cada envio mantém a ordem.
-  async function drain(): Promise<void> {
-    if (draining || !feed.pausesLoaded || !loaded.value) {
+  async function drainLane(lane: string): Promise<void> {
+    if (drainingLanes.has(lane) || !feed.pausesLoaded || !loaded.value) {
       return
     }
-    draining = true
+    drainingLanes.add(lane)
     try {
       for (;;) {
-        const index = queue.value.findIndex(isDispatchable)
+        const index = queue.value.findIndex(
+          (request) => laneKey(request.projectId, request.to) === lane && isDispatchable(request),
+        )
         const head = queue.value[index]
         if (head === undefined) {
           break
@@ -152,15 +155,32 @@ export const useRequests = defineStore('requests', () => {
         void removeQueuedRequest(head.id).catch((error) => {
           feed.feed.push({ type: 'error', message: `Não foi possível remover o pedido da fila: ${String(error)}` })
         })
-        inFlight = head
+        inFlightByLane.set(lane, head)
         try {
           await dispatch(head)
         } finally {
-          inFlight = null
+          inFlightByLane.delete(lane)
         }
       }
     } finally {
-      draining = false
+      drainingLanes.delete(lane)
+    }
+  }
+
+  function drain(): void {
+    if (!feed.pausesLoaded || !loaded.value) {
+      return
+    }
+    const lanes = new Set<string>()
+    for (const request of queue.value) {
+      if (isDispatchable(request)) {
+        lanes.add(laneKey(request.projectId, request.to))
+      }
+    }
+    for (const lane of lanes) {
+      if (!drainingLanes.has(lane)) {
+        void drainLane(lane)
+      }
     }
   }
 
@@ -264,6 +284,16 @@ export const useRequests = defineStore('requests', () => {
     void drain()
   }
 
+  function cancelForItem(projectId: number, itemId: string): boolean {
+    const matching = queue.value.filter(
+      (request) => request.projectId === projectId && request.itemId === itemId,
+    )
+    for (const request of matching) {
+      removeQueued(request.id)
+    }
+    return matching.length > 0
+  }
+
   function hasPendingWork(projectId: number): boolean {
     return (
       queue.value.some((request) => request.projectId === projectId) ||
@@ -301,13 +331,9 @@ export const useRequests = defineStore('requests', () => {
     if (project.id === selected?.id) {
       return project.id
     }
-    // Ember delega entre projetos diretamente pela ActionBar sem ser bloqueado por trabalho em andamento em outro projeto.
-    if (recipient === DEFAULT_RECIPIENT) {
+    // Ember ou envio para outro projeto com trabalho em andamento segue direto em paralelo sem bloquear o usuário.
+    if (recipient === DEFAULT_RECIPIENT || (selected !== null && hasPendingWork(selected.id))) {
       return project.id
-    }
-    if (selected !== null && hasPendingWork(selected.id)) {
-      feed.notify(`Há agentes trabalhando em #${selected.name}. Espere terminar para enviar um pedido a #${project.name}.`)
-      return null
     }
     try {
       await projects.select(project.id)
@@ -393,11 +419,13 @@ export const useRequests = defineStore('requests', () => {
     }
 
     const paused = control.isPaused(recipient, projectId)
-    const waitingBefore = queue.value.filter(isDispatchable).length
+    const waitingBefore = queue.value.filter(
+      (request) => request.projectId === projectId && request.to === recipient && isDispatchable(request),
+    ).length
     const busyState = feed.activity[projectAgentKey(projectId, recipient)]
-    const runningHere = inFlight !== null && inFlight.to === recipient && inFlight.projectId === projectId
+    const runningHere = inFlightByLane.has(laneKey(projectId, recipient))
     const externalBusy = (busyState === 'sending' || busyState === 'thinking') && !runningHere
-    const ahead = paused ? null : (inFlight === null ? 0 : 1) + waitingBefore + (externalBusy ? 1 : 0)
+    const ahead = paused ? null : (runningHere ? 1 : 0) + waitingBefore + (externalBusy ? 1 : 0)
     const record = await enqueueQueuedRequest({
       projectId,
       to: recipient,
@@ -450,5 +478,6 @@ export const useRequests = defineStore('requests', () => {
     cancelEdit,
     moveQueued,
     removeQueued,
+    cancelForItem,
   }
 })
