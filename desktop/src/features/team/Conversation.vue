@@ -292,7 +292,8 @@ watch(
     () => feed.screen,
     () =>
       scopedPendingAgents.value.reduce(
-        (total, agent) => total + (feed.stateOf(agent.id) === 'thinking' ? consoleStore.entriesOf(agent.id).length : 0),
+        (total, agent) =>
+          total + (feed.stateOf(agent.id) === 'thinking' ? (consoleStore.entriesOf(agent.id).at(-1)?.seq ?? 0) : 0),
         0,
       ),
     () =>
