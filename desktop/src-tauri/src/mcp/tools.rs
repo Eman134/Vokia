@@ -285,9 +285,9 @@ impl ToolScope {
 // Teto explícito do payload JSON de `tools/list` (baseline atual: ~10.5 KB Coordinator / ~8.5 KB Worker).
 // Impede inflação acidental de tokens fixos pagos a cada turno; novos comandos devem entrar em `commands/dispatcher.rs`.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) const TOOLS_LIST_COORDINATOR_MAX_BYTES: usize = 11_200;
+pub(crate) const TOOLS_LIST_COORDINATOR_MAX_BYTES: usize = 12_500;
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) const TOOLS_LIST_WORKER_MAX_BYTES: usize = 9_200;
+pub(crate) const TOOLS_LIST_WORKER_MAX_BYTES: usize = 10_500;
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn definitions_for_scope(scope: ToolScope) -> Vec<Value> {

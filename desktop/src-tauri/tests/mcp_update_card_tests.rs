@@ -27,10 +27,10 @@ fn editar_so_o_titulo_grava_confirma_registra_atividade_e_mantem_a_descricao() {
         json!({ "title": "Velho", "description": "Contexto" }),
     );
 
-    let outcome = update(&world, &axiom, json!({ "id": "velho", "title": " Novo " }));
+    let outcome = update(&world, &axiom, json!({ "id": "T1", "title": " Novo " }));
 
     assert!(!outcome.is_error, "{}", outcome.text);
-    assert_eq!(outcome.text, "Card velho atualizado: Novo.");
+    assert_eq!(outcome.text, "Card T1 atualizado: Novo.");
     let card = &world.cards(project)[0];
     assert_eq!(card.title, "Novo");
     assert_eq!(card.description.as_deref(), Some("Contexto"));
@@ -50,12 +50,12 @@ fn editar_so_a_descricao_e_os_dois_de_uma_vez_registram_a_atividade_certa() {
     update(
         &world,
         &axiom,
-        json!({ "id": "um", "description": "Primeira" }),
+        json!({ "id": "T1", "description": "Primeira" }),
     );
     update(
         &world,
         &axiom,
-        json!({ "id": "um", "title": "Dois", "description": "Segunda" }),
+        json!({ "id": "T1", "title": "Dois", "description": "Segunda" }),
     );
 
     let card = &world.cards(project)[0];
@@ -114,7 +114,7 @@ fn descricao_vazia_junto_de_um_titulo_nao_apaga_a_descricao_atual() {
     let outcome = update(
         &world,
         &axiom,
-        json!({ "id": "um", "title": "Dois", "description": "" }),
+        json!({ "id": "T1", "title": "Dois", "description": "" }),
     );
 
     assert!(!outcome.is_error, "{}", outcome.text);
@@ -130,16 +130,16 @@ fn titulo_em_branco_e_titulo_acima_de_200_sao_recusados_e_200_exatos_passam() {
     let axiom = world.agent("axiom", "Axiom", project);
     world.call(&axiom, "create_card", json!({ "title": "Um" }));
 
-    let blank = update(&world, &axiom, json!({ "id": "um", "title": "   " }));
+    let blank = update(&world, &axiom, json!({ "id": "T1", "title": "   " }));
     let long = update(
         &world,
         &axiom,
-        json!({ "id": "um", "title": "x".repeat(MAX_TITLE + 1) }),
+        json!({ "id": "T1", "title": "x".repeat(MAX_TITLE + 1) }),
     );
     let exact = update(
         &world,
         &axiom,
-        json!({ "id": "um", "title": "y".repeat(MAX_TITLE) }),
+        json!({ "id": "T1", "title": "y".repeat(MAX_TITLE) }),
     );
 
     assert!(blank.is_error);
@@ -157,17 +157,17 @@ fn card_de_outro_agente_e_recusado_e_o_card_da_troca_atual_e_aceito() {
     let vexa = world.agent("vexa", "Vexa", project);
     world.call(&vexa, "create_card", json!({ "title": "Do Vexa" }));
 
-    let refused = update(&world, &axiom, json!({ "id": "do-vexa", "title": "Roubado" }));
-    axiom.slot.begin(Some("do-vexa"), None);
+    let refused = update(&world, &axiom, json!({ "id": "T1", "title": "Roubado" }));
+    axiom.slot.begin(Some("T1"), None);
     let accepted = update(
         &world,
         &axiom,
-        json!({ "id": "do-vexa", "title": "Da troca" }),
+        json!({ "id": "T1", "title": "Da troca" }),
     );
     axiom.slot.end();
 
     assert!(refused.is_error);
-    assert_eq!(refused.text, "O card do-vexa não é seu nem do pedido atual.");
+    assert_eq!(refused.text, "O card T1 não é seu nem do pedido atual.");
     assert!(!accepted.is_error, "{}", accepted.text);
     assert_eq!(world.cards(project)[0].title, "Da troca");
 }
@@ -194,11 +194,11 @@ fn titulo_duplicado_e_recusado_mas_mudar_so_a_caixa_do_proprio_titulo_passa() {
     world.call(&axiom, "create_card", json!({ "title": "Um" }));
     world.call(&axiom, "create_card", json!({ "title": "Dois" }));
 
-    let duplicate = update(&world, &axiom, json!({ "id": "dois", "title": " um " }));
-    let own_case = update(&world, &axiom, json!({ "id": "dois", "title": "DOIS" }));
+    let duplicate = update(&world, &axiom, json!({ "id": "T2", "title": " um " }));
+    let own_case = update(&world, &axiom, json!({ "id": "T2", "title": "DOIS" }));
 
     assert!(duplicate.is_error);
-    assert!(duplicate.text.contains("um"), "{}", duplicate.text);
+    assert!(duplicate.text.contains("T1"), "{}", duplicate.text);
     assert!(!own_case.is_error, "{}", own_case.text);
     let titles: Vec<String> = world
         .cards(project)
@@ -217,22 +217,22 @@ fn card_em_ready_e_card_em_done_nao_sao_editados_pelo_agente() {
 
     world
         .db()
-        .move_backlog_item(project, "um", "Ready")
+        .move_backlog_item(project, "T1", "Ready")
         .expect("o usuário move para Ready");
-    let in_ready = update(&world, &axiom, json!({ "id": "um", "title": "Novo" }));
+    let in_ready = update(&world, &axiom, json!({ "id": "T1", "title": "Novo" }));
     world
         .db()
-        .move_backlog_item(project, "um", "Done")
+        .move_backlog_item(project, "T1", "Done")
         .expect("o usuário move para Done");
-    let in_done = update(&world, &axiom, json!({ "id": "um", "title": "Novo" }));
+    let in_done = update(&world, &axiom, json!({ "id": "T1", "title": "Novo" }));
 
     assert!(in_ready.is_error);
     assert_eq!(
         in_ready.text,
-        "O card um está em Ready: só o usuário altera."
+        "O card T1 está em Ready: só o usuário altera."
     );
     assert!(in_done.is_error);
-    assert_eq!(in_done.text, "O card um já está em Done.");
+    assert_eq!(in_done.text, "O card T1 já está em Done.");
     assert_eq!(world.cards(project)[0].title, "Um");
 }
 
@@ -249,7 +249,7 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_e_tocado() {
     update(
         &world,
         &in_second,
-        json!({ "id": "mesmo-card", "title": "Do B editado", "project_id": first }),
+        json!({ "id": "T1", "title": "Do B editado", "project_id": first }),
     );
 
     assert_eq!(world.cards(first)[0].title, "Mesmo card");
@@ -271,17 +271,17 @@ fn confirmacao_vai_ao_slot_e_o_evento_sai_so_quando_algo_mudou() {
     world.call(&axiom, "create_card", json!({ "title": "Um" }));
     axiom.slot.begin(None, None);
 
-    let changed = update(&world, &axiom, json!({ "id": "um", "title": "Dois" }));
-    let same = update(&world, &axiom, json!({ "id": "um", "title": "Dois" }));
-    let refused = update(&world, &axiom, json!({ "id": "um" }));
+    let changed = update(&world, &axiom, json!({ "id": "T1", "title": "Dois" }));
+    let same = update(&world, &axiom, json!({ "id": "T1", "title": "Dois" }));
+    let refused = update(&world, &axiom, json!({ "id": "T1" }));
     std::thread::sleep(std::time::Duration::from_millis(300));
 
-    assert_eq!(changed.text, "Card um atualizado: Dois.");
-    assert_eq!(same.text, "Card um já está assim: nada mudou.");
+    assert_eq!(changed.text, "Card T1 atualizado: Dois.");
+    assert_eq!(same.text, "Card T1 já está assim: nada mudou.");
     assert!(refused.is_error);
     assert_eq!(
         axiom.slot.end().confirmations,
-        ["Card um atualizado: Dois."]
+        ["Card T1 atualizado: Dois."]
     );
     let seen = events.lock().unwrap().clone();
     let backlog = seen

@@ -172,7 +172,7 @@ fn create_card_grava_no_projeto_do_binding_com_o_agente_dono_e_confirma_na_frase
     );
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card revisar-login criado: Revisar login.");
+    assert_eq!(outcome.text, "Card T1 criado: Revisar login.");
     let card = &world.cards(project)[0];
     assert_eq!(card.who, "axiom");
     assert_eq!(card.origin, "agente");
@@ -195,7 +195,7 @@ fn move_card_aceita_coluna_em_minuscula_e_grava_a_forma_canonica() {
     );
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card um movido para In progress.");
+    assert_eq!(outcome.text, "Card T1 movido para In progress.");
     assert_eq!(
         world.cards(project)[0].column.as_deref(),
         Some("In progress")
@@ -214,7 +214,7 @@ fn move_card_para_a_coluna_atual_avisa_sem_mudar_nem_confirmar_no_slot() {
     let outcome = world.call(&axiom, "move_card", json!({ "id": id, "column": "Backlog" }));
 
     assert!(!outcome.is_error);
-    assert_eq!(outcome.text, "Card um já está em Backlog.");
+    assert_eq!(outcome.text, "Card T1 já está em Backlog.");
     assert!(!axiom.slot.lock().changed);
     assert!(axiom.slot.lock().confirmations.is_empty());
 }
@@ -230,14 +230,14 @@ fn read_card_devolve_coluna_dono_origem_descricao_e_atividade() {
         json!({ "title": "Um", "description": "Detalhe" }),
     );
 
-    let outcome = world.call(&axiom, "read_card", json!({ "id": "um" }));
+    let outcome = world.call(&axiom, "read_card", json!({ "id": "T1" }));
 
     assert!(!outcome.is_error);
     let lines: Vec<&str> = outcome.text.lines().collect();
     assert_eq!(
         &lines[..5],
         [
-            "Card um: Um",
+            "Card T1: Um",
             "Coluna: Backlog",
             "Dono: axiom",
             "Origem: agente",
@@ -270,9 +270,9 @@ fn list_backlog_lista_do_mais_novo_para_o_mais_antigo_e_filtra_por_coluna() {
 
     assert_eq!(
         all.text,
-        "segundo | Segundo | In review | axiom | agente\nprimeiro | Primeiro | Backlog | axiom | agente"
+        "T2 | Segundo | In review | axiom | agente\nT1 | Primeiro | Backlog | axiom | agente"
     );
-    assert_eq!(done.text, "segundo | Segundo | In review | axiom | agente");
+    assert_eq!(done.text, "T2 | Segundo | In review | axiom | agente");
     assert_eq!((ready.is_error, ready.text.as_str()), (false, NO_CARDS));
 }
 
@@ -446,28 +446,28 @@ fn card_de_outro_projeto_com_o_mesmo_id_nao_aparece_nem_se_confunde() {
     let in_b = world.agent("axiom", "Axiom", second);
     world.create(&in_a, "Mesmo card");
 
-    let missing = world.call(&in_b, "read_card", json!({ "id": "mesmo-card" }));
+    let missing = world.call(&in_b, "read_card", json!({ "id": "T1" }));
     let moved = world.call(
         &in_b,
         "move_card",
-        json!({ "id": "mesmo-card", "column": "Done" }),
+        json!({ "id": "T1", "column": "Done" }),
     );
     world.create(&in_b, "Mesmo card");
-    let read_b = world.call(&in_b, "read_card", json!({ "id": "mesmo-card" }));
+    let read_b = world.call(&in_b, "read_card", json!({ "id": "T1" }));
     let list_b = world.call(&in_b, "list_backlog", json!({}));
 
     assert_eq!(
         (missing.is_error, missing.text.as_str()),
-        (true, "O item mesmo-card não existe no backlog deste projeto.")
+        (true, "O item T1 não existe no backlog deste projeto.")
     );
     assert!(moved.is_error);
     assert!(
-        read_b.text.starts_with("Card mesmo-card: Mesmo card"),
+        read_b.text.starts_with("Card T1: Mesmo card"),
         "{}",
         read_b.text
     );
-    assert_eq!(list_b.text, "mesmo-card | Mesmo card | Backlog | axiom | agente");
-    assert_eq!(column(&world, first, "mesmo-card"), "Backlog");
+    assert_eq!(list_b.text, "T1 | Mesmo card | Backlog | axiom | agente");
+    assert_eq!(column(&world, first, "T1"), "Backlog");
 }
 
 #[test]
@@ -532,11 +532,13 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "artifact",
             "list_movements",
             "post_channel_message",
+            "memory_graph_query",
+            "memory_graph_save",
             "app_commands_list",
             "app_command_call"
         ]
     );
-    assert_eq!(names.len(), 25);
+    assert_eq!(names.len(), 27);
     assert!(tools
         .iter()
         .all(|tool| tool["inputSchema"]["additionalProperties"] == json!(false)));
@@ -573,6 +575,8 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__artifact",
             "mcp__vokia__list_movements",
             "mcp__vokia__post_channel_message",
+            "mcp__vokia__memory_graph_query",
+            "mcp__vokia__memory_graph_save",
             "mcp__vokia__app_commands_list",
             "mcp__vokia__app_command_call"
         ]
@@ -601,13 +605,13 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "um", "column": "Ready" }),
+        json!({ "id": "T1", "column": "Ready" }),
     );
-    world.call(&axiom, "read_card", json!({ "id": "um" }));
+    world.call(&axiom, "read_card", json!({ "id": "T1" }));
     world.call(
         &axiom,
         "move_card",
-        json!({ "id": "um", "column": "In review" }),
+        json!({ "id": "T1", "column": "In review" }),
     );
     std::thread::sleep(std::time::Duration::from_millis(300));
 
@@ -615,7 +619,7 @@ fn sucesso_grava_confirmacao_no_slot_e_emite_um_evento_so_quando_algo_mudou() {
     assert!(slot.changed);
     assert_eq!(
         slot.confirmations,
-        ["Card um criado: Um.", "Card um movido para In review."]
+        ["Card T1 criado: Um.", "Card T1 movido para In review."]
     );
     let seen: Vec<Value> = events.lock().unwrap().clone();
     let backlog: Vec<&Value> = seen
@@ -639,7 +643,7 @@ fn confirmacao_da_troca_sai_no_end_e_o_slot_fica_vazio_depois_do_envio() {
     let collected = axiom.slot.end().confirmations;
     let again = axiom.slot.end().confirmations;
 
-    assert_eq!(collected, ["Card um criado: Um."]);
+    assert_eq!(collected, ["Card T1 criado: Um."]);
     assert!(again.is_empty());
     assert!(!axiom.slot.lock().changed);
     assert!(axiom.slot.lock().confirmations.is_empty());
@@ -932,7 +936,7 @@ fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes
     let tool_names = world.server.tool_names(ToolScope::Coordinator);
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_commands_list"));
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_command_call"));
-    assert_eq!(tool_names.len(), 25);
+    assert_eq!(tool_names.len(), 27);
 
     // 2. commands/list aceita filtro por domínio
     let body_list = json!({
@@ -1057,6 +1061,6 @@ fn worker_lista_so_as_ferramentas_de_trabalho_e_coordenador_lista_todas() {
     for work in ["read_card", "delegate", "set_variable", "artifact_set_criterion", "request_decision", "save_item_plan"] {
         assert!(worker.iter().any(|name| name == work), "worker perdeu {work}");
     }
-    assert_eq!(worker.len(), 17);
-    assert_eq!(coordinator.len(), 25);
+    assert_eq!(worker.len(), 19);
+    assert_eq!(coordinator.len(), 27);
 }

@@ -11,7 +11,7 @@ static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
 
 const TOOLS_RULE_TEXT: &str =
     "Use as ferramentas do Vokia para ler e mexer no backlog, pedir uma decisão ao usuário e ler ou gravar as variáveis da tarefa; nunca invente ids.";
-const DELEGATE_TOOL_TEXT: &str = "chame a ferramenta delegate com agent e request";
+const DELEGATE_TOOL_TEXT: &str = "delegate (agent, request";
 const OLD_MARKERS: [&str; 6] = ["#card", "#decisao", "@<Nome>", "$nome", "@time", "+= item"];
 
 fn with_team(check: impl FnOnce(&Team)) {
