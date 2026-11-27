@@ -35,8 +35,8 @@ const COMMANDS_LABEL = 'Comandos'
 const FOOTER_CLASSES = 'flex shrink-0 flex-col gap-1.5 border-t border-line bg-paper px-4 py-2.5'
 // Mesma pílula da ActionBar: o clipe e o @ moram dentro dela, à esquerda, e o campo não tem borda própria.
 const PILL_CLASSES = 'flex min-h-8.5 min-w-0 flex-1 items-center rounded-full bg-surface-2 pl-1.5 focus-within:outline-2 focus-within:outline-solid focus-within:outline-ink'
-const FIELD_TEXT_CLASSES = 'py-1.5 pl-1 pr-3.5 text-control'
-const FIELD_CLASSES = `relative field-sizing-content max-h-28 min-h-8 w-full min-w-0 resize-none border-0 bg-transparent ${FIELD_TEXT_CLASSES} text-transparent caret-ink outline-none placeholder:text-faint selection:bg-accent/25 selection:text-transparent`
+const FIELD_TEXT_CLASSES = 'py-1.5 pl-2 pr-3.5 font-sans text-label leading-5 [overflow-wrap:anywhere]'
+const FIELD_CLASSES = `relative block field-sizing-content max-h-28 min-h-8 w-full min-w-0 resize-none border-0 bg-transparent ${FIELD_TEXT_CLASSES} text-transparent caret-ink outline-none placeholder:text-muted selection:bg-accent/25 selection:text-transparent`
 const AT_ICON_SIZE = 12
 const RAISED_ICON_SIZE = 9
 const ICON_SIZE_CLASSES = 'size-4 shrink-0'
@@ -387,7 +387,7 @@ async function useChip(id: string): Promise<void> {
         <div class="relative min-w-0 flex-1 overflow-hidden rounded-r-full">
           <div
             aria-hidden="true"
-            :class="`pointer-events-none absolute inset-0 whitespace-pre-wrap break-words ${FIELD_TEXT_CLASSES}`"
+            :class="`pointer-events-none absolute inset-0 whitespace-pre-wrap ${FIELD_TEXT_CLASSES}`"
             :style="{ transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }"
           >
             <template v-for="(segment, index) in highlightSegments" :key="index">

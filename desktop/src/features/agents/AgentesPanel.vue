@@ -385,20 +385,6 @@ async function removeSelected(): Promise<void> {
     </div>
 
     <aside v-if="selected" :class="FICHA_CLASSES">
-      <AgentSettingsSubpanel
-        v-if="activeSubpanel !== null"
-        :agent="selected"
-        :subpanel="activeSubpanel"
-        :saving="saving"
-        :removing="removing"
-        :failure="failure"
-        @back="closeSubpanel()"
-        @patch="patchSelected($event)"
-        @remove="removeSelected()"
-        @clear-failure="failure = null"
-      />
-
-      <template v-else>
         <!-- Cabeçalho de Identidade -->
         <div class="flex flex-col items-center gap-3 pb-1">
           <div class="relative">
@@ -406,6 +392,7 @@ async function removeSelected(): Promise<void> {
               <AgentPortrait :who="selected.id" :size="FICHA_PORTRAIT_SIZE" />
             </UiSketchBox>
             <button
+              v-if="!selected.builtin"
               type="button"
               class="absolute -right-1.5 -bottom-1.5 grid size-6 cursor-pointer place-items-center rounded-full border border-line bg-surface text-tiny text-ink shadow-seg hover:bg-surface-2"
               :class="INK_FOCUS_CLASSES"
@@ -586,8 +573,20 @@ async function removeSelected(): Promise<void> {
           </div>
           <p class="px-1 text-small text-muted">{{ NOTIFICATION_NOTE }}</p>
         </section>
-      </template>
     </aside>
+
+    <AgentSettingsSubpanel
+      v-if="selected && activeSubpanel !== null"
+      :agent="selected"
+      :subpanel="activeSubpanel"
+      :saving="saving"
+      :removing="removing"
+      :failure="failure"
+      @back="closeSubpanel()"
+      @patch="patchSelected($event)"
+      @remove="removeSelected()"
+      @clear-failure="failure = null"
+    />
 
     <ProviderModelPickerModal
       v-if="selected"
