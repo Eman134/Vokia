@@ -44,6 +44,7 @@ const THINKING_VERB = 'Pensou'
 const THINKING_ROW_ID = 'thinking'
 export type CardTitleOf = (cardId: string) => string | undefined
 export type AgentNameOf = (id: string) => string | undefined
+export type CriterionTextOf = (artifactId: string | undefined, criterionId: string) => string | undefined
 
 type ClauseGroup = 'read' | 'search' | 'list' | 'command' | 'edit' | 'web' | 'mcp' | 'app' | 'agent' | 'tool'
 
@@ -357,10 +358,11 @@ const VOKIA_COMMAND_SPECS: Readonly<Record<string, VokiaCommandSpec>> = {
   save_item_plan: { icon: 'artifact', running: 'Gravando plano', done: 'Gravou plano', failed: 'Tentou gravar plano', chipFields: ['item-id', 'itemId'] },
   update_item_plan: { icon: 'artifact', running: 'Atualizando plano', done: 'Atualizou plano', failed: 'Tentou atualizar plano', chipFields: ['itemId'] },
   import_plan: { icon: 'artifact', running: 'Importando plano', done: 'Importou plano', failed: 'Tentou importar plano', chipFields: ['title'] },
-  set_criterion: { icon: 'check', running: 'Marcando critério', done: 'Marcou critério', failed: 'Tentou marcar critério', chipFields: ['criterion-id', 'criterionId'] },
-  artifact_set_criterion: { icon: 'check', running: 'Marcando critério', done: 'Marcou critério', failed: 'Tentou marcar critério', chipFields: ['criterion-id', 'criterionId'] },
+  set_criterion: { icon: 'check', running: 'Concluindo critério', done: 'Critério concluído', failed: 'Tentou concluir critério', chipFields: ['criterion-id', 'criterionId'] },
+  artifact_set_criterion: { icon: 'check', running: 'Concluindo critério', done: 'Critério concluído', failed: 'Tentou concluir critério', chipFields: ['criterion-id', 'criterionId'] },
   get_artifact: { icon: 'artifact', running: 'Lendo artefato', done: 'Leu artefato', failed: 'Tentou ler artefato', chipFields: ['id', 'artifactId'] },
   list_artifacts: { icon: 'artifact', running: 'Listando artefatos', done: 'Listou artefatos', failed: 'Tentou listar artefatos', defaultChip: 'Artefatos' },
+  artifacts: { icon: 'artifact', running: 'Listando artefatos', done: 'Listou artefatos', failed: 'Tentou listar artefatos', defaultChip: 'Artefatos' },
   create_artifact: { icon: 'artifact', running: 'Criando artefato', done: 'Criou artefato', failed: 'Tentou criar artefato', chipFields: ['title', 'id'] },
   update_artifact: { icon: 'artifact', running: 'Atualizando artefato', done: 'Atualizou artefato', failed: 'Tentou atualizar artefato', chipFields: ['id'] },
   delete_artifact: { icon: 'artifact', running: 'Removendo artefato', done: 'Removeu artefato', failed: 'Tentou remover artefato', chipFields: ['id'] },
@@ -399,7 +401,11 @@ function parseVokiaCliFlag(cmd: string, flag: string): string | undefined {
   return jsonMatch?.[1]?.trim() || undefined
 }
 
-function vokiaCliRow(tool: ToolActivity, nameOf: AgentNameOf): ActivityRowModel | null {
+function vokiaCliRow(
+  tool: ToolActivity,
+  nameOf: AgentNameOf,
+  criterionTextOf?: CriterionTextOf,
+): ActivityRowModel | null {
   const raw = tool.target.trim()
   const match = /(?:^|[\s/\\])vokia-cli(?:\.exe)?\s+(.+)$/i.exec(raw)
   if (!match) return null
@@ -425,6 +431,20 @@ function vokiaCliRow(tool: ToolActivity, nameOf: AgentNameOf): ActivityRowModel 
     }
   }
 
+  if (normalized === 'set_criterion' || normalized === 'artifact_set_criterion') {
+    const critId = parseVokiaCliFlag(rest, 'criterion-id') ?? parseVokiaCliFlag(rest, 'criterionId')
+    const artId = parseVokiaCliFlag(rest, 'artifact-id') ?? parseVokiaCliFlag(rest, 'artifactId')
+    const critText = critId ? criterionTextOf?.(artId, critId) : undefined
+    return {
+      id: tool.callId,
+      icon: 'check',
+      verb: running ? 'Concluindo critério' : failed ? 'Tentou concluir critério' : 'Critério concluído',
+      text: critText ?? critId,
+      chip: artId ? { label: artId, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+
   const spec = VOKIA_COMMAND_SPECS[normalized]
   if (spec) {
     const chipValue = spec.chipFields?.map((f) => parseVokiaCliFlag(rest, f)).find(Boolean) ?? spec.defaultChip
@@ -446,7 +466,13 @@ function vokiaCliRow(tool: ToolActivity, nameOf: AgentNameOf): ActivityRowModel 
   }
 }
 
-function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean, nameOf: AgentNameOf): ActivityRowModel {
+function defaultRow(
+  tool: ToolActivity,
+  icon: RowIconKind,
+  failed: boolean,
+  nameOf: AgentNameOf,
+  criterionTextOf?: CriterionTextOf,
+): ActivityRowModel {
   if (tool.name === 'mcp__vokia__memory_graph_query' || tool.name === 'memory_graph_query') {
     return {
       id: tool.callId,
@@ -466,7 +492,7 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean, name
     }
   }
   if (tool.category === 'command') {
-    const cliRow = vokiaCliRow(tool, nameOf)
+    const cliRow = vokiaCliRow(tool, nameOf, criterionTextOf)
     if (cliRow) return cliRow
   }
   if (tool.category === 'command' && tool.description !== undefined) {
@@ -645,11 +671,21 @@ export function splitVokiaConfirmations(text: string): VokiaConfirmations {
   return rows.length === 0 ? { rows, rest: text } : { rows, rest: rest.join(LINE_BREAK).trim() }
 }
 
-export function activityRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
-  return groupRepeatedRows(buildRows(tools, titleOf, nameOf))
+export function activityRows(
+  tools: readonly ToolActivity[],
+  titleOf: CardTitleOf,
+  nameOf: AgentNameOf,
+  criterionTextOf?: CriterionTextOf,
+): ActivityRowModel[] {
+  return groupRepeatedRows(buildRows(tools, titleOf, nameOf, criterionTextOf))
 }
 
-function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf: AgentNameOf): ActivityRowModel[] {
+function buildRows(
+  tools: readonly ToolActivity[],
+  titleOf: CardTitleOf,
+  nameOf: AgentNameOf,
+  criterionTextOf?: CriterionTextOf,
+): ActivityRowModel[] {
   // Criação conta desde a entrada da ferramenta: a linha nasce uma vez e só cresce com o contador.
   const created = tools.filter((tool) => tool.detail?.kind === 'created')
   return tools.flatMap((tool) => {
@@ -662,7 +698,7 @@ function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf:
     if (tool.detail?.kind === 'command') return [commandRow(tool, tool.detail, nameOf)]
     const delegation = delegationOf(tool)
     if (delegation) return [delegationRow(tool, delegation)]
-    return [defaultRow(tool, icon, tool.status === 'failed', nameOf)]
+    return [defaultRow(tool, icon, tool.status === 'failed', nameOf, criterionTextOf)]
   })
 }
 

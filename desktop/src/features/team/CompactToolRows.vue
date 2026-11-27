@@ -7,6 +7,7 @@ import {
   type ActivityRowModel,
   type AgentNameOf,
   type CardTitleOf,
+  type CriterionTextOf,
 } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
@@ -19,6 +20,7 @@ const props = defineProps<{
   rows: readonly ActivityRowModel[]
   cardTitleOf: CardTitleOf
   agentNameOf: AgentNameOf
+  criterionTextOf?: CriterionTextOf
 }>()
 
 const expanded = ref(false)
@@ -39,9 +41,9 @@ const split = computed(() => {
   const compactedTools = trailing > 0 ? props.tools.slice(0, props.tools.length - trailing) : props.tools
   if (compactedTools.length >= COMPACT_THRESHOLD) {
     return {
-      compactedRows: activityRows(compactedTools, props.cardTitleOf, props.agentNameOf),
+      compactedRows: activityRows(compactedTools, props.cardTitleOf, props.agentNameOf, props.criterionTextOf),
       summary: activitySentence(compactedTools),
-      activeRows: trailing > 0 ? activityRows(props.tools.slice(-trailing), props.cardTitleOf, props.agentNameOf) : [],
+      activeRows: trailing > 0 ? activityRows(props.tools.slice(-trailing), props.cardTitleOf, props.agentNameOf, props.criterionTextOf) : [],
     }
   }
   return {

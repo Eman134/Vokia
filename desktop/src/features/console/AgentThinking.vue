@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
 import type { AgentState, ToolActivity, TurnActivity } from '../team/events'
-import { activityRows, formatClock, type ActivityRowModel, type AgentNameOf, type CardTitleOf } from '../team/activitySummary'
+import { activityRows, formatClock, type ActivityRowModel, type AgentNameOf, type CardTitleOf, type CriterionTextOf } from '../team/activitySummary'
 import CompactToolRows from '../team/CompactToolRows.vue'
 import MarkdownText from '../team/MarkdownText.vue'
 import TurnPlanCard from '../team/TurnPlanCard.vue'
@@ -61,6 +61,11 @@ type LiveSegment = { kind: 'text'; text: string } | { kind: 'tools'; tools: Tool
 
 const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
 const agentNameOf: AgentNameOf = (id) => roster.profileOf(id)?.name
+const criterionTextOf: CriterionTextOf = (artifactId, criterionId) => {
+  const normalizedId = artifactId?.replace(/^plano-/, '')
+  const item = normalizedId ? backlog.items.find((entry) => entry.id === normalizedId || entry.id === artifactId) : undefined
+  return item?.criteria?.find((criterion) => criterion.id === criterionId)?.text
+}
 
 // Fora de 'thinking' (envio) o turno ainda não começou: sem isso, currentTurn devolve a resposta anterior.
 const timelineSegments = computed<LiveSegment[]>(() => {
@@ -70,7 +75,7 @@ const timelineSegments = computed<LiveSegment[]>(() => {
   return liveTimeline(consoleStore.entriesOf(props.agent.id), props.activity?.tools ?? []).map((segment) =>
     segment.kind === 'text'
       ? segment
-      : { kind: 'tools', tools: segment.tools, rows: activityRows(segment.tools, cardTitleOf, agentNameOf) },
+      : { kind: 'tools', tools: segment.tools, rows: activityRows(segment.tools, cardTitleOf, agentNameOf, criterionTextOf) },
   )
 })
 
@@ -133,6 +138,7 @@ const label = computed(() => {
           :rows="segment.rows"
           :card-title-of="cardTitleOf"
           :agent-name-of="agentNameOf"
+          :criterion-text-of="criterionTextOf"
         />
       </ul>
     </template>

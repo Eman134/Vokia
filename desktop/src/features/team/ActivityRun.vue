@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue'
 import type { TurnActivity } from './events'
-import { activityRows, activitySentence, thinkingRow, type AgentNameOf, type CardTitleOf } from './activitySummary'
+import { activityRows, activitySentence, thinkingRow, type AgentNameOf, type CardTitleOf, type CriterionTextOf } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
 import CompactToolRows from './CompactToolRows.vue'
 import MarkdownText from './MarkdownText.vue'
@@ -20,7 +20,12 @@ const thinkingListId = useId()
 const sentence = computed(() => activitySentence(props.activity.tools))
 const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
 const agentNameOf: AgentNameOf = (id) => roster.profileOf(id)?.name
-const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agentNameOf))
+const criterionTextOf: CriterionTextOf = (artifactId, criterionId) => {
+  const normalizedId = artifactId?.replace(/^plano-/, '')
+  const item = normalizedId ? backlog.items.find((entry) => entry.id === normalizedId || entry.id === artifactId) : undefined
+  return item?.criteria?.find((criterion) => criterion.id === criterionId)?.text
+}
+const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agentNameOf, criterionTextOf))
 </script>
 
 <template>
@@ -52,6 +57,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
         :rows="rows"
         :card-title-of="cardTitleOf"
         :agent-name-of="agentNameOf"
+        :criterion-text-of="criterionTextOf"
       />
     </ul>
     <template v-else-if="rows.length > 0">
