@@ -21,12 +21,13 @@ import {
 } from './backlogLabels'
 import { returnTask } from './backlogApi'
 import { useFeed } from '../team/useFeed'
+import { useDecisions } from '../decisions/useDecisions'
+import { useBtw } from '../team/bar/useBtw'
 import { useProjects } from '../projects/useProjects'
 import { fetchPlanArtifact, setArtifactCriterion, type PlanArtifactDetail } from '../artifacts/artifactApi'
 import ContextGraphModal from '../memory/ContextGraphModal.vue'
 import { SUGGESTED_TAGS, TAG_MAX_LENGTH, tagLabel, tagMarkerTone } from './tags'
 import {
-  AUTO_COLUMNS_HINT,
   COLUMN_LABEL,
   CONVERSATIONS_LABEL,
   DEFAULT_COLUMN,
@@ -41,7 +42,6 @@ import {
   OTHER_PLACEHOLDER,
   PLAN_HINT,
   QUESTIONS_TITLE,
-  READY_BLOCKED_HINT,
   READY_COLUMN,
   type BacklogColumn,
   type BacklogItem,
@@ -109,6 +109,24 @@ const triage = useTriage()
 const roster = useRoster()
 const navigation = useNavigation()
 const feed = useFeed()
+const btw = useBtw()
+const btwOpen = ref(false)
+const btwDraft = ref('')
+
+function sendCardBtw(): void {
+  const current = item.value
+  const text = btwDraft.value.trim()
+  if (!current || text === '') return
+  const targetAgent = isUnassigned(current) ? 'ember' : current.who
+  const code = current.publicId ?? current.id
+  btwDraft.value = ''
+  btwOpen.value = false
+  void btw.ask({
+    projectId: projects.selected?.id ?? null,
+    agent: targetAgent,
+    question: `Sobre o card ${code} (${current.title}): ${text}`,
+  })
+}
 const leaderName = computed(() => agentName(DEFAULT_RECIPIENT))
 const reopening = ref(false)
 const reopenMotive = ref('')
@@ -162,7 +180,27 @@ const column = computed(() => item.value?.column ?? DEFAULT_COLUMN)
 const statusChip = computed(() => COLUMN_CHIP[column.value])
 // Só o card concluído pela validação automática pode ser reaberto por aqui; o manual o usuário mesmo moveu.
 const autoClosed = computed(() => column.value === DONE_COLUMN_NAME && item.value?.closedBy === CLOSED_BY_AUTOMATIC)
-const readyBlocked = computed(() => !item.value || !itemPlan.isReviewed(item.value.id))
+const decisions = useDecisions()
+const pendingReviewDecision = computed(() =>
+  item.value
+    ? (decisions.pending.find(
+        (d) => d.itemId === item.value!.id && (d.kind === 'revisao' || d.kind === 'validacao'),
+      ) ?? null)
+    : null,
+)
+async function approvePendingReview(): Promise<void> {
+  if (!pendingReviewDecision.value) return
+  const decision = pendingReviewDecision.value
+  const answer = decision.kind === 'revisao' ? 'Lote aprovado' : 'Aprovar'
+  await decisions.answer(decision.id, answer, answer)
+}
+async function returnPendingReview(): Promise<void> {
+  if (!pendingReviewDecision.value) return
+  const decision = pendingReviewDecision.value
+  const motive = reopenMotive.value.trim() || 'Devolvido para ajustes na revisão.'
+  reopenMotive.value = ''
+  await decisions.answer(decision.id, motive, motive)
+}
 const delegateTargets = computed(() =>
   roster.agents.filter((profile) => profile.id !== (itemPlan.planOf(item.value?.id ?? '').agent ?? DEFAULT_RECIPIENT)),
 )
@@ -295,10 +333,14 @@ function submitNewTag(): void {
   newTag.value = ''
 }
 
+const hasPendingDecision = computed(() => (item.value ? runItem.hasPendingDecision(item.value.id) : false))
+
 function moveTo(target: BacklogColumn): void {
   statusMenuOpen.value = false
-  if (target === READY_COLUMN && readyBlocked.value) return
   dialog.value?.focus()
+  if (target === 'In progress' && planState.value === 'proposto' && item.value) {
+    itemPlan.accept(item.value.id)
+  }
   backlog.moveTo(item.value!.id, target)
 }
 
@@ -307,7 +349,7 @@ function onMainAction(): void {
   if (planState.value === 'proposto') {
     itemPlan.accept(item.value.id)
   }
-  void runItem.run(item.value.id)
+  void runItem.run(item.value.id, undefined, hasPendingDecision.value ? { ignorePendingDecision: true } : undefined)
 }
 
 async function stopActiveWork(): Promise<void> {
@@ -597,19 +639,14 @@ watch(
                     :key="target"
                     type="button"
                     role="menuitem"
-                    :disabled="target === column || (target === READY_COLUMN && readyBlocked)"
+                    :disabled="target === column"
                     :class="MENU_ITEM_CLASSES"
-                    :title="target === READY_COLUMN && readyBlocked ? READY_BLOCKED_HINT : undefined"
                     @click="moveTo(target)"
                   >
                     <span class="size-2 shrink-0 rounded-full" :class="BADGE_DOT[COLUMN_CHIP[target]?.status ?? 'backlog']" aria-hidden="true" />
                     <span class="flex-1">{{ COLUMN_LABEL[target] }}</span>
-                    <span v-if="target === READY_COLUMN && readyBlocked" class="text-tiny text-muted">Requer plano</span>
-                    <span v-else-if="target === column" class="text-tiny font-semibold text-accent">Atual</span>
+                    <span v-if="target === column" class="text-tiny font-semibold text-accent">Atual</span>
                   </button>
-                  <p class="mt-1 border-t border-line px-2.5 pt-1.5 pb-1 text-tiny text-muted">
-                    {{ AUTO_COLUMNS_HINT }}
-                  </p>
                 </div>
               </div>
 
@@ -622,6 +659,18 @@ watch(
 
               <div class="ml-auto flex items-center gap-1.5">
                 <UiBadge v-if="showStateBadge" :status="STATE_BADGE[planState]" :label="MODAL_STATE_CHIP[planState]" />
+                <button
+                  type="button"
+                  :class="HEADER_PILL_CLASSES"
+                  title="Perguntar ou comentar com o agente do card (/btw)"
+                  data-testid="task-quick-btw"
+                  @click="btwOpen = !btwOpen"
+                >
+                  <svg viewBox="0 0 16 16" class="size-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M2.5 3.5h11v7.5h-6l-3 2.5v-2.5h-2z" />
+                  </svg>
+                  <span>Perguntar</span>
+                </button>
                 <button
                   type="button"
                   :class="HEADER_PILL_CLASSES"
@@ -706,6 +755,23 @@ watch(
               </div>
             </div>
             <h2 :id="titleId" class="wrap-break-word text-section text-ink">{{ item.title }}</h2>
+            <form
+              v-if="btwOpen"
+              class="mt-2 flex items-center gap-2 rounded-md border border-line bg-surface-2 p-2"
+              data-testid="task-quick-btw-form"
+              @submit.prevent="sendCardBtw"
+            >
+              <input
+                v-model="btwDraft"
+                type="text"
+                class="min-w-0 flex-1 rounded-sm border border-line bg-surface px-2.5 py-1 text-caption text-ink outline-none focus:border-ink"
+                :placeholder="`Pergunte ou comente sobre ${item.publicId ?? item.id} para ${isUnassigned(item) ? 'Ember' : agentName(item.who)}…`"
+                autofocus
+              />
+              <UiButton type="submit" variant="primary" size="sm" :disabled="btwDraft.trim() === ''">
+                Enviar
+              </UiButton>
+            </form>
           </header>
 
           <section class="flex flex-wrap items-center gap-1.5" aria-label="Etiquetas">
@@ -799,6 +865,26 @@ watch(
               :criteria="item.criteria"
               @toggle="backlog.toggleCriterion(item.id, $event)"
             />
+
+            <section
+              v-if="pendingReviewDecision"
+              class="flex flex-col gap-2 rounded-md border border-line bg-surface-2 p-3"
+              data-testid="card-review-result"
+            >
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-label font-semibold text-ink">Resultado da revisão</h3>
+                <span class="text-tiny text-muted">{{ pendingReviewDecision.title }}</span>
+              </div>
+              <MarkdownText v-if="pendingReviewDecision.detail" :text="pendingReviewDecision.detail" tasks class="text-caption text-ink" />
+              <div class="flex flex-wrap items-center gap-2 pt-1">
+                <UiButton variant="approve" size="sm" data-testid="card-review-approve" @press="void approvePendingReview()">
+                  Aprovar
+                </UiButton>
+                <UiButton variant="quiet" size="sm" data-testid="card-review-return" @press="void returnPendingReview()">
+                  Devolver
+                </UiButton>
+              </div>
+            </section>
 
             <section v-if="item.activity?.length">
               <h3 class="mb-1 text-label font-semibold text-ink">Atividade</h3>
@@ -977,9 +1063,10 @@ watch(
                 size="lg"
                 data-testid="run-item"
                 :disabled="!runItem.canRun(item.id)"
+                :title="hasPendingDecision ? 'Há uma decisão pendente; clique para seguir mesmo assim' : undefined"
                 @press="onMainAction"
               >
-                {{ planState === 'proposto' ? 'Aprovar e iniciar' : MAIN_ACTION_LABEL }}
+                {{ hasPendingDecision ? 'Seguir mesmo assim' : planState === 'proposto' ? 'Aprovar e iniciar' : MAIN_ACTION_LABEL }}
               </UiButton>
             </template>
           </div>

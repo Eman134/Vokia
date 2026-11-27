@@ -9,7 +9,7 @@ interface QuestionLink {
   itemId: string
 }
 
-const questionText = (title: string, detail: string): string => (detail ? `${title} — ${detail}` : title)
+const questionText = (title: string): string => title
 const answeredMessage = (title: string): string => `Respondido no item: ${title}`
 
 export const useItemQuestions = defineStore('itemQuestions', () => {
@@ -32,7 +32,7 @@ export const useItemQuestions = defineStore('itemQuestions', () => {
       if (!backlog.items.some((item) => item.id === decision.itemId)) continue
       const question = {
         id: DECISION_QUESTION_PREFIX + crypto.randomUUID(),
-        text: questionText(decision.title, decision.detail),
+        text: questionText(decision.title),
         options: [...decision.options],
       }
       links.value[question.id] = { decisionId: decision.id, itemId: decision.itemId }

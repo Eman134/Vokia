@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import { DEFAULT_JITTER, sketchCheck } from '../../ui/sketch/sketchPath'
@@ -24,7 +23,6 @@ const ITEM_BUTTON_CLASSES = `flex w-full cursor-pointer items-start gap-2.5 roun
 const BOX_CLASSES = 'mt-0.5 flex size-4.25 shrink-0 items-center justify-center rounded-sm border bg-surface'
 const BOX_CHECKED_CLASSES = 'border-ink-pen text-ink-pen'
 const BOX_UNCHECKED_CLASSES = 'border-graphite'
-const STRIKE_CLASSES = 'pointer-events-none absolute inset-x-0 top-1/2 h-2 -translate-y-1/2'
 </script>
 
 <template>
@@ -42,9 +40,8 @@ const STRIKE_CLASSES = 'pointer-events-none absolute inset-x-0 top-1/2 h-2 -tran
           <span aria-hidden="true" :class="[BOX_CLASSES, criterion.done ? BOX_CHECKED_CLASSES : BOX_UNCHECKED_CLASSES]">
             <UiIcon v-if="criterion.done" :path="CHECK_PATH" :size="CHECK_BOX" />
           </span>
-          <span :class="['relative min-w-0 flex-1 wrap-break-word text-control', criterion.done ? 'text-muted' : 'text-ink']">
+          <span :class="['min-w-0 flex-1 wrap-break-word text-control', criterion.done ? 'text-muted line-through decoration-ink-pen/60' : 'text-ink']">
             {{ criterion.text }}
-            <UiHandLine v-if="criterion.done" variant="strike" :class="STRIKE_CLASSES" />
           </span>
         </button>
       </li>
