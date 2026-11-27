@@ -545,3 +545,14 @@ pub(super) fn schema_apply_learning_suggestion() -> Value {
     )
 }
 
+pub(super) fn schema_stop_agent_turn() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer", "description": "Id do projeto" },
+            "agent": { "type": "string", "description": "Id do agente com turno em andamento" },
+            "itemId": { "type": "string", "description": "Id opcional do card associado ao turno" },
+        }),
+        &["projectId", "agent"],
+    )
+}
+

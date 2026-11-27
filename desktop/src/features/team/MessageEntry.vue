@@ -89,7 +89,7 @@ const runCard = computed(() => {
   if (entry.type !== 'message' || entry.from !== 'user') return null
   const { text } = userContent.value
   const title = runTitleOf(text)
-  return title === undefined ? null : taskStartedRow(title, text)
+  return title === undefined ? null : taskStartedRow(title)
 })
 
 const protocolRow = computed(() => {
@@ -247,10 +247,10 @@ const graphModalMeta = computed(() => {
         </span>
         <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
       </div>
-      <ul v-if="runCard" class="flex min-w-0 flex-col gap-1 text-caption text-muted" data-testid="task-started">
+      <ul v-if="runCard" class="flex min-w-0 max-w-full flex-col gap-1 text-caption text-muted" data-testid="task-started">
         <ActivityRow :row="runCard" />
       </ul>
-      <ul v-else-if="protocolRow" class="flex min-w-0 flex-row items-center gap-1.5 text-caption text-muted">
+      <ul v-else-if="protocolRow" class="flex min-w-0 max-w-full flex-row items-center gap-1.5 text-caption text-muted">
         <ActivityRow
           :row="protocolRow.id === 'protocol-plan-ready' && entry.type === 'message' && entry.itemId && protocolRow.chip
             ? { ...protocolRow, chip: { ...protocolRow.chip, label: `${entry.itemId} · ${protocolRow.chip.label}` } }

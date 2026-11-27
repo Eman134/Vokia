@@ -516,7 +516,7 @@ pub(crate) async fn ask_btw_exec(
     let target_agent = args.agent.unwrap_or_else(Agent::ember);
     let profile = team
         .profile(&target_agent)
-        .or_else(|| team.profiles().into_iter().next())
+        .or_else(|| team.profiles().iter().next())
         .cloned()
         .ok_or_else(|| "Nenhum agente configurado para responder.".to_string())?;
     let state = app.state::<AppState>();

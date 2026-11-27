@@ -609,7 +609,7 @@ fn seal_secret(_provider_id: &str, _key: &str, value: &str) -> Result<(String, O
     #[cfg(windows)]
     {
         let blob = platform_seal::seal(value)?;
-        return Ok(("dpapi".to_string(), Some(encode_hex(&blob))));
+        Ok(("dpapi".to_string(), Some(encode_hex(&blob))))
     }
 
     #[cfg(target_os = "macos")]

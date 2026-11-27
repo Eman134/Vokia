@@ -423,14 +423,13 @@ export function taskResultRow(id: string, objective: string, concluded: boolean,
   }
 }
 
-// O prompt inteiro fica na lista expansível; a linha mostra só o título da task.
-export function taskStartedRow(title: string, prompt: string): ActivityRowModel {
+// A linha mostra só o título da task, sem lista expansível.
+export function taskStartedRow(title: string): ActivityRowModel {
   return {
     id: TASK_STARTED_ID,
     icon: 'command',
     verb: TASK_STARTED_VERB,
     chip: { label: title, title, icon: 'generic' },
-    items: prompt.split('\n').filter((line) => line.trim() !== ''),
     failed: false,
   }
 }

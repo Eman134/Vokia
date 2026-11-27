@@ -17,7 +17,7 @@ const TURN_PAUSED_TEXT: &str = "pausado: limite de uso atingido";
 const TURN_DONE_TEXT: &str = "concluído";
 const TURN_FAILED_PREFIX: &str = "falhou: ";
 
-pub(super) struct ConsoleSink<'a> {
+pub(crate) struct ConsoleSink<'a> {
     app: &'a AppHandle,
     key: SessionKey,
     item_id: Option<String>,

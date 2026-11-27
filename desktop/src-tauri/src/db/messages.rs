@@ -31,6 +31,7 @@ pub struct ClearConversationScope {
 }
 
 impl Db {
+    #[cfg(test)]
     pub fn clear_messages(&self, project_id: i64) -> Result<(), DbError> {
         self.clear_messages_scoped(project_id, None)
     }

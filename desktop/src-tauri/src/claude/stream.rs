@@ -248,7 +248,7 @@ pub(super) fn into_reply(
         return Err(ClaudeError::Reported(message));
     }
     let usage = response.extract_usage();
-    let session_id = (!response.session_id.trim().is_empty()).then(|| response.session_id);
+    let session_id = (!response.session_id.trim().is_empty()).then_some(response.session_id);
     Ok(Reply {
         text: response.result,
         limits,

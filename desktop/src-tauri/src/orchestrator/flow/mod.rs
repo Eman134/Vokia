@@ -11,7 +11,7 @@ use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{LimitName, ProjectAccess, UsageLimit};
 use crate::db::{DbError, DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
-use crate::mcp::{McpState, SlotDecision};
+use crate::mcp::McpState;
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::instances;
 use crate::orchestration::policy::{self, placed_participants, Passage, Verdict};
@@ -26,7 +26,7 @@ use crate::state::{
 };
 use crate::task::{
     fast_definition, long_request_text, needs_llm_interpreter, parse_definition, ActiveTask, TaskDefinition,
-    TaskKind, TaskOutcome, Variable, CONVERSATION_VAR,
+    TaskOutcome, CONVERSATION_VAR,
 };
 
 use super::agent_session::ask_step;
@@ -55,9 +55,11 @@ use super::turns::{
 use super::validation::{self, VALIDATION_RETURN};
 
 mod batch;
+mod rules;
 mod watchdog;
 
 pub(in crate::orchestrator) use batch::*;
+use rules::{limit_decision, parallel_definition, returns_without_motive};
 pub(crate) use watchdog::{emit_stage, publish_stage, schedule_done_cleanup, set_stage_state, spawn_dead_worktree_sweeper, spawn_delegation_watchdog};
 pub(in crate::orchestrator) use watchdog::spawn_stage_request;
 #[cfg(test)]
@@ -243,12 +245,6 @@ pub async fn answer_decision(
         reconcile_waiting(app, state, project_id);
     }
     result.map(|_| ())
-}
-
-fn returns_without_motive(answer: &str) -> bool {
-    answer
-        .strip_prefix(VALIDATION_RETURN)
-        .is_some_and(|rest| rest.trim_start_matches(':').trim().is_empty())
 }
 
 // Validação final: "Concluir" fecha o card sem falar com agente; "Devolver: <motivo>" volta a task ao líder.
@@ -1491,34 +1487,6 @@ async fn answer_once(
         exchange.item_id,
     )?;
     Ok(text)
-}
-
-// Estouro de limite do mapa vira decisão do usuário, com o motivo da política.
-fn limit_decision(motive: String) -> SlotDecision {
-    SlotDecision {
-        kind: DecisionKind::Pergunta,
-        title: policy::LIMIT_TITLE.to_string(),
-        detail: motive,
-        options: Vec::new(),
-    }
-}
-
-fn parallel_definition(
-    agent: &Agent,
-    objective: String,
-    variables: Vec<Variable>,
-) -> TaskDefinition {
-    TaskDefinition {
-        kind: TaskKind::Demanda,
-        nova_tarefa: false,
-        objetivo: objective,
-        criterion: String::new(),
-        verify: false,
-        participants: vec![agent.clone()],
-        alternate: false,
-        variables,
-        stop: None,
-    }
 }
 
 pub(crate) fn drain_waiting_for_project(app: &AppHandle, state: &AppState, project_id: i64) {

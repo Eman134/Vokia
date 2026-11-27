@@ -143,7 +143,7 @@ pub(crate) async fn delete_agent_exec(app: &AppHandle, args: DeleteAgentArgs) ->
     }
     app.state::<AppState>()
         .sessions
-        .close_agent(&db, &id)
+        .close_agent(db, &id)
         .await
         .map_err(|error| error.to_string())
 }

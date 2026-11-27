@@ -23,7 +23,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
 </script>
 
 <template>
-  <div class="mt-0.5 flex flex-col gap-1 text-caption text-muted" data-testid="activity-run">
+  <div class="mt-0.5 flex min-w-0 max-w-full flex-col gap-1 text-caption text-muted" data-testid="activity-run">
     <div v-if="!live && activity.thinkingMs !== undefined" class="flex flex-col gap-1" data-testid="activity-thinking">
       <ul class="flex flex-col">
         <ActivityRow :row="thinkingRow(activity.thinkingMs)" />
@@ -45,13 +45,13 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
         </div>
       </template>
     </div>
-    <ul v-if="live && rows.length > 0" class="flex flex-col gap-1" data-testid="activity-live">
+    <ul v-if="live && rows.length > 0" class="flex min-w-0 flex-col gap-1" data-testid="activity-live">
       <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
     </ul>
     <template v-else-if="rows.length > 0">
       <button
         type="button"
-        class="flex w-fit cursor-pointer items-center gap-1 text-left hover:text-ink" :class="INK_FOCUS_CLASSES"
+        class="flex w-fit max-w-full min-w-0 cursor-pointer items-center gap-1 text-left hover:text-ink" :class="INK_FOCUS_CLASSES"
         :aria-expanded="open"
         :aria-controls="listId"
         data-testid="activity-toggle"
@@ -60,7 +60,7 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
         <span class="wrap-break-word min-w-0" data-testid="activity-sentence">{{ sentence }}</span>
         <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
       </button>
-      <ul v-show="open" :id="listId" class="flex flex-col gap-1 pl-4">
+      <ul v-show="open" :id="listId" class="flex min-w-0 flex-col gap-1 pl-4">
         <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
       </ul>
     </template>

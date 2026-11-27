@@ -146,11 +146,7 @@ pub fn has_user_config_override(user_args: &[String], key: &str) -> bool {
         } else if let Some(rest) = arg.strip_prefix("--config=") {
             Some(rest)
         } else if let Some(rest) = arg.strip_prefix("-c") {
-            if rest.is_empty() {
-                None
-            } else {
-                Some(rest)
-            }
+            Some(rest).filter(|rest| !rest.is_empty())
         } else {
             None
         };
@@ -399,28 +395,14 @@ pub enum ServerEvent {
     Closed(String),
 }
 
+#[derive(Default)]
 struct PendingRequests {
     map: HashMap<u64, oneshot::Sender<Result<Json, RpcError>>>,
 }
 
-impl Default for PendingRequests {
-    fn default() -> Self {
-        Self {
-            map: HashMap::new(),
-        }
-    }
-}
-
+#[derive(Default)]
 struct TurnListeners {
     by_thread: HashMap<String, mpsc::UnboundedSender<ServerEvent>>,
-}
-
-impl Default for TurnListeners {
-    fn default() -> Self {
-        Self {
-            by_thread: HashMap::new(),
-        }
-    }
 }
 
 pub type UsagePushCallback = Arc<dyn Fn(ProviderPlanUsage) + Send + Sync>;

@@ -143,7 +143,7 @@ impl SessionPool {
         };
         self.adapters.archive_agent(agent).await;
         end_slots(removed).await;
-        db.clear_agent_sessions(&agent)
+        db.clear_agent_sessions(agent)
     }
 
     // Libera threads persistentes associadas a um worktree antes de apagar a pasta (evita lock no Windows).

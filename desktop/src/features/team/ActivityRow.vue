@@ -89,7 +89,7 @@ async function showPreview(): Promise<void> {
     @pointerenter="showPreview"
     @pointerleave="hovering = false"
   >
-    <div class="flex min-w-0 items-center gap-1.5" :class="row.failed ? 'text-danger' : ''">
+    <div class="flex min-w-0 max-w-full items-center gap-1.5" :class="row.failed ? 'text-danger' : ''">
       <svg :class="SVG_CLASSES" viewBox="0 0 24 24" aria-hidden="true">
         <path :d="ICON_PATHS[row.icon]" />
       </svg>
@@ -121,7 +121,7 @@ async function showPreview(): Promise<void> {
       <UiTooltip :text="row.command" class="min-w-0 truncate">{{ row.command }}</UiTooltip>
     </div>
     <slot name="details" />
-    <ul v-if="row.items?.length && open" :id="listId" class="flex flex-col gap-0.5 pl-6 text-muted">
+    <ul v-if="row.items?.length && open" :id="listId" class="flex min-w-0 flex-col gap-0.5 pl-6 text-muted">
       <li v-for="item in row.items" :key="item" class="truncate">
         <UiTooltip :text="item" class="block truncate">{{ item }}</UiTooltip>
       </li>

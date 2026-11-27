@@ -530,7 +530,9 @@ fn redact_url_query_secrets(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        let ch = text[i..].chars().next().unwrap();
+        let Some(ch) = text[i..].chars().next() else {
+            break;
+        };
         out.push(ch);
         i += ch.len_utf8();
         if ch == '?' || ch == '&' {
@@ -921,7 +923,9 @@ fn tokenize_shell(input: &str) -> Vec<String> {
             if ch == '\\' {
                 if let Some(&next) = chars.peek() {
                     if next == '"' || next == '\\' {
-                        current.push(chars.next().unwrap());
+                        if let Some(escaped) = chars.next() {
+                            current.push(escaped);
+                        }
                         continue;
                     }
                 }
@@ -945,7 +949,9 @@ fn tokenize_shell(input: &str) -> Vec<String> {
             '\\' => {
                 if let Some(&next) = chars.peek() {
                     if next.is_whitespace() || next == '"' || next == '\'' {
-                        current.push(chars.next().unwrap());
+                        if let Some(escaped) = chars.next() {
+                            current.push(escaped);
+                        }
                         in_token = true;
                         continue;
                     }

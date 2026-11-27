@@ -27,7 +27,7 @@ enum Action {
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    let action = match parse_args(&args, || read_stdin_utf8()) {
+    let action = match parse_args(&args, read_stdin_utf8) {
         Ok(action) => action,
         Err(msg) => {
             eprintln!("Erro: {msg}");
@@ -293,10 +293,7 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 fn decode_chunked(mut data: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
-    loop {
-        let Some(crlf) = find_bytes(data, b"\r\n") else {
-            break;
-        };
+    while let Some(crlf) = find_bytes(data, b"\r\n") {
         let size_str = String::from_utf8_lossy(&data[..crlf]);
         let size_hex = size_str.split(';').next().unwrap_or("").trim();
         let size = usize::from_str_radix(size_hex, 16)
