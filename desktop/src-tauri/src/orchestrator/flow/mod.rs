@@ -738,30 +738,52 @@ fn start_or_enqueue(
     Ok(true)
 }
 
-fn next_job_with_db(
+fn is_batchable_job(job: &QueuedJob) -> bool {
+    job.context.batch.is_none() && !job.context.parallel && job.context.resumed_run.is_none()
+}
+
+fn drain_next_jobs_with_db(
     db: Option<&crate::db::Db>,
     state: &AppState,
     key: SessionKey,
-) -> Result<Option<QueuedJob>, FlowError> {
+) -> Result<Vec<QueuedJob>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    let next = flow
-        .pending
-        .get_mut(&key)
-        .and_then(VecDeque::pop_front)
-        .or_else(|| {
-            // Work-stealing: réplica ociosa puxa o próximo pedido pendente na fila da instância base.
-            let (base_name, _) = replica_of(key.agent.as_str())?;
-            let base_agent = Agent::from_stored(base_name)?;
-            let base_key = SessionKey {
-                project_id: key.project_id,
-                agent: base_agent,
-            };
-            flow.pending.get_mut(&base_key).and_then(VecDeque::pop_front)
-        });
-    if let Some(ref job) = next {
-        if let Some(db_id) = job.db_id {
-            if let Some(db) = db {
-                let _ = db.remove_flow_job(db_id);
+    let mut drained = Vec::new();
+    let take_from = |deque: &mut VecDeque<QueuedJob>, out: &mut Vec<QueuedJob>| {
+        if let Some(first) = deque.pop_front() {
+            let batchable = is_batchable_job(&first);
+            out.push(first);
+            if batchable {
+                while deque.front().is_some_and(is_batchable_job) {
+                    if let Some(next) = deque.pop_front() {
+                        out.push(next);
+                    }
+                }
+            }
+        }
+    };
+    if let Some(deque) = flow.pending.get_mut(&key) {
+        take_from(deque, &mut drained);
+    }
+    if drained.is_empty() {
+        if let Some((base_name, _)) = replica_of(key.agent.as_str()) {
+            if let Some(base_agent) = Agent::from_stored(base_name) {
+                let base_key = SessionKey {
+                    project_id: key.project_id,
+                    agent: base_agent,
+                };
+                if let Some(deque) = flow.pending.get_mut(&base_key) {
+                    take_from(deque, &mut drained);
+                }
+            }
+        }
+    }
+    if !drained.is_empty() {
+        if let Some(db) = db {
+            for job in &drained {
+                if let Some(db_id) = job.db_id {
+                    let _ = db.remove_flow_job(db_id);
+                }
             }
         }
     } else {
@@ -770,12 +792,45 @@ fn next_job_with_db(
         flow.active_delegations
             .retain(|(project_id, agent, _), _| !(*project_id == key.project_id && agent == &key.agent));
     }
-    Ok(next)
+    Ok(drained)
+}
+
+fn combine_queued_jobs(
+    mut jobs: Vec<QueuedJob>,
+) -> (QueuedJob, Vec<u64>, Vec<(Option<String>, String)>) {
+    if jobs.len() <= 1 {
+        return (jobs.remove(0), Vec::new(), Vec::new());
+    }
+    let total = jobs.len();
+    let mut sections = Vec::with_capacity(total);
+    let mut extra_run_ids = Vec::new();
+    let mut extra_item_works = Vec::new();
+    for (index, job) in jobs.iter().enumerate() {
+        let header = match job.context.item_id.as_deref() {
+            Some(id) => format!("### Pedido {} (card: {id})", index + 1),
+            None => format!("### Pedido {}", index + 1),
+        };
+        sections.push(format!("{header}\n{}", job.text.trim()));
+        if index > 0 {
+            if let Some(run_id) = job.context.run_id {
+                extra_run_ids.push(run_id);
+            }
+            extra_item_works.push((job.context.item_id.clone(), job.text.clone()));
+        }
+    }
+    let combined_text = format!(
+        "Você tem {total} pedidos acumulados na fila para executar em sequência neste turno. \
+         Realize todos eles na ordem abaixo, separando cada entrega claramente e sem precisar delegar de volta para continuar a fila:\n\n{}",
+        sections.join("\n\n---\n\n")
+    );
+    let mut primary = jobs.remove(0);
+    primary.text = combined_text;
+    (primary, extra_run_ids, extra_item_works)
 }
 
 #[cfg(test)]
 fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, FlowError> {
-    next_job_with_db(None, state, key)
+    Ok(drain_next_jobs_with_db(None, state, key)?.into_iter().next())
 }
 
 // Começar a executar um card ou etapa o põe em In progress com as etiquetas de andamento; o quadro é avisado na hora.
@@ -941,8 +996,13 @@ async fn run_flow(
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = context.run_id;
+    let mut extra_run_ids: Vec<u64> = Vec::new();
+    let mut extra_item_works: Vec<(Option<String>, String)> = Vec::new();
     loop {
         start_item_work(app, key.project_id, item_id.as_deref(), &request)?;
+        for (extra_item, extra_req) in extra_item_works.drain(..) {
+            start_item_work(app, key.project_id, extra_item.as_deref(), &extra_req)?;
+        }
         set_running_item(state, &key, item_id.as_deref())?;
         register_main_branch(state, key.project_id, item_id.as_deref())?;
         let journal_run = if parallel {
@@ -1052,27 +1112,37 @@ async fn run_flow(
                 },
             )?;
         }
+        for run_id in extra_run_ids.drain(..) {
+            emit(
+                app,
+                VokiaEvent::RequestSettled {
+                    run_id,
+                    project_id: key.project_id,
+                    outcome: this,
+                },
+            )?;
+        }
         first.get_or_insert(this);
         release_branch(app, state, team, &key, item_id.as_deref(), stopped).await;
-        match next_job_with_db(app.state::<DbState>().db(), state, key.clone())? {
-            Some(job) => {
-                request = job.text;
-                current_run = job.context.run_id;
-                item_id = job.context.item_id;
-                channel_id = job.context.channel_id;
-                parallel = job.context.parallel;
-                batch = job.context.batch;
-                resumed_run = job.context.resumed_run;
-                reply_to = job.context.reply_to;
+        let drained = drain_next_jobs_with_db(app.state::<DbState>().db(), state, key.clone())?;
+        if drained.is_empty() {
+            if !is_limit_pause {
+                reconcile_waiting(app, state, key.project_id);
             }
-            None => {
-                if !is_limit_pause {
-                    reconcile_waiting(app, state, key.project_id);
-                }
-                drain_waiting(app, state, key.project_id);
-                return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed));
-            }
+            drain_waiting(app, state, key.project_id);
+            return outcome.map(|()| first.unwrap_or(RequestOutcome::Failed));
         }
+        let (job, next_extra_runs, next_extra_items) = combine_queued_jobs(drained);
+        request = job.text;
+        current_run = job.context.run_id;
+        extra_run_ids = next_extra_runs;
+        extra_item_works = next_extra_items;
+        item_id = job.context.item_id;
+        channel_id = job.context.channel_id;
+        parallel = job.context.parallel;
+        batch = job.context.batch;
+        resumed_run = job.context.resumed_run;
+        reply_to = job.context.reply_to;
     }
 }
 
