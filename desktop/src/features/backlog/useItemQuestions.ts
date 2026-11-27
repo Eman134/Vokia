@@ -9,7 +9,13 @@ interface QuestionLink {
   itemId: string
 }
 
-const questionText = (title: string, detail: string): string => (detail ? `${title} — ${detail}` : title)
+const normalizeQuestion = (title: string, detail: string): { text: string; detail?: string } => {
+  const cleanTitle = title.trim()
+  const cleanDetail = detail.trim()
+  if (!cleanTitle) return { text: cleanDetail }
+  if (!cleanDetail || cleanDetail === cleanTitle) return { text: cleanTitle }
+  return { text: cleanTitle, detail: cleanDetail }
+}
 const answeredMessage = (title: string): string => `Respondido no item: ${title}`
 
 export const useItemQuestions = defineStore('itemQuestions', () => {
@@ -30,9 +36,11 @@ export const useItemQuestions = defineStore('itemQuestions', () => {
       if (decision.itemId === null || isLinked(decision.id)) continue
       if (backlog.loadedProjectId !== decision.projectId) continue
       if (!backlog.items.some((item) => item.id === decision.itemId)) continue
+      const { text, detail } = normalizeQuestion(decision.title, decision.detail)
       const question = {
         id: DECISION_QUESTION_PREFIX + crypto.randomUUID(),
-        text: questionText(decision.title, decision.detail),
+        text,
+        ...(detail ? { detail } : {}),
         options: [...decision.options],
       }
       links.value[question.id] = { decisionId: decision.id, itemId: decision.itemId }

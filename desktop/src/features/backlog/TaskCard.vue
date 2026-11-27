@@ -28,6 +28,7 @@ import {
   type BacklogState,
 } from './backlogTypes'
 import { cardActionFor } from './cardAction'
+import { openQuestionsCount } from './backlogFilters'
 import BacklogPlanActions from './BacklogPlanActions.vue'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
@@ -41,6 +42,7 @@ const props = withDefaults(
     state: BacklogState
     planLine?: string
     proposal?: ParsedProposal
+    sprintName?: string
     density?: CardDensity
     selectable?: boolean
     selected?: boolean
@@ -81,6 +83,7 @@ const CHECKBOX_OFF_CLASSES = 'hidden border-line bg-surface text-transparent hov
 const ID_CLASSES = 'shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-tiny font-bold tracking-wide text-ink'
 const TAG_CLASSES = 'max-w-[110px] truncate rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 text-tiny text-muted'
 const PAPERCLIP_PATH = 'M11.5 4.5 6.3 9.7a2 2 0 1 1-2.8-2.8l5.6-5.6a3.2 3.2 0 0 1 4.5 4.5l-5.7 5.7a4.4 4.4 0 0 1-6.2-6.2l5.2-5.2'
+const CHAT_BUBBLE_PATH = 'M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z'
 const CHECK_PATH = 'M3.5 8.5 6.5 11.5 12.5 5'
 const QUEUED_TEXT = 'Na fila de triagem…'
 const GENERATING_TEXT = 'Escrevendo o plano…'
@@ -94,6 +97,8 @@ const extraTagsCount = computed(() => Math.max(0, props.item.tags.length - MAX_V
 const descriptionContent = computed(() => extractAttachments(props.item.description ?? ''))
 const compactDescription = computed(() => descriptionContent.value.text.trim())
 const attachmentCount = computed(() => descriptionContent.value.attachments.length)
+const interactionCount = computed(() => props.item.interactionCount ?? 0)
+const openQuestions = computed(() => openQuestionsCount(props.item))
 const isCompact = computed(() => props.density === 'compact')
 
 const chip = computed(
@@ -162,8 +167,28 @@ function onCardClick(event: MouseEvent): void {
       <span class="sr-only">{{ chip.label }}:</span>
       <span :class="ID_CLASSES" data-testid="card-id">{{ displayId }}</span>
       <UiMarker v-if="isFeature" tone="blue" class="text-tiny font-semibold">feature</UiMarker>
+      <span
+        v-if="!isCompact && sprintName"
+        class="max-w-[120px] truncate rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 text-tiny text-muted"
+        :title="`Sprint: ${sprintName}`"
+        data-testid="card-sprint-badge"
+      >
+        {{ sprintName }}
+      </span>
       <UiBadge v-if="isAutoClosed" status="trabalhando" :label="AUTO_CLOSED_LABEL" />
       <div v-if="isCompact || selectable" class="ml-auto flex shrink-0 items-center gap-1.5">
+        <span
+          v-if="isCompact && interactionCount > 0"
+          class="inline-flex shrink-0 items-center gap-0.5 text-tiny tabular-nums"
+          :class="openQuestions > 0 ? 'font-semibold text-warn' : 'text-muted'"
+          :title="openQuestions > 0 ? `${interactionCount} interações (${openQuestions} pergunta aberta)` : `${interactionCount} interações`"
+          data-testid="card-compact-interactions"
+        >
+          <svg viewBox="0 0 16 16" class="size-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path :d="CHAT_BUBBLE_PATH" />
+          </svg>
+          {{ interactionCount }}
+        </span>
         <span
           v-if="isCompact && attachmentCount > 0"
           class="inline-flex shrink-0 items-center gap-0.5 text-tiny text-muted tabular-nums"
@@ -233,6 +258,19 @@ function onCardClick(event: MouseEvent): void {
 
     <div v-if="!isCompact" class="mt-auto flex items-center gap-1.5 pt-0.5 lg:gap-2">
       <BacklogPlanActions v-if="action" :action="action" class="hidden lg:flex" @action="emit('action', $event)" />
+      <span
+        v-if="interactionCount > 0 || openQuestions > 0"
+        class="inline-flex items-center gap-1 text-tiny tabular-nums"
+        :class="openQuestions > 0 ? 'font-semibold text-warn' : 'text-muted'"
+        :title="openQuestions > 0 ? `${openQuestions} ${openQuestions === 1 ? 'pergunta pendente' : 'perguntas pendentes'}` : `${interactionCount} interações`"
+        data-testid="card-interactions"
+      >
+        <svg viewBox="0 0 16 16" class="size-3 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path :d="CHAT_BUBBLE_PATH" />
+        </svg>
+        <span>{{ interactionCount }}</span>
+        <span v-if="openQuestions > 0">· {{ openQuestions }}?</span>
+      </span>
       <span class="ml-auto shrink-0" :title="ownerName">
         <UserAvatar v-if="isUnassigned(item)" :size="AVATAR_SIZE" />
         <AgentPortrait v-else :who="item.who" :size="AVATAR_SIZE" />

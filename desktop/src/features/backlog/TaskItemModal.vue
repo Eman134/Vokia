@@ -73,6 +73,7 @@ import MarkdownText from '../team/MarkdownText.vue'
 import AgentPicker from '../agents/AgentPicker.vue'
 import type { Agent } from '../team/events'
 import { activityTime } from './activityTime'
+import { effectiveLastActivityAt, openQuestionsCount } from './backlogFilters'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 
 type PendingConfirm = 'archive' | 'delete' | 'discard-plan' | null
@@ -263,9 +264,30 @@ function onDelegateTo(agentId: Agent | null): void {
   void runItem.run(item.value.id, agentId)
 }
 
+function onSprintChange(event: Event): void {
+  if (!item.value) return
+  const target = event.target as HTMLSelectElement
+  const sprintId = target.value.trim() || null
+  void backlog.setItemSprint(item.value.id, sprintId)
+}
+
+function formatLastActivity(ms: number | null): string | undefined {
+  if (ms === null) return undefined
+  return new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+}
+
 const details = computed(() => {
   const current = item.value
   if (!current) return []
+  const interactionCount = current.interactionCount ?? 0
+  const openQuestions = openQuestionsCount(current)
+  const interactionsLabel =
+    interactionCount > 0 || openQuestions > 0
+      ? openQuestions > 0
+        ? `${interactionCount} (${openQuestions} ${openQuestions === 1 ? 'pergunta aberta' : 'perguntas abertas'})`
+        : `${interactionCount}`
+      : undefined
+  const lastActivityLabel = formatLastActivity(effectiveLastActivityAt(current))
   const rows: [string, string | undefined][] = [
     ['Tipo', current.type === 'feature' ? 'Feature' : 'Tarefa'],
     ['Aberto por', current.by],
@@ -273,6 +295,8 @@ const details = computed(() => {
     ['Feature', current.feature],
     ['Prioridade', current.priority],
     ['Estimativa', current.estimate],
+    ['Interações', interactionsLabel],
+    ['Última atividade', lastActivityLabel],
     ['Custo', usage.value.turns > 0 ? (formatCostUsd(usage.value.costUsd) ?? undefined) : undefined],
     ['Tempo', usage.value.workMs > 0 ? (formatThinkingDuration(usage.value.workMs) ?? undefined) : undefined],
   ]
@@ -739,7 +763,8 @@ watch(
             <section v-if="pendingQuestions.length" class="flex flex-col gap-3">
               <h3 class="text-label font-semibold text-ink">{{ QUESTIONS_TITLE(leaderName) }}</h3>
               <div v-for="question in pendingQuestions" :key="question.id" class="flex flex-col gap-1.5">
-                <p class="text-control text-ink">{{ question.text }}</p>
+                <p class="wrap-break-word text-control font-medium text-ink">{{ question.text }}</p>
+                <MarkdownText v-if="question.detail" :text="question.detail" />
                 <div class="flex flex-wrap gap-1.5">
                   <UiChip
                     v-for="option in [...question.options, OTHER_OPTION]"
@@ -814,6 +839,22 @@ watch(
                     test-id="task-owner-picker"
                     @select="onAssignOwner"
                   />
+                </dd>
+                <dt class="text-muted">Sprint</dt>
+                <dd class="min-w-0">
+                  <select
+                    :value="item.sprintId ?? ''"
+                    :disabled="backlog.sprints.length === 0 && !item.sprintId"
+                    aria-label="Selecionar sprint do card"
+                    data-testid="task-sprint-picker"
+                    class="h-7 w-full cursor-pointer rounded-sm border border-line bg-surface px-2 text-caption text-ink focus:border-ink focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    @change="onSprintChange"
+                  >
+                    <option value="">Sem sprint</option>
+                    <option v-for="sprint in backlog.sprints" :key="sprint.id" :value="sprint.id">
+                      {{ sprint.name }}
+                    </option>
+                  </select>
                 </dd>
                 <template v-for="[label, value] in details" :key="label">
                   <dt class="text-muted">{{ label }}</dt>
