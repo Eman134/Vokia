@@ -30,12 +30,12 @@ const FILTER_OPTIONS: readonly { label: string; value: MemoryFilter }[] = [
   { label: 'Preferências', value: 'preferencias' },
 ]
 
-const MARKER_SIZE = 30
-const HEADER_CLASSES = 'flex flex-col items-start gap-2.5 px-4.5 pt-4'
-const LIST_CLASSES = 'flex flex-col gap-3 px-4.5 py-4'
-const ROW_CLASSES = 'flex items-start gap-3'
-const SUGGESTION_ROW_CLASSES = 'flex items-start gap-3 rounded-md bg-accent-soft p-3'
-const CONTENT_CLASSES = 'flex min-w-0 flex-1 flex-col items-stretch gap-2'
+const MARKER_SIZE = 22
+const HEADER_CLASSES = 'flex shrink-0 flex-col items-start gap-2 border-b border-line px-3.5 py-3'
+const LIST_CLASSES = 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3.5 py-3'
+const ROW_CLASSES = 'flex items-start gap-2'
+const SUGGESTION_ROW_CLASSES = 'flex items-start gap-2.5 rounded-md bg-accent-soft p-2.5'
+const CONTENT_CLASSES = 'flex min-w-0 flex-1 flex-col items-stretch gap-1'
 const CHIP_WARN_CLASSES = 'inline-flex items-center rounded-sm bg-warn-soft px-1.5 py-0.5 text-tiny font-medium text-warn-text'
 const CHIP_ACCENT_CLASSES = 'inline-flex items-center rounded-sm bg-accent-soft px-1.5 py-0.5 text-tiny font-medium text-accent'
 const CHIP_MUTED_CLASSES = 'inline-flex items-center rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny font-medium text-muted'

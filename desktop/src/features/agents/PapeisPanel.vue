@@ -20,12 +20,12 @@ import type { Role } from './rolesApi'
 import { useRoles } from './useRoles'
 
 const LIST_CLASSES = 'flex w-full min-w-0 flex-col gap-3 rounded-md bg-surface p-5'
-const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-md border border-line p-6'
+const FICHA_CLASSES = 'flex w-full min-w-0 flex-col gap-4 rounded-md border border-line bg-surface p-5'
 const ROW_BASE_CLASSES = 'flex cursor-pointer flex-col gap-0.5 rounded-md border-[1.5px] px-3 py-2 text-left'
 const ROW_ACTIVE_CLASSES = HAND_SELECTED_CLASSES
 const ROW_INACTIVE_CLASSES = 'border-transparent hover:bg-hover'
 const NAME_CLASSES = 'truncate text-control font-semibold text-ink'
-const COLUMNS_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]'
+const COLUMNS_CLASSES = 'grid min-w-0 grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,440px)]'
 const BODY_CLASSES = 'whitespace-pre-wrap text-body text-ink'
 
 const roles = useRoles()

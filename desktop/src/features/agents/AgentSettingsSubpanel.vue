@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import { useNavigation } from '../../shell/useNavigation'
+import { trapFocus } from '../backlog/dialogFocus'
 import UiButton from '../../ui/UiButton.vue'
+import UiCloseButton from '../../ui/UiCloseButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
@@ -133,7 +135,9 @@ const learning = useLearningSuggestions()
 const artifacts = useArtifacts()
 const executionMode = useExecutionMode()
 
-const backButtonRef = ref<HTMLButtonElement>()
+const dialogRef = ref<HTMLElement>()
+const closeButtonRef = ref<{ $el: HTMLElement } | null>(null)
+const titleId = useId()
 const avatarLabelId = useId()
 
 const newDir = ref('')
@@ -151,7 +155,7 @@ watch(
 
 onMounted(() => {
   void nextTick(() => {
-    backButtonRef.value?.focus()
+    closeButtonRef.value?.$el.focus()
   })
 })
 
@@ -294,27 +298,34 @@ function downloadExportJson(): void {
 </script>
 
 <template>
-  <div
-    class="flex min-w-0 flex-col gap-4"
-    @keydown.esc.stop="emit('back')"
-  >
-    <div class="flex items-center gap-2 border-b border-line pb-3">
-      <button
-        ref="backButtonRef"
-        type="button"
-        class="inline-flex cursor-pointer items-center gap-1 rounded-sm px-2 py-1 text-caption font-medium text-muted hover:bg-surface-2 hover:text-ink"
-        :class="INK_FOCUS_CLASSES"
-        @click="emit('back')"
+  <Teleport to="body">
+    <div
+      class="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+      @click.self="emit('back')"
+    >
+      <section
+        ref="dialogRef"
+        data-testid="agent-subpanel-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="titleId"
+        tabindex="-1"
+        class="flex max-h-[82vh] w-[560px] max-w-full flex-col overflow-hidden rounded-md border border-line bg-surface shadow-paper focus:outline-none"
+        @keydown.esc.stop="emit('back')"
+        @keydown.tab="trapFocus($event, dialogRef)"
       >
-        <span aria-hidden="true">&lsaquo;</span>
-        <span>Voltar</span>
-      </button>
-      <h3 class="truncate text-control font-semibold text-ink">
-        {{ SUBPANEL_TITLES[subpanel] }}
-      </h3>
-    </div>
+        <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3">
+          <div class="flex min-w-0 items-center gap-2">
+            <h2 :id="titleId" class="truncate text-control font-bold text-ink">
+              {{ SUBPANEL_TITLES[subpanel] }}
+            </h2>
+            <span class="truncate text-caption text-muted">· {{ agent.name }}</span>
+          </div>
+          <UiCloseButton ref="closeButtonRef" data-testid="agent-subpanel-close" @press="emit('back')" />
+        </header>
 
-    <UiNotice v-if="failure !== null" :text="failure" @close="emit('clearFailure')" />
+        <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+          <UiNotice v-if="failure !== null" :text="failure" @close="emit('clearFailure')" />
 
     <!-- Avatar -->
     <div v-if="subpanel === 'avatar'" class="flex flex-col gap-3">
@@ -694,5 +705,8 @@ function downloadExportJson(): void {
       </div>
       <p class="text-caption text-muted">{{ NOTIFICATION_NOTE }}</p>
     </div>
-  </div>
+        </div>
+      </section>
+    </div>
+  </Teleport>
 </template>

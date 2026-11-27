@@ -20,12 +20,12 @@ onMounted(() => {
   if (roster.agents.length === 0) void roster.load()
 })
 
-const PAGE_CLASSES = `flex-[999_1_640px] flex min-w-0 flex-col gap-5 overflow-y-auto ${PAGE_INSET_CLASSES}`
+const PAGE_CLASSES = `flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto lg:overflow-hidden ${PAGE_INSET_CLASSES}`
 const PAGE_TITLE = 'Memória e grafo'
-const SECTIONS_CLASSES = 'flex flex-wrap items-start gap-4.5'
-const SECTION_CLASSES = 'flex min-w-0 flex-col overflow-hidden rounded-md border border-line bg-surface'
-const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} flex-[1_1_400px]`
-const GRAPH_SECTION_CLASSES = `${SECTION_CLASSES} flex-[999_1_560px]`
+const SECTIONS_CLASSES = 'flex min-h-0 flex-1 flex-col gap-4 lg:flex-row'
+const SECTION_CLASSES = 'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-line bg-surface'
+const MEMORY_SECTION_CLASSES = `${SECTION_CLASSES} max-h-[420px] w-full shrink-0 lg:h-full lg:max-h-none lg:w-[310px] xl:w-[340px]`
+const GRAPH_SECTION_CLASSES = `${SECTION_CLASSES} min-h-[420px] flex-1 lg:h-full`
 </script>
 
 <template>
