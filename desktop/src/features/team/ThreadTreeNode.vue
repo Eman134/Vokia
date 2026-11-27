@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import UnreadDot from '../channels/UnreadDot.vue'
 import type { UnreadState } from '../channels/unread'
 import { useUnread } from '../channels/useUnread'
@@ -43,23 +43,6 @@ const backlog = useBacklog()
 const runItem = useRunItem()
 const unread = useUnread()
 
-const subthreadsOverride = ref<boolean | null>(null)
-
-function hasSelectedDescendant(node: TaskThread): boolean {
-  if (feed.screen.kind === 'thread' && feed.screen.itemId === node.itemId) return true
-  return node.subthreads.some(hasSelectedDescendant)
-}
-
-const subthreadsOpen = computed<boolean>(() => {
-  if (subthreadsOverride.value !== null) return subthreadsOverride.value
-  if (props.thread.subthreads.some(hasSelectedDescendant)) return true
-  return props.thread.subthreads.some((sub) => sub.status === 'working' || sub.status === 'needs-you')
-})
-
-function toggleSubthreads(): void {
-  subthreadsOverride.value = !subthreadsOpen.value
-}
-
 function threadShown(itemId: string): boolean {
   return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
 }
@@ -93,19 +76,6 @@ const isThreadActive = computed(
         :aria-pressed="threadShown(thread.itemId)"
         @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
       >
-        <span
-          v-if="thread.subthreads.length > 0"
-          role="button"
-          tabindex="0"
-          class="grid size-4 shrink-0 place-items-center rounded-sm text-[10px] text-muted hover:bg-hover hover:text-ink"
-          :title="subthreadsOpen ? 'Recolher subthreads' : 'Expandir subthreads'"
-          :aria-expanded="subthreadsOpen"
-          @click.stop="toggleSubthreads"
-          @keydown.enter.stop.prevent="toggleSubthreads"
-          @keydown.space.stop.prevent="toggleSubthreads"
-        >
-          {{ subthreadsOpen ? '▾' : '▸' }}
-        </span>
         <AgentPortrait
           v-if="thread.assignee && categoryKey !== 'done'"
           :who="thread.assignee"
@@ -156,18 +126,5 @@ const isThreadActive = computed(
         <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
       </button>
     </div>
-
-    <ul
-      v-if="thread.subthreads.length > 0 && subthreadsOpen"
-      class="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-line pl-2"
-      data-testid="subthreads-tree"
-    >
-      <ThreadTreeNode
-        v-for="sub in thread.subthreads"
-        :key="`${categoryKey}-${sub.itemId}`"
-        :thread="sub"
-        :category-key="categoryKey"
-      />
-    </ul>
   </li>
 </template>

@@ -419,7 +419,7 @@ watch(
           type="button"
           class="cursor-pointer rounded-full border px-2 py-0.5 text-tiny font-medium transition-colors"
           :class="!feed.screen.agent ? 'border-ink bg-ink text-bg' : 'border-line bg-surface-2 text-muted hover:text-ink'"
-          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId })"
+          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId, subItemId: feed.screen.subItemId })"
         >
           Todos ({{ activeThread.participants.length }})
         </button>
@@ -433,7 +433,7 @@ watch(
               ? 'border-ink bg-ink text-bg'
               : 'border-line bg-surface-2 text-ink hover:bg-hover'
           "
-          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId, agent: participant })"
+          @click="feed.showScreen({ kind: 'thread', itemId: activeThread.itemId, agent: participant, subItemId: feed.screen.subItemId })"
         >
           <AgentPortrait :who="participant" :size="16" />
           <span>{{ agentName(participant) }}</span>
@@ -450,11 +450,28 @@ watch(
           v-for="sub in activeThread.subthreads"
           :key="sub.itemId"
           type="button"
-          class="inline-flex max-w-64 cursor-pointer items-center gap-1.5 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny text-ink hover:bg-hover"
+          class="inline-flex max-w-64 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-tiny font-medium transition-colors"
+          :class="
+            feed.screen.subItemId === sub.itemId
+              ? 'border-ink bg-ink text-bg'
+              : 'border-line bg-surface-2 text-ink hover:bg-hover'
+          "
           :title="sub.title"
-          @click="feed.showScreen({ kind: 'thread', itemId: sub.itemId })"
+          @click="
+            feed.showScreen({
+              kind: 'thread',
+              itemId: activeThread.itemId,
+              agent: feed.screen.agent,
+              subItemId: feed.screen.subItemId === sub.itemId ? undefined : sub.itemId,
+            })
+          "
         >
-          <span class="shrink-0 font-mono text-muted">{{ sub.publicId ?? sub.itemId }}</span>
+          <span
+            class="shrink-0 font-mono"
+            :class="feed.screen.subItemId === sub.itemId ? 'text-bg/75' : 'text-muted'"
+          >
+            {{ sub.publicId ?? sub.itemId }}
+          </span>
           <span class="truncate">{{ sub.title }}</span>
         </button>
       </div>

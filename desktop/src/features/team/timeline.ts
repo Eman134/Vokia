@@ -35,7 +35,7 @@ export type ConversationScreen =
   | { kind: 'agent'; agent: Agent }
   | { kind: 'copy'; copyId: string; baseAgent: Agent; number: number; itemId?: string | null; itemTitle?: string | null }
   | { kind: 'channel'; channel: number | typeof GENERAL_CHANNEL_NAME }
-  | { kind: 'thread'; itemId: string; agent?: Agent }
+  | { kind: 'thread'; itemId: string; agent?: Agent; subItemId?: string }
   | { kind: 'triage' }
   | { kind: 'logs' }
 
@@ -132,7 +132,8 @@ export function screenEntries(
     case 'channel':
       return feed.filter((entry) => entryInChannel(entry, screen.channel, channels))
     case 'thread': {
-      const items = entriesOfItems(feed, new Set([screen.itemId]), threadAgents)
+      const targetId = screen.subItemId ?? screen.itemId
+      const items = entriesOfItems(feed, new Set([targetId]), threadAgents)
       return screen.agent ? items.filter((entry) => entryInvolves(entry, screen.agent!)) : items
     }
     case 'triage':
