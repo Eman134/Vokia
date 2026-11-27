@@ -1,7 +1,12 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { DEFAULT_RECIPIENT } from '../agents'
 import { mentionSpans } from '../composerMentions'
 import { expandCommand, parseLocalCommand } from '../slashCommands'
+import {
+  composerDraftKey,
+  useConversationDrafts,
+  type ComposerScope,
+} from '../useConversationDrafts'
 import { useBtw } from './useBtw'
 import { agentName } from '../agents'
 import { useProjects } from '../../projects/useProjects'
@@ -24,8 +29,8 @@ import { useChannels } from '../../channels/useChannels'
 import { useComposerAttachments } from '../../attachments/useComposerAttachments'
 import { useProviders } from '../../providers/useProviders'
 
-// Rascunho e envio vivem no pai: o campo é desmontado offline, e a restauração após falha precisa sobreviver a isso.
-export function useComposerSubmit() {
+// Rascunho é persistido automaticamente por contexto (conversa/barra), sobrevivendo à troca de página sem modal.
+export function useComposerSubmit(scope: ComposerScope = 'bar') {
   const connection = useConnection()
   const requests = useRequests()
   const requestNotices = useRequestNotices()
@@ -34,11 +39,22 @@ export function useComposerSubmit() {
   const channels = useChannels()
   const roster = useRoster()
   const providers = useProviders()
-  const draft = ref('')
-  const confirmed = ref(new Set<Agent>())
+  const draftsStore = useConversationDrafts()
   const deliveryMode = ref<'auto' | 'now' | 'queue'>('auto')
   const composerAttachments = useComposerAttachments()
   const projects = useProjects()
+
+  const draftKey = computed(() =>
+    composerDraftKey(scope, projects.selected?.id, feed.screen),
+  )
+  const draft = computed({
+    get: () => draftsStore.getText(draftKey.value),
+    set: (value: string) => draftsStore.setText(draftKey.value, value),
+  })
+  const confirmed = computed({
+    get: () => draftsStore.getConfirmed(draftKey.value),
+    set: (value: Set<Agent>) => draftsStore.setConfirmed(draftKey.value, value),
+  })
 
   async function submit(): Promise<void> {
     const text = draft.value.trim()

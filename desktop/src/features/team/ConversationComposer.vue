@@ -44,7 +44,7 @@ const triage = useTriage()
 const channels = useChannels()
 const threads = useThreads()
 const navigation = useNavigation()
-const { draft, submit, attachments } = useComposerSubmit()
+const { draft, submit, attachments } = useComposerSubmit('conversation')
 const field = ref<HTMLTextAreaElement>()
 
 const triageItems = computed(() => backlog.items.filter((item) => backlog.triagingIds.has(item.id)))
