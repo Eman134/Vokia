@@ -77,15 +77,15 @@ const interacting = computed(
     modeOpen.value ||
     agentPickerOpen.value,
 )
-const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() =>
   showsInlinePermission({
     flowActive: flow.active,
-    expanded: expanded.value,
     pendingCount: feed.projectPermissions.length,
     hasContent: hasDraft.value,
   }),
 )
+const pillExpanded = computed(() => interacting.value || inlinePermission.value)
+const expanded = computed(() => flow.active || pillExpanded.value)
 const canAsk = computed(() => flow.flow !== 'onboarding')
 const statusStore = useTeamStatus()
 const requests = useRequests()
@@ -98,6 +98,7 @@ useErrorNotices()
 const layoutKey = computed(() =>
   [
     interacting.value,
+    inlinePermission.value,
     flow.active,
     flow.flow,
     flow.step,
@@ -114,14 +115,14 @@ const layoutKey = computed(() =>
   ].join('|'),
 )
 const pillWidthClass = computed(() => {
-  if (canAsk.value && interacting.value) {
+  if (canAsk.value && pillExpanded.value) {
     return EXPANDED_WIDTH_CLASS
   }
   return flow.active ? CONTENT_WIDTH_CLASS : COMPACT_WIDTH_CLASS
 })
 
 // Sem isto o rótulo é cortado com "…" nos quadros em que a pílula já está mais estreita que o texto.
-watch(interacting, (active) => {
+watch(pillExpanded, (active) => {
   clearTimeout(collapseTimer)
   collapsing.value = !active
   if (!active) {
