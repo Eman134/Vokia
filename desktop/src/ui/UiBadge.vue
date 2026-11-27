@@ -21,10 +21,12 @@ const GLYPH_SIZE = 12
 const CHECK_BOX = 16
 const CHECK_SEED = 11
 const CHECK_PATH = sketchCheck(CHECK_BOX, CHECK_BOX, CHECK_SEED, DEFAULT_JITTER)
-const BASE_CLASSES = 'relative inline-flex h-6 shrink-0 items-center rounded-sm px-2 text-caption font-medium'
+const BASE_CLASSES = 'relative inline-flex h-6 shrink-0 items-center text-caption font-medium'
+const DEFAULT_SHAPE_CLASSES = 'rounded-sm px-2'
+const CIRCLE_SHAPE_CLASSES = 'rounded-[50%] px-3'
 const GLYPH_CLASSES = 'mr-1 flex-none'
 const CIRCLE_CLASSES =
-  'pointer-events-none absolute -inset-x-1 -inset-y-0.5 h-[calc(100%+4px)] w-[calc(100%+8px)]'
+  'pointer-events-none absolute -inset-x-1 -inset-y-0.5 h-[calc(100%+4px)] w-[calc(100%+8px)] text-ink'
 const GRAPHITE_LINE_CLASSES = 'pointer-events-none absolute inset-x-1 bottom-0.5 h-1.5 text-graphite'
 // Cada estado tem marca-texto (cor) e forma (tique, círculo, rabisco, traço), para não depender só da cor.
 const TEXT_CLASSES: Record<BadgeStatus, string> = {
@@ -53,6 +55,7 @@ const highlighted = props.highlight && useHighlightOnce(HIGHLIGHT_KEY)
   <span
     :class="[
       BASE_CLASSES,
+      status === 'precisa de você' ? CIRCLE_SHAPE_CLASSES : DEFAULT_SHAPE_CLASSES,
       TEXT_CLASSES[status],
       highlighted ? HIGHLIGHT_SURFACE_CLASSES : SURFACE_CLASSES[status],
     ]"
