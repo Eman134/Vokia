@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiSelect from '../../ui/UiSelect.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import type { OverrideReason } from '../team/events'
@@ -71,6 +72,7 @@ const newTier = ref<ModelTier>('intermediate')
 const newModel = ref('')
 const newEffort = ref('')
 
+const initialLoading = ref(true)
 const saving = ref(false)
 const feedbackMsg = ref<string | null>(null)
 const feedbackError = ref<string | null>(null)
@@ -82,13 +84,17 @@ function syncFromStore(): void {
 }
 
 onMounted(async () => {
-  await Promise.all([
-    providersStore.load().catch(() => {}),
-    activeLlm.load().catch(() => {}),
-  ])
-  syncFromStore()
-  if (!newCli.value && providersStore.providers.length > 0) {
-    newCli.value = providersStore.providers[0].id
+  try {
+    await Promise.all([
+      providersStore.load().catch(() => {}),
+      activeLlm.load().catch(() => {}),
+    ])
+    syncFromStore()
+    if (!newCli.value && providersStore.providers.length > 0) {
+      newCli.value = providersStore.providers[0].id
+    }
+  } finally {
+    initialLoading.value = false
   }
 })
 
@@ -353,7 +359,15 @@ async function saveConfig(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div v-if="initialLoading" class="flex flex-col gap-4">
+    <section :class="PANEL_CLASSES">
+      <UiSkeleton type="heading, subtitle, list-item, card" />
+    </section>
+    <section :class="PANEL_CLASSES">
+      <UiSkeleton type="heading, text" />
+    </section>
+  </div>
+  <div v-else class="flex flex-col gap-4">
     <section data-testid="fallback-chain-editor" aria-label="Fallback e roteamento" :class="PANEL_CLASSES">
       <div class="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
         <div class="flex flex-col gap-1">

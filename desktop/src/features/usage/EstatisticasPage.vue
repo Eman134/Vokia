@@ -9,6 +9,7 @@ import UiEmpty from '../../ui/UiEmpty.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import UiSelect from '../../ui/UiSelect.vue'
 import UiTable from '../../ui/UiTable.vue'
 import { useProjects } from '../projects/useProjects'
@@ -559,7 +560,17 @@ onMounted(async () => {
 
     <UiNotice v-if="error !== null" :text="error" @close="error = null" />
 
-    <UiEmpty v-if="!loading && isEmpty" :title="EMPTY_TITLE" :text="EMPTY_TEXT" />
+    <div v-if="loading && !data" class="flex flex-col gap-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <UiSkeleton v-for="n in 4" :key="n" type="card" />
+      </div>
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <UiSkeleton type="card" />
+        <UiSkeleton type="card" />
+      </div>
+    </div>
+
+    <UiEmpty v-else-if="!loading && isEmpty" :title="EMPTY_TITLE" :text="EMPTY_TEXT" />
 
     <template v-else-if="data">
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

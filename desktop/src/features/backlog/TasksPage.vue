@@ -7,6 +7,7 @@ import UiNotice from '../../ui/UiNotice.vue'
 import { PAGE_INSET_CLASSES } from '../../ui/pageLayout'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import { useNavigation } from '../../shell/useNavigation'
 import { useProjects } from '../projects/useProjects'
 import { useRoster } from '../team/useRoster'
@@ -27,7 +28,6 @@ import {
   EMPTY_BOARD_TITLE,
   EMPTY_COLUMN_TEXT,
   LOAD_ERROR_PREFIX,
-  LOADING_TEXT,
   NEW_REQUEST_LABEL,
 } from './tasksPageCopy'
 import {
@@ -786,7 +786,7 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
               <span class="font-mono text-tiny font-bold">{{ draggingItem?.publicId ?? draggingItem?.id }}</span>
               <p class="truncate font-semibold">{{ draggingItem?.title }}</p>
             </div>
-            <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
+            <UiSkeleton v-if="backlog.loading" type="card" :count="2" />
           </section>
         </div>
       </div>

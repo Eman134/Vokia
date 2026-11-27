@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import UiSwitch from '../../ui/UiSwitch.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import type {
@@ -572,7 +573,7 @@ async function removeEnvVar(key: string): Promise<void> {
         </div>
       </div>
 
-      <p v-if="envLoading" class="text-small text-muted">Carregando variáveis...</p>
+      <UiSkeleton v-if="envLoading" type="list-item" :count="2" />
       <ul v-else-if="envVars.length > 0" class="flex flex-col divide-y divide-line rounded-sm border border-line bg-surface">
         <li
           v-for="item in envVars"

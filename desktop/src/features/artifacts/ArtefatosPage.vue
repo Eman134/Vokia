@@ -10,6 +10,7 @@ import UiNotice from '../../ui/UiNotice.vue'
 import UiPageHeader from '../../ui/UiPageHeader.vue'
 import UiSegmented from '../../ui/UiSegmented.vue'
 import UiSelect from '../../ui/UiSelect.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import { PAGE_LABELS } from '../../shell/railNav'
 import { useNavigation } from '../../shell/useNavigation'
 import { useBacklog } from '../backlog/useBacklog'
@@ -27,7 +28,6 @@ import {
   ARTIFACTS_BACK_LABEL,
   ARTIFACTS_EMPTY_TITLE,
   ARTIFACTS_FILTER_LABEL,
-  ARTIFACTS_LOADING_TEXT,
   ARTIFACTS_NEW_LABEL,
   ARTIFACTS_OPENING_TEXT,
   ARTIFACTS_PLANS_LABEL,
@@ -435,7 +435,7 @@ function saved(document: ArtifactDocument): void {
           </section>
         </div>
         <div v-else :class="EMPTY_AREA_CLASSES">
-          <p v-if="artifacts.loading && total === 0" class="text-small text-muted">{{ ARTIFACTS_LOADING_TEXT }}</p>
+          <UiSkeleton v-if="artifacts.loading && total === 0" type="list-item-two-line" :count="4" class="w-full max-w-2xl" />
           <UiEmpty v-else-if="total === 0" :title="ARTIFACTS_EMPTY_TITLE" />
           <UiEmpty v-else :title="NOTHING_FOUND_TITLE">
             <template #action>

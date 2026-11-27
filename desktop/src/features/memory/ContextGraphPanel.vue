@@ -6,6 +6,7 @@ import { useProjects } from '../projects/useProjects'
 import { useLearningSuggestions } from './useLearningSuggestions'
 import UiButton from '../../ui/UiButton.vue'
 import UiEmpty from '../../ui/UiEmpty.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import {
   DEFAULT_JITTER,
   sketchDiamond,
@@ -552,7 +553,8 @@ function nodeColor(node: ContextGraphNode): string {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-baseline justify-between gap-2 px-4.5 py-4">
+  <div class="flex h-full min-h-0 flex-col">
+  <div class="flex shrink-0 flex-wrap items-baseline justify-between gap-2 px-4.5 py-3">
     <div class="flex flex-wrap items-baseline gap-2">
       <h2 class="text-lead text-ink">Grafo de Conhecimento</h2>
       <p class="text-caption text-muted">{{ GRAPH_DESCRIPTION }}</p>
@@ -572,6 +574,8 @@ function nodeColor(node: ContextGraphNode): string {
     {{ error }}
   </p>
 
+  <UiSkeleton v-else-if="loading && !hasNodes" type="block" class="p-4.5" />
+
   <UiEmpty
     v-else-if="!hasNodes && !loading"
     class="px-4.5 pb-6"
@@ -580,9 +584,9 @@ function nodeColor(node: ContextGraphNode): string {
   />
 
   <template v-else-if="hasNodes">
-    <div class="flex flex-col border-t border-line lg:flex-row">
+    <div class="flex min-h-0 flex-1 flex-col border-t border-line lg:flex-row">
       <div
-        class="relative isolate z-0 h-[500px] flex-1 overflow-hidden select-none"
+        class="relative isolate z-0 min-h-[380px] flex-1 overflow-hidden select-none"
         style="background-color: light-dark(#fcf6e3, #17171c);"
         :class="isPanning ? 'cursor-grabbing' : 'cursor-grab'"
         @wheel="onWheel"
@@ -759,7 +763,7 @@ function nodeColor(node: ContextGraphNode): string {
       </aside>
     </div>
 
-    <div class="flex flex-col gap-3 border-t border-line px-4.5 py-4">
+    <div class="flex max-h-40 shrink-0 flex-col gap-2 overflow-y-auto border-t border-line px-4.5 py-2.5">
       <h3 class="text-label font-semibold text-ink">Otimizações sugeridas</h3>
       <p v-if="optimizations.length === 0" class="text-small text-muted">
         Nenhuma otimização pendente para o estado atual do grafo.
@@ -797,4 +801,5 @@ function nodeColor(node: ContextGraphNode): string {
       </ul>
     </div>
   </template>
+  </div>
 </template>

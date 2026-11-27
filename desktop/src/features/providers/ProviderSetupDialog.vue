@@ -8,6 +8,7 @@ import UiCommandBlock from '../../ui/UiCommandBlock.vue'
 import UiField from '../../ui/UiField.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiSelect from '../../ui/UiSelect.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import { trapFocus } from '../backlog/dialogFocus'
 import type {
   InspectCliResult,
@@ -489,9 +490,7 @@ async function saveAddWithoutTest(): Promise<void> {
         @close="actionError = null"
       />
 
-      <p v-if="providersStore.loading" class="py-4 text-center text-caption text-muted">
-        Carregando provedores...
-      </p>
+      <UiSkeleton v-if="providersStore.loading" type="list-item-avatar" :count="4" class="py-2" />
 
       <ul v-else class="flex flex-col divide-y divide-line rounded-md border border-line bg-surface">
         <li

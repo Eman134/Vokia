@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import UiIcon from '../../ui/UiIcon.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import { useProjects } from '../projects/useProjects'
 import { splitHighlightedSnippet } from './searchApi'
 import {
@@ -51,7 +52,6 @@ const PLACEHOLDER = 'Buscar projetos, cards (#), agentes (@), ações (>), artef
 const DIALOG_LABEL = 'Busca global'
 const EMPTY_TITLE = 'Nenhum resultado encontrado.'
 const EMPTY_HINT = 'Tente outro termo ou troque o filtro acima.'
-const LOADING_TEXT = 'Buscando no workspace...'
 const CLEAR_LABEL = 'Limpar busca'
 const CURRENT_PROJECT_LABEL = 'Projeto atual'
 
@@ -335,11 +335,8 @@ function canLoadMore(group: PaletteGroup): boolean {
             </section>
           </template>
 
-          <div
-            v-else-if="search.loading"
-            class="flex items-center justify-center py-10 text-caption text-muted"
-          >
-            {{ LOADING_TEXT }}
+          <div v-else-if="search.loading" class="p-3">
+            <UiSkeleton type="list-item-two-line" :count="4" />
           </div>
 
           <div

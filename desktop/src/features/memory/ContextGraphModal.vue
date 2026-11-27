@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import MarkdownText from '../team/MarkdownText.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiCloseButton from '../../ui/UiCloseButton.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import {
   DEFAULT_JITTER,
   sketchDiamond,
@@ -334,7 +335,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
             <div class="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2 text-meta text-muted">
               <span>Grafo relacionado ({{ nodes.length }} nós · {{ edges.length }} conexões)</span>
               <div class="flex items-center gap-2">
-                <span v-if="loading">Carregando...</span>
+                <UiSkeleton v-if="loading" type="list-item-two-line" :count="2" />
                 <UiButton
                   v-if="projectId"
                   variant="quiet"

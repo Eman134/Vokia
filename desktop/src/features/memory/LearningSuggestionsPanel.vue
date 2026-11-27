@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiSelect from '../../ui/UiSelect.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import { useProjects } from '../projects/useProjects'
 import type { LearningSuggestion, SkillScope, SuggestionKind, SuggestionOperation } from './learningApi'
 import { useLearningSuggestions } from './useLearningSuggestions'
@@ -104,9 +105,7 @@ onMounted(() => {
       {{ store.error }}
     </p>
 
-    <p v-if="store.loading && visibleSuggestions.length === 0" class="text-caption text-muted">
-      Carregando sugestões...
-    </p>
+    <UiSkeleton v-if="store.loading && visibleSuggestions.length === 0" type="list-item-two-line" :count="2" />
 
     <p v-else-if="visibleSuggestions.length === 0" class="text-caption text-muted">
       Nenhuma sugestão pendente no momento.

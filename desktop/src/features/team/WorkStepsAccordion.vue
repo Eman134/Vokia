@@ -4,6 +4,7 @@ import type { Agent, TurnActivity } from './events'
 import { listTurnWorkSteps, type HistoryWorkStepEntry } from './teamApi'
 import { parseWorkStepsBlock, pickClosestWorkStepEntry, workStepsFromActivity } from './workStepsFormat'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 
 const props = defineProps<{
   projectId: number | null
@@ -128,9 +129,7 @@ onMounted(() => {
           Provedor: {{ effectiveProvider }}
         </span>
       </div>
-      <p v-if="loading && activeSteps.length === 0" class="text-caption text-muted">
-        Carregando etapas…
-      </p>
+      <UiSkeleton v-if="loading && activeSteps.length === 0" type="list-item" :count="3" />
       <ul v-else class="flex min-w-0 flex-col gap-1">
         <li
           v-for="(step, idx) in activeSteps"

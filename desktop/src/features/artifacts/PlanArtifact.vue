@@ -6,6 +6,7 @@ import UiCheckbox from '../../ui/UiCheckbox.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
 import UiNotice from '../../ui/UiNotice.vue'
 import UiProgress from '../../ui/UiProgress.vue'
+import UiSkeleton from '../../ui/UiSkeleton.vue'
 import type { BacklogItem, BacklogState } from '../backlog/backlogTypes'
 import PlanBreakdown from '../backlog/PlanBreakdown.vue'
 import { breakdownOf, type StageFlow } from '../backlog/planBreakdown'
@@ -32,7 +33,6 @@ import {
   PLAN_DOWNLOAD_ARIA,
   PLAN_DOWNLOAD_LABEL,
   PLAN_EDIT_LABEL,
-  PLAN_LOADING_TEXT,
   PLAN_RETRY_LABEL,
   PLAN_RISKS_TITLE,
   PLAN_SAVED_NOTICE,
@@ -230,7 +230,7 @@ function saved(fresh: PlanArtifactDetail): void {
       <p class="min-w-0 flex-1">{{ loadError }}</p>
       <UiButton variant="quiet" size="sm" data-testid="plan-retry" @press="load">{{ PLAN_RETRY_LABEL }}</UiButton>
     </div>
-    <p v-else-if="loading" class="text-small text-muted">{{ PLAN_LOADING_TEXT }}</p>
+    <UiSkeleton v-else-if="loading" type="heading, paragraph, card" />
 
     <section :aria-label="PLAN_STAGES_TITLE" :class="SECTION_CLASSES">
       <h4 :class="SECTION_TITLE_CLASSES">{{ PLAN_STAGES_TITLE }}</h4>
