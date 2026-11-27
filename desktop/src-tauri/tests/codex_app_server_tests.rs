@@ -1224,7 +1224,7 @@ fn diagnosticos_pt_br_para_binario_antigo_backfill_code_mode_host_e_fallback_jso
 fn shutdown_all_sync_encerra_arvore_de_processos_sem_deixar_orfaos() {
     tauri::async_runtime::block_on(async {
         #[cfg(windows)]
-        let mut cmd = {
+        let cmd = {
             let mut c = crate::claude::base_command(Path::new("cmd.exe"));
             c.args(["/C", "ping -n 30 127.0.0.1 >nul"]);
             c.stdin(std::process::Stdio::piped())
@@ -1233,7 +1233,7 @@ fn shutdown_all_sync_encerra_arvore_de_processos_sem_deixar_orfaos() {
             c
         };
         #[cfg(not(windows))]
-        let mut cmd = {
+        let cmd = {
             let mut c = crate::claude::base_command(Path::new("sh"));
             c.args(["-c", "sleep 30"]);
             c.process_group(0);
@@ -1243,7 +1243,7 @@ fn shutdown_all_sync_encerra_arvore_de_processos_sem_deixar_orfaos() {
             c
         };
 
-        let mut child = cmd.spawn().expect("spawn processo dummy");
+        let mut child = crate::silent_process::spawn_silent(cmd).expect("spawn processo dummy");
         let pid = child.id().expect("pid do processo dummy");
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();

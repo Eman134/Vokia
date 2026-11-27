@@ -415,3 +415,125 @@ fn agente_desliga_a_busca_adiada_de_ferramentas_da_cli() {
         assert_eq!(tool_search(&command).as_deref(), Some("false"));
     }
 }
+
+#[test]
+fn comando_base_preserva_no_proxy() {
+    let command = base_command(Path::new("claude"));
+    let no_proxy = command
+        .as_std()
+        .get_envs()
+        .find(|(name, _)| *name == OsStr::new("NO_PROXY"))
+        .and_then(|(_, value)| value.map(|v| v.to_string_lossy().into_owned()));
+    assert_eq!(no_proxy.as_deref(), Some("127.0.0.1,localhost"));
+}
+
+#[test]
+fn parse_cmd_shim_resolve_shim_npm_com_dp0_e_espacos_no_caminho() {
+    let temp = std::env::temp_dir().join(format!(
+        "vokia-shim-npm-{}-dir com espaco",
+        std::process::id()
+    ));
+    let script_dir = temp.join("node_modules").join("pkg").join("bin");
+    std::fs::create_dir_all(&script_dir).expect("criar dir");
+    let node_exe = temp.join("node.exe");
+    let script_js = script_dir.join("cli.js");
+    std::fs::write(&node_exe, b"").expect("criar node.exe fake");
+    std::fs::write(&script_js, b"console.log('ok');").expect("criar cli.js");
+
+    let shim = r#"@ECHO off
+GOTO start
+:find_dp0
+SET dp0=%~dp0
+EXIT /b
+:start
+SETLOCAL
+CALL :find_dp0
+endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\node_modules\pkg\bin\cli.js" %*
+"#;
+
+    let resolved = crate::silent_process::parse_cmd_shim(&temp, shim)
+        .expect("shim npm deve resolver para node.exe + script");
+    assert_eq!(resolved.program, node_exe);
+    assert_eq!(
+        resolved.prefix_args,
+        vec![script_js.to_string_lossy().into_owned()]
+    );
+
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[test]
+fn parse_cmd_shim_resolve_wrapper_para_exe_nativo() {
+    let temp = std::env::temp_dir().join(format!("vokia-shim-exe-{}", std::process::id()));
+    let bin_dir = temp.join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("criar dir");
+    let target_exe = bin_dir.join("tool.exe");
+    std::fs::write(&target_exe, b"").expect("criar tool.exe fake");
+
+    let shim = "@echo off\n\"%~dp0\\bin\\tool.exe\" --stdio %*\n";
+    let resolved = crate::silent_process::parse_cmd_shim(&temp, shim)
+        .expect("wrapper .exe deve resolver diretamente");
+    assert_eq!(resolved.program, target_exe);
+    assert_eq!(resolved.prefix_args, vec!["--stdio".to_string()]);
+
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[test]
+fn parse_cmd_shim_faz_fallback_seguro_para_batch_complexo() {
+    let temp = std::env::temp_dir().join(format!("vokia-shim-complex-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&temp);
+
+    let shim = "@echo off\nfor %%i in (%*) do echo %%i\npowershell -Command %1 %*\n";
+    assert!(crate::silent_process::parse_cmd_shim(&temp, shim).is_none());
+
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[cfg(windows)]
+#[test]
+fn resolve_direct_executable_prefere_exe_irmao_ao_lado_de_cmd() {
+    let temp = std::env::temp_dir().join(format!("vokia-sibling-exe-{}", std::process::id()));
+    std::fs::create_dir_all(&temp).expect("criar dir");
+    let cmd_path = temp.join("meu-cli.cmd");
+    let exe_path = temp.join("meu-cli.exe");
+    std::fs::write(&cmd_path, b"@echo off\r\necho hi %*\r\n").expect("criar .cmd");
+    std::fs::write(&exe_path, b"").expect("criar .exe");
+
+    let resolved = crate::silent_process::resolve_direct_executable(&cmd_path);
+    assert_eq!(resolved.program, exe_path);
+    assert!(resolved.prefix_args.is_empty());
+
+    let _ = std::fs::remove_dir_all(&temp);
+}
+
+#[cfg(windows)]
+#[test]
+fn spawn_silent_executa_no_windows_e_captura_stdout_stderr_e_status() {
+    use tokio::io::AsyncReadExt;
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+
+    rt.block_on(async {
+        let mut cmd = crate::silent_process::configure_tokio_command(Path::new("cmd.exe"));
+        cmd.args(["/c", "echo linha_out & echo linha_err 1>&2"]);
+        let mut child = crate::silent_process::spawn_silent(cmd).expect("spawn_silent");
+        drop(child.stdin.take());
+
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        if let Some(mut stdout) = child.stdout.take() {
+            stdout.read_to_end(&mut out).await.expect("ler stdout");
+        }
+        if let Some(mut stderr) = child.stderr.take() {
+            stderr.read_to_end(&mut err).await.expect("ler stderr");
+        }
+        let status = child.wait().await.expect("wait");
+        assert!(status.success());
+        assert!(String::from_utf8_lossy(&out).contains("linha_out"));
+        assert!(String::from_utf8_lossy(&err).contains("linha_err"));
+    });
+}

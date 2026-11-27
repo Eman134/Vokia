@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
 use tokio::time::timeout;
 
 use crate::agents::Agent;
@@ -477,7 +476,9 @@ async fn call_stdio_mcp_search(
     connector: &McpSearchConnectorConfig,
     query: &str,
 ) -> Result<String, String> {
-    let mut cmd = Command::new(connector.command.trim());
+    let mut cmd = crate::silent_process::configure_tokio_command(std::path::Path::new(
+        connector.command.trim(),
+    ));
     cmd.args(&connector.args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

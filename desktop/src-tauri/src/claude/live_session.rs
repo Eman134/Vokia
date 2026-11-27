@@ -5,7 +5,6 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
@@ -16,6 +15,9 @@ use super::control::{parse_control_request, ControlRequest, PermissionRequest, P
 use super::error::ClaudeError;
 use super::stream::{into_reply, CliResponse, RateLimits, Reply, StreamAccumulator};
 use crate::mcp::{ExchangeSlot, McpSession};
+use crate::silent_process::{
+    spawn_silent, SilentChild, SilentChildStderr, SilentChildStdin, SilentChildStdout,
+};
 
 const USER_MESSAGE_KIND: &str = "user";
 const USER_ROLE: &str = "user";
@@ -29,9 +31,9 @@ const DENIED_MESSAGE: &str = "O usuário negou este comando.";
 const PERMISSION_WAIT_PREFIX: &str = "aguardando sua permissão: ";
 
 pub struct LiveSession {
-    child: Child,
-    stdin: ChildStdin,
-    lines: Lines<BufReader<ChildStdout>>,
+    child: SilentChild,
+    stdin: SilentChildStdin,
+    lines: Lines<BufReader<SilentChildStdout>>,
     session_id: Option<String>,
     timeout: Duration,
     stderr_tail: Option<JoinHandle<String>>,
@@ -70,7 +72,7 @@ impl LiveSession {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command.spawn().map_err(ClaudeError::Spawn)?;
+        let mut child = spawn_silent(command).map_err(ClaudeError::Spawn)?;
         let stdin = child
             .stdin
             .take()
@@ -271,7 +273,7 @@ fn permission_response(verdict: PermissionVerdict, input: serde_json::Value) -> 
 }
 
 // Sem leitor contínuo o stderr cheio travaria o processo no meio de uma resposta.
-async fn read_stderr_tail(stderr: ChildStderr) -> String {
+async fn read_stderr_tail(stderr: SilentChildStderr) -> String {
     let mut lines = BufReader::new(stderr).lines();
     let mut tail = VecDeque::with_capacity(STDERR_TAIL_LINES);
     while let Ok(Some(line)) = lines.next_line().await {

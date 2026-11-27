@@ -529,16 +529,12 @@ async fn read_usage_via_agy_cli(
     timeout: Duration,
     now_ms: u64,
 ) -> Result<Option<ProviderPlanUsage>, UsageReadError> {
-    let mut command = tokio::process::Command::new("agy");
+    let mut command = crate::silent_process::configure_tokio_command(std::path::Path::new("agy"));
     command
         .args(["-p", "/usage", "--output-format", "json"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
-    #[cfg(windows)]
-    {
-        command.creation_flags(0x0800_0000);
-    }
     let output = tokio::time::timeout(timeout, command.output())
         .await
         .map_err(|_| UsageReadError::new("Timeout ao consultar `agy -p /usage`."))?

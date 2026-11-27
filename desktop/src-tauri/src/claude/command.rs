@@ -79,9 +79,6 @@ const LEITURA_FLAGS: LevelFlags = LevelFlags {
     tools: Some(READ_TOOLS),
     allowed: &[&READ_ALLOWED],
 };
-// Sem isso o executável release (subsistema "windows") abre uma janela de console a cada chamada.
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Copy)]
 pub enum Access<'a> {
@@ -114,7 +111,8 @@ pub fn kill_process_tree(pid: u32) {
         let mut command = std::process::Command::new("taskkill");
         command
             .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .creation_flags(CREATE_NO_WINDOW);
+            .stdin(Stdio::null())
+            .creation_flags(crate::silent_process::CREATE_NO_WINDOW);
         command
     };
     #[cfg(not(windows))]
@@ -223,15 +221,13 @@ pub(crate) fn base_command_for_provider(cli: &Path, provider_id: &str) -> Comman
 }
 
 pub(crate) fn base_command(cli: &Path) -> Command {
-    let mut command = Command::new(cli);
+    let mut command = crate::silent_process::configure_tokio_command(cli);
     command.env("NO_PROXY", NO_PROXY_HOSTS);
     // Com stdin aberto a CLI espera 3 s por dados antes de responder.
     command.stdin(Stdio::null());
     for name in STRIPPED_AUTH_ENV {
         command.env_remove(name);
     }
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
     command
 }
 

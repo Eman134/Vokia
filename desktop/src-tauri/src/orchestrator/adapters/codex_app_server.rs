@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value as Json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
 use tokio::time::timeout;
 
@@ -407,6 +407,8 @@ struct TurnListeners {
 
 pub type UsagePushCallback = Arc<dyn Fn(ProviderPlanUsage) + Send + Sync>;
 
+use crate::silent_process::{spawn_silent, SilentChild};
+
 pub struct CodexRpcClient {
     writer_tx: mpsc::UnboundedSender<String>,
     next_id: AtomicU64,
@@ -414,7 +416,7 @@ pub struct CodexRpcClient {
     listeners: Arc<StdMutex<TurnListeners>>,
     alive: Arc<AtomicBool>,
     pid: Option<u32>,
-    child: Arc<StdMutex<Option<Child>>>,
+    child: Arc<StdMutex<Option<SilentChild>>>,
     stderr_tail: Arc<StdMutex<VecDeque<String>>>,
     global_usage_push: Arc<StdMutex<Option<UsagePushCallback>>>,
 }
@@ -423,7 +425,7 @@ impl CodexRpcClient {
     pub fn from_io<R, W>(
         reader: R,
         mut writer: W,
-        child: Option<Child>,
+        child: Option<SilentChild>,
         pid: Option<u32>,
         stderr_tail: Arc<StdMutex<VecDeque<String>>>,
     ) -> Arc<Self>
@@ -503,8 +505,8 @@ impl CodexRpcClient {
         user_args: &[String],
         mcp: Option<&McpSession>,
     ) -> Result<Arc<Self>, ClaudeError> {
-        let mut command = build_app_server_command(program, user_args, mcp);
-        let mut child = command.spawn().map_err(ClaudeError::Spawn)?;
+        let command = build_app_server_command(program, user_args, mcp);
+        let mut child = spawn_silent(command).map_err(ClaudeError::Spawn)?;
         let pid = child.id();
         let stdin = child.stdin.take().ok_or_else(|| {
             if let Some(pid) = pid {

@@ -749,17 +749,12 @@ fn probe_version_sync(
         .filter(|args| !args.is_empty())
         .unwrap_or_else(|| vec!["--version".to_string()]);
 
-    let mut cmd = std::process::Command::new(program);
+    let mut cmd = crate::silent_process::configure_std_command(program);
     cmd.args(base_args)
         .args(&version_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
 
     let Ok(output) = cmd.output() else {
         return Ok(None);
