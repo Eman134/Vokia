@@ -1180,6 +1180,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     ensure_column(&tx, "orch_teams", "leader_agent", "TEXT")?;
     ensure_column(&tx, "messages", "usage", "TEXT")?;
     ensure_column(&tx, "messages", "task_result", "TEXT")?;
+    ensure_column(&tx, "permission_rules", "last_used_at", "INTEGER")?;
     make_orchestration_global(&tx)?;
     migrate_flow(&tx)?;
     tx.execute_batch("DROP TABLE IF EXISTS orch_rules")?;

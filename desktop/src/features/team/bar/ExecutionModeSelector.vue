@@ -138,7 +138,7 @@ onUnmounted(() => {
               class="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center"
               :class="EXECUTION_MODE_INFO[option].colorClass"
             >
-              <svg :class="[ICON_CLASSES, current.colorClass]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <svg :class="ICON_CLASSES" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path :d="EXECUTION_MODE_INFO[option].icon" />
               </svg>
             </span>

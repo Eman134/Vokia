@@ -5,6 +5,7 @@ import UiChip from '../../ui/UiChip.vue'
 import UiField from '../../ui/UiField.vue'
 import { agentName } from '../team/agents'
 import AgentPortrait from '../team/AgentPortrait.vue'
+import MarkdownText from '../team/MarkdownText.vue'
 import { PORTRAIT_SIZES } from '../team/portraitArt'
 import {
   acceptsTypedAnswer,
@@ -95,7 +96,7 @@ function dismissChoice(): void {
       <AgentPortrait :who="card.agent" :size="PORTRAIT_SIZES.stack" class="mt-0.5 shrink-0" />
       <span class="min-w-0">{{ name }} · {{ card.title }}</span>
     </p>
-    <p v-if="card.detail" class="wrap-break-word whitespace-pre-wrap text-caption text-muted">{{ card.detail }}</p>
+    <MarkdownText v-if="card.detail" :text="card.detail" tasks class="text-caption! text-muted" />
     <template v-if="isChoice">
       <div class="mt-2 flex flex-wrap gap-1.5">
         <UiChip

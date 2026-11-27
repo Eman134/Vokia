@@ -41,9 +41,16 @@ const ATTACHMENTS_OTHER_PROJECT_NOTICE = 'Os anexos são de outro projeto. Selec
 
 export type QueueMove = 'up' | 'down'
 
+export interface QuotedMessage {
+  author: string
+  text: string
+  itemId?: string
+}
+
 export const useRequests = defineStore('requests', () => {
   const roster = useRoster()
   const pendingMention = ref<Agent | null>(null)
+  const pendingQuote = ref<QuotedMessage | null>(null)
   const queue = ref<QueuedRequest[]>([])
   const control = useAgentControl()
   const projects = useProjects()
@@ -73,6 +80,14 @@ export const useRequests = defineStore('requests', () => {
     const agent = pendingMention.value
     pendingMention.value = null
     return agent
+  }
+
+  function requestQuote(quote: QuotedMessage): void {
+    pendingQuote.value = quote
+  }
+
+  function clearPendingQuote(): void {
+    pendingQuote.value = null
   }
 
   function queuedFor(
@@ -466,11 +481,14 @@ export const useRequests = defineStore('requests', () => {
 
   return {
     pendingMention,
+    pendingQuote,
     queue,
     projectQueue,
     queuedFor,
     requestMention,
     takePendingMention,
+    requestQuote,
+    clearPendingQuote,
     load,
     send,
     startEdit,

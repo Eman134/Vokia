@@ -24,7 +24,7 @@ const props = defineProps<{
 const OPEN_CARD_LABEL = 'Abrir task'
 const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
 const OPEN_CARD_ICON_SIZE = 13
-const START_THREAD_LABEL = 'Iniciar task'
+const START_THREAD_LABEL = 'Retomar / verificar'
 const START_THREAD_ICON_PATH = 'M5 3.5l7.5 4.5L5 12.5z'
 const THREAD_PORTRAIT_SIZE = 16
 const SELECTED_TEXT_CLASSES = 'text-ink-pen'
@@ -72,6 +72,9 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
   const raw = (thread.publicId ?? thread.itemId).trim()
   return raw.length > 0 && raw.length <= 12 ? raw : null
 }
+const isThreadActive = computed(
+  () => runItem.isRunning(props.thread.itemId) || props.thread.status === 'working',
+)
 </script>
 
 <template>
@@ -141,7 +144,7 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
         <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
       </button>
       <button
-        v-if="runItem.canRun(thread.itemId)"
+        v-if="runItem.canRun(thread.itemId) && !isThreadActive"
         type="button"
         :class="[THREAD_CARD_BUTTON_CLASSES, 'right-6 text-ok hover:text-ok']"
         :title="`${START_THREAD_LABEL}: ${thread.title}`"

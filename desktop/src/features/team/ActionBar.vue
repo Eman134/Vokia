@@ -260,6 +260,21 @@ function onPointerLeave(): void {
         <ExecutionModeSelector v-if="canAsk && expanded && !flow.active && !inlinePermission" v-model:open="modeOpen" />
         <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
       </div>
+      <div
+        v-if="requests.pendingQuote && expanded"
+        class="flex max-w-48 shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-tiny text-ink"
+        data-testid="composer-quote-chip"
+      >
+        <span class="truncate">Citando {{ requests.pendingQuote.author }}</span>
+        <button
+          type="button"
+          class="cursor-pointer text-muted hover:text-ink"
+          aria-label="Remover citação"
+          @click="requests.clearPendingQuote()"
+        >
+          ×
+        </button>
+      </div>
       <ComposerField
         v-model:draft="draft"
         v-model:confirmed="confirmed"

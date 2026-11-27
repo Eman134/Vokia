@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { agentIconSvg } from './agentArt'
-import { renderMarkdown, type MentionAgent } from './markdown'
+import { renderMarkdown, type MentionAgent, type MentionTask } from './markdown'
 import { useRequests } from './useRequests'
 import { useRoster } from './useRoster'
+import { useBacklog } from '../backlog/useBacklog'
 
 const MENTION_ICON_SIZE = 14
 const MENTION_SELECTOR = '[data-mention]'
+const TASK_MENTION_SELECTOR = '[data-task-mention]'
 const CHECK_INDEX_ATTRIBUTE = 'checkIndex'
 
 const props = defineProps<{ text: string; tasks?: boolean }>()
@@ -14,9 +16,17 @@ const emit = defineEmits<{ toggle: [index: number, done: boolean] }>()
 
 const roster = useRoster()
 const requests = useRequests()
+const backlog = useBacklog()
 
 function insertMention(event: MouseEvent): void {
-  const element = event.target instanceof Element ? event.target.closest<HTMLElement>(MENTION_SELECTOR) : null
+  const target = event.target instanceof Element ? event.target : null
+  const taskElement = target?.closest<HTMLElement>(TASK_MENTION_SELECTOR)
+  const itemId = taskElement?.dataset.taskMention
+  if (itemId) {
+    backlog.open(itemId)
+    return
+  }
+  const element = target?.closest<HTMLElement>(MENTION_SELECTOR)
   const agent = element?.dataset.mention
   if (agent) requests.requestMention(agent)
 }
@@ -32,8 +42,14 @@ const agents = computed<MentionAgent[]>(() =>
   roster.agents.map((agent) => ({ id: agent.id, name: agent.name, icon: agentIconSvg(agent.id, MENTION_ICON_SIZE) })),
 )
 
+const taskMentions = computed<MentionTask[]>(() =>
+  backlog.items.map((item) => ({ id: item.id, publicId: item.publicId, title: item.title })),
+)
+
 // renderMarkdown escapa todo o texto antes de montar o HTML, então v-html recebe só marcação nossa.
-const html = computed(() => renderMarkdown(props.text, agents.value, { taskList: props.tasks }))
+const html = computed(() =>
+  renderMarkdown(props.text, agents.value, { taskList: props.tasks, taskMentions: taskMentions.value }),
+)
 </script>
 
 <template>

@@ -13,7 +13,7 @@ export function escapeRegExp(text: string): string {
 // Os caracteres `< / & #` antes do nome evitam casar dentro de tags e entidades do HTML que o markdown
 // gera; o mesmo critério vale para o texto digitado, para as duas telas destacarem igual.
 function mentionPattern(name: string): RegExp {
-  return new RegExp(`(?<![\\p{L}\\p{N}<\\/&#@])@?${escapeRegExp(normalizeName(name))}(?![\\p{L}\\p{N}])`, 'gu')
+  return new RegExp(`(?<![\\p{L}\\p{N}_<\\/&#@])@?${escapeRegExp(normalizeName(name))}(?![\\p{L}\\p{N}_])`, 'gu')
 }
 
 // Posições valem no texto original: normalizeName troca letra acentuada por uma letra, sem mudar o tamanho.

@@ -49,8 +49,9 @@ const optimizations = ref<ContextGraphOptimization[]>([])
 const selectedNodeId = ref<string | null>(null)
 
 const draftFact = ref('')
-const draftCategory = ref<'decisao' | 'macro' | 'mapa-arquivos'>('decisao')
+const draftCategory = ref<'decisao' | 'macro' | 'mapa-arquivos' | 'arquivo'>('decisao')
 const draftKeywords = ref('')
+const draftFiles = ref('')
 const saving = ref(false)
 const scanningRepo = ref(false)
 const saveFeedback = ref<string | null>(null)
@@ -273,16 +274,22 @@ async function saveToGraph(): Promise<void> {
       .split(',')
       .map((k) => k.trim().toLowerCase())
       .filter((k) => k.length >= 3)
+    const files = draftFiles.value
+      .split(',')
+      .map((f) => f.trim())
+      .filter((f) => f.length > 0)
     await memoryGraphSave({
       projectId: props.projectId,
       fact: draftFact.value.trim(),
       category: draftCategory.value,
       keywords,
+      files: files.length > 0 ? files : undefined,
       cardId: props.cardId,
       author: props.agent ?? 'você',
     })
     saveFeedback.value = 'Salvo no grafo de memória para otimizações futuras.'
     draftKeywords.value = ''
+    draftFiles.value = ''
     await learning.load(props.projectId)
     await load()
   } catch (err) {
@@ -401,9 +408,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
                 </g>
               </svg>
             </div>
-            <div v-if="selectedNode" class="flex items-start gap-2 border-t border-line bg-surface px-3.5 py-2 text-small text-ink">
+            <div v-if="selectedNode" class="flex items-start gap-2.5 border-t border-line bg-surface px-3.5 py-2.5 text-small text-ink">
               <span class="mt-0.5 shrink-0 rounded-sm bg-accent-soft px-1.5 py-0.5 text-tiny font-semibold text-accent">{{ selectedNode.kind }}</span>
-              <MarkdownText :text="selectedNode.subtitle ?? selectedNode.path ?? selectedNode.label" class="min-w-0 flex-1" />
+              <MarkdownText
+                :text="selectedNode.subtitle ?? selectedNode.path ?? selectedNode.label"
+                tasks
+                class="min-w-0 flex-1 text-small!"
+              />
             </div>
           </div>
 
@@ -412,7 +423,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
               <h3 class="text-label font-semibold text-ink">Contexto completo</h3>
               <MarkdownText
                 :text="contextText || 'Sem conteúdo textual.'"
-                class="max-h-48 overflow-y-auto wrap-break-word text-small text-ink"
+                tasks
+                class="max-h-48 overflow-y-auto wrap-break-word text-small! text-ink"
               />
             </div>
 
@@ -425,7 +437,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
                 <option value="decisao">Decisão / Regra</option>
                 <option value="macro">Visão macro</option>
                 <option value="mapa-arquivos">Mapa de arquivos</option>
+                <option value="arquivo">Arquivo</option>
               </select>
+              <input
+                v-if="draftCategory === 'arquivo' || draftCategory === 'mapa-arquivos'"
+                v-model="draftFiles"
+                type="text"
+                class="w-full rounded-sm border border-line bg-surface px-2 py-1 font-mono text-small text-ink"
+                placeholder="Arquivos separados por vírgula (ex: src/main.rs, src/App.vue)"
+              />
               <input
                 v-model="draftKeywords"
                 type="text"
@@ -453,16 +473,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
             </div>
           </div>
 
-          <div v-if="memories.length > 0 || optimizations.length > 0" class="flex flex-col gap-1.5 rounded-md border border-line p-3.5">
+          <div v-if="memories.length > 0 || optimizations.length > 0" class="flex flex-col gap-2 rounded-md border border-line p-3.5">
             <h3 class="text-label font-semibold text-ink">Memórias e sugestões vinculadas</h3>
-            <ul class="flex flex-col gap-1.5 text-small text-muted">
-              <li v-for="mem in memories.slice(0, 5)" :key="mem.id" class="flex items-start gap-1.5">
-                <span class="shrink-0 font-semibold">[{{ mem.wing ?? mem.source }}]</span>
-                <MarkdownText :text="mem.fact" class="min-w-0 flex-1" />
+            <ul class="flex flex-col gap-2 text-small text-ink">
+              <li
+                v-for="mem in memories.slice(0, 5)"
+                :key="mem.id"
+                class="flex flex-col gap-1.5 rounded-sm border border-line/70 bg-surface-2 p-2.5"
+              >
+                <span class="self-start rounded-sm bg-surface px-1.5 py-0.5 font-mono text-tiny font-semibold text-muted">
+                  {{ mem.wing ?? mem.source }}
+                </span>
+                <MarkdownText :text="mem.fact" tasks class="min-w-0 text-small!" />
               </li>
-              <li v-for="opt in optimizations.slice(0, 3)" :key="opt.id" class="flex items-start gap-1.5">
-                <span class="shrink-0 font-semibold">[{{ opt.badge }}]</span>
-                <MarkdownText :text="opt.message" class="min-w-0 flex-1" />
+              <li
+                v-for="opt in optimizations.slice(0, 3)"
+                :key="opt.id"
+                class="flex flex-col gap-1.5 rounded-sm border border-line/70 bg-surface-2 p-2.5"
+              >
+                <span class="self-start rounded-sm bg-accent-soft px-1.5 py-0.5 font-mono text-tiny font-semibold text-accent">
+                  {{ opt.badge }}
+                </span>
+                <MarkdownText :text="opt.message" tasks class="min-w-0 text-small!" />
               </li>
             </ul>
           </div>

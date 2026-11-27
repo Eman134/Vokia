@@ -5,6 +5,7 @@ import UiButton from '../../ui/UiButton.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { KIND_LABELS as DECISION_KIND_LABELS } from '../decisions/decisionCopy'
 import { agentName } from './agents'
+import MarkdownText from './MarkdownText.vue'
 import UsageLimitFailedNotice from './UsageLimitFailedNotice.vue'
 import { useLogs, type LogEntry, type LogKind } from './useLogs'
 
@@ -153,16 +154,16 @@ function formatTime(ms: number): string {
           </div>
         </template>
 
-        <div v-else-if="item.kind === 'decision'" class="flex flex-col gap-0.5 text-ink">
-          <p class="font-medium wrap-break-word">{{ item.title }}</p>
-          <p v-if="item.detail" class="text-muted wrap-break-word">{{ item.detail }}</p>
+        <div v-else-if="item.kind === 'decision'" class="flex flex-col gap-1 text-ink">
+          <MarkdownText :text="item.title" tasks class="font-medium text-caption!" />
+          <MarkdownText v-if="item.detail" :text="item.detail" tasks class="text-caption! text-muted" />
           <p v-if="item.answer" class="text-tiny text-ok">Respondida: {{ item.answer }}</p>
           <p v-else-if="item.undone" class="text-tiny text-muted">Resposta desfeita (pendente)</p>
         </div>
 
-        <div v-else class="flex flex-col gap-0.5 text-ink">
-          <p class="font-medium wrap-break-word">{{ item.title }}</p>
-          <p v-if="item.text" class="text-muted wrap-break-word">{{ item.text }}</p>
+        <div v-else class="flex flex-col gap-1 text-ink">
+          <MarkdownText :text="item.title" tasks class="font-medium text-caption!" />
+          <MarkdownText v-if="item.text" :text="item.text" tasks class="text-caption! text-muted" />
         </div>
       </li>
     </ol>

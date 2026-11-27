@@ -10,6 +10,7 @@ pub struct PermissionRule {
     pub tool: String,
     pub command: String,
     pub created_at: i64,
+    pub last_used_at: Option<i64>,
 }
 
 const COMPOUND_OPERATORS: [&str; 11] = ["&&", "||", ";", "|", "&", "$(", "`", ">", "<", "\n", "\r"];
@@ -41,6 +42,13 @@ impl Db {
             params![project_id, tool, command, root_pattern],
             |row| row.get(0),
         )?;
+        if matching > 0 {
+            let _ = conn.execute(
+                "UPDATE permission_rules SET last_used_at = CAST(unixepoch('subsec') * 1000 AS INTEGER) \
+                 WHERE project_id = ?1 AND tool = ?2 AND (command = ?3 OR (?4 IS NOT NULL AND command = ?4))",
+                params![project_id, tool, command, root_pattern],
+            );
+        }
         Ok(matching > 0)
     }
 
@@ -53,9 +61,9 @@ impl Db {
     ) -> Result<(), DbError> {
         let conn = self.conn()?;
         conn.execute(
-            "INSERT INTO permission_rules(project_id, tool, command, created_at) \
-             VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT(project_id, tool, command) DO NOTHING",
+            "INSERT INTO permission_rules(project_id, tool, command, created_at, last_used_at) \
+             VALUES (?1, ?2, ?3, ?4, ?4) \
+             ON CONFLICT(project_id, tool, command) DO UPDATE SET last_used_at = excluded.last_used_at",
             params![project_id, tool, command, time as i64],
         )?;
         Ok(())
@@ -64,8 +72,8 @@ impl Db {
     pub fn list_permission_rules(&self, project_id: i64) -> Result<Vec<PermissionRule>, DbError> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT tool, command, created_at FROM permission_rules \
-             WHERE project_id = ?1 ORDER BY created_at DESC, tool, command",
+            "SELECT tool, command, created_at, last_used_at FROM permission_rules \
+             WHERE project_id = ?1 ORDER BY COALESCE(last_used_at, created_at) DESC, tool, command",
         )?;
         let rules = statement
             .query_map([project_id], |row| {
@@ -73,6 +81,7 @@ impl Db {
                     tool: row.get(0)?,
                     command: row.get(1)?,
                     created_at: row.get(2)?,
+                    last_used_at: row.get(3)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
