@@ -17,6 +17,7 @@ fn tok2_ember_recebe_identidade_sem_bloco_da_arvore() {
         origin_repo: Some("org/vokia".to_string()),
         last_activity_at: None,
         setup_command: None,
+        teardown_command: None,
     };
     let ember = project_context_without_tree(&project);
 
@@ -126,6 +127,7 @@ fn project_at(dir: &std::path::Path) -> Project {
         origin_repo: None,
         last_activity_at: None,
         setup_command: None,
+        teardown_command: None,
     }
 }
 

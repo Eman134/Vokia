@@ -47,11 +47,17 @@ const description = ref(props.project.description)
 const color = ref<string>(projectColorOf(props.project))
 const level = ref<PermissionLevel>(props.project.permissionLevel)
 const setupCommand = ref(props.project.setupCommand ?? '')
+const teardownCommand = ref(props.project.teardownCommand ?? '')
 const SETUP_COMMAND_LABEL = 'Comando de preparo (opcional)'
 const SETUP_COMMAND_HINT = 'Roda dentro do worktree de cada item; até 300 caracteres.'
+const TEARDOWN_COMMAND_LABEL = 'Comando de encerramento (opcional)'
+const TEARDOWN_COMMAND_HINT = 'Roda antes de remover o worktree; até 300 caracteres.'
 const SETUP_COMMAND_TOO_LONG = `Use no máximo ${SETUP_COMMAND_MAX_CHARS} caracteres.`
 const setupCommandError = computed(() =>
   [...setupCommand.value].length > SETUP_COMMAND_MAX_CHARS ? SETUP_COMMAND_TOO_LONG : undefined,
+)
+const teardownCommandError = computed(() =>
+  [...teardownCommand.value].length > SETUP_COMMAND_MAX_CHARS ? SETUP_COMMAND_TOO_LONG : undefined,
 )
 
 function close(): void {
@@ -60,7 +66,7 @@ function close(): void {
 }
 
 function submit(): void {
-  if (setupCommandError.value) return
+  if (setupCommandError.value || teardownCommandError.value) return
   emit(
     'save',
     {
@@ -69,6 +75,7 @@ function submit(): void {
       description: description.value,
       color: color.value,
       setupCommand: setupCommand.value,
+      teardownCommand: teardownCommand.value,
     },
     level.value,
   )
@@ -107,6 +114,13 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
       :error="setupCommandError"
       data-testid="edit-setup-command"
     />
+    <UiField
+      v-model="teardownCommand"
+      :label="TEARDOWN_COMMAND_LABEL"
+      :hint="TEARDOWN_COMMAND_HINT"
+      :error="teardownCommandError"
+      data-testid="edit-teardown-command"
+    />
     <div class="flex flex-col gap-1.5">
       <UiSegmented
         v-model="level"
@@ -128,7 +142,7 @@ onMounted(() => dialog.value?.querySelector<HTMLElement>(NAME_FIELD_SELECTOR)?.f
       <UiButton variant="quiet" size="lg" data-testid="edit-cancel" @press="close()">
         {{ CANCEL_LABEL }}
       </UiButton>
-      <UiButton variant="primary" size="lg" data-testid="edit-save" :disabled="Boolean(setupCommandError)" @press="submit">
+      <UiButton variant="primary" size="lg" data-testid="edit-save" :disabled="Boolean(setupCommandError || teardownCommandError)" @press="submit">
         {{ SAVE_LABEL }}
       </UiButton>
     </div>

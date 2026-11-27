@@ -223,9 +223,20 @@ async fn done_cleanup(
         .sessions
         .release_worktree(project_id, item_id, Some(&worktree_path))
         .await;
-    worktree::cleanup_done(Path::new(&project.path), &root, item_id)
-        .await
-        .map_err(FlowError::Worktree)
+    let (outcome, teardown_warning) = worktree::cleanup_done_with_teardown(
+        Path::new(&project.path),
+        &root,
+        item_id,
+        project.teardown_command.as_deref(),
+    )
+    .await
+    .map_err(FlowError::Worktree)?;
+    if let Some(warning) = teardown_warning {
+        if let Ok(db) = app.state::<DbState>().require() {
+            let _ = db.add_card_activity(project_id, item_id, &warning);
+        }
+    }
+    Ok(outcome)
 }
 
 const DEAD_WORKTREE_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);

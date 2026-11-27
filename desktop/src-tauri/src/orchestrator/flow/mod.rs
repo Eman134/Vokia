@@ -1093,9 +1093,19 @@ async fn working_dir(
         &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
         project_id,
     );
-    let worktree = worktree::ensure(project_dir, &root, item, project.setup_command.as_deref())
-        .await
-        .map_err(FlowError::Worktree)?;
+    let worktree = match worktree::ensure(project_dir, &root, item, project.setup_command.as_deref()).await {
+        Ok(worktree) => worktree,
+        Err(error) => {
+            if let Ok(db) = app.state::<DbState>().require() {
+                let _ = db.add_card_activity(
+                    project_id,
+                    item,
+                    &format!("Falha no preparo do worktree: {error}"),
+                );
+            }
+            return Err(FlowError::Worktree(error));
+        }
+    };
     Ok(worktree.path)
 }
 

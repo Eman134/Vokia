@@ -36,6 +36,7 @@ export interface Project {
   permissionLevel: PermissionLevel
   color: string | null
   setupCommand: string | null
+  teardownCommand: string | null
 }
 
 export const SETUP_COMMAND_MAX_CHARS = 300
@@ -123,6 +124,7 @@ export interface ProjectEdit {
   description: string
   color: string
   setupCommand: string
+  teardownCommand?: string
 }
 
 export function createProject(input: NewProjectInput): Promise<Project> {

@@ -67,6 +67,8 @@ pub struct ProjectEdit {
     description: String,
     color: String,
     setup_command: Option<String>,
+    #[serde(default)]
+    teardown_command: Option<String>,
 }
 
 struct CreateGuard;
@@ -111,14 +113,17 @@ fn ensure_known_color(color: &str) -> Result<(), ProjectError> {
     ))
 }
 
-fn normalize_setup_command(raw: Option<String>) -> Result<Option<String>, ProjectError> {
+fn normalize_lifecycle_command(
+    raw: Option<String>,
+    label: &str,
+) -> Result<Option<String>, ProjectError> {
     let Some(trimmed) = raw.as_deref().map(str::trim).filter(|text| !text.is_empty()) else {
         return Ok(None);
     };
     if trimmed.chars().count() > SETUP_COMMAND_MAX_CHARS {
         return Err(ProjectError::new(
             ErrorCode::SetupCommandTooLong,
-            format!("O comando de preparo passa de {SETUP_COMMAND_MAX_CHARS} caracteres."),
+            format!("O comando de {label} passa de {SETUP_COMMAND_MAX_CHARS} caracteres."),
         ));
     }
     Ok(Some(trimmed.to_string()))
@@ -128,7 +133,8 @@ pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, Pr
     let symbol = edit.symbol.trim();
     ensure_known_icon(symbol)?;
     ensure_known_color(&edit.color)?;
-    let setup_command = normalize_setup_command(edit.setup_command)?;
+    let setup_command = normalize_lifecycle_command(edit.setup_command, "preparo")?;
+    let teardown_command = normalize_lifecycle_command(edit.teardown_command, "encerramento")?;
     Ok(db.update_project(
         id,
         &edit.name,
@@ -136,6 +142,7 @@ pub fn update_project(db: &Db, id: i64, edit: ProjectEdit) -> Result<Project, Pr
         &edit.description,
         &edit.color,
         setup_command.as_deref(),
+        teardown_command.as_deref(),
     )?)
 }
 
@@ -176,6 +183,7 @@ pub async fn create_project(db: &Db, input: NewProjectInput) -> Result<Project, 
             &project.symbol,
             &project.description,
             color,
+            None,
             None,
         )?),
         None => Ok(project),

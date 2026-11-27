@@ -49,6 +49,7 @@ fn edit(color: &str) -> ProjectEdit {
         description: String::new(),
         color: color.into(),
         setup_command: None,
+        teardown_command: None,
     }
 }
 

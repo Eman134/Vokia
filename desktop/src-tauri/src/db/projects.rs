@@ -8,7 +8,7 @@ use super::error::DbError;
 
 const PROJECT_COLUMNS: &str =
     "id, name, path, selected, created_at, symbol, description, origin_kind, origin_repo, pinned, \
-     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level, color, setup_command";
+     (SELECT MAX(created_at) FROM messages WHERE project_id = projects.id), permission_level, color, setup_command, teardown_command";
 
 // Critérios antes de artefatos, e os dois com item_plans antes de backlog_items: as chaves estrangeiras apontam nessa ordem.
 const PROJECT_CHILD_TABLES: &[&str] = &[
@@ -48,6 +48,7 @@ pub struct Project {
     pub permission_level: PermissionLevel,
     pub color: Option<String>,
     pub setup_command: Option<String>,
+    pub teardown_command: Option<String>,
 }
 
 fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
@@ -74,6 +75,7 @@ fn project_from_row(row: &Row<'_>) -> rusqlite::Result<Project> {
         permission_level,
         color: row.get(12)?,
         setup_command: row.get(13)?,
+        teardown_command: row.get(14)?,
     })
 }
 
@@ -185,12 +187,13 @@ impl Db {
         description: &str,
         color: &str,
         setup_command: Option<&str>,
+        teardown_command: Option<&str>,
     ) -> Result<Project, DbError> {
         validate_project_fields(name, symbol)?;
         let conn = self.conn()?;
         let changed = conn.execute(
-            "UPDATE projects SET name = ?1, symbol = ?2, description = ?3, color = ?4, setup_command = ?5 WHERE id = ?6",
-            params![name.trim(), symbol.trim(), description.trim(), color, setup_command, id],
+            "UPDATE projects SET name = ?1, symbol = ?2, description = ?3, color = ?4, setup_command = ?5, teardown_command = ?6 WHERE id = ?7",
+            params![name.trim(), symbol.trim(), description.trim(), color, setup_command, teardown_command, id],
         )?;
         if changed == 0 {
             return Err(DbError::ProjectNotFound(id));

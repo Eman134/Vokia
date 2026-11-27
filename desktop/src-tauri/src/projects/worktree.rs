@@ -6,16 +6,20 @@ use std::time::Duration;
 
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::process::{run, tail, RunError, GIT_MISSING_MESSAGE, GIT_PROGRAM};
+use super::process::{run, run_with_env, tail, RunError, GIT_MISSING_MESSAGE, GIT_PROGRAM};
 
 // Uma trava por pasta de card: réplicas do mesmo card esperam uma só criação; cards diferentes não se bloqueiam.
 static ITEM_LOCKS: LazyLock<StdMutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+static PORT_ALLOCATIONS: LazyLock<StdMutex<HashMap<PathBuf, u16>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 const WORKTREES_DIR: &str = "worktrees";
 const BRANCH_PREFIX: &str = "vokia/";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_PATH_CHARS: usize = 260;
+const WORKTREE_PORT_START: u16 = 4100;
+const WORKTREE_PORT_END: u16 = 4999;
 
 #[cfg(windows)]
 const SHELL: (&str, &str) = ("cmd", "/C");
@@ -134,12 +138,63 @@ async fn branch_exists(git_path: &Path, dir: &Path, branch: &str) -> Result<bool
     Ok(output.status.success())
 }
 
-async fn run_setup(path: &Path, command: &str) -> Result<(), WorktreeError> {
-    let output = run(
+pub(crate) fn allocate_port(worktree_path: &Path) -> u16 {
+    let mut ports = PORT_ALLOCATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(&port) = ports.get(worktree_path) {
+        return port;
+    }
+    let used: HashSet<u16> = ports.values().copied().collect();
+    let chosen = (WORKTREE_PORT_START..=WORKTREE_PORT_END)
+        .find(|port| !used.contains(port) && std::net::TcpListener::bind(("127.0.0.1", *port)).is_ok())
+        .unwrap_or_else(|| {
+            (WORKTREE_PORT_START..=u16::MAX)
+                .find(|port| !used.contains(port))
+                .unwrap_or(WORKTREE_PORT_START)
+        });
+    ports.insert(worktree_path.to_path_buf(), chosen);
+    chosen
+}
+
+fn release_port(worktree_path: &Path) {
+    let mut ports = PORT_ALLOCATIONS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    ports.remove(worktree_path);
+}
+
+pub(crate) fn worktree_env(
+    project_dir: &Path,
+    worktree_path: &Path,
+    item_id: &str,
+) -> Vec<(String, String)> {
+    let port = allocate_port(worktree_path);
+    vec![
+        (
+            "VOKIA_WORKTREE_PATH".to_string(),
+            worktree_path.to_string_lossy().into_owned(),
+        ),
+        (
+            "VOKIA_PROJECT_ROOT".to_string(),
+            project_dir.to_string_lossy().into_owned(),
+        ),
+        ("VOKIA_CARD_ID".to_string(), item_id.to_string()),
+        ("VOKIA_PORT".to_string(), port.to_string()),
+    ]
+}
+
+async fn run_setup(
+    path: &Path,
+    command: &str,
+    envs: &[(String, String)],
+) -> Result<(), WorktreeError> {
+    let output = run_with_env(
         Path::new(SHELL.0),
         &[SHELL.1, command],
         Some(path),
         Some(SETUP_TIMEOUT),
+        envs,
     )
     .await
     .map_err(|error| match error {
@@ -156,6 +211,41 @@ async fn run_setup(path: &Path, command: &str) -> Result<(), WorktreeError> {
         path: path.to_path_buf(),
         output: tail(&output),
     })
+}
+
+async fn run_teardown(path: &Path, command: &str, envs: &[(String, String)]) -> Option<String> {
+    let output = match run_with_env(
+        Path::new(SHELL.0),
+        &[SHELL.1, command],
+        Some(path),
+        Some(SETUP_TIMEOUT),
+        envs,
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(RunError::TimedOut) => {
+            return Some(format!(
+                "Encerramento do worktree passou de {} s em {}.",
+                SETUP_TIMEOUT.as_secs(),
+                path.display()
+            ));
+        }
+        Err(RunError::Spawn(error)) => {
+            return Some(format!(
+                "Falha ao executar encerramento do worktree em {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    if output.status.success() {
+        return None;
+    }
+    Some(format!(
+        "Encerramento do worktree falhou em {}:\n{}",
+        path.display(),
+        tail(&output)
+    ))
 }
 
 // Pasta onde ficam os worktrees de um projeto; o agente trabalha e lista dentro dela.
@@ -191,9 +281,11 @@ pub async fn create(
         &["worktree", "add", "-b", &branch, &path_arg, &base],
     )
     .await?;
+    let envs = worktree_env(project_dir, &path, item_id);
     if let Some(command) = setup_command.map(str::trim).filter(|text| !text.is_empty()) {
         // A pasta que fica depois de um preparo falho seria reaproveitada pelo ensure como se estivesse pronta.
-        if let Err(error) = run_setup(&path, command).await {
+        if let Err(error) = run_setup(&path, command, &envs).await {
+            release_port(&path);
             let rollback_steps: [&[&str]; 2] = [
                 &["worktree", "remove", "--force", &path_arg],
                 &["branch", "-D", &branch],
@@ -274,6 +366,7 @@ pub async fn remove(
     if branch_exists(&git_path, project_dir, branch).await? {
         git(&git_path, project_dir, &["branch", "-D", branch]).await?;
     }
+    release_port(worktree_path);
     Ok(RemoveOutcome::Removed)
 }
 
@@ -292,29 +385,49 @@ pub async fn cleanup_done(
     worktrees_root: &Path,
     item_id: &str,
 ) -> Result<CleanupOutcome, WorktreeError> {
+    let (outcome, _) =
+        cleanup_done_with_teardown(project_dir, worktrees_root, item_id, None).await?;
+    Ok(outcome)
+}
+
+pub async fn cleanup_done_with_teardown(
+    project_dir: &Path,
+    worktrees_root: &Path,
+    item_id: &str,
+    teardown_command: Option<&str>,
+) -> Result<(CleanupOutcome, Option<String>), WorktreeError> {
     let name = safe_name(item_id);
     let path = worktrees_root.join(&name);
     let branch = format!("{BRANCH_PREFIX}{name}");
     let git_path = find_git()?;
     if !path.exists() && !branch_exists(&git_path, project_dir, &branch).await? {
-        return Ok(CleanupOutcome::Absent);
+        return Ok((CleanupOutcome::Absent, None));
     }
     let base = git(&git_path, project_dir, &["branch", "--show-current"]).await?;
     if base.is_empty() {
-        return Ok(CleanupOutcome::Kept(
-            "o projeto não está numa branch base".to_string(),
+        return Ok((
+            CleanupOutcome::Kept("o projeto não está numa branch base".to_string()),
+            None,
         ));
     }
-    match remove(project_dir, &path, &branch, &base).await {
-        Ok(RemoveOutcome::Removed) => Ok(CleanupOutcome::Removed),
-        Ok(RemoveOutcome::BranchKept { commits }) => Ok(CleanupOutcome::Kept(format!(
+    let teardown_warning = match teardown_command.map(str::trim).filter(|text| !text.is_empty()) {
+        Some(command) if path.is_dir() => {
+            let envs = worktree_env(project_dir, &path, item_id);
+            run_teardown(&path, command, &envs).await
+        }
+        _ => None,
+    };
+    let outcome = match remove(project_dir, &path, &branch, &base).await {
+        Ok(RemoveOutcome::Removed) => CleanupOutcome::Removed,
+        Ok(RemoveOutcome::BranchKept { commits }) => CleanupOutcome::Kept(format!(
             "a branch {branch} tem {commits} commit(s) que não estão em {base}"
-        ))),
-        Err(WorktreeError::UncommittedChanges(_)) => Ok(CleanupOutcome::Kept(
-            "o worktree tem alterações não commitadas".to_string(),
         )),
-        Err(error) => Err(error),
-    }
+        Err(WorktreeError::UncommittedChanges(_)) => {
+            CleanupOutcome::Kept("o worktree tem alterações não commitadas".to_string())
+        }
+        Err(error) => return Err(error),
+    };
+    Ok((outcome, teardown_warning))
 }
 
 // Varredura de worktrees mortos: poda referências órfãs no git e limpa pastas cujo card já foi concluído, arquivado ou removido.

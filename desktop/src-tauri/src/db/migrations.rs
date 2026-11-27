@@ -1176,6 +1176,7 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         backfill_agent_message_channels(&tx)?;
     }
     ensure_column(&tx, "projects", "setup_command", "TEXT")?;
+    ensure_column(&tx, "projects", "teardown_command", "TEXT")?;
     ensure_column(&tx, "orch_teams", "leader_agent", "TEXT")?;
     ensure_column(&tx, "messages", "usage", "TEXT")?;
     ensure_column(&tx, "messages", "task_result", "TEXT")?;

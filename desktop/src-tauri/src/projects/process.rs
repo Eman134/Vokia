@@ -55,12 +55,25 @@ pub(super) async fn run(
     dir: Option<&Path>,
     limit: Option<Duration>,
 ) -> Result<Output, RunError> {
+    run_with_env(program, args, dir, limit, &[]).await
+}
+
+pub(super) async fn run_with_env(
+    program: &Path,
+    args: &[&str],
+    dir: Option<&Path>,
+    limit: Option<Duration>,
+    envs: &[(String, String)],
+) -> Result<Output, RunError> {
     let mut command = base_command(program);
     command
         .args(args)
         .env("GH_PROMPT_DISABLED", "1")
         .env("GIT_TERMINAL_PROMPT", "0")
         .kill_on_drop(true);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
