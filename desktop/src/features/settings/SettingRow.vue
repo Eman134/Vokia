@@ -469,7 +469,7 @@ function toOptions(labels: readonly string[]) {
       <ThemeSwitch v-if="item.control.kind === 'theme'" />
       <div v-else-if="item.control.kind === 'app-version'" :class="STACK_CLASSES">
         <div class="flex items-baseline gap-1.5">
-          <b class="text-control text-ink">{{ updater.currentVersion ?? '0.15.1' }}</b>
+          <b class="text-control text-ink">{{ updater.currentVersion ?? '0.20.0' }}</b>
           <span class="text-small text-muted">
             {{ updater.readyText ?? (updater.status === 'idle' ? 'em dia' : updater.status) }}
           </span>
