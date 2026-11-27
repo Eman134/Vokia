@@ -18,6 +18,7 @@ export const WEB_SEARCH_SETTING_KEY = 'web_search'
 export const LEARNING_MODE_SETTING_KEY = 'learning_mode'
 export const LEARNING_TURN_CADENCE_SETTING_KEY = 'learning_turn_cadence'
 export const NOTIFICATIONS_ENABLED_SETTING_KEY = 'notifications_enabled'
+export const MOMENTS_CONFIG_SETTING_KEY = 'moments_config'
 
 export type WebSearchMode = 'auxiliary_provider' | 'mcp_connector' | 'disabled'
 

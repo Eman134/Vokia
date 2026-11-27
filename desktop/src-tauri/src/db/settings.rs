@@ -20,6 +20,7 @@ pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
 pub const SETTING_LEARNING_MODE: &str = "learning_mode";
 pub const SETTING_LEARNING_TURN_CADENCE: &str = "learning_turn_cadence";
 pub const SETTING_NOTIFICATIONS_ENABLED: &str = "notifications_enabled";
+pub const SETTING_MOMENTS_CONFIG: &str = "moments_config";
 pub const LEARNING_MODE_ASK: &str = "ask";
 pub const LEARNING_MODE_OFF: &str = "off";
 pub const LEARNING_MODE_AUTO: &str = "auto";
@@ -94,6 +95,7 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
         SettingRule::OneOf(LEARNING_CADENCE_VALUES),
     ),
     (SETTING_NOTIFICATIONS_ENABLED, SettingRule::OneOf(BOOL_VALUES)),
+    (SETTING_MOMENTS_CONFIG, SettingRule::Json),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.

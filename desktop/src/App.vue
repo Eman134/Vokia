@@ -18,6 +18,7 @@ import UpdatePrompt from './features/updater/UpdatePrompt.vue'
 import { useUpdater } from './features/updater/useUpdater'
 import { useUsage } from './features/usage/useUsage'
 import { useLimitNotices } from './features/usage/useLimitNotices'
+import { useMoments } from './features/balloon/useMoments'
 import { useInterruptedRuns } from './features/panel/useInterruptedRuns'
 import SplashScreen from './features/system/SplashScreen.vue'
 import UiEmpty from './ui/UiEmpty.vue'
@@ -32,6 +33,7 @@ const globalSearch = useGlobalSearch()
 const updater = useUpdater()
 const usage = useUsage()
 const limitNotices = useLimitNotices()
+const moments = useMoments()
 const interruptedRuns = useInterruptedRuns()
 const pageViews = computed(() => PAGE_VIEWS[navigation.page] ?? null)
 const showRail = computed(() => navigation.page !== 'onboarding')
@@ -54,11 +56,13 @@ onMounted(connection.start)
 onMounted(updater.check)
 onMounted(usage.start)
 onMounted(limitNotices.start)
+onMounted(moments.start)
 onMounted(interruptedRuns.start)
 onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onUnmounted(connection.stop)
 onUnmounted(usage.stop)
 onUnmounted(limitNotices.stop)
+onUnmounted(moments.stop)
 onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 

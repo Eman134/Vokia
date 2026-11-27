@@ -67,7 +67,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         @mouseleave="store.setHovered(item.id, false)"
       >
         <div class="flex items-start gap-2">
-          <VokiaMascot v-if="item.mascot" :look="item.mascot" />
+          <VokiaMascot v-if="item.mascot" :look="item.mascot" :size="28" />
           <div class="min-w-0">
             <p class="text-label font-semibold text-ink">{{ item.title }}</p>
           </div>

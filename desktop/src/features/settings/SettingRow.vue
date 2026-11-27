@@ -10,6 +10,7 @@ import { EXECUTION_MODE_INFO, EXECUTION_MODES, type ExecutionMode } from '../per
 import { useExecutionMode } from '../permissions/useExecutionMode'
 import { useModeChoice } from '../permissions/useModeChoice'
 import { useConsole } from '../console/useConsole'
+import { MOMENT_DEFINITIONS, useMoments } from '../balloon/useMoments'
 import { useUpdater } from '../updater/useUpdater'
 import { useUsage } from '../usage/useUsage'
 import { primaryWindowsOf, providerDisplayName, renewsLabel } from '../usage/usagePlans'
@@ -50,6 +51,7 @@ const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
 const updater = useUpdater()
 const usage = useUsage()
+const moments = useMoments()
 const ONBOARDING_PAGE = 'onboarding'
 const ACTION_HANDLERS: Record<SettingsActionId, () => void> = {
   'rever-onboarding': () => navigation.goTo(ONBOARDING_PAGE),
@@ -358,6 +360,9 @@ onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'execution-mode' && modeProjectId.value !== null) {
     void executionMode.load(modeProjectId.value)
   }
+  if (props.item.kind === 'moments' && !moments.loaded) {
+    void moments.load()
+  }
 })
 
 const ROW_CLASSES = 'flex flex-wrap items-center gap-x-3.5 gap-y-2 border-t border-line py-3'
@@ -437,16 +442,21 @@ function toOptions(labels: readonly string[]) {
 
   <div v-else-if="item.kind === 'moments'" :class="MOMENTS_CLASSES">
     <div
-      v-for="moment in item.items"
-      :key="moment.label"
-      :class="[MOMENT_CLASSES, moment.on ? MOMENT_ON_CLASSES : MOMENT_OFF_CLASSES]"
+      v-for="moment in MOMENT_DEFINITIONS"
+      :key="moment.kind"
+      :class="[MOMENT_CLASSES, moments.preferences[moment.kind] ? MOMENT_ON_CLASSES : MOMENT_OFF_CLASSES]"
     >
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
         <span class="text-control">{{ moment.label }}</span>
         <span class="text-small text-muted">{{ moment.hint }}</span>
       </div>
-      <UiSwitch :model-value="moment.on" :label="moment.label" disabled />
+      <UiSwitch
+        :model-value="moments.preferences[moment.kind]"
+        :label="moment.label"
+        @update:model-value="moments.setEnabled(moment.kind, $event)"
+      />
     </div>
+    <p v-if="moments.saveError" role="alert" :class="ERROR_CLASSES">{{ moments.saveError }}</p>
   </div>
 
   <div v-else :class="ROW_CLASSES">

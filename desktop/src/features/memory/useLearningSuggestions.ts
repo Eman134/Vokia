@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { VOKIA_EVENT, type VokiaEvent } from '../team/events'
-import { useBalloons } from '../balloon/useBalloons'
+import { useMoments } from '../balloon/useMoments'
 import { useNavigation } from '../../shell/useNavigation'
 import {
   applyLearningSuggestion,
@@ -130,28 +130,21 @@ export const useLearningSuggestions = defineStore('learningSuggestions', () => {
       if (activeProjectId.value !== undefined && payload.projectId !== activeProjectId.value) return
       void load(activeProjectId.value ?? payload.projectId)
       if (payload.newCount > 0) {
-        const balloons = useBalloons()
+        const moments = useMoments()
         const navigation = useNavigation()
-        balloons.enqueue({
-          id: `learning-suggestions:${payload.projectId}:${Date.now()}`,
-          kind: 'moment',
-          source: 'conversa',
+        moments.emitMoment({
+          kind: 'memory',
+          dedupeKey: `learning:${payload.projectId}:${Date.now()}`,
           title:
             payload.newCount === 1
-              ? 'Nova sugestão de aprendizado'
+              ? 'Isso parece um fato ou skill do projeto'
               : `${payload.newCount} novas sugestões de aprendizado`,
           text: 'Revise e aprove memórias ou skills sugeridas em 1 clique.',
-          actions: [
-            {
-              id: 'open-suggestions',
-              label: 'Ver sugestões',
-              primary: true,
-              run: () => {
-                navigation.goTo('memoria')
-              },
-            },
-            { id: 'dismiss', label: 'Depois' },
-          ],
+          actionLabel: 'Guardar na memória',
+          confirmText: 'Aberto em Memória',
+          onAccept: () => {
+            navigation.goTo('memoria')
+          },
         })
       }
     })
