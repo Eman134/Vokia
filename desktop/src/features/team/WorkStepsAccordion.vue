@@ -24,6 +24,7 @@ const BADGE_OMITTED_CLASSES = 'rounded-sm bg-warn-soft px-1.5 py-0.5 text-tiny f
 const STEP_ITEM_CLASSES = 'whitespace-pre-wrap break-words font-mono text-meta leading-note text-ink'
 
 const open = ref(false)
+const hoveredIndex = ref<number | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
 const persistedEntry = ref<HistoryWorkStepEntry | null>(null)
@@ -58,12 +59,14 @@ const effectiveProvider = computed(
 
 const visible = computed(() => totalCount.value > 0)
 
+const hoveredSummary = computed(() => {
+  if (hoveredIndex.value === null) return null
+  return activeSteps.value[hoveredIndex.value] ?? null
+})
+
 const toggleLabel = computed(() => {
   const count = totalCount.value
-  if (open.value) {
-    return `Etapas executadas (${count})`
-  }
-  return count === 1 ? 'Ver 1 etapa executada' : `Ver ${count} etapas executadas`
+  return count === 1 ? '1 etapa' : `${count} etapas`
 })
 
 const omittedLabel = computed(() => {
@@ -106,20 +109,55 @@ onMounted(() => {
 
 <template>
   <div v-if="visible" class="mt-0.5 flex min-w-0 flex-col items-start" data-testid="work-steps-accordion">
-    <button
-      type="button"
-      :class="TOGGLE_CLASSES"
-      :aria-expanded="open"
-      :aria-controls="panelId"
-      data-testid="work-steps-toggle"
-      @click="toggle"
-    >
-      <span>{{ toggleLabel }}</span>
-      <span v-if="isFallback && effectiveProvider" :class="BADGE_HANDOFF_CLASSES" data-testid="work-steps-handoff">
-        Handoff · {{ effectiveProvider }}
+    <div class="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      <button
+        type="button"
+        :class="TOGGLE_CLASSES"
+        :aria-expanded="open"
+        :aria-controls="panelId"
+        data-testid="work-steps-toggle"
+        @click="toggle"
+      >
+        <span>{{ toggleLabel }}</span>
+        <span v-if="isFallback && effectiveProvider" :class="BADGE_HANDOFF_CLASSES" data-testid="work-steps-handoff">
+          Handoff · {{ effectiveProvider }}
+        </span>
+        <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
+      </button>
+      <div
+        v-if="activeSteps.length > 0"
+        class="inline-flex items-center"
+        aria-label="Linha do tempo das etapas executadas"
+        data-testid="work-steps-inline-timeline"
+      >
+        <template v-for="(step, idx) in activeSteps" :key="idx">
+          <span v-if="idx > 0" class="h-px w-2 bg-line" aria-hidden="true" />
+          <button
+            type="button"
+            class="grid size-3.5 cursor-pointer place-items-center rounded-full focus-visible:outline-none"
+            :title="step"
+            :aria-label="step"
+            @mouseenter="hoveredIndex = idx"
+            @mouseleave="hoveredIndex = null"
+            @focus="hoveredIndex = idx"
+            @blur="hoveredIndex = null"
+            @click="toggle"
+          >
+            <span
+              class="size-1.5 rounded-full transition-transform duration-150"
+              :class="hoveredIndex === idx ? 'scale-150 bg-accent' : 'bg-muted/60 hover:bg-ink'"
+            />
+          </button>
+        </template>
+      </div>
+      <span
+        v-if="hoveredSummary"
+        class="min-w-0 max-w-80 truncate rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny text-ink"
+        data-testid="work-steps-hover-summary"
+      >
+        {{ hoveredSummary }}
       </span>
-      <span aria-hidden="true">{{ open ? '▾' : '▸' }}</span>
-    </button>
+    </div>
     <div v-if="open" :id="panelId" :class="PANEL_CLASSES" data-testid="work-steps-panel">
       <div v-if="omittedCount > 0 || (isFallback && effectiveProvider)" class="flex flex-wrap items-center gap-1.5">
         <span v-if="omittedCount > 0" :class="BADGE_OMITTED_CLASSES" data-testid="work-steps-omitted">

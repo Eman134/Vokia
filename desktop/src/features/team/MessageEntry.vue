@@ -473,11 +473,59 @@ const graphModalMeta = computed(() => {
         </div>
       </div>
     </div>
-    <div v-if="hasExchangeDetails" class="flex w-full flex-col gap-1">
-      <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
-        <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
-        {{ speakerName(entry.from) }}
-      </span>
+    <div v-if="hasExchangeDetails" class="flex w-full flex-col gap-1 text-left">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
+          <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
+          {{ speakerName(entry.from) }}
+        </span>
+        <span v-if="profile(entry.from)?.role" class="text-small text-muted">
+          {{ profile(entry.from)?.role }}
+        </span>
+        <TemporaryOverrideBadge
+          v-if="entry.from !== 'user' && agentUsage?.isFallback"
+          :override="overrides.byAgent(entry.from) ?? {
+            cli: agentUsage.provider ?? '',
+            model: agentUsage.model ?? '',
+            originalCli: '',
+            originalModel: '',
+            reason: 'usage-limit',
+          }"
+          :restoring="Boolean(overrides.restoring[entry.from])"
+          @restore="overrides.restore(entry.from)"
+        />
+        <time class="text-xs text-muted">{{ TIME_FORMAT.format(entry.time) }}</time>
+        <span v-if="usageModel" data-testid="message-usage" class="text-xs text-muted">· {{ usageModel }}</span>
+        <span
+          v-if="thinkingDuration"
+          data-testid="message-thinking-duration"
+          class="inline-flex items-center gap-1 text-xs text-muted tabular-nums"
+          :title="`Pensou por ${thinkingDuration}`"
+        >
+          <span aria-hidden="true">·</span>
+          <svg
+            viewBox="0 0 24 24"
+            class="size-3 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path :d="THINKING_ICON_PATH" />
+          </svg>
+          <span>{{ thinkingDuration }}</span>
+        </span>
+        <span
+          v-if="usageCost || usageSplit"
+          data-testid="message-usage-detail"
+          :class="USAGE_REVEAL_CLASSES"
+        >
+          <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
+          <TokenUsageChart :usage="entry.usage" />
+        </span>
+      </div>
       <TurnPlanCard v-if="messagePlan" :plan="messagePlan" :status="messagePlanStatus" />
       <ActivityRun v-if="entry.activity" :activity="entry.activity" />
       <WorkStepsAccordion
