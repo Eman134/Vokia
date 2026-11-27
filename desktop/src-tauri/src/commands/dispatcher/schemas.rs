@@ -30,6 +30,67 @@ pub(super) fn schema_project_id() -> Value {
     )
 }
 
+pub(super) fn schema_create_sprint() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "name": { "type": "string" },
+            "goal": { "type": "string" },
+            "startsAt": { "type": ["integer", "null"] },
+            "endsAt": { "type": ["integer", "null"] },
+            "status": { "type": "string", "enum": ["planejada", "ativa", "encerrada"] },
+        }),
+        &["projectId", "name"],
+    )
+}
+
+pub(super) fn schema_update_sprint() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "goal": { "type": "string" },
+            "startsAt": { "type": ["integer", "null"] },
+            "endsAt": { "type": ["integer", "null"] },
+            "status": { "type": "string", "enum": ["planejada", "ativa", "encerrada"] },
+        }),
+        &["projectId", "id"],
+    )
+}
+
+pub(super) fn schema_close_sprint() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "string" },
+            "movePendingToSprintId": { "type": ["string", "null"] },
+        }),
+        &["projectId", "id"],
+    )
+}
+
+pub(super) fn schema_delete_sprint() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "id": { "type": "string" },
+        }),
+        &["projectId", "id"],
+    )
+}
+
+pub(super) fn schema_set_item_sprint() -> Value {
+    obj_schema(
+        json!({
+            "projectId": { "type": "integer" },
+            "itemId": { "type": "string" },
+            "sprintId": { "type": ["string", "null"] },
+        }),
+        &["projectId", "itemId"],
+    )
+}
+
 pub(super) fn schema_link_git_ref() -> Value {
     obj_schema(
         json!({

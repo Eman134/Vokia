@@ -8,8 +8,8 @@ use crate::projects::ProjectError;
 
 use super::{
     agents, artifacts, attachments, backlog, channels, command_search, execution_mode, history,
-    learning, orchestration, projects, providers, roles, search, settings, team, turn_plan, usage,
-    usage_analytics, web_search,
+    learning, orchestration, projects, providers, roles, search, settings, sprints, team,
+    turn_plan, usage, usage_analytics, web_search,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +124,12 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "archive_backlog_item", "Arquiva um item do backlog.", "Para arquivar um card que saiu de uso sem apagá-lo.", empty_object_schema),
     exposed("backlog", "restore_backlog_item", "Restaura um item arquivado do backlog.", "Para trazer de volta um card arquivado.", empty_object_schema),
     exposed("backlog", "delete_backlog_item", "Exclui um item do backlog.", "Para excluir um card definitivamente; ação destrutiva.", empty_object_schema),
+    exposed("backlog", "list_sprints", "Lista as sprints/milestones de um projeto com totalItems e doneItems.", "Para consultar as sprints planejadas, ativa e encerradas de um projeto; parâmetro projectId.", schema_project_id),
+    exposed("backlog", "create_sprint", "Cria uma sprint/milestone no projeto. Parâmetros: projectId, name (1..120), goal (opcional), startsAt/endsAt (epoch ms opcionais), status (planejada|ativa|encerrada, padrão planejada).", "Para criar uma sprint ou milestone no projeto; apenas uma sprint pode ficar ativa por projeto.", schema_create_sprint),
+    exposed("backlog", "update_sprint", "Atualiza uma sprint/milestone existente. Parâmetros: projectId, id, e campos opcionais name, goal, startsAt, endsAt, status.", "Para renomear, ajustar período/objetivo ou ativar uma sprint.", schema_update_sprint),
+    exposed("backlog", "close_sprint", "Encerra uma sprint/milestone e opcionalmente migra cards pendentes. Parâmetros: projectId, id, movePendingToSprintId (opcional).", "Para encerrar uma sprint; se movePendingToSprintId for informado, move os cards top-level não concluídos e não arquivados para outra sprint não encerrada.", schema_close_sprint),
+    exposed("backlog", "delete_sprint", "Exclui uma sprint/milestone e desvincula seus cards. Parâmetros: projectId, id.", "Para excluir uma sprint do projeto limpando sprintId dos cards vinculados.", schema_delete_sprint),
+    exposed("backlog", "set_item_sprint", "Vincula ou desvincula um card do backlog a uma sprint. Parâmetros: projectId, itemId, sprintId (vazio ou null desvincula).", "Para associar um card a uma sprint planejada/ativa ou removê-lo da sprint.", schema_set_item_sprint),
     exposed("artifacts", "list_artifact_kinds", "Lista os 5 tipos de artefato livre com rótulo, descrição e template Markdown.", "Para descobrir os tipos válidos e o template de cada um antes de criar um artefato.", empty_object_schema),
     exposed("artifacts", "list_artifacts", "Lista os artefatos de um projeto (planos e documentos). Parâmetro: projectId. Devolve id, kind, title, summary, tags, author, itemId e updatedAt.", "Para ver tudo o que existe de artefato num projeto, sem o corpo; leia um deles com get_artifact.", schema_project_id),
     exposed("artifacts", "get_artifact", "Lê um artefato por id. Parâmetros: projectId, id. Devolve o plano com critérios (id plano-*) ou o documento com o corpo em Markdown.", "Para ler o conteúdo completo de um artefato antes de editá-lo ou de usá-lo como contexto.", schema_artifact_ref),
@@ -453,6 +459,15 @@ async fn run(
             parse_args(arguments)?,
         )),
         "delete_backlog_item" => json_result(backlog::delete_backlog_item_exec(
+            app,
+            parse_args(arguments)?,
+        )),
+        "list_sprints" => json_result(sprints::list_sprints_exec(app, parse_args(arguments)?)),
+        "create_sprint" => json_result(sprints::create_sprint_exec(app, parse_args(arguments)?)),
+        "update_sprint" => json_result(sprints::update_sprint_exec(app, parse_args(arguments)?)),
+        "close_sprint" => json_result(sprints::close_sprint_exec(app, parse_args(arguments)?)),
+        "delete_sprint" => json_result(sprints::delete_sprint_exec(app, parse_args(arguments)?)),
+        "set_item_sprint" => json_result(sprints::set_item_sprint_exec(
             app,
             parse_args(arguments)?,
         )),

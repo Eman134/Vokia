@@ -75,10 +75,27 @@ CREATE TABLE IF NOT EXISTS backlog_items (
         children_total INTEGER,
         children_done INTEGER,
         position INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'usuario',
+        sprint_id TEXT,
         PRIMARY KEY (project_id, id)
     );
 
 CREATE INDEX IF NOT EXISTS backlog_items_by_position ON backlog_items(project_id, position);
+CREATE INDEX IF NOT EXISTS backlog_items_by_sprint ON backlog_items(project_id, sprint_id);
+
+CREATE TABLE IF NOT EXISTS sprints (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+        goal TEXT NOT NULL DEFAULT '' CHECK (length(goal) <= 1000),
+        starts_at INTEGER,
+        ends_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'planejada' CHECK (status IN ('planejada','ativa','encerrada')),
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        PRIMARY KEY (project_id, id)
+    );
+
+CREATE UNIQUE INDEX IF NOT EXISTS sprints_one_active ON sprints(project_id) WHERE status = 'ativa';
 
 CREATE TABLE IF NOT EXISTS item_plans (
         project_id INTEGER NOT NULL,

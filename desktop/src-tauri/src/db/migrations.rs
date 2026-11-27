@@ -149,6 +149,22 @@ const ARTIFACT_DOCUMENTS_SCHEMA: &str = "
     );
 ";
 
+const SPRINTS_SCHEMA: &str = "
+    CREATE TABLE IF NOT EXISTS sprints (
+        project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+        goal TEXT NOT NULL DEFAULT '' CHECK (length(goal) <= 1000),
+        starts_at INTEGER,
+        ends_at INTEGER,
+        status TEXT NOT NULL DEFAULT 'planejada' CHECK (status IN ('planejada','ativa','encerrada')),
+        created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+        PRIMARY KEY (project_id, id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS sprints_one_active ON sprints(project_id) WHERE status = 'ativa';
+";
+
 const ATTACHMENTS_SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS attachments (
         project_id INTEGER NOT NULL,
@@ -1157,6 +1173,11 @@ pub(super) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.execute_batch(USAGE_RECORDS_SCHEMA)?;
     tx.execute_batch(TURN_WORK_STEPS_SCHEMA)?;
     tx.execute_batch(LEARNING_SCHEMA)?;
+    tx.execute_batch(SPRINTS_SCHEMA)?;
+    ensure_column(&tx, "backlog_items", "sprint_id", "TEXT")?;
+    tx.execute_batch(
+        "CREATE INDEX IF NOT EXISTS backlog_items_by_sprint ON backlog_items(project_id, sprint_id)",
+    )?;
     ensure_column(&tx, "project_memories", "valid_from", "INTEGER")?;
     ensure_column(&tx, "project_memories", "valid_until", "INTEGER")?;
     ensure_column(&tx, "project_memories", "superseded_by", "TEXT")?;
