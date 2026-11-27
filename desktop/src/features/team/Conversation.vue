@@ -10,7 +10,8 @@ export const NO_PROJECT_TEXT = 'Crie um projeto para começar a conversar com o 
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useNavigation, type PendingMessageTarget } from '../../shell/useNavigation'
-import type { TurnActivity } from './events'
+import type { TurnActivity, TurnPlan, TurnPlanStep } from './events'
+import type { TurnPlanCardStatus } from './useTurnPlans'
 import { useConversationTab } from './conversationTabs'
 import { agentName } from './agents'
 import { ALL_SCREEN, ALL_SCREEN_LABEL, type FeedEntry } from './timeline'
@@ -24,6 +25,7 @@ import {
   type PendingAgentEntry,
 } from './pendingAgents'
 import MessageEntry from './MessageEntry.vue'
+import TurnPlanCard from './TurnPlanCard.vue'
 import AutoPermissionGroup from './AutoPermissionGroup.vue'
 import PermissionRow from './PermissionRow.vue'
 import AgentPortrait from './AgentPortrait.vue'
@@ -184,6 +186,32 @@ const pendingGroups = computed(() =>
 const activeThreadItemId = computed(() =>
   feed.screen.kind === 'thread' ? (feed.screen.subItemId ?? feed.screen.itemId) : undefined,
 )
+const taskProgressPlan = computed<{ plan: TurnPlan; status: TurnPlanCardStatus } | null>(() => {
+  if (feed.screen.kind !== 'thread' || !activeThreadItemId.value) return null
+  const card = backlog.items.find((item) => item.id === activeThreadItemId.value)
+  const subs = !feed.screen.subItemId ? (activeThread.value?.subthreads ?? []) : []
+  const steps: TurnPlanStep[] =
+    subs.length > 0
+      ? subs.map((sub) => ({
+          id: sub.itemId,
+          text: `${sub.publicId ?? sub.itemId} · ${sub.title}`,
+          status:
+            sub.column === 'Done'
+              ? 'completed'
+              : sub.status === 'working' || sub.column === 'In progress'
+                ? 'in_progress'
+                : 'pending',
+        }))
+      : (card?.criteria ?? []).map((criterion) => ({
+          id: criterion.id,
+          text: criterion.text,
+          status: criterion.done ? 'completed' : 'pending',
+        }))
+  if (steps.length === 0) return null
+  const allDone = steps.every((step) => step.status === 'completed')
+  const status: TurnPlanCardStatus = allDone ? 'completed' : 'active'
+  return { plan: { steps }, status }
+})
 const scopedLiveRuns = computed(() =>
   pendingGroups.value
     .flatMap((group) => group.entries)
@@ -416,7 +444,7 @@ watch(
       </div>
     </header>
     <div
-      v-if="!filaAberta && feed.screen.kind === 'thread' && activeThread && (activeThread.participants.length > 0 || activeThread.subthreads.length > 0)"
+      v-if="!filaAberta && feed.screen.kind === 'thread' && activeThread && (activeThread.participants.length > 0 || activeThread.subthreads.length > 0 || taskProgressPlan)"
       class="z-20 flex shrink-0 flex-col gap-1.5 border-b border-line bg-surface px-4 py-2"
       aria-label="Painel da thread"
       data-testid="thread-instances-bar"
@@ -482,6 +510,14 @@ watch(
           <span class="truncate">{{ sub.title }}</span>
         </button>
       </div>
+      <TurnPlanCard
+        v-if="taskProgressPlan"
+        :plan="taskProgressPlan.plan"
+        :status="taskProgressPlan.status"
+        title="Progresso da task"
+        compact
+        :default-open="false"
+      />
     </div>
     <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
     <template v-if="!filaAberta">

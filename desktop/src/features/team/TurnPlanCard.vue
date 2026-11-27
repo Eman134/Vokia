@@ -8,6 +8,8 @@ const props = defineProps<{
   plan: TurnPlan
   status: TurnPlanCardStatus
   compact?: boolean
+  title?: string
+  defaultOpen?: boolean
 }>()
 
 const CARD_TITLE = 'Plano do turno'
@@ -39,7 +41,7 @@ const STEP_ROW_ACTIVE_CLASSES = `${STEP_ROW_BASE_CLASSES} bg-accent-soft text-in
 const STEP_ROW_COMPLETED_CLASSES = `${STEP_ROW_BASE_CLASSES} text-muted`
 const STEP_ROW_PENDING_CLASSES = `${STEP_ROW_BASE_CLASSES} text-muted`
 
-const open = ref(props.status !== 'replaced')
+const open = ref(props.defaultOpen ?? props.status !== 'replaced')
 const listId = useId()
 
 watch(
@@ -61,7 +63,7 @@ const progressPercent = computed(() =>
 const progressLabel = computed(
   () => `${completedCount.value}/${totalCount.value} ${completedCount.value === 1 ? 'concluída' : 'concluídas'}`,
 )
-const titleText = computed(() => (props.status === 'replaced' ? REPLACED_TITLE : CARD_TITLE))
+const titleText = computed(() => (props.status === 'replaced' ? REPLACED_TITLE : (props.title ?? CARD_TITLE)))
 const progressBarFillClasses = computed(() =>
   props.status === 'completed' ? 'bg-ok' : 'bg-accent',
 )
