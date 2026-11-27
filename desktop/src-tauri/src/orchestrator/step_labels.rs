@@ -1137,6 +1137,7 @@ fn classify_program_tokens(tokens: &[String], home: Option<&str>) -> Option<Stri
             }
         }
         "cargo" => Some(classify_cargo(args)),
+        "vokia-cli" | "vokia-cli.exe" => Some(classify_vokia_cli(args)),
         "npm" | "pnpm" | "yarn" | "bun" => Some(classify_node_pm(&prog, args)),
         "npx" | "pnpx" | "bunx" => Some(classify_npx(&prog, args, home)),
         "vitest" | "pytest" | "playwright" | "jest" | "mocha" | "ava" | "rspec" | "phpunit"
@@ -1154,6 +1155,58 @@ fn classify_program_tokens(tokens: &[String], home: Option<&str>) -> Option<Stri
             }
         }
         _ => Some(format!("Rodando {}", truncate_arg(&prog))),
+    }
+}
+
+fn classify_vokia_cli(args: &[String]) -> String {
+    let sub_raw = match args.first().map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("cmd") => args.get(1).map(|s| s.to_ascii_lowercase()),
+        Some(other) => Some(other.to_string()),
+        None => None,
+    };
+    let normalized = sub_raw
+        .as_deref()
+        .map(|s| s.replace('-', "_"))
+        .unwrap_or_default();
+    match normalized.as_str() {
+        "commands" | "tools" | "app_commands_list" => "Listando comandos do Vokia".to_string(),
+        "command_search" => "Buscando comandos do Vokia".to_string(),
+        "list_projects" | "create_project" | "update_project" | "delete_project" => {
+            "Consultando projetos".to_string()
+        }
+        "list_backlog" | "read_card" => "Lendo card do backlog".to_string(),
+        "create_card" => "Criando card no backlog".to_string(),
+        "move_card" | "move_backlog_item" => "Movendo card".to_string(),
+        "update_card" | "update_backlog_item" | "backlog_add_label" | "backlog_remove_label"
+        | "backlog_set_responsible" => "Atualizando card".to_string(),
+        "backlog_archive_item" | "backlog_restore_item" | "backlog_delete_item" => {
+            "Gerenciando card".to_string()
+        }
+        "submit_for_review" => "Enviando para revisão".to_string(),
+        "save_item_plan" | "update_item_plan" | "import_plan" => "Gravando plano".to_string(),
+        "set_criterion" | "artifact_set_criterion" => "Marcando critério".to_string(),
+        "get_artifact" | "list_artifacts" | "create_artifact" | "update_artifact"
+        | "delete_artifact" | "artifact" => "Acessando artefato".to_string(),
+        "delegate" => "Delegando via Vokia".to_string(),
+        "request_decision" | "answer_decision" | "dismiss_decision" => {
+            "Tratando decisão".to_string()
+        }
+        "propose_request" => "Propondo card".to_string(),
+        "memory_graph_query" | "get_context_graph" => "Consultando grafo".to_string(),
+        "memory_graph_save" | "save_project_memory" => "Salvando no grafo".to_string(),
+        "list_project_memories" | "list_learning_suggestions" | "apply_learning_suggestion"
+        | "dismiss_learning_suggestion" | "run_memory_review" => "Gerenciando memórias".to_string(),
+        "history_search" | "history_read" | "list_turn_work_steps" => {
+            "Lendo histórico".to_string()
+        }
+        "web_search" => "Pesquisando na web".to_string(),
+        "get_variables" | "set_variable" => "Atualizando variável".to_string(),
+        "get_orchestration" | "list_agents" | "list_movements" => {
+            "Consultando orquestração".to_string()
+        }
+        "post_channel_message" | "send_request" | "ask_btw" => "Enviando mensagem".to_string(),
+        "" => "Executando Vokia".to_string(),
+        other => format!("Vokia: {}", truncate_arg(other)),
     }
 }
 
