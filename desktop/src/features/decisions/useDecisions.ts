@@ -5,6 +5,7 @@ import { useProjects } from '../projects/useProjects'
 import type { Agent, VokiaDecision } from '../team/events'
 import { answerDecision } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
+import { useLogs } from '../team/useLogs'
 import { UNDO_WINDOW_MS, type CardKind } from './decisionCopy'
 
 export interface PanelCard {
@@ -44,6 +45,7 @@ export const useDecisions = defineStore('decisions', () => {
   const feed = useFeed()
   const balloons = useBalloons()
   const projects = useProjects()
+  const logs = useLogs()
   const pending = ref<VokiaDecision[]>([])
   const resolved = ref<ResolvedEntry[]>([])
   const answerLog = ref<AnswerLogEntry[]>([])
@@ -85,9 +87,12 @@ export const useDecisions = defineStore('decisions', () => {
   function apply(event: VokiaDecision): void {
     if (!pending.value.some((decision) => decision.id === event.id)) {
       pending.value.push(event)
+      if (belongsToSelectedProject(event.projectId)) {
+        logs.recordDecision(event)
+      }
       // Com o painel aberto a decisão já está à vista.
       if (!open.value && belongsToSelectedProject(event.projectId)) {
-        balloons.alert(DECISION_PENDING_TITLE, event.title)
+        balloons.alert(DECISION_PENDING_TITLE, event.title, 'conversa', { log: false })
       }
     }
   }
@@ -105,6 +110,7 @@ export const useDecisions = defineStore('decisions', () => {
     pending.value = pending.value.filter((candidate) => candidate.id !== id)
     resolved.value.push({ key: `decisao-${id}`, message, decisionId: id, sent: false })
     logAnswer({ decisionId: id, text, kind: 'answered' })
+    logs.recordDecisionAnswer(id, text)
     awaiting.set(id, { decision, answer: text, timer: setTimeout(() => void send(id), UNDO_WINDOW_MS) })
   }
 
@@ -135,6 +141,7 @@ export const useDecisions = defineStore('decisions', () => {
     resolved.value = resolved.value.filter((candidate) => candidate.decisionId !== id)
     pending.value = [...pending.value, entry.decision].sort((a, b) => a.id - b.id)
     logAnswer({ decisionId: id, text: '', kind: 'undone' })
+    logs.recordDecisionUndone(id)
   }
 
   function answerPermission(id: string, allow: boolean, message: string, always = false): void {

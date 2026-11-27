@@ -1,5 +1,5 @@
 <script lang="ts">
-export const SPLASH_TEXT = 'Conectando Claude Code…'
+export const SPLASH_TEXT = 'Iniciando o Vokia…'
 </script>
 
 <script setup lang="ts">

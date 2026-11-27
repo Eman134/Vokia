@@ -43,7 +43,9 @@ import UiNotice from '../../ui/UiNotice.vue'
 import { HIDDEN_SCROLLBAR_CLASSES } from '../../ui/pageLayout'
 import { useFollowEnd } from '../../ui/useFollowEnd'
 import ConversationComposer from './ConversationComposer.vue'
+import LogsChannelPanel from './LogsChannelPanel.vue'
 import TriageChannelPanel from './TriageChannelPanel.vue'
+import { useLogs } from './useLogs'
 import AgentThinking from '../console/AgentThinking.vue'
 import { useConsole } from '../console/useConsole'
 import { useTurnPlans } from './useTurnPlans'
@@ -81,6 +83,7 @@ const HIGHLIGHT_MESSAGE_CLASSES = 'rounded-md bg-accent-soft/70 ring-1 ring-acce
 const HIGHLIGHT_DURATION_MS = 2200
 
 const feed = useFeed()
+const logs = useLogs()
 const navigation = useNavigation()
 
 const roster = useRoster()
@@ -138,7 +141,7 @@ const screenRole = computed(() => {
     return feed.screen.agent ? `${col} · ${agentName(feed.screen.agent)}` : col
   }
   if (feed.screen.kind === 'triage') return triageRole(backlog.triagingIds.size)
-  if (feed.screen.kind === 'logs') return 'Erros e logs do sistema'
+  if (feed.screen.kind === 'logs') return 'Erros, decisões e avisos do sistema'
   return ''
 })
 
@@ -192,7 +195,8 @@ const hasVisibleElements = computed(
     feed.permissions.length > 0 ||
     scopedLiveRuns.value.length > 0 ||
     quietGroups.value.length > 0 ||
-    (feed.screen.kind === 'triage' && backlog.triagingIds.size > 0),
+    (feed.screen.kind === 'triage' && backlog.triagingIds.size > 0) ||
+    (feed.screen.kind === 'logs' && logs.items.length > 0),
 )
 const pendingLabel = computed(() => formatPendingStatusLabel(pendingGroups.value))
 const scroller = ref<HTMLElement | null>(null)
@@ -449,6 +453,7 @@ watch(
         </span>
       </div>
       <TriageChannelPanel v-if="feed.screen.kind === 'triage'" />
+      <LogsChannelPanel v-else-if="feed.screen.kind === 'logs'" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">
         <template #mascot>
           <VokiaMascot look="tudo-em-dia" />
@@ -468,7 +473,7 @@ watch(
           <VokiaMascot look="tudo-em-dia" />
         </template>
       </UiEmpty>
-      <ol class="flex w-full min-w-0 flex-col gap-2">
+      <ol v-if="feed.screen.kind !== 'logs'" class="flex w-full min-w-0 flex-col gap-2">
         <li v-for="item in feed.timeline" :key="item.start">
           <div v-if="item.type === 'group'" class="flex flex-col gap-2">
             <div

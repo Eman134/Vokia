@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import UiButton from '../../../ui/UiButton.vue'
 import UiNotice from '../../../ui/UiNotice.vue'
 import UiSegmented from '../../../ui/UiSegmented.vue'
@@ -18,6 +18,19 @@ const EFFORT_OPTIONS: readonly { label: string; value: ModelTier }[] = [
 
 const providersStore = useProviders()
 const onboardingLlm = useOnboardingLlm()
+const rechecking = ref(false)
+
+async function recheckConnections(): Promise<void> {
+  if (rechecking.value) return
+  rechecking.value = true
+  try {
+    await providersStore.checkStatus()
+  } catch {
+    // erro já registrado em providersStore.error
+  } finally {
+    rechecking.value = false
+  }
+}
 
 const connectedProviders = computed(() =>
   providersStore.providers.filter(
@@ -45,6 +58,7 @@ const fallbackOptions = computed(() => [
 onMounted(async () => {
   try {
     await providersStore.load()
+    await recheckConnections()
   } catch {
     // erro já registrado em providersStore.error
   }
@@ -81,14 +95,25 @@ function selectProvider(id: string): void {
       <span class="text-label font-medium text-muted">
         {{ connectedProviders.length }} de {{ providersStore.providers.length }} conectados
       </span>
-      <UiButton
-        data-testid="onboarding-open-setup"
-        variant="quiet"
-        size="sm"
-        @press="providersStore.openAddProvider()"
-      >
-        + Adicionar provedor customizado
-      </UiButton>
+      <div class="flex flex-wrap items-center gap-2">
+        <UiButton
+          data-testid="onboarding-recheck-connections"
+          variant="quiet"
+          size="sm"
+          :disabled="rechecking || providersStore.loading"
+          @press="recheckConnections()"
+        >
+          {{ rechecking ? 'Verificando…' : 'Reverificar conexão' }}
+        </UiButton>
+        <UiButton
+          data-testid="onboarding-open-setup"
+          variant="quiet"
+          size="sm"
+          @press="providersStore.openAddProvider()"
+        >
+          + Adicionar provedor customizado
+        </UiButton>
+      </div>
     </div>
 
     <div class="flex flex-col gap-3">

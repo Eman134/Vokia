@@ -20,7 +20,6 @@ import { useUsage } from './features/usage/useUsage'
 import { useLimitNotices } from './features/usage/useLimitNotices'
 import { useInterruptedRuns } from './features/panel/useInterruptedRuns'
 import SplashScreen from './features/system/SplashScreen.vue'
-import CliMissingScreen from './features/system/CliMissingScreen.vue'
 import UiEmpty from './ui/UiEmpty.vue'
 
 const UNBUILT_PAGE_TEXT = 'Página ainda sem tela no app.'
@@ -44,7 +43,7 @@ const railWidth = computed(() => {
 function onGlobalKeydown(event: KeyboardEvent): void {
   if (event.altKey || !(event.ctrlKey || event.metaKey)) return
   if (event.key.toLowerCase() !== 'k') return
-  if (!connection.cliChecked || connection.cliProblem || connection.startupError || navigation.page === 'onboarding') {
+  if (!connection.ready || connection.startupError || navigation.page === 'onboarding') {
     return
   }
   event.preventDefault()
@@ -70,12 +69,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   >
     {{ connection.startupError }}
   </main>
-  <CliMissingScreen
-    v-else-if="connection.cliProblem"
-    :problem="connection.cliProblem"
-    @recheck="connection.recheckCli"
-  />
-  <div v-else-if="connection.cliChecked" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${railWidth}px` }">
+  <div v-else-if="connection.ready" class="flex h-screen bg-bg text-ink" :style="{ '--rail-w': `${railWidth}px` }">
     <AppRail v-if="showRail" />
     <template v-if="pageViews">
       <component :is="view" v-for="(view, index) in pageViews" :key="index" />

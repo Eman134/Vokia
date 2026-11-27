@@ -8,6 +8,7 @@ import { categorizeThreads, type ThreadCategoryKey } from './threadStatus'
 import { useRoster } from './useRoster'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
+import { useLogs } from './useLogs'
 import { useThreads, type TaskThread } from './useThreads'
 import ThreadTreeNode from './ThreadTreeNode.vue'
 import { useRequests } from './useRequests'
@@ -76,6 +77,7 @@ const COPY_NOUN_PLURAL = 'cópias'
 
 const connection = useConnection()
 const feed = useFeed()
+const logs = useLogs()
 const requests = useRequests()
 const roster = useRoster()
 const control = useAgentControl()
@@ -192,10 +194,6 @@ function triageShown(): boolean {
 function logsShown(): boolean {
   return feed.screen.kind === 'logs'
 }
-
-const errorLogCount = computed(() =>
-  feed.feed.filter((entry) => entry.type === 'error' || entry.type === 'usage-limit-failed').length,
-)
 
 function channelShown(target: number | typeof GENERAL_CHANNEL_NAME): boolean {
   return feed.screen.kind === 'channel' && feed.screen.channel === target
@@ -330,8 +328,13 @@ function closeChannelDialog(): void {
               <path :d="LOGS_ICON_PATH" />
             </svg>
             <span class="truncate">{{ LOGS_CHANNEL_NAME }}</span>
-            <span v-if="errorLogCount > 0" class="ml-auto rounded-full bg-danger/15 px-1.5 text-tiny font-semibold text-danger tabular-nums">
-              {{ errorLogCount }}
+            <span
+              v-if="logs.unreadCount > 0"
+              class="ml-auto rounded-full px-1.5 text-tiny font-semibold tabular-nums"
+              :class="logs.unreadErrorCount > 0 ? 'bg-danger/15 text-danger' : 'bg-accent/15 text-accent'"
+              data-testid="logs-unread-count"
+            >
+              {{ logs.unreadCount }}
             </span>
             <UiHandLine v-if="logsShown()" draw :class="CHANNEL_MARK_CLASSES" />
           </button>

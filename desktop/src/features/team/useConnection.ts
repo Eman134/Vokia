@@ -1,9 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { CliProblem } from './events'
 import {
   checkConnection,
-  fetchCliProblem,
   listenConnectionChanges,
   listenTeamEvents,
   type UnlistenFn,
@@ -16,8 +14,7 @@ import { useRoster } from './useRoster'
 const CONNECTIVITY_POLL_INTERVAL_MS = 15000
 
 export const useConnection = defineStore('connection', () => {
-  const cliChecked = ref(false)
-  const cliProblem = ref<CliProblem | null>(null)
+  const ready = ref(false)
   const startupError = ref<string | null>(null)
   const online = ref(true)
   const checking = ref(false)
@@ -75,42 +72,24 @@ export const useConnection = defineStore('connection', () => {
     }
   }
 
-  async function reportDbProblem(): Promise<void> {
-    const problem = await checkDbProblem()
-    if (problem !== null) {
-      feed.feed.push({ type: 'error', message: problem.reason })
-    }
-  }
-
   async function start(): Promise<void> {
     try {
       await loadRoster()
-      cliProblem.value = await fetchCliProblem()
-      if (cliProblem.value === null) {
-        await feed.restoreHistory()
-        unlisten = await listenTeamEvents(feed.apply)
-        stopListeningConnection = listenConnectionChanges(
-          () => void refreshConnection(),
-          () => {
-            offlineSignals += 1
-            online.value = false
-          },
-        )
-        void refreshConnection()
-        pollTimer = setInterval(() => void refreshConnection(), CONNECTIVITY_POLL_INTERVAL_MS)
-      } else {
-        await reportDbProblem()
-      }
-      cliChecked.value = true
+      await feed.restoreHistory()
+      unlisten = await listenTeamEvents(feed.apply)
+      stopListeningConnection = listenConnectionChanges(
+        () => void refreshConnection(),
+        () => {
+          offlineSignals += 1
+          online.value = false
+        },
+      )
+      void refreshConnection()
+      pollTimer = setInterval(() => void refreshConnection(), CONNECTIVITY_POLL_INTERVAL_MS)
+      ready.value = true
     } catch (error) {
-      startupError.value = `Não foi possível iniciar a Vokia: ${String(error)}`
+      startupError.value = `Não foi possível iniciar o Vokia: ${String(error)}`
     }
-  }
-
-  async function recheckCli(): Promise<void> {
-    cliProblem.value = null
-    cliChecked.value = false
-    await start()
   }
 
   function stop(): void {
@@ -126,15 +105,13 @@ export const useConnection = defineStore('connection', () => {
   }
 
   return {
-    cliChecked,
-    cliProblem,
+    ready,
     startupError,
     online,
     checking,
     refreshConnection,
     confirmOnline,
     start,
-    recheckCli,
     stop,
   }
 })

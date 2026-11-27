@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import UiIcon from '../../ui/UiIcon.vue'
 import UiImageViewer from '../../ui/UiImageViewer.vue'
-import { attachmentIconPath, isImageAttachmentPath, type Attachment } from './attachmentBlock'
-import { loadAttachmentPreview } from './attachmentsApi'
+import { attachmentIconPath, type Attachment } from './attachmentBlock'
+import { useAttachmentPreviews } from './useAttachmentPreviews'
 
 const props = withDefaults(
   defineProps<{
@@ -18,8 +17,6 @@ const props = withDefaults(
   },
 )
 
-const previews = ref<Record<string, string>>({})
-
 const LIST_BASE_CLASSES = 'flex flex-wrap gap-1.5'
 const ITEM_DEFAULT_CLASSES =
   'flex min-w-0 max-w-full items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-caption'
@@ -30,23 +27,7 @@ const THUMB_COMPACT_CLASSES = 'size-7 shrink-0 rounded-sm border border-line obj
 const THUMB_BUTTON_CLASSES = `shrink-0 cursor-zoom-in rounded-sm ${INK_FOCUS_CLASSES}`
 const EXPAND_LABEL_PREFIX = 'Ampliar'
 
-const expanded = ref<Attachment | null>(null)
-
-watch(
-  () => props.attachments,
-  (list) => {
-    for (const attachment of list) {
-      if (!isImageAttachmentPath(attachment.path || attachment.name)) continue
-      if (previews.value[attachment.path] !== undefined) continue
-      void loadAttachmentPreview(attachment.path).then((dataUrl) => {
-        if (dataUrl) {
-          previews.value = { ...previews.value, [attachment.path]: dataUrl }
-        }
-      })
-    }
-  },
-  { immediate: true },
-)
+const { previews, expanded } = useAttachmentPreviews(() => props.attachments)
 </script>
 
 <template>

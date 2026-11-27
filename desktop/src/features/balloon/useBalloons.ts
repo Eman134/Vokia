@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useLogs } from '../team/useLogs'
 import {
   ALERT_TIMEOUT_MS,
   CONFIRM_VISIBLE_MS,
@@ -99,25 +100,36 @@ export const useBalloons = defineStore('balloons', () => {
     }
   }
 
-  function enqueue(item: BalloonItem): void {
+  function enqueue(item: BalloonItem, options?: { log?: boolean }): void {
     if (items.value.some((candidate) => candidate.id === item.id)) {
       return
+    }
+    if (options?.log !== false) {
+      useLogs().recordPopup(item)
     }
     items.value.push(item)
     startTimer(item)
   }
 
   // Aviso temporário de uma ação importante: fecha em ALERT_TIMEOUT_MS, com Esc ou no botão Dispensar.
-  function alert(title: string, text?: string, source: BalloonSource = 'conversa'): void {
+  function alert(
+    title: string,
+    text?: string,
+    source: BalloonSource = 'conversa',
+    options?: { log?: boolean },
+  ): void {
     alertCount += 1
-    enqueue({
-      id: `alert:${alertCount}`,
-      kind: 'alert',
-      source,
-      title,
-      text,
-      actions: [{ id: 'dismiss', label: DISMISS_LABEL }],
-    })
+    enqueue(
+      {
+        id: `alert:${alertCount}`,
+        kind: 'alert',
+        source,
+        title,
+        text,
+        actions: [{ id: 'dismiss', label: DISMISS_LABEL }],
+      },
+      options,
+    )
   }
 
   async function act(id: string, actionId: string): Promise<void> {
