@@ -21,19 +21,19 @@ Quando uma pendência for decidida, o arquivo recebe o status "decidida" com a d
 | [PEN-013](pendencias/PEN-013.md) | Painel ao entrar em fluxo | aberta | Barra de ação, item 13 |
 | [PEN-014](pendencias/PEN-014.md) | Cores do Dock e textos "4 trabalhando" e "um agente" | aberta | Barra de ação, item 14 |
 | [PEN-015](pendencias/PEN-015.md) | Regra 03 x item 05 Decisão em linha | aberta | Barra de ação, item 15 |
-| [PEN-016](pendencias/PEN-016.md) | Posição fixa da barra e rolagem | aberta | 001.md:40 |
-| [PEN-017](pendencias/PEN-017.md) | Barra em todas as telas, inclusive onboarding | aberta | 001.md:41 |
+| [PEN-016](pendencias/PEN-016.md) | Posição fixa da barra e rolagem | decidida | 001.md:40 |
+| [PEN-017](pendencias/PEN-017.md) | Barra em todas as telas, inclusive onboarding | decidida | 001.md:41 |
 | [PEN-018](pendencias/PEN-018.md) | Modo configurável da barra | aberta | 002.md:38 |
-| [PEN-019](pendencias/PEN-019.md) | Contador vira ✓ sem pendências | aberta | 002.md:39 |
-| [PEN-020](pendencias/PEN-020.md) | Volta a Compacta sem hover | aberta | 002.md:40 |
+| [PEN-019](pendencias/PEN-019.md) | Contador vira ✓ sem pendências | decidida | 002.md:39 |
+| [PEN-020](pendencias/PEN-020.md) | Volta a Compacta sem hover | decidida | 002.md:40 |
 | [PEN-021](pendencias/PEN-021.md) | Pensando sem variação de barra com anel | aberta | 003.md:60 |
 | [PEN-022](pendencias/PEN-022.md) | Quando aparece o placeholder "Mensagem para @Davi" | aberta | 006.md:51 |
 | [PEN-023](pendencias/PEN-023.md) | @ menciona projeto | aberta | 007.md:41 |
-| [PEN-024](pendencias/PEN-024.md) | Filtro da lista de agentes depois do @ | aberta | 007.md:42 |
-| [PEN-025](pendencias/PEN-025.md) | Origem da lista de agentes do @ | aberta | 007.md:43 |
+| [PEN-024](pendencias/PEN-024.md) | Filtro da lista de agentes depois do @ | decidida | 007.md:42 |
+| [PEN-025](pendencias/PEN-025.md) | Origem da lista de agentes do @ | decidida | 007.md:43 |
 | [PEN-026](pendencias/PEN-026.md) | Escolha e fechamento da lista de @ fora do diagrama | aberta | 007.md:44 |
-| [PEN-027](pendencias/PEN-027.md) | Lista completa de comandos com / | aberta | 008.md:43 |
-| [PEN-028](pendencias/PEN-028.md) | Fechamento da lista de / ao apagar | aberta | 008.md:46 |
+| [PEN-027](pendencias/PEN-027.md) | Lista completa de comandos com / | decidida | 008.md:43 |
+| [PEN-028](pendencias/PEN-028.md) | Fechamento da lista de / ao apagar | decidida | 008.md:46 |
 | [PEN-029](pendencias/PEN-029.md) | Efeito do botão Cancelar do compositor | aberta | 009.md:52 |
 | [PEN-030](pendencias/PEN-030.md) | Conferir textos do compositor no navegador | aberta | 009.md:53 |
 | [PEN-031](pendencias/PEN-031.md) | Textos dos balões de triagem | aberta | 010.md:62 |
@@ -48,7 +48,7 @@ Quando uma pendência for decidida, o arquivo recebe o status "decidida" com a d
 | [PEN-040](pendencias/PEN-040.md) | Efeito de "Abrir conversa" | aberta | 013.md:47 |
 | [PEN-041](pendencias/PEN-041.md) | Ordem e limite da fila em "Todos" | aberta | 013.md:48 |
 | [PEN-042](pendencias/PEN-042.md) | Saída de "Pedidos rápidos" ao virar commit | aberta | 013.md:49 |
-| [PEN-043](pendencias/PEN-043.md) | Anatomia do balão | aberta | 014.md:48 |
+| [PEN-043](pendencias/PEN-043.md) | Anatomia do balão | decidida | 014.md:48 |
 | [PEN-044](pendencias/PEN-044.md) | Tela de Configurações que cala balões | aberta | 014.md:49 |
 | [PEN-045](pendencias/PEN-045.md) | Botão "Próximo momento" | aberta | 014.md:50 |
 | [PEN-046](pendencias/PEN-046.md) | Fila de balões fora do diagrama | aberta | 014.md:51 |
@@ -63,7 +63,7 @@ Quando uma pendência for decidida, o arquivo recebe o status "decidida" com a d
 | [PEN-055](pendencias/PEN-055.md) | Natureza do aviso fora do app | aberta | 021.md:50 |
 | [PEN-056](pendencias/PEN-056.md) | Duração do aviso fora do app | aberta | 021.md:51 |
 | [PEN-057](pendencias/PEN-057.md) | Persistência do modo do trilho | aberta | 022.md:41 |
-| [PEN-058](pendencias/PEN-058.md) | Destino de "Configurações" no trilho | aberta | 022.md:42 |
+| [PEN-058](pendencias/PEN-058.md) | Destino de "Configurações" no trilho | decidida | 022.md:42 |
 | [PEN-059](pendencias/PEN-059.md) | Destino de "Limites" no painel de planos | aberta | 023.md:53 |
 | [PEN-060](pendencias/PEN-060.md) | Ação "Triar" do card | aberta | 024.md:60 |
 | [PEN-061](pendencias/PEN-061.md) | Ações "Revisar" e "Ver diff" do card | aberta | 024.md:61 |
@@ -88,7 +88,7 @@ Quando uma pendência for decidida, o arquivo recebe o status "decidida" com a d
 | [PEN-080](pendencias/PEN-080.md) | Uso dos tamanhos 28 e 24 do retrato | aberta | 027.md:48 |
 | [PEN-081](pendencias/PEN-081.md) | Regra do crachá "80% de primeira" | aberta | 027.md:49 |
 | [PEN-082](pendencias/PEN-082.md) | Retrato, identidades visuais e tokens | aberta | 027.md:50 |
-| [PEN-083](pendencias/PEN-083.md) | Onde trocar o tema no app | aberta | 028.md:66 |
+| [PEN-083](pendencias/PEN-083.md) | Onde trocar o tema no app | decidida | 028.md:66 |
 | [PEN-084](pendencias/PEN-084.md) | Família de fonte por escala | aberta | 028.md:67 |
 | [PEN-085](pendencias/PEN-085.md) | Tokens fora da tabela | aberta | 028.md:68 |
 | [PEN-086](pendencias/PEN-086.md) | Efeito de Desfazer no aviso de retorno | aberta | 029.md:62 |
