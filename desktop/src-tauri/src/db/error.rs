@@ -107,6 +107,13 @@ pub enum DbError {
     InvalidUsageQuery(String),
     CrossProjectAccess(String),
     MessageNotFound(i64),
+    SprintNotFound(String),
+    EmptySprintName,
+    SprintFieldTooLong { field: &'static str, max: usize },
+    InvalidSprintStatus(String),
+    InvalidSprintPeriod,
+    ActiveSprintExists(String),
+    SprintClosed(String),
 }
 
 impl DbError {
@@ -155,6 +162,13 @@ impl DbError {
                 | DbError::PlanStageStarted(_)
                 | DbError::PlanFileTooLarge { .. }
                 | DbError::PlanFileNotText
+                | DbError::SprintNotFound(_)
+                | DbError::EmptySprintName
+                | DbError::SprintFieldTooLong { .. }
+                | DbError::InvalidSprintStatus(_)
+                | DbError::InvalidSprintPeriod
+                | DbError::ActiveSprintExists(_)
+                | DbError::SprintClosed(_)
         )
     }
 }
@@ -428,6 +442,34 @@ impl fmt::Display for DbError {
             DbError::CrossProjectAccess(reason) => f.write_str(reason),
             DbError::MessageNotFound(id) => {
                 write!(f, "A mensagem {id} não existe neste projeto.")
+            }
+            DbError::SprintNotFound(id) => {
+                write!(f, "A sprint {id} não existe neste projeto.")
+            }
+            DbError::EmptySprintName => write!(f, "O nome da sprint não pode ficar vazio."),
+            DbError::SprintFieldTooLong { field, max } => {
+                write!(f, "O campo {field} da sprint passa de {max} caracteres.")
+            }
+            DbError::InvalidSprintStatus(status) => {
+                write!(
+                    f,
+                    "A sprint não aceita o estado {status:?}. Use planejada, ativa ou encerrada."
+                )
+            }
+            DbError::InvalidSprintPeriod => {
+                write!(
+                    f,
+                    "A data de término da sprint não pode ser anterior à data de início."
+                )
+            }
+            DbError::ActiveSprintExists(id) => {
+                write!(
+                    f,
+                    "Já existe a sprint ativa {id} neste projeto; encerre-a antes de ativar outra."
+                )
+            }
+            DbError::SprintClosed(id) => {
+                write!(f, "A sprint {id} está encerrada e não aceita novos vínculos.")
             }
         }
     }

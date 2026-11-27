@@ -1,6 +1,9 @@
 import type { BacklogColumn } from './backlogTypes'
 
 export const TASKS_TITLE = 'Tasks'
+export const SPRINTS_BUTTON_LABEL = 'Sprints'
+export const SPRINT_ALL_LABEL = 'Sprint: todas'
+export const SPRINT_NONE_LABEL = 'Sem sprint'
 export const NEW_REQUEST_LABEL = 'Novo pedido'
 export const NEW_REQUEST_DIALOG_TITLE = 'Novo pedido'
 export const NEW_REQUEST_TITLE_LABEL = 'Título'

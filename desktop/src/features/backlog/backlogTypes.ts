@@ -11,9 +11,41 @@ export type BacklogOrigin = 'usuario' | 'conversa' | 'agente'
 
 export type BacklogColumn = 'Backlog' | 'Ready' | 'In progress' | 'In review' | 'Done'
 
+export type SprintStatus = 'planejada' | 'ativa' | 'encerrada'
+
+export interface Sprint {
+  id: string
+  name: string
+  goal: string
+  startsAt?: number | null
+  endsAt?: number | null
+  status: SprintStatus
+  totalItems: number
+  doneItems: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SprintDraft {
+  name: string
+  goal?: string
+  startsAt?: number | null
+  endsAt?: number | null
+  status?: SprintStatus
+}
+
+export interface SprintPatch {
+  name?: string
+  goal?: string
+  startsAt?: number | null
+  endsAt?: number | null
+  status?: SprintStatus
+}
+
 export interface TriageQuestion {
   id: string
   text: string
+  detail?: string
   options: string[]
   selected?: string
 }
@@ -115,6 +147,9 @@ export interface BacklogItem {
   column?: BacklogColumn
   priority?: string
   estimate?: string
+  sprintId?: string | null
+  lastActivityAt?: number | null
+  interactionCount?: number
   questions?: TriageQuestion[]
   criteria?: BacklogCriterion[]
   activity?: BacklogActivity[]

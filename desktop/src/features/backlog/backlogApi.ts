@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { Agent, RequestProposal } from '../team/events'
-import type { BacklogColumn, BacklogItem, NewRequestDraft } from './backlogTypes'
+import type { BacklogColumn, BacklogItem, NewRequestDraft, Sprint, SprintDraft, SprintPatch } from './backlogTypes'
 import type { LinkedPlan } from './useItemPlan'
 
 const LIST_BACKLOG_COMMAND = 'list_backlog'
@@ -14,6 +14,12 @@ const STOP_TASK_RUN_COMMAND = 'stop_task_run'
 const SAVE_ITEM_PLAN_COMMAND = 'save_item_plan'
 const ARCHIVE_BACKLOG_ITEM_COMMAND = 'archive_backlog_item'
 const DELETE_BACKLOG_ITEM_COMMAND = 'delete_backlog_item'
+const LIST_SPRINTS_COMMAND = 'list_sprints'
+const CREATE_SPRINT_COMMAND = 'create_sprint'
+const UPDATE_SPRINT_COMMAND = 'update_sprint'
+const CLOSE_SPRINT_COMMAND = 'close_sprint'
+const DELETE_SPRINT_COMMAND = 'delete_sprint'
+const SET_ITEM_SPRINT_COMMAND = 'set_item_sprint'
 
 export const EMPTY_PLAN_STATE = 'vazio'
 
@@ -38,6 +44,7 @@ export interface ItemPlanInput {
 export interface BacklogSnapshot {
   items: BacklogItem[]
   plans: ItemPlanEntry[]
+  sprints: Sprint[]
 }
 
 export function fetchBacklog(projectId: number): Promise<BacklogSnapshot> {
@@ -103,4 +110,36 @@ export function archiveBacklogItem(projectId: number, itemId: string): Promise<v
 
 export function deleteBacklogItem(projectId: number, itemId: string, cascade = false): Promise<void> {
   return invoke<void>(DELETE_BACKLOG_ITEM_COMMAND, { projectId, itemId, cascade })
+}
+
+export function listSprints(projectId: number): Promise<Sprint[]> {
+  return invoke<Sprint[]>(LIST_SPRINTS_COMMAND, { projectId })
+}
+
+export function createSprint(projectId: number, sprint: SprintDraft): Promise<Sprint> {
+  return invoke<Sprint>(CREATE_SPRINT_COMMAND, { projectId, sprint })
+}
+
+export function updateSprint(projectId: number, id: string, patch: SprintPatch): Promise<Sprint> {
+  return invoke<Sprint>(UPDATE_SPRINT_COMMAND, { projectId, id, patch })
+}
+
+export function closeSprint(
+  projectId: number,
+  id: string,
+  movePendingToSprintId?: string | null,
+): Promise<Sprint> {
+  return invoke<Sprint>(CLOSE_SPRINT_COMMAND, {
+    projectId,
+    id,
+    movePendingToSprintId: movePendingToSprintId ?? null,
+  })
+}
+
+export function deleteSprint(projectId: number, id: string): Promise<void> {
+  return invoke<void>(DELETE_SPRINT_COMMAND, { projectId, id })
+}
+
+export function setItemSprint(projectId: number, itemId: string, sprintId: string | null): Promise<void> {
+  return invoke<void>(SET_ITEM_SPRINT_COMMAND, { projectId, itemId, sprintId })
 }

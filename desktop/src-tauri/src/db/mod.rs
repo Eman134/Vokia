@@ -20,6 +20,7 @@ mod queued_requests;
 mod runs;
 pub mod search;
 mod settings;
+mod sprints;
 pub mod usage_analytics;
 pub mod usage_pricing;
 mod work_steps;
@@ -40,6 +41,7 @@ pub use backlog::{
     CardResult, GitRefLinkInput, ItemPlanInput, Link, NewCard, AGENT_FORBIDDEN_COLUMNS, BACKLOG_LABEL_MAX_CHARS,
     BOARD_COLUMNS,
 };
+pub use sprints::{NewSprint, Sprint, SprintPatch};
 #[cfg(test)]
 pub use backlog::{MicroTask, ScriptBlock};
 pub use channels::Channel;

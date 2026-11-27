@@ -5,14 +5,19 @@ import { useFeed } from '../team/useFeed'
 import type { VokiaMessage } from '../team/events'
 import {
   archiveBacklogItem,
+  closeSprint as closeSprintApi,
   createBacklogItem,
   createRequestFromProposal,
+  createSprint as createSprintApi,
   deleteBacklogItem,
+  deleteSprint as deleteSprintApi,
   fetchBacklog,
   moveBacklogItem,
   reorderBacklogColumn,
   saveBacklogItem,
   saveItemPlan,
+  setItemSprint as setItemSprintApi,
+  updateSprint as updateSprintApi,
   type ItemPlanEntry,
   type ItemPlanInput,
 } from './backlogApi'
@@ -24,6 +29,9 @@ import {
   type BacklogColumn,
   type BacklogItem,
   type NewRequestDraft,
+  type Sprint,
+  type SprintDraft,
+  type SprintPatch,
   type TriageQuestion,
 } from './backlogTypes'
 import { normalizeTag } from './tags'
@@ -40,6 +48,7 @@ export type RunColumn = (typeof RUN_COLUMNS)[number]
 export const useBacklog = defineStore('backlog', () => {
   const items = ref<BacklogItem[]>([])
   const planEntries = ref<ItemPlanEntry[]>([])
+  const sprints = ref<Sprint[]>([])
   const openId = ref<string | null>(null)
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
@@ -53,6 +62,7 @@ export const useBacklog = defineStore('backlog', () => {
   let loadSeq = 0
 
   const openItem = computed(() => items.value.find((item) => item.id === openId.value) ?? null)
+  const activeSprint = computed(() => sprints.value.find((sprint) => sprint.status === 'ativa') ?? null)
   const triagingIds = computed<ReadonlySet<string>>(
     () =>
       new Set(
@@ -91,9 +101,15 @@ export const useBacklog = defineStore('backlog', () => {
     feed.feed.push({ type: 'error', message: error instanceof Error ? error.message : String(error) })
   }
 
+  function sprintById(id: string | null | undefined): Sprint | undefined {
+    if (!id) return undefined
+    return sprints.value.find((sprint) => sprint.id === id)
+  }
+
   function clearLoaded(): void {
     items.value = []
     planEntries.value = []
+    sprints.value = []
     loadedProjectId.value = null
     openId.value = null
   }
@@ -184,6 +200,7 @@ export const useBacklog = defineStore('backlog', () => {
       if (seq !== loadSeq) return false
       items.value = snapshot.items
       planEntries.value = snapshot.plans
+      sprints.value = snapshot.sprints ?? []
       loadedProjectId.value = projectId
       loadError.value = null
       return true
@@ -373,6 +390,76 @@ export const useBacklog = defineStore('backlog', () => {
     saveItem(itemId)
   }
 
+  async function createSprint(draft: SprintDraft): Promise<Sprint | null> {
+    const projectId = loadedProjectId.value
+    if (projectId === null) return null
+    try {
+      const created = await createSprintApi(projectId, draft)
+      await reloadAfterAgentChange(projectId)
+      return created
+    } catch (error) {
+      reportError(error)
+      return null
+    }
+  }
+
+  async function updateSprint(id: string, patch: SprintPatch): Promise<Sprint | null> {
+    const projectId = loadedProjectId.value
+    if (projectId === null) return null
+    try {
+      const updated = await updateSprintApi(projectId, id, patch)
+      await reloadAfterAgentChange(projectId)
+      return updated
+    } catch (error) {
+      reportError(error)
+      return null
+    }
+  }
+
+  async function closeSprint(id: string, movePendingToSprintId?: string | null): Promise<Sprint | null> {
+    const projectId = loadedProjectId.value
+    if (projectId === null) return null
+    try {
+      const closed = await closeSprintApi(projectId, id, movePendingToSprintId)
+      await reloadAfterAgentChange(projectId)
+      return closed
+    } catch (error) {
+      reportError(error)
+      return null
+    }
+  }
+
+  async function deleteSprint(id: string): Promise<boolean> {
+    const projectId = loadedProjectId.value
+    if (projectId === null) return false
+    try {
+      await deleteSprintApi(projectId, id)
+      await reloadAfterAgentChange(projectId)
+      return true
+    } catch (error) {
+      reportError(error)
+      return false
+    }
+  }
+
+  async function setItemSprint(itemId: string, sprintId: string | null): Promise<boolean> {
+    const projectId = loadedProjectId.value
+    const item = editable(itemId)
+    if (projectId === null || !item) return false
+    const previous = item.sprintId ?? null
+    if (previous === sprintId) return true
+    item.sprintId = sprintId
+    try {
+      await setItemSprintApi(projectId, itemId, sprintId)
+      await reloadAfterAgentChange(projectId)
+      return true
+    } catch (error) {
+      item.sprintId = previous
+      reportError(error)
+      return false
+    }
+  }
+
   // Carrega no próprio store: a linha "Iniciou tarefa" do chat precisa dos títulos sem abrir a página Backlog.
   watch(
     () => projects.selected?.id,
@@ -389,6 +476,8 @@ export const useBacklog = defineStore('backlog', () => {
   return {
     items,
     planEntries,
+    sprints,
+    activeSprint,
     loadedProjectId,
     openId,
     openItem,
@@ -397,6 +486,7 @@ export const useBacklog = defineStore('backlog', () => {
     creating,
     loading,
     loadError,
+    sprintById,
     open,
     close,
     clear,
@@ -424,5 +514,10 @@ export const useBacklog = defineStore('backlog', () => {
     removeQuestions,
     toggleCriterion,
     savePlan,
+    createSprint,
+    updateSprint,
+    closeSprint,
+    deleteSprint,
+    setItemSprint,
   }
 })

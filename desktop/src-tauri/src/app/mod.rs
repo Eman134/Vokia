@@ -76,6 +76,13 @@ pub(crate) fn run() {
             commands::backlog::archive_backlog_item,
             commands::backlog::restore_backlog_item,
             commands::backlog::delete_backlog_item,
+            // sprints
+            commands::sprints::list_sprints,
+            commands::sprints::create_sprint,
+            commands::sprints::update_sprint,
+            commands::sprints::close_sprint,
+            commands::sprints::delete_sprint,
+            commands::sprints::set_item_sprint,
             // artifacts
             commands::artifacts::list_artifact_kinds,
             commands::artifacts::list_artifacts,

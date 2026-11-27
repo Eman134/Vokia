@@ -13,6 +13,21 @@ import { useProjects } from '../projects/useProjects'
 import { useRoster } from '../team/useRoster'
 import TaskCard from './TaskCard.vue'
 import BatchTriageBar from './BatchTriageBar.vue'
+import SprintManagerModal from './SprintManagerModal.vue'
+import {
+  DEFAULT_INTERACTION_FILTER,
+  DEFAULT_TIME_FILTER,
+  effectiveLastActivityAt,
+  INTERACTION_FILTER_OPTIONS,
+  matchesInteractionFilter,
+  matchesSprintFilter,
+  matchesTimeFilter,
+  SPRINT_ALL_FILTER,
+  SPRINT_NONE_FILTER,
+  TIME_FILTER_OPTIONS,
+  type InteractionFilter,
+  type TimeFilter,
+} from './backlogFilters'
 import {
   applySelectionClick,
   createEmptySelection,
@@ -29,6 +44,9 @@ import {
   EMPTY_COLUMN_TEXT,
   LOAD_ERROR_PREFIX,
   NEW_REQUEST_LABEL,
+  SPRINT_ALL_LABEL,
+  SPRINT_NONE_LABEL,
+  SPRINTS_BUTTON_LABEL,
 } from './tasksPageCopy'
 import {
   COLUMN_LABEL,
@@ -99,11 +117,22 @@ function columnOf(item: BacklogItem): BacklogColumn {
   return item.column ?? (item.stage ? STAGE_COLUMN[item.stage] : DEFAULT_COLUMN)
 }
 
-type ColumnSortKey = 'default' | 'title-asc' | 'title-desc' | 'id-asc' | 'id-desc' | 'priority' | 'progress'
+type ColumnSortKey =
+  | 'default'
+  | 'title-asc'
+  | 'title-desc'
+  | 'id-asc'
+  | 'id-desc'
+  | 'priority'
+  | 'progress'
+  | 'activity-desc'
+  | 'interactions-desc'
 
 const SORT_OPTIONS: { value: ColumnSortKey; label: string }[] = [
   { value: 'default', label: 'Padrão' },
   { value: 'id-desc', label: 'Mais recentes' },
+  { value: 'activity-desc', label: 'Atividade recente' },
+  { value: 'interactions-desc', label: 'Mais interações' },
   { value: 'id-asc', label: 'ID (A–Z)' },
   { value: 'title-asc', label: 'Título (A–Z)' },
   { value: 'title-desc', label: 'Título (Z–A)' },
@@ -116,6 +145,7 @@ const UNASSIGNED_FILTER_VALUE = '__unassigned__'
 
 const dismissedError = ref(false)
 const filtersOpen = ref(false)
+const sprintManagerOpen = ref(false)
 const openSortColumn = ref<BacklogColumn | null>(null)
 
 function onSortMenuPointerDown(e: PointerEvent): void {
@@ -157,6 +187,9 @@ const featureFilter = ref<string>(ALL_FEATURES_VALUE)
 const ownerFilter = ref<string>(ALL_FILTER_VALUE)
 const tagFilter = ref<string>(ALL_FILTER_VALUE)
 const typeFilter = ref<string>(ALL_FILTER_VALUE)
+const sprintFilter = ref<string>(SPRINT_ALL_FILTER)
+const timeFilter = ref<TimeFilter>(DEFAULT_TIME_FILTER)
+const interactionFilter = ref<InteractionFilter>(DEFAULT_INTERACTION_FILTER)
 
 const activeFilterCount = computed(() => {
   let n = 0
@@ -164,6 +197,9 @@ const activeFilterCount = computed(() => {
   if (ownerFilter.value !== ALL_FILTER_VALUE) n += 1
   if (tagFilter.value !== ALL_FILTER_VALUE) n += 1
   if (typeFilter.value !== ALL_FILTER_VALUE) n += 1
+  if (sprintFilter.value !== SPRINT_ALL_FILTER) n += 1
+  if (timeFilter.value !== DEFAULT_TIME_FILTER) n += 1
+  if (interactionFilter.value !== DEFAULT_INTERACTION_FILTER) n += 1
   return n
 })
 const columnSort = ref<Record<BacklogColumn, ColumnSortKey>>({
@@ -205,7 +241,10 @@ const hasActiveFilters = computed(
     featureFilter.value !== ALL_FEATURES_VALUE ||
     ownerFilter.value !== ALL_FILTER_VALUE ||
     tagFilter.value !== ALL_FILTER_VALUE ||
-    typeFilter.value !== ALL_FILTER_VALUE,
+    typeFilter.value !== ALL_FILTER_VALUE ||
+    sprintFilter.value !== SPRINT_ALL_FILTER ||
+    timeFilter.value !== DEFAULT_TIME_FILTER ||
+    interactionFilter.value !== DEFAULT_INTERACTION_FILTER,
 )
 
 function clearFilters(): void {
@@ -214,18 +253,46 @@ function clearFilters(): void {
   ownerFilter.value = ALL_FILTER_VALUE
   tagFilter.value = ALL_FILTER_VALUE
   typeFilter.value = ALL_FILTER_VALUE
+  sprintFilter.value = SPRINT_ALL_FILTER
+  timeFilter.value = DEFAULT_TIME_FILTER
+  interactionFilter.value = DEFAULT_INTERACTION_FILTER
 }
+
+watch(
+  () => projectsStore.selected?.id,
+  () => {
+    clearFilters()
+    sprintManagerOpen.value = false
+  },
+)
+
+const summarySprint = computed(() => {
+  if (sprintFilter.value !== SPRINT_ALL_FILTER && sprintFilter.value !== SPRINT_NONE_FILTER) {
+    return backlog.sprintById(sprintFilter.value) ?? null
+  }
+  return backlog.activeSprint
+})
+
+const summarySprintPercent = computed(() => {
+  const sprint = summarySprint.value
+  if (!sprint || sprint.totalItems <= 0) return 0
+  return Math.round((sprint.doneItems / sprint.totalItems) * 100)
+})
 
 const topLevelItems = computed(() => backlog.items.filter((item) => !item.parent))
 
 const visibleItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
+  const activeSprint = backlog.activeSprint
   return topLevelItems.value.filter((item) => {
     if (featureFilter.value !== ALL_FEATURES_VALUE && item.feature !== featureFilter.value) return false
     if (ownerFilter.value === UNASSIGNED_FILTER_VALUE && !isUnassigned(item)) return false
     if (ownerFilter.value !== ALL_FILTER_VALUE && ownerFilter.value !== UNASSIGNED_FILTER_VALUE && item.who !== ownerFilter.value) return false
     if (tagFilter.value !== ALL_FILTER_VALUE && !item.tags.includes(tagFilter.value)) return false
     if (typeFilter.value !== ALL_FILTER_VALUE && item.type !== typeFilter.value) return false
+    if (!matchesSprintFilter(item, sprintFilter.value)) return false
+    if (!matchesTimeFilter(item, timeFilter.value, activeSprint)) return false
+    if (!matchesInteractionFilter(item, interactionFilter.value)) return false
     if (!query) return true
     const ownerName = isUnassigned(item) ? '' : (roster.profileOf(item.who)?.name ?? item.who)
     return (
@@ -264,6 +331,8 @@ function sortCards(cards: BacklogItem[], key: ColumnSortKey): BacklogItem[] {
     if (key === 'id-desc') return bId.localeCompare(aId, 'pt-BR', { numeric: true })
     if (key === 'priority') return priorityRank(a.priority) - priorityRank(b.priority)
     if (key === 'progress') return progressRatio(b) - progressRatio(a)
+    if (key === 'activity-desc') return (effectiveLastActivityAt(b) ?? 0) - (effectiveLastActivityAt(a) ?? 0)
+    if (key === 'interactions-desc') return (b.interactionCount ?? 0) - (a.interactionCount ?? 0)
     return 0
   })
   return copy
@@ -559,9 +628,20 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
   <section :class="PAGE_CLASSES">
     <UiPageHeader :title="TASKS_TITLE">
       <template #actions>
-        <UiCreateButton :disabled="!projectsStore.selected" @press="backlog.startRequest()">
-          {{ NEW_REQUEST_LABEL }}
-        </UiCreateButton>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            :disabled="!projectsStore.selected"
+            class="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-caption font-medium text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-45"
+            data-testid="open-sprint-manager"
+            @click="sprintManagerOpen = true"
+          >
+            {{ SPRINTS_BUTTON_LABEL }}
+          </button>
+          <UiCreateButton :disabled="!projectsStore.selected" @press="backlog.startRequest()">
+            {{ NEW_REQUEST_LABEL }}
+          </UiCreateButton>
+        </div>
       </template>
     </UiPageHeader>
 
@@ -610,6 +690,17 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
             <option value="task">Tasks</option>
             <option value="feature">Features</option>
           </select>
+          <select v-model="sprintFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por sprint">
+            <option :value="SPRINT_ALL_FILTER">{{ SPRINT_ALL_LABEL }}</option>
+            <option :value="SPRINT_NONE_FILTER">{{ SPRINT_NONE_LABEL }}</option>
+            <option v-for="sprint in backlog.sprints" :key="sprint.id" :value="sprint.id">{{ sprint.name }}</option>
+          </select>
+          <select v-model="timeFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por tempo">
+            <option v-for="opt in TIME_FILTER_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+          <select v-model="interactionFilter" :class="[FILTER_SELECT_CLASSES, 'w-full']" aria-label="Filtrar por interações">
+            <option v-for="opt in INTERACTION_FILTER_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
           <button
             v-if="hasActiveFilters"
             type="button"
@@ -639,6 +730,17 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
           <option value="task">Tasks</option>
           <option value="feature">Features</option>
         </select>
+        <select v-model="sprintFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por sprint" data-testid="filter-sprint">
+          <option :value="SPRINT_ALL_FILTER">{{ SPRINT_ALL_LABEL }}</option>
+          <option :value="SPRINT_NONE_FILTER">{{ SPRINT_NONE_LABEL }}</option>
+          <option v-for="sprint in backlog.sprints" :key="sprint.id" :value="sprint.id">{{ sprint.name }}</option>
+        </select>
+        <select v-model="timeFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por tempo" data-testid="filter-time">
+          <option v-for="opt in TIME_FILTER_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
+        <select v-model="interactionFilter" :class="FILTER_SELECT_CLASSES" aria-label="Filtrar por interações" data-testid="filter-interactions">
+          <option v-for="opt in INTERACTION_FILTER_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+        </select>
         <button
           v-if="hasActiveFilters"
           type="button"
@@ -651,6 +753,23 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
       <span v-if="topLevelItems.length > 0" class="ml-auto text-tiny text-muted tabular-nums">
         {{ visibleItems.length }} de {{ topLevelItems.length }}
       </span>
+    </div>
+
+    <div
+      v-if="summarySprint"
+      class="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-3 py-1.5 text-caption"
+      data-testid="sprint-progress-strip"
+    >
+      <span class="font-semibold text-ink">{{ summarySprint.name }}</span>
+      <span v-if="summarySprint.goal" class="hidden truncate text-muted sm:inline">{{ summarySprint.goal }}</span>
+      <div class="ml-auto flex items-center gap-2">
+        <div class="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2">
+          <div class="h-full rounded-full bg-ok transition-all" :style="{ width: `${summarySprintPercent}%` }" />
+        </div>
+        <span class="text-tiny text-muted tabular-nums">
+          {{ summarySprint.doneItems }}/{{ summarySprint.totalItems }} ({{ summarySprintPercent }}%)
+        </span>
+      </div>
     </div>
 
     <UiNotice v-if="backlog.loadError && !dismissedError" :text="LOAD_ERROR_PREFIX + backlog.loadError" @close="dismissedError = true" />
@@ -742,6 +861,7 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
                 :state="itemPlan.stateFor(item)"
                 :plan-line="itemPlan.lineFor(item)"
                 :proposal="itemPlan.proposalFor(item)"
+                :sprint-name="backlog.sprintById(item.sprintId)?.name"
                 :density="column.name === DEFAULT_COLUMN ? 'compact' : 'full'"
                 :selectable="column.name === DEFAULT_COLUMN && canSelectForTriage(item)"
                 :selected="column.name === DEFAULT_COLUMN && selection.selected.has(item.id)"
@@ -796,11 +916,13 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
           :state="itemPlan.stateFor(draggingItem)"
           :plan-line="itemPlan.lineFor(draggingItem)"
           :proposal="itemPlan.proposalFor(draggingItem)"
+          :sprint-name="backlog.sprintById(draggingItem.sprintId)?.name"
           :density="columnOf(draggingItem) === DEFAULT_COLUMN ? 'compact' : 'full'"
           :queued="triage.isQueued(draggingItem.id)"
           floating
         />
       </div>
     </Teleport>
+    <SprintManagerModal :open="sprintManagerOpen" @close="sprintManagerOpen = false" />
   </section>
 </template>

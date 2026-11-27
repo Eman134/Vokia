@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use chrono::Local;
+use chrono::{Local, NaiveDateTime};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -16,6 +16,7 @@ use super::artifacts::{
 use super::connection::Db;
 use super::error::DbError;
 use super::orchestration::read_snapshot;
+use super::sprints::{read_sprints, Sprint};
 
 pub const BACKLOG_LABEL_MAX_CHARS: usize = 32;
 pub const GIT_REF_KINDS: &[&str] = &["commit", "branch", "pr"];
@@ -68,14 +69,14 @@ const PLAN_IMPORTED_TEXT: &str = "Plano importado";
 const ITEM_COLUMNS: &str = "id, public_id, title, \"type\", state, stage, triage_step, parent, feature, \
     description, plan, who, \"by\", is_new, \"column\", priority, estimate, tags, tasks, criteria, \
     questions, links, activity, children_total, children_done, origin, branch, worktree_path, \
-    closed_by, auto_attempts, plan_note";
+    closed_by, auto_attempts, plan_note, sprint_id, cycle_started_at";
 
 const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, public_id, title, \"type\", state, \
     stage, triage_step, parent, feature, description, plan, who, \"by\", is_new, \"column\", \
     priority, estimate, tags, tasks, criteria, questions, links, activity, children_total, \
-    children_done, origin, plan_note, position) \
+    children_done, origin, plan_note, sprint_id, position) \
     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
-    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, \
+    ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, \
     (SELECT COALESCE(MAX(position), 0) + 1 FROM backlog_items WHERE project_id = ?1)) \
     ON CONFLICT(project_id, id) DO UPDATE SET \
     public_id = COALESCE(excluded.public_id, backlog_items.public_id), \
@@ -87,7 +88,8 @@ const UPSERT_ITEM_SQL: &str = "INSERT INTO backlog_items (project_id, id, public
     tags = excluded.tags, tasks = excluded.tasks, criteria = excluded.criteria, \
     questions = excluded.questions, links = excluded.links, activity = excluded.activity, \
     children_total = excluded.children_total, children_done = excluded.children_done, \
-    plan_note = excluded.plan_note";
+    plan_note = excluded.plan_note, \
+    sprint_id = COALESCE(excluded.sprint_id, backlog_items.sprint_id)";
 
 const INSERT_CARD_SQL: &str = "INSERT INTO backlog_items (project_id, id, title, \"type\", state, \
     is_new, \"column\", who, \"by\", description, origin, activity, links, position) \
@@ -252,6 +254,12 @@ pub struct BacklogItem {
     #[serde(default)]
     pub auto_attempts: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sprint_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_at: Option<i64>,
+    #[serde(default)]
+    pub interaction_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ItemError>,
 }
 
@@ -299,6 +307,7 @@ pub struct ItemPlanEntry {
 pub struct BacklogSnapshot {
     pub items: Vec<BacklogItem>,
     pub plans: Vec<ItemPlanEntry>,
+    pub sprints: Vec<Sprint>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,7 +395,12 @@ impl Db {
         ensure_project(&conn, project_id)?;
         let items = read_items(&conn, project_id)?;
         let plans = read_plans(&conn, project_id)?;
-        Ok(BacklogSnapshot { items, plans })
+        let sprints = read_sprints(&conn, project_id)?;
+        Ok(BacklogSnapshot {
+            items,
+            plans,
+            sprints,
+        })
     }
 
     pub fn read_card(&self, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
@@ -1568,6 +1582,9 @@ fn fresh_card(id: &str, draft: CardDraft<'_>) -> BacklogItem {
         worktree_path: None,
         closed_by: None,
         auto_attempts: 0,
+        sprint_id: None,
+        last_activity_at: None,
+        interaction_count: 0,
     }
 }
 
@@ -1977,17 +1994,32 @@ fn refresh_parent_of(conn: &Connection, project_id: i64, id: &str) -> Result<(),
 
 fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
     let trimmed = id.trim().trim_start_matches('#');
-    conn.query_row(
-        &format!(
-            "SELECT {ITEM_COLUMNS} FROM backlog_items \
-             WHERE project_id = ?1 AND (id = ?2 OR UPPER(public_id) = UPPER(?2)) \
-             ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END LIMIT 1"
-        ),
-        params![project_id, trimmed],
-        read_item,
-    )
-    .optional()?
-    .ok_or_else(|| DbError::BacklogItemNotFound(id.to_string()))
+    let mut item = conn
+        .query_row(
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM backlog_items \
+                 WHERE project_id = ?1 AND (id = ?2 OR UPPER(public_id) = UPPER(?2)) \
+                 ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END LIMIT 1"
+            ),
+            params![project_id, trimmed],
+            read_item,
+        )
+        .optional()?
+        .ok_or_else(|| DbError::BacklogItemNotFound(id.to_string()))?;
+    let msg_stats = read_single_event_stats(
+        conn,
+        "SELECT COUNT(*), MAX(created_at) FROM messages WHERE project_id = ?1 AND item_id = ?2",
+        project_id,
+        &item.id,
+    )?;
+    let handoff_stats = read_single_event_stats(
+        conn,
+        "SELECT COUNT(*), MAX(created_at) FROM orch_handoffs WHERE project_id = ?1 AND item_id = ?2",
+        project_id,
+        &item.id,
+    )?;
+    enrich_item_metrics(&mut item, msg_stats, handoff_stats);
+    Ok(item)
 }
 
 const TEAM_WORD: &str = "time";
@@ -2267,18 +2299,108 @@ fn upsert_item(conn: &Connection, project_id: i64, item: &BacklogItem) -> Result
             children.map(|children| children.done),
             item.origin,
             normalized_description(item.plan_note.as_deref()),
+            item.sprint_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty()),
         ],
     )?;
     Ok(())
 }
 
 fn read_items(conn: &Connection, project_id: i64) -> Result<Vec<BacklogItem>, DbError> {
+    let message_stats = read_project_event_stats(
+        conn,
+        "SELECT item_id, COUNT(*), MAX(created_at) FROM messages \
+         WHERE project_id = ?1 AND item_id IS NOT NULL GROUP BY item_id",
+        project_id,
+    )?;
+    let handoff_stats = read_project_event_stats(
+        conn,
+        "SELECT item_id, COUNT(*), MAX(created_at) FROM orch_handoffs \
+         WHERE project_id = ?1 AND item_id IS NOT NULL GROUP BY item_id",
+        project_id,
+    )?;
     let mut statement = conn.prepare(&format!(
         "SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 AND archived_at IS NULL ORDER BY position"
     ))?;
     let rows = statement.query_map([project_id], read_item)?;
-    rows.collect::<rusqlite::Result<Vec<BacklogItem>>>()
-        .map_err(DbError::from)
+    let mut items = rows.collect::<rusqlite::Result<Vec<BacklogItem>>>()?;
+    for item in &mut items {
+        let msg = message_stats.get(&item.id).copied().unwrap_or_default();
+        let handoff = handoff_stats.get(&item.id).copied().unwrap_or_default();
+        enrich_item_metrics(item, msg, handoff);
+    }
+    Ok(items)
+}
+
+fn read_project_event_stats(
+    conn: &Connection,
+    sql: &str,
+    project_id: i64,
+) -> Result<HashMap<String, (u32, Option<i64>)>, DbError> {
+    let mut stmt = conn.prepare(sql)?;
+    let rows = stmt.query_map([project_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            (row.get::<_, u32>(1)?, row.get::<_, Option<i64>>(2)?),
+        ))
+    })?;
+    let mut stats = HashMap::new();
+    for row in rows {
+        let (item_id, entry) = row?;
+        stats.insert(item_id, entry);
+    }
+    Ok(stats)
+}
+
+fn read_single_event_stats(
+    conn: &Connection,
+    sql: &str,
+    project_id: i64,
+    item_id: &str,
+) -> Result<(u32, Option<i64>), DbError> {
+    conn.query_row(sql, params![project_id, item_id], |row| {
+        Ok((row.get::<_, u32>(0)?, row.get::<_, Option<i64>>(1)?))
+    })
+    .map_err(DbError::from)
+}
+
+fn enrich_item_metrics(
+    item: &mut BacklogItem,
+    msg_stats: (u32, Option<i64>),
+    handoff_stats: (u32, Option<i64>),
+) {
+    let activity_count = u32::try_from(item.activity.len()).unwrap_or(u32::MAX);
+    let question_count = u32::try_from(item.questions.len()).unwrap_or(u32::MAX);
+    item.interaction_count = msg_stats
+        .0
+        .saturating_add(handoff_stats.0)
+        .saturating_add(activity_count)
+        .saturating_add(question_count);
+
+    let activity_max_at = item
+        .activity
+        .iter()
+        .filter_map(|entry| parse_activity_timestamp_ms(&entry.at))
+        .max();
+    item.last_activity_at = [
+        item.last_activity_at,
+        msg_stats.1,
+        handoff_stats.1,
+        activity_max_at,
+    ]
+    .into_iter()
+    .flatten()
+    .max();
+}
+
+fn parse_activity_timestamp_ms(raw: &str) -> Option<i64> {
+    let naive = NaiveDateTime::parse_from_str(raw.trim(), ACTIVITY_TIME_FORMAT).ok()?;
+    naive
+        .and_local_timezone(Local)
+        .earliest()
+        .map(|dt| dt.timestamp_millis())
 }
 
 // Um item ilegível não derruba a lista: volta marcado com a causa, sem os campos que não deu para ler.
@@ -2324,6 +2446,9 @@ fn broken_item_from_row(row: &Row<'_>, error: DbError) -> rusqlite::Result<Backl
         worktree_path: row.get("worktree_path")?,
         closed_by: row.get("closed_by")?,
         auto_attempts: row.get("auto_attempts")?,
+        sprint_id: row.get("sprint_id").ok().flatten(),
+        last_activity_at: row.get("cycle_started_at").ok().flatten(),
+        interaction_count: 0,
         is_new: None,
         column: BOARD_COLUMNS.contains(&column.as_str()).then_some(column),
         priority: None,
@@ -2384,6 +2509,9 @@ fn item_from_row(row: &Row<'_>) -> Result<BacklogItem, DbError> {
         worktree_path: row.get("worktree_path")?,
         closed_by: row.get("closed_by")?,
         auto_attempts: row.get("auto_attempts")?,
+        sprint_id: row.get("sprint_id")?,
+        last_activity_at: row.get("cycle_started_at")?,
+        interaction_count: 0,
         error: None,
         id,
     };

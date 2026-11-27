@@ -1678,6 +1678,9 @@ mod tests {
             worktree_path: None,
             closed_by: None,
             auto_attempts: 0,
+            sprint_id: None,
+            last_activity_at: None,
+            interaction_count: 0,
             error: None,
         }
     }
