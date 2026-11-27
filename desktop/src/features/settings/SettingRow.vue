@@ -10,6 +10,9 @@ import { EXECUTION_MODE_INFO, EXECUTION_MODES, type ExecutionMode } from '../per
 import { useExecutionMode } from '../permissions/useExecutionMode'
 import { useModeChoice } from '../permissions/useModeChoice'
 import { useConsole } from '../console/useConsole'
+import { useUpdater } from '../updater/useUpdater'
+import { useUsage } from '../usage/useUsage'
+import { primaryWindowsOf, providerDisplayName, renewsLabel } from '../usage/usagePlans'
 import { useNavigation } from '../../shell/useNavigation'
 import UiButton from '../../ui/UiButton.vue'
 import UiConfirm from '../../ui/UiConfirm.vue'
@@ -25,6 +28,7 @@ import {
   CONTINUATION_MAX_COUNT_SETTING_KEY,
   LEARNING_MODE_SETTING_KEY,
   LEARNING_TURN_CADENCE_SETTING_KEY,
+  NOTIFICATIONS_ENABLED_SETTING_KEY,
   USAGE_PAUSE_THRESHOLD_SETTING_KEY,
   eraseAllData,
   fetchSettings,
@@ -44,9 +48,13 @@ const NO_PROJECT_TEXT = 'Selecione um projeto'
 const theme = useTheme()
 const avatarProfiles = useAvatarProfiles()
 const navigation = useNavigation()
+const updater = useUpdater()
+const usage = useUsage()
 const ONBOARDING_PAGE = 'onboarding'
 const ACTION_HANDLERS: Record<SettingsActionId, () => void> = {
   'rever-onboarding': () => navigation.goTo(ONBOARDING_PAGE),
+  'abrir-estatisticas': () => navigation.goTo('estatisticas'),
+  'verificar-atualizacoes': () => void updater.check(),
 }
 
 // Espelha PERMISSION_GRANT_VALUES de src-tauri/src/db.rs.
@@ -65,6 +73,8 @@ const grant = ref<GrantChoice>(DEFAULT_GRANT)
 const grantError = ref<string | null>(null)
 const autoPauseOnLimit = ref(false)
 const autoPauseError = ref<string | null>(null)
+const notificationsEnabled = ref(true)
+const notificationsError = ref<string | null>(null)
 const PAUSE_THRESHOLD_CHOICES = ['85', '90', '95', 'off'] as const
 type PauseThresholdChoice = (typeof PAUSE_THRESHOLD_CHOICES)[number]
 const PAUSE_THRESHOLD_OPTIONS: readonly { label: string; value: PauseThresholdChoice }[] = [
@@ -300,6 +310,26 @@ async function chooseUsagePauseThreshold(next: PauseThresholdChoice): Promise<vo
   }
 }
 
+async function loadNotificationsEnabled(): Promise<void> {
+  try {
+    const stored = (await fetchSettings())[NOTIFICATIONS_ENABLED_SETTING_KEY]
+    notificationsEnabled.value = stored === undefined ? true : stored === 'true'
+  } catch (error) {
+    notificationsError.value = `Não foi possível ler as notificações: ${String(error)}`
+  }
+}
+
+async function toggleNotificationsEnabled(next: boolean): Promise<void> {
+  notificationsEnabled.value = next
+  try {
+    await saveSetting(NOTIFICATIONS_ENABLED_SETTING_KEY, next ? 'true' : 'false')
+    notificationsError.value = null
+  } catch (error) {
+    notificationsEnabled.value = !next
+    notificationsError.value = `Não foi possível salvar as notificações: ${String(error)}`
+  }
+}
+
 onMounted(() => {
   if (props.item.kind === 'row' && props.item.control.kind === 'permission-grant') {
     void loadGrant()
@@ -321,6 +351,9 @@ onMounted(() => {
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'learning-turn-cadence') {
     void loadLearningCadence()
+  }
+  if (props.item.kind === 'row' && props.item.control.kind === 'notifications-enabled') {
+    void loadNotificationsEnabled()
   }
   if (props.item.kind === 'row' && props.item.control.kind === 'execution-mode' && modeProjectId.value !== null) {
     void executionMode.load(modeProjectId.value)
@@ -381,6 +414,27 @@ function toOptions(labels: readonly string[]) {
     <UiProgress :value="item.percent" />
   </div>
 
+  <div v-else-if="item.kind === 'live-usage'" class="flex flex-col gap-3 border-t border-line py-3">
+    <template v-if="usage.providerList.length > 0">
+      <template v-for="provider in usage.providerList" :key="provider.providerId">
+        <div
+          v-for="window in primaryWindowsOf(provider)"
+          :key="`${provider.providerId}-${window.label}`"
+          class="flex flex-col gap-1.5"
+        >
+          <div class="flex items-baseline gap-2">
+            <span class="text-control">{{ providerDisplayName(provider) }} · {{ window.label }}</span>
+            <span class="ml-auto text-caption text-muted">
+              {{ window.percent }}% · {{ renewsLabel(window.resetsAt, Date.now()) }}
+            </span>
+          </div>
+          <UiProgress :value="window.percent" />
+        </div>
+      </template>
+    </template>
+    <p v-else class="text-caption text-muted">Nenhum uso de plano carregado ainda.</p>
+  </div>
+
   <div v-else-if="item.kind === 'moments'" :class="MOMENTS_CLASSES">
     <div
       v-for="moment in item.items"
@@ -403,6 +457,23 @@ function toOptions(labels: readonly string[]) {
 
     <div :class="CONTROL_CLASSES">
       <ThemeSwitch v-if="item.control.kind === 'theme'" />
+      <div v-else-if="item.control.kind === 'app-version'" :class="STACK_CLASSES">
+        <div class="flex items-baseline gap-1.5">
+          <b class="text-control text-ink">{{ updater.currentVersion ?? '0.15.1' }}</b>
+          <span class="text-small text-muted">
+            {{ updater.readyText ?? (updater.status === 'idle' ? 'em dia' : updater.status) }}
+          </span>
+        </div>
+        <p v-if="updater.checkError" role="alert" :class="ERROR_CLASSES">{{ updater.checkError }}</p>
+      </div>
+      <div v-else-if="item.control.kind === 'notifications-enabled'" :class="STACK_CLASSES">
+        <UiSwitch
+          :model-value="notificationsEnabled"
+          label="Notificações nativas"
+          @update:model-value="toggleNotificationsEnabled"
+        />
+        <p v-if="notificationsError" role="alert" :class="ERROR_CLASSES">{{ notificationsError }}</p>
+      </div>
       <div v-else-if="item.control.kind === 'permission-grant'" :class="STACK_CLASSES">
         <UiSegmented
           :options="GRANT_OPTIONS"

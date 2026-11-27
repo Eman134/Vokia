@@ -1,4 +1,4 @@
-export type SettingsActionId = 'rever-onboarding'
+export type SettingsActionId = 'rever-onboarding' | 'abrir-estatisticas' | 'verificar-atualizacoes'
 
 type SettingsAction = { label: string; variant: 'quiet' | 'danger'; id?: SettingsActionId }
 
@@ -12,6 +12,8 @@ type SettingsControl =
   | { kind: 'continuation-max-count' }
   | { kind: 'learning-mode' }
   | { kind: 'learning-turn-cadence' }
+  | { kind: 'notifications-enabled' }
+  | { kind: 'app-version' }
   | { kind: 'switch'; on: boolean }
   | { kind: 'segmented'; options: readonly string[]; selected: string }
   | { kind: 'select'; options: readonly string[] }
@@ -33,6 +35,7 @@ export type SettingsItem =
   | { kind: 'row'; label: string; hint?: string; control: SettingsControl }
   | { kind: 'cli'; code: string; name: string; version: string; status: string; detail: string; action: string }
   | { kind: 'usage'; label: string; detail: string; percent: number }
+  | { kind: 'live-usage' }
   | { kind: 'moments'; items: readonly SettingsMoment[] }
   | { kind: 'note'; text: string }
 
@@ -45,7 +48,28 @@ interface SettingsSectionData {
 
 export const GENERAL_SECTION_TITLE = 'Geral'
 export const AGENTS_SECTION_TITLE = 'Agentes e conexões'
+export const FALLBACK_SECTION_TITLE = 'Fallback e roteamento'
 export const SEARCH_SECTION_TITLE = 'Pesquisa'
+
+export interface SettingsNavGroup {
+  label: string
+  sections: readonly string[]
+}
+
+export const SETTINGS_NAV_GROUPS: readonly SettingsNavGroup[] = [
+  {
+    label: 'Aplicativo',
+    sections: [GENERAL_SECTION_TITLE, 'Barra de ação e avisos', 'Atualizações', 'Privacidade e dados'],
+  },
+  {
+    label: 'IA e Provedores',
+    sections: [AGENTS_SECTION_TITLE, FALLBACK_SECTION_TITLE, SEARCH_SECTION_TITLE],
+  },
+  {
+    label: 'Fluxo e Segurança',
+    sections: ['Execução', 'Permissões', 'Memória e Skills', 'Uso e limites'],
+  },
+]
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
   {
@@ -317,6 +341,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
     items: [
       {
         kind: 'row',
+        label: 'Notificações nativas do sistema',
+        hint: 'avisa quando uma decisão precisa de você com a janela fora de foco',
+        control: { kind: 'notifications-enabled' },
+      },
+      {
+        kind: 'row',
         label: 'Modo da barra',
         hint: 'automática abre ao passar o mouse ou focar no campo',
         control: { kind: 'segmented', options: ['Automática', 'Compacta', 'Sempre aberta'], selected: 'Automática' },
@@ -362,11 +392,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         control: { kind: 'input', value: '8', unit: 's' },
       },
       { kind: 'group', label: 'Notificações do sistema' },
-      {
-        kind: 'row',
-        label: 'Decisão esperando você',
-        control: { kind: 'switch', on: true },
-      },
       {
         kind: 'row',
         label: 'Erro ou teste falhando',
@@ -448,9 +473,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
     title: 'Uso e limites',
     description: 'o custo é dos seus planos; a Vokia mede e segura o time antes do limite',
     items: [
-      { kind: 'usage', label: 'Claude Code · janela de 5 h', detail: '62% · renova em 1 h 40', percent: 62 },
-      { kind: 'usage', label: 'Claude Code · semana', detail: '41%', percent: 41 },
-      { kind: 'usage', label: 'Codex · janela de 5 h', detail: '28% · renova em 3 h 10', percent: 28 },
+      { kind: 'live-usage' },
       {
         kind: 'row',
         label: 'Pausar o time quando a cota passar de',
@@ -472,42 +495,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionData[] = [
         kind: 'row',
         label: 'Relatório completo',
         hint: 'gasto por agente, projeto e camada',
-        control: { kind: 'actions', actions: [{ label: 'Abrir Estatísticas', variant: 'quiet' }] },
+        control: { kind: 'actions', actions: [{ label: 'Abrir Estatísticas', variant: 'quiet', id: 'abrir-estatisticas' }] },
       },
     ],
   },
   {
     title: 'Atualizações',
     description: 'a Vokia se atualiza pelo GitHub Releases',
-    action: 'Verificar agora',
     items: [
       {
         kind: 'row',
-        label: 'Versão',
-        hint: 'verificado hoje às 14:02',
-        control: { kind: 'value', text: '0.9.2', note: 'a mais recente' },
+        label: 'Versão instalada',
+        hint: 'verificação automática ao abrir em builds de produção',
+        control: { kind: 'app-version' },
       },
       {
         kind: 'row',
-        label: 'Canal',
-        control: { kind: 'segmented', options: ['Estável', 'Beta'], selected: 'Estável' },
-      },
-      {
-        kind: 'row',
-        label: 'Buscar atualizações ao abrir',
-        control: { kind: 'switch', on: true },
-      },
-      {
-        kind: 'row',
-        label: 'Instalar ao fechar o app',
-        hint: 'nunca reinicia com o time trabalhando',
-        control: { kind: 'switch', on: true },
-      },
-      {
-        kind: 'row',
-        label: 'Notas da versão',
-        hint: 'o que mudou na 0.9.2',
-        control: { kind: 'actions', actions: [{ label: 'Ver notas', variant: 'quiet' }] },
+        label: 'Procurar atualização',
+        hint: 'consulta o GitHub Releases agora',
+        control: { kind: 'actions', actions: [{ label: 'Verificar agora', variant: 'quiet', id: 'verificar-atualizacoes' }] },
       },
     ],
   },
