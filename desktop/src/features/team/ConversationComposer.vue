@@ -4,6 +4,7 @@ import UiButton from '../../ui/UiButton.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import { useNavigation } from '../../shell/useNavigation'
 import AgentPicker from '../agents/AgentPicker.vue'
+import AgentPortrait from './AgentPortrait.vue'
 import AttachmentChips from '../attachments/AttachmentChips.vue'
 import CommandMenu from './CommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
@@ -16,7 +17,7 @@ import { agentName } from './agents'
 import { findAgentMentions } from './agentMentions'
 import { useComposerMenus } from './bar/useComposerMenus'
 import { useComposerSubmit } from './bar/useComposerSubmit'
-import { MENTION_TRIGGER, mentionSpans } from './composerMentions'
+import { MENTION_TRIGGER, mentionSegments, mentionSpans } from './composerMentions'
 import type { Agent } from './events'
 import { useThreads } from './useThreads'
 import { screenPlaceholder } from './screenRecipient'
@@ -34,7 +35,10 @@ const COMMANDS_LABEL = 'Comandos'
 const FOOTER_CLASSES = 'flex shrink-0 flex-col gap-1.5 border-t border-line bg-paper px-4 py-2.5'
 // Mesma pílula da ActionBar: o clipe e o @ moram dentro dela, à esquerda, e o campo não tem borda própria.
 const PILL_CLASSES = 'flex min-h-8.5 min-w-0 flex-1 items-center rounded-full bg-surface-2 pl-1.5 focus-within:outline-2 focus-within:outline-solid focus-within:outline-ink'
-const FIELD_CLASSES = 'field-sizing-content max-h-28 min-h-8 min-w-0 flex-1 resize-none border-0 bg-transparent py-1.5 pl-1 pr-3.5 text-control text-ink outline-none placeholder:text-faint'
+const FIELD_TEXT_CLASSES = 'py-1.5 pl-1 pr-3.5 text-control'
+const FIELD_CLASSES = `relative field-sizing-content max-h-28 min-h-8 w-full min-w-0 resize-none border-0 bg-transparent ${FIELD_TEXT_CLASSES} text-transparent caret-ink outline-none placeholder:text-faint selection:bg-accent/25 selection:text-transparent`
+const AT_ICON_SIZE = 12
+const RAISED_ICON_SIZE = 9
 const ICON_SIZE_CLASSES = 'size-4 shrink-0'
 const ATTACH_CLASSES = 'size-6.5 shrink-0 px-0! text-muted hover:text-ink'
 const SEND_CLASSES = 'size-9 shrink-0 rounded-full px-0!'
@@ -75,6 +79,14 @@ const {
 } = useComposerMenus({ draft, caret, confirmed, locked, placeCaret })
 
 const spans = computed(() => mentionSpans(draft.value, confirmed.value))
+const highlightSegments = computed(() =>
+  mentionSegments(
+    draft.value,
+    findAgentMentions(draft.value, roster.agents).map(({ start, end, agent }) => ({ start, end, agent: agent.id })),
+  ),
+)
+const scrollTop = ref(0)
+const scrollLeft = ref(0)
 const selectedMentionRecipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
 const queuedCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {}
@@ -106,6 +118,8 @@ watch(draft, (text) => {
 
 function syncCaret(): void {
   caret.value = field.value?.selectionStart ?? draft.value.length
+  scrollTop.value = field.value?.scrollTop ?? 0
+  scrollLeft.value = field.value?.scrollLeft ?? 0
 }
 
 async function placeCaret(position: number): Promise<void> {
@@ -370,28 +384,54 @@ async function useChip(id: string): Promise<void> {
           class="max-w-[45%]"
           @remove="attachments.remove($event)"
         />
-        <textarea
-          ref="field"
-          v-model="draft"
-          rows="1"
-          role="combobox"
-          aria-autocomplete="list"
-          :aria-expanded="menuOpen"
-          :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
-          :aria-activedescendant="activeOptionId"
-          :aria-label="FIELD_LABEL"
-          :placeholder="placeholder"
-          :class="FIELD_CLASSES"
-          data-testid="conversation-composer-field"
-          @keydown="onFieldKeydown"
-          @keydown.backspace="onBackspace"
-          @input="syncCaret"
-          @click="syncCaret"
-          @keyup="syncCaret"
-          @select="syncCaret"
-          @blur="dismissMenu"
-          @paste="onPaste"
-        />
+        <div class="relative min-w-0 flex-1 overflow-hidden rounded-r-full">
+          <div
+            aria-hidden="true"
+            :class="`pointer-events-none absolute inset-0 whitespace-pre-wrap break-words ${FIELD_TEXT_CLASSES}`"
+            :style="{ transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }"
+          >
+            <template v-for="(segment, index) in highlightSegments" :key="index">
+              <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
+              <span v-else :data-mention="segment.agent" class="relative text-accent">
+                <span
+                  v-if="segment.text.startsWith(MENTION_TRIGGER)"
+                  class="absolute top-1/2 left-0 -translate-y-1/2"
+                  ><AgentPortrait :who="segment.agent" :size="AT_ICON_SIZE"
+                /></span>
+                <span v-else class="absolute bottom-full left-0"
+                  ><AgentPortrait :who="segment.agent" :size="RAISED_ICON_SIZE"
+                /></span>
+                <span :class="segment.text.startsWith(MENTION_TRIGGER) ? 'text-transparent' : ''">{{
+                  segment.text.startsWith(MENTION_TRIGGER) ? MENTION_TRIGGER : ''
+                }}</span
+                >{{ segment.text.startsWith(MENTION_TRIGGER) ? segment.text.slice(MENTION_TRIGGER.length) : segment.text }}
+              </span>
+            </template>
+          </div>
+          <textarea
+            ref="field"
+            v-model="draft"
+            rows="1"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-expanded="menuOpen"
+            :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
+            :aria-activedescendant="activeOptionId"
+            :aria-label="FIELD_LABEL"
+            :placeholder="placeholder"
+            :class="FIELD_CLASSES"
+            data-testid="conversation-composer-field"
+            @keydown="onFieldKeydown"
+            @keydown.backspace="onBackspace"
+            @input="syncCaret"
+            @click="syncCaret"
+            @keyup="syncCaret"
+            @select="syncCaret"
+            @scroll="syncCaret"
+            @blur="dismissMenu"
+            @paste="onPaste"
+          />
+        </div>
       </div>
       <UiButton variant="primary" size="lg" :class="SEND_CLASSES" :aria-label="SEND_LABEL" :title="SEND_LABEL" :disabled="!canSend" @press="submit">
         <svg viewBox="0 0 20 20" class="size-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
