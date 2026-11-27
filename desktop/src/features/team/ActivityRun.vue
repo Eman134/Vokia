@@ -3,6 +3,7 @@ import { computed, ref, useId } from 'vue'
 import type { TurnActivity } from './events'
 import { activityRows, activitySentence, thinkingRow, type AgentNameOf, type CardTitleOf } from './activitySummary'
 import ActivityRow from './ActivityRow.vue'
+import CompactToolRows from './CompactToolRows.vue'
 import MarkdownText from './MarkdownText.vue'
 import { useBacklog } from '../backlog/useBacklog'
 import { useRoster } from './useRoster'
@@ -46,7 +47,12 @@ const rows = computed(() => activityRows(props.activity.tools, cardTitleOf, agen
       </template>
     </div>
     <ul v-if="live && rows.length > 0" class="flex min-w-0 flex-col gap-1" data-testid="activity-live">
-      <ActivityRow v-for="row in rows" :key="row.id" :row="row" />
+      <CompactToolRows
+        :tools="activity.tools"
+        :rows="rows"
+        :card-title-of="cardTitleOf"
+        :agent-name-of="agentNameOf"
+      />
     </ul>
     <template v-else-if="rows.length > 0">
       <button

@@ -124,6 +124,8 @@ const agentContent = computed(() => extractAttachments(confirmations.value.rest)
 const AVATAR_SIZE = PORTRAIT_SIZES.chat
 const META_AVATAR_SIZE = PORTRAIT_SIZES.stack
 const PROPOSAL_LABEL = 'Virar pedido'
+const USAGE_REVEAL_CLASSES =
+  'flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none'
 
 const TIME_FORMAT = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' })
 const ERROR_ICON_PATH = 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z M8 5v3.5M8 10.8v.4'
@@ -391,7 +393,7 @@ const graphModalMeta = computed(() => {
         <span
           v-if="usageCost || usageSplit"
           data-testid="message-usage-detail"
-          class="flex items-center gap-2"
+          :class="USAGE_REVEAL_CLASSES"
         >
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />
@@ -525,7 +527,7 @@ const graphModalMeta = computed(() => {
         <span
           v-if="usageCost || usageSplit"
           data-testid="message-usage-detail"
-          class="flex items-center gap-2"
+          :class="USAGE_REVEAL_CLASSES"
         >
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />

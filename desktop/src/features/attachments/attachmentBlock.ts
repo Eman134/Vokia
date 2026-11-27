@@ -27,7 +27,8 @@ const ICON_TEXT = 'M6 4h12v16H6V4Zm3 5h6M9 13h6M9 17h4'
 const ICON_GENERIC = 'M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm7 0v5h5'
 
 // Caminho absoluto na pasta de anexos do Vokia: .../attachments/<project_id>/<hex_id>/<arquivo>
-const INLINE_ATTACHMENT_PATH_RE = /`?((?:[A-Za-z]:\\|\/)[^\r\n`"'<>]*?[\\/]attachments[\\/]\d+[\\/][0-9a-fA-F]+[\\/][^\\/\s`"'<>]+)`?/g
+const INLINE_ATTACHMENT_PATH_RE = /`?((?:[A-Za-z]:[\\/]|\/)[^\r\n`"'<>]*?[\\/]attachments[\\/]\d+[\\/][0-9a-fA-F]+[\\/][^\\/\s`"'<>]+)`?/g
+const CORRUPTED_DRIVE_FILE_RE = /\b[A-Za-z]:([^\s\\/:]+\.(?:png|jpe?g|gif|webp|svg|bmp|ico))\b/gi
 const TRAILING_PUNCTUATION_RE = /[.,;:)]+$/
 
 export interface Attachment {
@@ -89,22 +90,24 @@ export function extractAttachments(text: string): AttachmentsSplit {
   const seen = new Set(attachments.map((item) => item.path))
 
   const cleanedLines = base.text.split('\n').map((line) => {
-    const replaced = line.replace(INLINE_ATTACHMENT_PATH_RE, (fullMatch, rawPath: string) => {
-      const cleanPath = rawPath.replace(TRAILING_PUNCTUATION_RE, '')
-      const trailing = rawPath.slice(cleanPath.length)
-      const name = fileNameFromPath(cleanPath)
-      if (!seen.has(cleanPath)) {
-        seen.add(cleanPath)
-        attachments.push({
-          name,
-          label: isImageAttachmentPath(name) ? 'imagem' : 'arquivo',
-          size: '',
-          path: cleanPath,
-        })
-      }
-      if (line.trim() === fullMatch.trim()) return ''
-      return `${name}${trailing}`
-    })
+    const replaced = line
+      .replace(INLINE_ATTACHMENT_PATH_RE, (fullMatch, rawPath: string) => {
+        const cleanPath = rawPath.replace(TRAILING_PUNCTUATION_RE, '')
+        const trailing = rawPath.slice(cleanPath.length)
+        const name = fileNameFromPath(cleanPath)
+        if (!seen.has(cleanPath)) {
+          seen.add(cleanPath)
+          attachments.push({
+            name,
+            label: isImageAttachmentPath(name) ? 'imagem' : 'arquivo',
+            size: '',
+            path: cleanPath,
+          })
+        }
+        if (line.trim() === fullMatch.trim()) return ''
+        return `${name}${trailing}`
+      })
+      .replace(CORRUPTED_DRIVE_FILE_RE, '$1')
     return replaced
   })
 

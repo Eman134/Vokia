@@ -22,8 +22,12 @@ watch(
 
 watch(
   () => learning.pendingCount,
-  (count) => {
-    if (count === 0) open.value = false
+  (count, prev = 0) => {
+    if (count === 0) {
+      open.value = false
+    } else if (prev === 0 && count > 0) {
+      open.value = true
+    }
   },
 )
 

@@ -321,7 +321,116 @@ function commandRow(tool: ToolActivity, detail: CommandDetail, nameOf: AgentName
   }
 }
 
-function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
+function parseVokiaCliFlag(cmd: string, flag: string): string | undefined {
+  const m = new RegExp(`--${flag}(?:=|\\s+)(?:"([^"]+)"|'([^']+)'|(\\S+))`).exec(cmd)
+  return (m?.[1] ?? m?.[2] ?? m?.[3])?.trim() || undefined
+}
+
+function vokiaCliRow(tool: ToolActivity, nameOf: AgentNameOf): ActivityRowModel | null {
+  const raw = tool.target.trim()
+  const match = /(?:^|[\s/\\])vokia-cli(?:\.exe)?\s+(.+)$/i.exec(raw)
+  if (!match) return null
+  const rest = match[1].trim()
+  const running = tool.status === 'running'
+  const failed = tool.status === 'failed'
+  const tokens = rest.split(/\s+/)
+  let sub = (tokens[0] ?? '').toLowerCase()
+  if (sub === 'cmd' && tokens[1]) sub = tokens[1].toLowerCase()
+
+  if (sub === 'delegate') {
+    const agentId = parseVokiaCliFlag(rest, 'agent')
+    const itemId = parseVokiaCliFlag(rest, 'item-id')
+    const agentLabel = agentId ? (nameOf(agentId) ?? agentId) : undefined
+    return {
+      id: tool.callId,
+      icon: 'agent',
+      verb: running ? 'Delegando via Vokia' : 'Delegou via Vokia',
+      chip: agentLabel ? { label: agentLabel, title: raw, icon: 'generic' } : undefined,
+      meta: itemId ? `· ${itemId}` : undefined,
+      failed,
+    }
+  }
+  if (sub === 'set-criterion' || sub === 'artifact_set_criterion') {
+    const crit = parseVokiaCliFlag(rest, 'criterion-id')
+    const art = parseVokiaCliFlag(rest, 'artifact-id')
+    return {
+      id: tool.callId,
+      icon: 'check',
+      verb: running ? 'Marcando critério' : 'Marcou critério',
+      chip: crit ? { label: crit, title: raw, icon: 'generic' } : undefined,
+      meta: art ? `· ${art}` : undefined,
+      failed,
+    }
+  }
+  if (sub === 'submit_for_review' || sub === 'submit-for-review') {
+    const itemId = parseVokiaCliFlag(rest, 'item-id')
+    return {
+      id: tool.callId,
+      icon: 'check',
+      verb: running ? 'Enviando para revisão' : 'Enviou para revisão',
+      chip: itemId ? { label: itemId, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+  if (sub === 'request-decision' || sub === 'request_decision') {
+    const title = parseVokiaCliFlag(rest, 'title')
+    return {
+      id: tool.callId,
+      icon: 'warning',
+      verb: running ? 'Pedindo decisão' : 'Pediu decisão',
+      chip: title ? { label: title, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+  if (sub === 'save-item-plan' || sub === 'save_item_plan') {
+    const itemId = parseVokiaCliFlag(rest, 'item-id')
+    return {
+      id: tool.callId,
+      icon: 'artifact',
+      verb: running ? 'Gravando plano' : 'Gravou plano',
+      chip: itemId ? { label: itemId, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+  if (sub === 'memory-graph-query' || sub === 'memory_graph_query') {
+    const q = parseVokiaCliFlag(rest, 'query')
+    return {
+      id: tool.callId,
+      icon: 'search',
+      verb: running ? 'Consultando grafo' : 'Consultou grafo',
+      chip: q ? { label: q, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+  if (sub === 'memory-graph-save' || sub === 'memory_graph_save') {
+    return {
+      id: tool.callId,
+      icon: 'artifact',
+      verb: running ? 'Salvando no grafo' : 'Salvou no grafo',
+      chip: { label: 'Memória', title: raw, icon: 'generic' },
+      failed,
+    }
+  }
+  if (sub === 'set-variable' || sub === 'set_variable') {
+    const name = parseVokiaCliFlag(rest, 'name')
+    return {
+      id: tool.callId,
+      icon: 'settings',
+      verb: running ? 'Atualizando variável' : 'Atualizou variável',
+      chip: name ? { label: name, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+  return {
+    id: tool.callId,
+    icon: 'generic',
+    verb: running ? 'Executando Vokia CLI' : 'Executou Vokia CLI',
+    chip: { label: sub || 'vokia-cli', title: raw, icon: 'generic' },
+    failed,
+  }
+}
+
+function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean, nameOf: AgentNameOf): ActivityRowModel {
   if (tool.name === 'mcp__vokia__memory_graph_query' || tool.name === 'memory_graph_query') {
     return {
       id: tool.callId,
@@ -339,6 +448,10 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): Act
       text: tool.target || undefined,
       failed,
     }
+  }
+  if (tool.category === 'command') {
+    const cliRow = vokiaCliRow(tool, nameOf)
+    if (cliRow) return cliRow
   }
   if (tool.category === 'command' && tool.description !== undefined) {
     return { id: tool.callId, icon, verb: tool.description, command: tool.target, failed }
@@ -533,7 +646,7 @@ function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf:
     if (tool.detail?.kind === 'command') return [commandRow(tool, tool.detail, nameOf)]
     const delegation = delegationOf(tool)
     if (delegation) return [delegationRow(tool, delegation)]
-    return [defaultRow(tool, icon, tool.status === 'failed')]
+    return [defaultRow(tool, icon, tool.status === 'failed', nameOf)]
   })
 }
 

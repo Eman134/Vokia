@@ -408,15 +408,13 @@ watch(
         </div>
       </div>
     </header>
-    <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
-    <template v-if="!filaAberta">
-      <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
-      <div
-        v-if="feed.screen.kind === 'thread' && activeThread && activeThread.participants.length > 0"
-        class="mb-3 flex flex-wrap items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5"
-        aria-label="Instâncias na thread"
-        data-testid="thread-instances-bar"
-      >
+    <div
+      v-if="!filaAberta && feed.screen.kind === 'thread' && activeThread && (activeThread.participants.length > 0 || activeThread.subthreads.length > 0)"
+      class="z-20 flex shrink-0 flex-col gap-1.5 border-b border-line bg-surface px-4 py-2"
+      aria-label="Painel da thread"
+      data-testid="thread-instances-bar"
+    >
+      <div v-if="activeThread.participants.length > 0" class="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           class="cursor-pointer rounded-full border px-2 py-0.5 text-tiny font-medium transition-colors"
@@ -445,14 +443,25 @@ watch(
             aria-hidden="true"
           />
         </button>
-        <span
-          v-if="activeThread.exchangeCount > 0"
-          class="ml-auto rounded-sm bg-surface-2 px-1.5 py-0.5 text-tiny font-medium text-muted"
-          title="Mensagens entre agentes nesta thread"
-        >
-          ↔ {{ activeThread.exchangeCount }} entre agentes
-        </span>
       </div>
+      <div v-if="activeThread.subthreads.length > 0" class="flex flex-wrap items-center gap-1.5" data-testid="thread-subthreads-bar">
+        <span class="text-tiny font-medium text-muted">Subthreads:</span>
+        <button
+          v-for="sub in activeThread.subthreads"
+          :key="sub.itemId"
+          type="button"
+          class="inline-flex max-w-64 cursor-pointer items-center gap-1.5 rounded-sm border border-line bg-surface-2 px-2 py-0.5 text-tiny text-ink hover:bg-hover"
+          :title="sub.title"
+          @click="feed.showScreen({ kind: 'thread', itemId: sub.itemId })"
+        >
+          <span class="shrink-0 font-mono text-muted">{{ sub.publicId ?? sub.itemId }}</span>
+          <span class="truncate">{{ sub.title }}</span>
+        </button>
+      </div>
+    </div>
+    <section ref="scroller" :class="BODY_CLASSES" @scroll="onScroll">
+    <template v-if="!filaAberta">
+      <UiNotice v-if="clearFailure" class="mb-6" :text="clearFailure" @close="clearFailure = null" />
       <TriageChannelPanel v-if="feed.screen.kind === 'triage'" />
       <LogsChannelPanel v-else-if="feed.screen.kind === 'logs'" />
       <UiEmpty v-if="projectsStore.loaded && projectsStore.selected === null" class="m-auto" :title="NO_PROJECT_TITLE" :text="NO_PROJECT_TEXT">

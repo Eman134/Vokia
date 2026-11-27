@@ -122,13 +122,6 @@ const isThreadActive = computed(
           {{ thread.subthreads.length }}
         </span>
         <span
-          v-if="categoryKey !== 'done' && thread.exchangeCount > 0"
-          class="shrink-0 rounded-sm bg-surface-2 px-1 text-[10px] font-medium text-muted tabular-nums"
-          :title="`${thread.exchangeCount} mensagens entre agentes`"
-        >
-          ↔{{ thread.exchangeCount }}
-        </span>
-        <span
           v-if="categoryKey !== 'done' && THREAD_DOT[thread.status]"
           class="ml-auto size-1.5 shrink-0 rounded-full"
           :class="THREAD_DOT[thread.status]?.classes"

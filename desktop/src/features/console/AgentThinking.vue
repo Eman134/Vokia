@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
-import type { AgentState, TurnActivity } from '../team/events'
+import type { AgentState, ToolActivity, TurnActivity } from '../team/events'
 import { activityRows, formatClock, type ActivityRowModel, type AgentNameOf, type CardTitleOf } from '../team/activitySummary'
-import ActivityRow from '../team/ActivityRow.vue'
+import CompactToolRows from '../team/CompactToolRows.vue'
 import MarkdownText from '../team/MarkdownText.vue'
 import TurnPlanCard from '../team/TurnPlanCard.vue'
 import { useBacklog } from '../backlog/useBacklog'
@@ -57,7 +57,7 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(timer))
 
-type LiveSegment = { kind: 'text'; text: string } | { kind: 'tools'; rows: ActivityRowModel[] }
+type LiveSegment = { kind: 'text'; text: string } | { kind: 'tools'; tools: ToolActivity[]; rows: ActivityRowModel[] }
 
 const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
 const agentNameOf: AgentNameOf = (id) => roster.profileOf(id)?.name
@@ -70,7 +70,7 @@ const timelineSegments = computed<LiveSegment[]>(() => {
   return liveTimeline(consoleStore.entriesOf(props.agent.id), props.activity?.tools ?? []).map((segment) =>
     segment.kind === 'text'
       ? segment
-      : { kind: 'tools', rows: activityRows(segment.tools, cardTitleOf, agentNameOf) },
+      : { kind: 'tools', tools: segment.tools, rows: activityRows(segment.tools, cardTitleOf, agentNameOf) },
   )
 })
 
@@ -128,7 +128,12 @@ const label = computed(() => {
         class="mt-0.5 flex min-w-0 max-w-full flex-col gap-1 text-caption text-muted"
         data-testid="activity-live"
       >
-        <ActivityRow v-for="row in segment.rows" :key="row.id" :row="row" />
+        <CompactToolRows
+          :tools="segment.tools"
+          :rows="segment.rows"
+          :card-title-of="cardTitleOf"
+          :agent-name-of="agentNameOf"
+        />
       </ul>
     </template>
     <div v-if="thinkingPreview" class="line-clamp-4 min-w-0">
