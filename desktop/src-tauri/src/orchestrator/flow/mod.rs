@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 use std::time::{Duration, Instant};
@@ -9,25 +9,19 @@ use crate::agents::replica_of;
 use crate::attachments;
 use crate::agents::{Agent, AgentError, AgentProfile, AgentRegistry, Team};
 use crate::claude::{LimitName, ProjectAccess, UsageLimit};
-use crate::db::{
-    DbError, DbState, FlowEdge, OrchestrationSnapshot, FLOW_END, GATEWAY_PARALLEL, LINK_FLOW,
-};
+use crate::db::{DbError, DbState, OrchestrationSnapshot};
 use crate::events::{AgentState, DecisionKind, Speaker, VokiaEvent};
 use crate::mcp::{McpState, SlotDecision};
 use crate::orchestration::counters::TaskCounters;
 use crate::orchestration::instances;
-use crate::orchestration::stages::{self, StallAction};
-use crate::orchestration::policy::{
-    self, placed_participants, Passage, Verdict, HUMAN_GATE_END, HUMAN_GATE_NEVER,
-    REVIEW_BATCH_TITLE, REVIEW_TASK_TITLE,
-};
+use crate::orchestration::policy::{self, placed_participants, Passage, Verdict};
 use crate::orchestration::worktree_policy::{leader_limit, should_use};
 use crate::projects::worktree;
 use crate::roles::RoleRegistry;
 use crate::session_key::SessionKey;
 use crate::state::{
-    ActiveDelegation, AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
-    WaitingReason, DEFAULT_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS, MAX_WATCHDOG_RETRIES,
+    ActiveDelegation, AppState, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
+    WaitingReason, DEFAULT_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS,
     MIN_DELEGATION_PING_SECS,
 };
 use crate::task::{
@@ -38,8 +32,8 @@ use crate::task::{
 use super::agent_session::ask_step;
 use super::archive::archive_task;
 use super::emit::{
-    emit, emit_artifacts_changed, emit_backlog_changed, emit_feed_note, emit_message, emit_state,
-    now_millis, reconcile_waiting, report_limits, MessageScope,
+    emit, emit_backlog_changed, emit_feed_note, emit_message, emit_state, now_millis,
+    reconcile_waiting, report_limits, MessageScope,
 };
 use super::error::{FlowError, RequestOutcome};
 use super::project_context::{
@@ -59,7 +53,16 @@ use super::turns::{
     with_cache, Exchange, USER_LABEL,
 };
 use super::validation::{self, VALIDATION_RETURN};
-use crate::orchestration::snapshot::{flow_target, leader_of, node_id, placement_of};
+
+mod batch;
+mod watchdog;
+
+pub(in crate::orchestrator) use batch::*;
+pub(crate) use watchdog::{emit_stage, publish_stage, schedule_done_cleanup, set_stage_state, spawn_dead_worktree_sweeper, spawn_delegation_watchdog};
+pub(in crate::orchestrator) use watchdog::spawn_stage_request;
+#[cfg(test)]
+use watchdog::{stage_is_moving, sweep_silent_delegations};
+use crate::orchestration::snapshot::placement_of;
 use crate::task::Change;
 
 // Sem configuração de gate, a junção segue o padrão do projeto: revisão a cada lote.
@@ -496,291 +499,6 @@ fn new_delegation(project_id: i64, to_agent: &Agent, context: &RequestContext) -
     }
 }
 
-// Abre o lote de um turno do líder; o id devolvido vai nas trocas paralelas.
-pub(super) fn open_batch(state: &AppState, batch: Batch) -> Result<u64, FlowError> {
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    let id = flow.next_batch;
-    flow.next_batch += 1;
-    flow.batches.insert(id, batch);
-    Ok(id)
-}
-
-pub(super) fn is_batch_open(state: &AppState, id: u64) -> bool {
-    state
-        .flow
-        .lock()
-        .is_ok_and(|flow| flow.batches.contains_key(&id))
-}
-
-// Objetivo e variáveis da tarefa do líder: a réplica usa o mesmo registro que o líder.
-fn batch_task(state: &AppState, batch: Option<u64>) -> Option<(String, Vec<Variable>)> {
-    let id = batch?;
-    let flow = state.flow.lock().ok()?;
-    let open = flow.batches.get(&id)?;
-    Some((open.objective.clone(), open.variables.clone()))
-}
-
-// Guarda o resultado de uma troca do lote; a última fecha o lote e vai para a junção.
-fn finish_item(
-    app: &AppHandle,
-    state: &AppState,
-    team: &Team,
-    batch: Option<u64>,
-    agent: &Agent,
-    text: String,
-) {
-    if let Some(id) = batch {
-        let result = (agent.clone(), instances::display_name(team, agent), text);
-        settle_batch(app, state, id, Some(result));
-    }
-}
-
-// Fim do despacho do líder: solta a contagem própria do lote.
-pub(super) fn seal_batch(app: &AppHandle, state: &AppState, batch: u64) {
-    settle_batch(app, state, batch, None);
-}
-
-// Uma troca (ou o despacho) sai do lote; quando nada mais falta, a junção roda.
-fn settle_batch(
-    app: &AppHandle,
-    state: &AppState,
-    id: u64,
-    result: Option<(Agent, String, String)>,
-) {
-    let (done, progress) = {
-        let Ok(mut flow) = state.flow.lock() else {
-            return;
-        };
-        let Some(open) = flow.batches.get_mut(&id) else {
-            return;
-        };
-        if let Some((agent, name, text)) = result {
-            open.returned.push(agent);
-            open.results.push((name, text));
-        }
-        open.pending = open.pending.saturating_sub(1);
-        if open.pending == 0 {
-            let closed = flow.batches.remove(&id);
-            let progress = closed.as_ref().map(|batch| progress_event(batch, true));
-            (closed, progress)
-        } else {
-            (None, Some(progress_event(open, false)))
-        }
-    };
-    if let Some(progress) = progress {
-        let _ = emit(app, progress);
-    }
-    if let Some(done) = done {
-        let project_id = done.project_id;
-        if let Err(error) = join_batch(app, state, done) {
-            let _ = report_failure(app, project_id, &error);
-        }
-        reconcile_waiting(app, state, project_id);
-    }
-}
-
-// Placar do lote: quantas trocas voltaram, quantas foram despachadas e quais ainda rodam.
-fn progress_event(batch: &Batch, done: bool) -> VokiaEvent {
-    let mut running = batch.started.clone();
-    for returned in &batch.returned {
-        if let Some(position) = running.iter().position(|agent| agent == returned) {
-            running.remove(position);
-        }
-    }
-    VokiaEvent::BatchProgress {
-        project_id: batch.project_id,
-        leader: batch.leader.clone(),
-        returned: batch.returned.len(),
-        total: batch.dispatched.len(),
-        running,
-        done,
-    }
-}
-
-// Emite o placar do lote que ainda está aberto (usado depois do despacho do líder e da resposta de réplica).
-pub(super) fn announce_batch(app: &AppHandle, state: &AppState, id: u64) {
-    let progress = {
-        let Ok(flow) = state.flow.lock() else {
-            return;
-        };
-        flow.batches
-            .get(&id)
-            .map(|batch| progress_event(batch, false))
-    };
-    if let Some(progress) = progress {
-        let _ = emit(app, progress);
-    }
-}
-
-// Acesso ao lote aberto; None quando ele já fechou.
-fn with_batch<T>(state: &AppState, id: u64, action: impl FnOnce(&mut Batch) -> T) -> Option<T> {
-    let mut flow = state.flow.lock().ok()?;
-    flow.batches.get_mut(&id).map(action)
-}
-
-// Réplica usa o perfil do base: a política e os limites contam a delegação pelo agente base.
-fn base_agent(agent: &Agent) -> Agent {
-    replica_of(agent.as_str())
-        .and_then(|(base, _)| Agent::from_stored(base))
-        .unwrap_or_else(|| agent.clone())
-}
-
-// Junção: uma entrada do líder com o resultado de cada troca, e o human_gate dispara com ela.
-fn join_batch(app: &AppHandle, state: &AppState, batch: Batch) -> Result<(), FlowError> {
-    let count = batch.results.len();
-    let text = batch
-        .results
-        .iter()
-        .map(|(name, text)| format!("{name}: {text}"))
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    emit_message(
-        app,
-        batch.project_id,
-        Speaker::from(batch.leader.clone()),
-        Speaker::User,
-        &text,
-        MessageScope {
-            channel_id: batch.channel_id,
-            item_id: batch.item_id.as_deref(),
-        },
-        None,
-        None,
-        None,
-    )?;
-    let snapshot = load_orchestration(app)?;
-    let team = app
-        .state::<AgentRegistry>()
-        .team()
-        .map_err(FlowError::Team)?;
-    let join = snapshot
-        .as_ref()
-        .and_then(|snapshot| join_target(snapshot, &team, &batch));
-    // A junção sai para o fim: os ramos paralelos não passam pelo laço de turnos (que marca o fim), então a junção
-    // marca; a validação final abre em release_branch, quando o último ramo do card termina.
-    if let (Some(JoinExit::End), Some(item)) = (&join, batch.item_id.as_deref()) {
-        let last = batch.returned.last().unwrap_or(&batch.leader);
-        mark_flow_end(state, batch.project_id, item, last)?;
-        return emit_state(
-            app,
-            batch.project_id,
-            batch.leader,
-            AgentState::Idle,
-            batch.item_id.as_deref(),
-        );
-    }
-    if let Some(JoinExit::Agent(target)) = join {
-        let max_instances = snapshot
-            .as_ref()
-            .and_then(|snapshot| placement_of(snapshot, &target))
-            .map_or(1, |placement| placement.max_instances);
-        let max_parallel = snapshot
-            .as_ref()
-            .map_or(1, |snapshot| snapshot.settings.max_parallel);
-        let context = RequestContext::new(None, batch.item_id.clone(), batch.channel_id);
-        count_branch(state, batch.project_id, batch.item_id.as_deref())?;
-        dispatch_request(
-            app,
-            state,
-            batch.project_id,
-            &target,
-            &format!("Resultados dos ramos:\n\n{text}"),
-            context,
-            max_instances,
-            max_parallel,
-        )?;
-        return emit_state(
-            app,
-            batch.project_id,
-            batch.leader,
-            AgentState::Idle,
-            batch.item_id.as_deref(),
-        );
-    }
-    let gate = snapshot.as_ref().map_or(HUMAN_GATE_LOTE, |snapshot| {
-        snapshot.settings.human_gate.as_str()
-    });
-    if gate == HUMAN_GATE_NEVER {
-        return emit_state(
-            app,
-            batch.project_id,
-            batch.leader,
-            AgentState::Idle,
-            batch.item_id.as_deref(),
-        );
-    }
-    let title = if gate == HUMAN_GATE_END {
-        REVIEW_TASK_TITLE
-    } else {
-        REVIEW_BATCH_TITLE
-    };
-    open_decision(
-        app,
-        state,
-        &batch.leader,
-        batch.project_id,
-        batch.item_id.as_deref(),
-        &batch.objective,
-        SlotDecision {
-            kind: DecisionKind::Revisao,
-            title: title.to_string(),
-            detail: format!("Resultados de {count} trocas em paralelo."),
-            options: Vec::new(),
-        },
-    )?;
-    emit_state(
-        app,
-        batch.project_id,
-        batch.leader,
-        AgentState::Waiting,
-        batch.item_id.as_deref(),
-    )
-}
-
-enum JoinExit {
-    Agent(Agent),
-    End,
-}
-
-// Gateway paralelo de junção (2 ou mais entradas, uma saída) cujas entradas vêm todas dos ramos do lote: o destino da
-// saída (um agente ou o fim do fluxo) recebe os resultados quando o último ramo volta.
-fn join_target(snapshot: &OrchestrationSnapshot, team: &Team, batch: &Batch) -> Option<JoinExit> {
-    let branches: HashSet<&str> = batch.dispatched.iter().map(node_id).collect();
-    let flow_edges = |from: bool, gateway: &str| -> Vec<&FlowEdge> {
-        snapshot
-            .edges
-            .iter()
-            .filter(|edge| {
-                edge.link == LINK_FLOW
-                    && if from {
-                        edge.from_node == gateway
-                    } else {
-                        edge.to_node == gateway
-                    }
-            })
-            .collect()
-    };
-    snapshot
-        .gateways
-        .iter()
-        .filter(|gateway| gateway.kind == GATEWAY_PARALLEL)
-        .find_map(|gateway| {
-            let entries = flow_edges(false, &gateway.id);
-            let exits = flow_edges(true, &gateway.id);
-            let from_branches = entries.len() >= 2
-                && entries
-                    .iter()
-                    .all(|edge| branches.contains(edge.from_node.as_str()));
-            match exits.as_slice() {
-                [exit] if from_branches && exit.to_node == FLOW_END => Some(JoinExit::End),
-                [exit] if from_branches => flow_target(team, &exit.to_node)
-                    .cloned()
-                    .map(JoinExit::Agent),
-                _ => None,
-            }
-        })
-}
-
 fn spawn_flow(app: &AppHandle, key: SessionKey, request: String, context: RequestContext) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -1002,115 +720,6 @@ fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, Flow
     next_job_with_db(None, state, key)
 }
 
-// O card chegou ao fim do fluxo por este agente; a validação final espera o último ramo terminar.
-pub(super) fn mark_flow_end(
-    state: &AppState,
-    project_id: i64,
-    item_id: &str,
-    speaker: &Agent,
-) -> Result<(), FlowError> {
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    flow.ended
-        .insert((project_id, item_id.to_string()), speaker.clone());
-    Ok(())
-}
-
-// Cada troca com card é um ramo dele; a primeira registra o ramo principal.
-fn register_main_branch(
-    state: &AppState,
-    project_id: i64,
-    item_id: Option<&str>,
-) -> Result<(), FlowError> {
-    let Some(item) = item_id else {
-        return Ok(());
-    };
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    flow.open_branches
-        .entry((project_id, item.to_string()))
-        .or_insert(1);
-    Ok(())
-}
-
-// Um ramo novo do card: linha assíncrona, saída de gateway paralelo ou a entrega da junção.
-pub(super) fn count_branch(
-    state: &AppState,
-    project_id: i64,
-    item_id: Option<&str>,
-) -> Result<(), FlowError> {
-    let Some(item) = item_id else {
-        return Ok(());
-    };
-    let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    *flow
-        .open_branches
-        .entry((project_id, item.to_string()))
-        .or_insert(0) += 1;
-    Ok(())
-}
-
-// O ramo terminou (concluído ou não). Sem chegar ao fim, o líder fica sabendo; o card só segue quando nenhum ramo resta.
-async fn release_branch(
-    app: &AppHandle,
-    state: &AppState,
-    team: &Team,
-    key: &SessionKey,
-    item_id: Option<&str>,
-    stopped: Option<String>,
-) {
-    let Some(item) = item_id else {
-        return;
-    };
-    let failed = stopped.is_some();
-    if let Some(reason) = stopped {
-        let leader = load_orchestration(app)
-            .ok()
-            .flatten()
-            .map_or_else(|| leader_of(None), |snapshot| leader_of(Some(&snapshot)));
-        let text = format!(
-            "Ramo {} de {item} parou: {reason}.",
-            team.name_of(&base_agent(&key.agent))
-        );
-        if let Ok(time) = now_millis() {
-            let _ = emit_feed_note(app, key.project_id, Speaker::from(leader), &text, time);
-        }
-    }
-    let Some((ended, finished)) = close_branch(state, key.project_id, item, failed) else {
-        return;
-    };
-    // Sem ramo aberto: só o card que chegou ao fim do fluxo vai para a validação final.
-    if let Some(speaker) = ended {
-        if let Err(error) =
-            validation::on_flow_end(app, state, team, key.project_id, item, &speaker, finished)
-                .await
-        {
-            let _ = report_failure(app, key.project_id, &error);
-        }
-    }
-}
-
-// Fecha um ramo do card. Devolve None enquanto restam ramos abertos; no último, o agente que chegou ao fim (se algum
-// chegou) e se todos os ramos terminaram sem parar por erro.
-fn close_branch(
-    state: &AppState,
-    project_id: i64,
-    item: &str,
-    failed: bool,
-) -> Option<(Option<Agent>, bool)> {
-    let mut flow = state.flow.lock().ok()?;
-    let branch = (project_id, item.to_string());
-    if failed {
-        flow.stopped.insert(branch.clone());
-    }
-    let open = flow.open_branches.get(&branch).copied().unwrap_or(0);
-    if open > 1 {
-        flow.open_branches.insert(branch, open - 1);
-        return None;
-    }
-    flow.open_branches.remove(&branch);
-    let finished = !flow.stopped.remove(&branch);
-    Some((flow.ended.remove(&branch), finished))
-}
-
 // Começar a executar um card ou etapa o põe em In progress com as etiquetas de andamento; o quadro é avisado na hora.
 fn start_item_work(app: &AppHandle, project_id: i64, item_id: Option<&str>) -> Result<(), FlowError> {
     let Some(item_id) = item_id else {
@@ -1201,6 +810,7 @@ pub(crate) struct QueueMetricsSnapshot {
 }
 
 pub(crate) fn queue_metrics(state: &AppState) -> Result<QueueMetricsSnapshot, FlowError> {
+    let now = Instant::now();
     let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
     let mut queued_jobs = Vec::new();
     for (key, deque) in &flow.pending {
@@ -1209,7 +819,7 @@ pub(crate) fn queue_metrics(state: &AppState) -> Result<QueueMetricsSnapshot, Fl
                 project_id: key.project_id,
                 agent: key.agent.to_string(),
                 item_id: job.context.item_id.clone(),
-                wait_ms: job.queued_at.elapsed().as_millis() as u64,
+                wait_ms: now.saturating_duration_since(job.queued_at).as_millis() as u64,
             });
         }
     }
@@ -1220,7 +830,7 @@ pub(crate) fn queue_metrics(state: &AppState) -> Result<QueueMetricsSnapshot, Fl
                 project_id,
                 agent: waiting.base.to_string(),
                 item_id: waiting.context.item_id.clone(),
-                wait_ms: waiting.queued_at.elapsed().as_millis() as u64,
+                wait_ms: now.saturating_duration_since(waiting.queued_at).as_millis() as u64,
                 reason: waiting.reason,
             });
         }
@@ -1874,338 +1484,6 @@ fn parallel_definition(
     }
 }
 
-pub(crate) fn spawn_delegation_watchdog(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let mut ticker = tokio::time::interval(Duration::from_secs(MIN_DELEGATION_PING_SECS));
-        loop {
-            ticker.tick().await;
-            sweep_silent_delegations(&app);
-            sweep_stalled_stages(&app);
-        }
-    });
-}
-
-// Task parada: a etapa ficou sem movimento além do intervalo de ping, sem delegação pendente nem fluxo rodando no projeto.
-// Reenvia ao nó da etapa enquanto houver tentativas; esgotadas, sobe ao líder do time desse nó.
-// Bem acima do ping de delegação: cada reenvio reabre o contexto inteiro do agente, então só vale para etapa parada de fato.
-const STALL_AFTER_SECS: i64 = 180;
-const STALL_AFTER_MS: i64 = STALL_AFTER_SECS * 1000;
-const MAX_STAGE_RESENDS: i64 = MAX_WATCHDOG_RETRIES as i64;
-const STALL_RESEND_TEXT: &str = "A task {item} parou na sua etapa, sem movimento. Retome o trabalho desta etapa de onde ele parou.";
-const STALL_ESCALATE_TEXT: &str = "A task {item} está parada na etapa de {agent}, sem movimento depois de {retries} reenvios. Decida como seguir: retome com quem tem o contexto, reenvie ao nó certo ou conclua a task.";
-const STALL_NO_LEADER_TEXT: &str = "A task {item} parou na etapa de {agent} e não há líder para retomá-la.";
-
-fn sweep_stalled_stages(app: &AppHandle) {
-    let db_state = app.state::<DbState>();
-    let Some(db) = db_state.db() else {
-        return;
-    };
-    let Ok(stalled) = db.stalled_task_stages(STALL_AFTER_MS) else {
-        return;
-    };
-    let state = app.state::<AppState>();
-    for stage in stalled {
-        let Some(agent) = Agent::from_stored(&stage.agent) else {
-            continue;
-        };
-        if stage_is_moving(&state, stage.project_id, &stage.item_id, &agent) {
-            continue;
-        }
-        let item = stage.item_id.as_str();
-        match stages::stall_action(stage.retries, MAX_STAGE_RESENDS) {
-            StallAction::Resend => {
-                if db.bump_task_stage_retry(stage.project_id, item).is_err() {
-                    continue;
-                }
-                let text = STALL_RESEND_TEXT.replace("{item}", item);
-                spawn_stage_request(app, stage.project_id, item, agent, &text);
-                let _ = emit_stage(app, stage.project_id, item);
-            }
-            StallAction::Escalate => {
-                if set_stage_state(app, stage.project_id, item, stages::STAGE_ESCALATED).is_err() {
-                    continue;
-                }
-                let leader = load_orchestration(app)
-                    .ok()
-                    .flatten()
-                    .and_then(|snapshot| stage_leader(&snapshot, &agent));
-                match leader {
-                    Some(leader) if leader != agent => {
-                        let text = STALL_ESCALATE_TEXT
-                            .replace("{item}", item)
-                            .replace("{agent}", agent.as_str())
-                            .replace("{retries}", &stage.retries.to_string());
-                        spawn_stage_request(app, stage.project_id, item, leader, &text);
-                    }
-                    _ => {
-                        let message = STALL_NO_LEADER_TEXT
-                            .replace("{item}", item)
-                            .replace("{agent}", agent.as_str());
-                        record_on_card(app, stage.project_id, item, &message);
-                        let _ = emit(app, VokiaEvent::Error { message });
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Líder do time em que o agente está posicionado.
-fn stage_leader(snapshot: &OrchestrationSnapshot, agent: &Agent) -> Option<Agent> {
-    let placement = snapshot
-        .placements
-        .iter()
-        .find(|placement| placement.agent_id == agent.as_str())?;
-    let team = snapshot
-        .teams
-        .iter()
-        .find(|team| team.id == placement.team_id)?;
-    Agent::from_stored(team.leader_agent.as_deref()?)
-}
-
-// Só o próprio card, o agente da etapa (ou réplica dele) e as delegações do card seguram a etapa: outra task
-// rodando no mesmo projeto não pode impedir que a parada seja vista.
-fn stage_is_moving(state: &AppState, project_id: i64, item_id: &str, agent: &Agent) -> bool {
-    if has_pending_delegation(state, project_id, item_id) {
-        return true;
-    }
-    let Ok(flow) = state.flow.lock() else {
-        return true;
-    };
-    let base = base_agent(agent);
-    let item_running = flow
-        .running
-        .iter()
-        .any(|(key, running)| key.project_id == project_id && running == item_id);
-    let agent_busy = flow
-        .pending
-        .keys()
-        .any(|key| key.project_id == project_id && base_agent(&key.agent) == base);
-    item_running || agent_busy
-}
-
-fn has_pending_delegation(state: &AppState, project_id: i64, item_id: &str) -> bool {
-    let Ok(flow) = state.flow.lock() else {
-        return true;
-    };
-    let active = flow
-        .active_delegations
-        .keys()
-        .any(|(project, _, item)| *project == project_id && item.as_deref() == Some(item_id));
-    let waiting = flow.waiting.get(&project_id).is_some_and(|queue| {
-        queue
-            .iter()
-            .any(|entry| entry.context.item_id.as_deref() == Some(item_id))
-    });
-    active || waiting
-}
-
-// Pedido de retomada ao agente (ou ao líder): entra pelo mesmo caminho de um pedido novo, preso ao card.
-pub(super) fn spawn_stage_request(app: &AppHandle, project_id: i64, item_id: &str, recipient: Agent, text: &str) {
-    let app = app.clone();
-    let text = text.to_string();
-    let item_id = item_id.to_string();
-    tauri::async_runtime::spawn(async move {
-        let state = app.state::<AppState>();
-        let context = RequestContext::new(None, Some(item_id), None);
-        let _ = handle_request(&app, &state, &text, recipient, project_id, context).await;
-    });
-}
-
-// Card que foi para Done: limpa o worktree e a branch dele em segundo plano. Falha ou motivo de manter viram
-// registro na atividade do card; a conclusão do card não espera nem depende disso.
-pub(crate) fn schedule_done_cleanup(app: &AppHandle, project_id: i64, item_id: &str) {
-    super::memory_review::schedule_memory_review(
-        app,
-        project_id,
-        super::memory_review::ReviewTrigger::CardDone,
-        None,
-        Some(item_id.to_string()),
-        None,
-    );
-    let app = app.clone();
-    let item = item_id.to_string();
-    tauri::async_runtime::spawn(async move {
-        let outcome = done_cleanup(&app, project_id, &item).await;
-        let text = match outcome {
-            Ok(worktree::CleanupOutcome::Absent) => return,
-            Ok(worktree::CleanupOutcome::Removed) => format!(
-                "Limpei o worktree e a branch de {item}: estavam integrados à main e sem alterações."
-            ),
-            Ok(worktree::CleanupOutcome::Kept(reason)) => {
-                format!("Mantive o worktree de {item}: {reason}.")
-            }
-            Err(error) => format!("Não consegui limpar o worktree de {item}: {error}."),
-        };
-        record_on_card(&app, project_id, &item, &text);
-    });
-}
-
-// Registro no card que precisa sobreviver ao app fechado; card inexistente ou sem banco não vira erro de quem chama.
-fn record_on_card(app: &AppHandle, project_id: i64, item_id: &str, text: &str) {
-    let state = app.state::<DbState>();
-    let Some(db) = state.db() else {
-        return;
-    };
-    if db.add_card_activity(project_id, item_id, text).is_ok() {
-        let _ = emit_backlog_changed(app, project_id);
-    }
-}
-
-async fn done_cleanup(
-    app: &AppHandle,
-    project_id: i64,
-    item_id: &str,
-) -> Result<worktree::CleanupOutcome, FlowError> {
-    let refinery = app.state::<AppState>().sessions.refinery_lock(project_id);
-    let _refinery_guard = refinery.lock_owned().await;
-    let project = load_project(app, project_id)?;
-    let root = worktree::project_worktrees_dir(
-        &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
-        project_id,
-    );
-    let safe_dir_name: String = item_id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let worktree_path = root.join(safe_dir_name);
-    app.state::<AppState>()
-        .sessions
-        .release_worktree(project_id, item_id, Some(&worktree_path))
-        .await;
-    worktree::cleanup_done(Path::new(&project.path), &root, item_id)
-        .await
-        .map_err(FlowError::Worktree)
-}
-
-const DEAD_WORKTREE_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
-const DEAD_WORKTREE_INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
-
-// Varredura periódica de worktrees mortos (concluídos, arquivados ou órfãos) em todos os projetos.
-pub(crate) fn spawn_dead_worktree_sweeper(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(DEAD_WORKTREE_INITIAL_DELAY).await;
-        let mut interval = tokio::time::interval(DEAD_WORKTREE_SWEEP_INTERVAL);
-        loop {
-            interval.tick().await;
-            sweep_all_projects(&app).await;
-        }
-    });
-}
-
-async fn sweep_all_projects(app: &AppHandle) {
-    let Ok(data_dir) = app.path().app_data_dir() else {
-        return;
-    };
-    let db_state = app.state::<DbState>();
-    let Some(db) = db_state.db() else {
-        return;
-    };
-    let Ok(projects) = db.list_projects() else {
-        return;
-    };
-    for project in projects {
-        let Ok(snapshot) = db.list_backlog(project.id) else {
-            continue;
-        };
-        let active_ids: std::collections::HashSet<String> = snapshot
-            .items
-            .iter()
-            .filter(|item| item.column.as_deref() != Some("Done"))
-            .map(|item| item.id.clone())
-            .collect();
-        let root = worktree::project_worktrees_dir(&data_dir, project.id);
-        let _ = worktree::sweep_dead_worktrees(Path::new(&project.path), &root, &active_ids).await;
-    }
-}
-
-// Leva a etapa atual da task à tela e aos eventos; sem banco, a etapa simplesmente não sai.
-pub(crate) fn emit_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
-    let state = app.state::<DbState>();
-    let Some(db) = state.db() else {
-        return Ok(());
-    };
-    match db.task_stage(project_id, item_id) {
-        Ok(Some(stage)) => emit(app, VokiaEvent::TaskStage { stage }),
-        _ => Ok(()),
-    }
-}
-
-// Único caminho para mudar a etapa de uma task: o banco grava etapa, card filho, pai e artefato numa transação;
-// aqui a tela recebe a etapa, o quadro e os artefatos já atualizados.
-pub(crate) fn set_stage_state(
-    app: &AppHandle,
-    project_id: i64,
-    item_id: &str,
-    stage_state: &str,
-) -> Result<(), FlowError> {
-    app.state::<DbState>()
-        .require()?
-        .set_task_stage_state(project_id, item_id, stage_state)?;
-    publish_stage(app, project_id, item_id)
-}
-
-// Etapa gravada que mudou: a task, o quadro e os artefatos são avisados juntos.
-pub(crate) fn publish_stage(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
-    emit_stage(app, project_id, item_id)?;
-    emit_backlog_changed(app, project_id)?;
-    emit_artifacts_changed(app, project_id)
-}
-
-// Delegação ativada já cumpriu o papel do registro e sai; a silenciosa recebe novas tentativas de drenar a fila
-// e, esgotadas, vira erro para o usuário.
-fn sweep_silent_delegations(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let (retry_projects, gave_up) = {
-        let Ok(mut flow) = state.flow.lock() else {
-            return;
-        };
-        flow.active_delegations.retain(|_, delegation| !delegation.activated);
-        let mut retry_projects = HashSet::new();
-        let mut gave_up = Vec::new();
-        for (key, delegation) in flow.active_delegations.iter_mut() {
-            if delegation.created_at.elapsed() < delegation.ping_interval {
-                continue;
-            }
-            if delegation.retries < MAX_WATCHDOG_RETRIES {
-                delegation.retries += 1;
-                delegation.created_at = Instant::now();
-                retry_projects.insert(delegation.project_id);
-            } else {
-                gave_up.push(key.clone());
-            }
-        }
-        let gave_up: Vec<ActiveDelegation> = gave_up
-            .iter()
-            .filter_map(|key| flow.active_delegations.remove(key))
-            .collect();
-        (retry_projects, gave_up)
-    };
-    for project_id in retry_projects {
-        drain_waiting(app, &state, project_id);
-    }
-    for delegation in gave_up {
-        let target = delegation
-            .item_id
-            .as_ref()
-            .map_or_else(String::new, |item| format!(" do card {item}"));
-        let message = format!(
-            "O agente {} não respondeu à delegação{target}.",
-            delegation.to_agent.as_str()
-        );
-        if let Some(item) = &delegation.item_id {
-            record_on_card(app, delegation.project_id, item, &message);
-        }
-        let _ = emit(app, VokiaEvent::Error { message });
-    }
-}
-
 pub(crate) fn drain_waiting_for_project(app: &AppHandle, state: &AppState, project_id: i64) {
     drain_waiting(app, state, project_id);
 }
@@ -2738,9 +2016,9 @@ pub(crate) async fn restore_flow_queue(app: AppHandle) {
 }
 
 #[cfg(test)]
-#[path = "../../tests/flow_tests.rs"]
+#[path = "../../../tests/flow_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../tests/delegation_watchdog_tests.rs"]
+#[path = "../../../tests/delegation_watchdog_tests.rs"]
 mod watchdog_tests;
