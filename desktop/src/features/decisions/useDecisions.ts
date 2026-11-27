@@ -17,6 +17,7 @@ export interface PanelCard {
   options: string[]
   decisionId: number | null
   permissionId: string | null
+  itemId: string | null
 }
 
 export interface ResolvedEntry {
@@ -68,6 +69,7 @@ export const useDecisions = defineStore('decisions', () => {
       options: [],
       decisionId: null,
       permissionId: permission.id,
+      itemId: null,
     })),
     ...pending.value
       .filter((decision) => belongsToSelectedProject(decision.projectId))
@@ -80,6 +82,7 @@ export const useDecisions = defineStore('decisions', () => {
         options: decision.options,
         decisionId: decision.id,
         permissionId: null,
+        itemId: decision.itemId ?? null,
       })),
   ])
   const pendingCount = computed(() => cards.value.length)
