@@ -228,7 +228,7 @@ impl AcpFlavor for GeminiFlavor {
         user_args: &[String],
         access: Access<'_>,
         _relay: Option<&RelayEndpoint>,
-        temp_dir: &Path,
+        _temp_dir: &Path,
     ) -> Result<AcpSpawnSpec, ClaudeError> {
         let mut command = base_acp_command(program, user_args, access);
         if self.is_gemini_cli {
@@ -239,12 +239,34 @@ impl AcpFlavor for GeminiFlavor {
             if !has_subcommand(user_args, "acp") {
                 command.arg("acp");
             }
-            if !has_flag(user_args, "--gemini-dir") {
-                let abs_gemini_dir = resolve_absolute_gemini_dir(access, temp_dir);
-                command.arg("--gemini-dir").arg(abs_gemini_dir);
-            }
-            if !has_flag(user_args, "--app-data-dir") {
-                command.arg("--app-data-dir").arg(".vokia-agy-data");
+            match access {
+                Access::TextOnly => {
+                    if !has_flag(user_args, "--sandbox") {
+                        command.arg("--sandbox");
+                    }
+                }
+                Access::Project(project) => {
+                    if !has_flag(user_args, "--add-dir") {
+                        command.arg("--add-dir").arg(project.dir);
+                        command.arg("--add-dir").arg(project.attachments);
+                        for extra_dir in project.extra_dirs {
+                            command.arg("--add-dir").arg(extra_dir);
+                        }
+                    }
+                    match project.level {
+                        crate::permissions::PermissionLevel::Leitura
+                        | crate::permissions::PermissionLevel::Edicao => {
+                            if !has_flag(user_args, "--sandbox") {
+                                command.arg("--sandbox");
+                            }
+                        }
+                        crate::permissions::PermissionLevel::Liberado => {
+                            if !has_flag(user_args, "--dangerously-skip-permissions") {
+                                command.arg("--dangerously-skip-permissions");
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(AcpSpawnSpec {
@@ -313,21 +335,6 @@ fn has_subcommand(args: &[String], sub: &str) -> bool {
 fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter()
         .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
-}
-
-fn resolve_absolute_gemini_dir(access: Access<'_>, temp_dir: &Path) -> PathBuf {
-    if let Access::Project(project) = access {
-        let joined = project.dir.join(".gemini");
-        if joined.is_absolute() {
-            return joined;
-        }
-    }
-    if temp_dir.is_absolute() {
-        return temp_dir.join(".gemini");
-    }
-    std::env::current_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".gemini")
 }
 
 pub fn is_opencode_free_model_id(id: &str) -> bool {

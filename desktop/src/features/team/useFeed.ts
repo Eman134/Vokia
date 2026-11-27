@@ -155,7 +155,10 @@ export const useFeed = defineStore('feed', () => {
       const triagingIds = useBacklog().triagingIds
       return buildTimeline(screenEntries(feed.value, current, channels.channels, activeAgentsForItems(triagingIds), triagingIds))
     }
-    const threadAgents = current.kind === 'thread' ? activeAgentsForItems(new Set([current.itemId])) : undefined
+    const threadAgents =
+      current.kind === 'thread'
+        ? activeAgentsForItems(new Set([current.subItemId ?? current.itemId]))
+        : undefined
     return buildTimeline(screenEntries(feed.value, current, channels.channels, threadAgents), current.kind === 'logs')
   })
 
@@ -214,7 +217,12 @@ export const useFeed = defineStore('feed', () => {
       useTurnPlans().forgetProject(project.id)
       return
     }
-    const threadAgents = current.kind === 'thread' ? activeAgentsForItems(new Set([current.itemId])) : current.kind === 'triage' ? activeAgentsForItems(triagingIds) : undefined
+    const threadAgents =
+      current.kind === 'thread'
+        ? activeAgentsForItems(new Set([current.subItemId ?? current.itemId]))
+        : current.kind === 'triage'
+          ? activeAgentsForItems(triagingIds)
+          : undefined
     const toRemove = new Set(screenEntries(feed.value, current, channels.channels, threadAgents, triagingIds))
     feed.value = feed.value.filter((entry) => !toRemove.has(entry))
   }

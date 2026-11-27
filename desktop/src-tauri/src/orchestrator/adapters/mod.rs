@@ -654,7 +654,7 @@ where
     }
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let mut child = command.spawn().map_err(ClaudeError::Spawn)?;
+    let mut child = crate::silent_process::spawn_silent(command).map_err(ClaudeError::Spawn)?;
     let child_pid = child.id();
     pid.store(child_pid.unwrap_or(NO_PID), Ordering::SeqCst);
 
@@ -668,6 +668,8 @@ where
                     .map_err(ClaudeError::Spawn)?;
                 stdin.shutdown().await.map_err(ClaudeError::Spawn)?;
             }
+        } else {
+            drop(child.stdin.take());
         }
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();

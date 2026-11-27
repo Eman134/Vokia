@@ -421,7 +421,7 @@ pub fn detect_next_step_announcement(text: &str) -> bool {
 /// Indica se a resposta está claramente aguardando resposta ou aprovação humana.
 pub fn is_waiting_for_human(text: &str) -> bool {
     let trimmed = text.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || crate::plan_proposal::contains_plan_ready(trimmed) {
         return false;
     }
     let normalized = normalize_for_match(trimmed);

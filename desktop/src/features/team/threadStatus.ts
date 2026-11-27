@@ -28,7 +28,7 @@ export function splitThreads<T extends { status: ThreadStatus }>(threads: readon
   }
 }
 
-export type ThreadCategoryKey = 'recent' | 'needs-you' | 'in-progress' | 'in-review' | 'done'
+export type ThreadCategoryKey = 'recent' | 'needs-you' | 'in-progress' | 'in-review' | 'ready' | 'done'
 
 export interface ThreadCategory<T> {
   key: ThreadCategoryKey
@@ -45,6 +45,7 @@ export function categorizeThreads<
   const needsYou: T[] = []
   const inProgress: T[] = []
   const inReview: T[] = []
+  const ready: T[] = []
   const done: T[] = []
 
   for (const thread of threads) {
@@ -54,6 +55,8 @@ export function categorizeThreads<
       needsYou.push(thread)
     } else if (thread.column === 'In review') {
       inReview.push(thread)
+    } else if (thread.column === 'Ready') {
+      ready.push(thread)
     } else {
       inProgress.push(thread)
     }
@@ -69,6 +72,7 @@ export function categorizeThreads<
     { key: 'needs-you', label: 'Precisa de você', items: needsYou, defaultOpen: true },
     { key: 'in-progress', label: 'Em andamento', items: inProgress, defaultOpen: true },
     { key: 'in-review', label: 'Em revisão', items: inReview, defaultOpen: true },
+    { key: 'ready', label: 'Pronto', items: ready, defaultOpen: false },
     { key: 'done', label: 'Concluídas', items: done, defaultOpen: false },
   ]
   return categories.filter((category) => category.items.length > 0)

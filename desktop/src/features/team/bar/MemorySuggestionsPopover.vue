@@ -34,13 +34,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="absolute bottom-full right-0 pb-2">
-    <div
-      class="w-88 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-2 shadow-paper"
-      role="dialog"
-      aria-label="Sugestões de memória"
-      data-testid="memory-suggestions-popover"
-    >
+  <Teleport to="body">
+    <div class="fixed bottom-18 right-6 z-50">
+      <div
+        class="w-88 max-w-[calc(100vw-2rem)] rounded-md border border-line bg-surface p-2 shadow-paper"
+        role="dialog"
+        aria-label="Sugestões de memória"
+        data-testid="memory-suggestions-popover"
+      >
       <div class="flex items-center justify-between px-1.5 pb-1.5">
         <p class="text-caption font-semibold text-ink">
           Sugestões de memória ({{ learning.pendingCount }})
@@ -91,6 +92,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </div>
         </li>
       </ul>
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>

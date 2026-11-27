@@ -42,6 +42,7 @@ const THREAD_CATEGORY_ICON: Record<ThreadCategoryKey, string> = {
   'needs-you': 'M8 2.5l5.5 10.5h-11z M8 6.5v3 M8 11v.4',
   'in-progress': 'M4.5 3.5l7 4.5-7 4.5z',
   'in-review': 'M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z M8 6.3a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4z',
+  ready: 'M8 3.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M6.2 8.2l1.3 1.3 2.5-2.7',
   done: 'M3.5 8.5l3 3 6-6.5',
 }
 const GENERAL_ICON_PATH =

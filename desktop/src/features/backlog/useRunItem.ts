@@ -3,6 +3,8 @@ import { defineStore } from 'pinia'
 import type { Agent } from '../team/events'
 import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useRequests, type RunResult } from '../team/useRequests'
+import { useDecisions } from '../decisions/useDecisions'
+import { useFeed } from '../team/useFeed'
 import { useProjects } from '../projects/useProjects'
 import type { BacklogItem } from './backlogTypes'
 import { stopTaskRun } from './backlogApi'
@@ -97,6 +99,8 @@ export const useRunItem = defineStore('runItem', () => {
   const backlog = useBacklog()
   const itemPlan = useItemPlan()
   const requests = useRequests()
+  const decisions = useDecisions()
+  const feed = useFeed()
   const projects = useProjects()
 
   function findItem(itemId: string): BacklogItem | undefined {
@@ -179,10 +183,28 @@ export const useRunItem = defineStore('runItem', () => {
     },
   )
 
-  async function run(itemId: string, delegateTo?: Agent): Promise<void> {
+  function hasPendingDecision(itemId: string): boolean {
+    const item = findItem(itemId)
+    const hasOpenQuestion = item?.questions?.some((question) => question.selected === undefined) ?? false
+    const hasPending = decisions.pending.some((decision) => decision.itemId === itemId)
+    return hasOpenQuestion || hasPending
+  }
+
+  async function run(
+    itemId: string,
+    delegateTo?: Agent,
+    options?: { ignorePendingDecision?: boolean },
+  ): Promise<void> {
     const item = findItem(itemId)
     const projectId = backlog.loadedProjectId
     if (item === undefined || projectId === null || !canRun(itemId)) return
+    if (!options?.ignorePendingDecision && hasPendingDecision(itemId)) {
+      feed.notify('Há uma pergunta ou decisão pendente neste card. Responda antes de iniciar ou confirme para seguir.')
+      return
+    }
+    if (itemPlan.stateFor(item) === 'proposto') {
+      itemPlan.accept(itemId)
+    }
     const agent = delegateTo ?? itemPlan.planOf(itemId).agent ?? DEFAULT_RECIPIENT
     running.value[runKey(projectId, itemId)] = true
     backlog.setRunColumn(itemId, 'In progress', SENT_NOTE(agentName(agent)))
@@ -214,5 +236,5 @@ export const useRunItem = defineStore('runItem', () => {
     }
   }
 
-  return { canRun, isRunning, run, stop }
+  return { canRun, isRunning, hasPendingDecision, run, stop }
 })

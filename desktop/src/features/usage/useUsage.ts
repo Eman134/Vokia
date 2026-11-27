@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useProviders } from '../providers/useProviders'
+import { useActiveLlm } from '../providers/useActiveLlm'
 import type {
   PlanUsageSnapshot,
   ProviderPlanUsage,
@@ -67,6 +68,7 @@ export const useUsage = defineStore('usage', () => {
   }
 
   const providersStore = useProviders()
+  const activeLlm = useActiveLlm()
   const disabledProviderIds = computed(() => {
     const disabled = new Set<string>()
     for (const entry of providersStore.providers) {
@@ -104,6 +106,17 @@ export const useUsage = defineStore('usage', () => {
       })
     }
     if (candidates.length === 0) return null
+    const primaryCli = activeLlm.active.cli.trim()
+    if (primaryCli) {
+      const primaryMatch = candidates.find((item) => item.provider.providerId === primaryCli)
+      if (primaryMatch) return primaryMatch
+    }
+    if (activeLlm.fallback.enabled) {
+      for (const entry of activeLlm.fallback.chain) {
+        const fbMatch = candidates.find((item) => item.provider.providerId === entry.cli)
+        if (fbMatch) return fbMatch
+      }
+    }
     const blocking = candidates.filter((item) => !item.usingCredits)
     const pool = blocking.length > 0 ? blocking : candidates
     return pool.reduce((worst, current) =>
@@ -139,14 +152,11 @@ export const useUsage = defineStore('usage', () => {
     return critical.window.percent
   })
 
-  const alert = computed(() =>
-    providerList.value.some((provider) => {
-      if (isUsingCredits(provider)) return false
-      const window = mostRestrictiveWindow(provider, now.value)
-      if (!window) return false
-      return window.percent >= thresholdsOf(provider.providerId).warn
-    }),
-  )
+  const alert = computed(() => {
+    const critical = mostCritical.value
+    if (!critical || critical.usingCredits) return false
+    return critical.window.percent >= critical.thresholds.warn
+  })
 
   const openable = computed(() => providerList.value.length > 0 || startupError.value !== null)
 

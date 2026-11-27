@@ -163,6 +163,7 @@ export interface PermissionRule {
   tool: string
   command: string
   createdAt: number
+  lastUsedAt?: number | null
 }
 
 export function listPermissionRules(projectId: number): Promise<PermissionRule[]> {

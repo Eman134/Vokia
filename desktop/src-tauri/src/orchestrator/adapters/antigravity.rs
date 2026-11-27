@@ -37,7 +37,8 @@ pub(crate) fn build_command_with_resume(
     command.kill_on_drop(true);
     command.args(user_args);
     command.args([
-        "-p=",
+        "--print",
+        "",
         "--input-format",
         "stream-json",
         "--output-format",
@@ -140,7 +141,7 @@ pub(super) async fn run_turn(
                     activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
                     activity.current_step_label = None;
                     console.live_activity(activity.clone());
-                } else if matches!(step_type, "tool_use" | "tool_call" | "command" | "web_search") {
+                } else if matches!(step_type, "tool" | "tool_use" | "tool_call" | "command" | "web_search") {
                     if let Some(plan) = extract_antigravity_step_plan(&mut plan_state, step) {
                         activity.plan = (!plan.is_empty()).then_some(plan.clone());
                         console.turn_plan(plan);
@@ -149,6 +150,18 @@ pub(super) async fn run_turn(
                     activity.current_step_label =
                         crate::orchestrator::step_labels::label_for_antigravity_step(step);
                     console.live_activity(activity.clone());
+                } else if step_type == "agent_response" {
+                    let state = step.get("state").and_then(Json::as_str).unwrap_or("");
+                    if state == "ACTIVE"
+                        && step
+                            .get("text_delta")
+                            .and_then(Json::as_str)
+                            .is_some_and(|s| !s.is_empty())
+                    {
+                        activity.thinking_ms = Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
+                        activity.current_step_label = Some("Respondendo…".to_string());
+                        console.live_activity(activity.clone());
+                    }
                 }
             } else if value.get("type").and_then(Json::as_str) == Some("assistant") {
                 if let Some(blocks) = value.pointer("/message/content").and_then(Json::as_array) {
@@ -241,14 +254,15 @@ fn extract_antigravity_step_plan(
     step: &Json,
 ) -> Option<crate::orchestrator::turn_plan::TurnPlan> {
     let (call_id, name, input) = extract_antigravity_step_tool(step)?;
-    extract_tool_plan(state, call_id, name, &input)
+    extract_tool_plan(state, &call_id, name, &input)
 }
 
-fn extract_antigravity_step_tool(step: &Json) -> Option<(&str, &str, Json)> {
+fn extract_antigravity_step_tool(step: &Json) -> Option<(String, &str, Json)> {
     let name = step
         .get("tool_name")
         .or_else(|| step.get("name"))
         .or_else(|| step.get("tool"))
+        .or_else(|| step.pointer("/tool_info/name"))
         .or_else(|| step.pointer("/tool_call/name"))
         .or_else(|| step.pointer("/tool_use/name"))
         .and_then(Json::as_str)?;
@@ -256,12 +270,16 @@ fn extract_antigravity_step_tool(step: &Json) -> Option<(&str, &str, Json)> {
         .get("tool_call_id")
         .or_else(|| step.get("id"))
         .and_then(Json::as_str)
-        .unwrap_or("");
+        .map(str::to_string)
+        .or_else(|| step.get("step_index").and_then(Json::as_u64).map(|idx| format!("step-{idx}")))
+        .unwrap_or_default();
     let raw_input = step
         .get("tool_input")
         .or_else(|| step.get("input"))
         .or_else(|| step.get("arguments"))
         .or_else(|| step.get("args"))
+        .or_else(|| step.pointer("/tool_info/parameters"))
+        .or_else(|| step.pointer("/tool_info/input"))
         .or_else(|| step.pointer("/tool_call/input"))
         .or_else(|| step.pointer("/tool_call/arguments"))
         .or_else(|| step.pointer("/tool_use/input"));
@@ -275,13 +293,14 @@ fn extract_antigravity_step_tool(step: &Json) -> Option<(&str, &str, Json)> {
 }
 
 fn record_antigravity_step_tool(activity: &mut TurnActivity, step: &Json, step_type: &str) {
-    let status = match step
+    let status_raw = step
         .get("status")
+        .or_else(|| step.get("state"))
         .and_then(Json::as_str)
         .unwrap_or("")
-        .to_ascii_lowercase()
-        .as_str()
-    {
+        .to_ascii_lowercase();
+    let status = match status_raw.as_str() {
+        "active" | "running" | "in_progress" | "pending" => ToolStatus::Running,
         "completed" | "done" | "ok" | "success" => ToolStatus::Ok,
         "failed" | "error" => ToolStatus::Failed,
         _ => ToolStatus::Ok,
@@ -289,10 +308,11 @@ fn record_antigravity_step_tool(activity: &mut TurnActivity, step: &Json, step_t
     let result = step
         .get("output")
         .or_else(|| step.get("result"))
+        .or_else(|| step.pointer("/tool_info/output"))
         .and_then(|v| v.as_str().map(str::to_string).or_else(|| Some(v.to_string())));
 
     if let Some((call_id, name, input)) = extract_antigravity_step_tool(step) {
-        upsert_antigravity_tool(activity, call_id, name, &input, status, result);
+        upsert_antigravity_tool(activity, &call_id, name, &input, status, result);
         return;
     }
     if step_type == "command" {

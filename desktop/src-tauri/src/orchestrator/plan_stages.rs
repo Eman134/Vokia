@@ -24,6 +24,7 @@ static RELEASE_LOCK: Mutex<()> = Mutex::new(());
 
 // Plano aprovado: as etapas sem dependência (a primeira e as com `apos:0`) começam juntas; o teto de max_parallel
 // fica por conta da fila de pedidos do projeto.
+#[allow(dead_code)]
 pub(crate) fn start_approved_plan(app: &AppHandle, project_id: i64, item_id: &str) -> Result<(), FlowError> {
     let Some(snapshot) = load_orchestration(app)? else {
         return Ok(());
@@ -126,6 +127,7 @@ fn start_edge(snapshot: &OrchestrationSnapshot, team_id: &str, agent: &str) -> O
         .map(|edge| edge.id)
 }
 
+#[allow(dead_code)]
 fn team_led_by<'a>(snapshot: &'a OrchestrationSnapshot, leader: &str) -> Option<&'a OrchTeam> {
     snapshot
         .teams

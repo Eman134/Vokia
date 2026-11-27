@@ -52,7 +52,6 @@ import {
   COLUMN_LABEL,
   DEFAULT_COLUMN,
   isUnassigned,
-  READY_BLOCKED_HINT,
   READY_COLUMN,
   type TaskCardAction,
   type BacklogColumn,
@@ -460,27 +459,6 @@ function canDropOnColumn(item: BacklogItem, target: BacklogColumn): { allowed: b
   const source = columnOf(item)
   if (source === target) return { allowed: true }
   if (item.error) return { allowed: false, reason: 'Card com erro não pode ser movido.' }
-  if (target === 'In review') {
-    return { allowed: false, reason: 'Em revisão é atualizado automaticamente pela validação.' }
-  }
-  const state = itemPlan.stateFor(item)
-  if (target === READY_COLUMN) {
-    if (
-      itemPlan.isReviewed(item.id) ||
-      state === 'proposto' ||
-      source === 'In progress' ||
-      source === 'In review'
-    ) {
-      return { allowed: true }
-    }
-    return { allowed: false, reason: READY_BLOCKED_HINT }
-  }
-  if (target === 'In progress') {
-    if (runItem.canRun(item.id) || state === 'proposto' || source === 'In review' || source === 'Done') {
-      return { allowed: true }
-    }
-    return { allowed: false, reason: 'Este card não pode ser iniciado agora.' }
-  }
   return { allowed: true }
 }
 
@@ -617,9 +595,7 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
 
   if (sourceColumn === 'In progress' || runItem.isRunning(item.id)) {
     await runItem.stop(item.id)
-    if (targetColumn === 'Backlog' || targetColumn === 'Done') {
-      backlog.moveTo(item.id, targetColumn)
-    }
+    backlog.moveTo(item.id, targetColumn)
     return
   }
 
@@ -627,10 +603,11 @@ async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetI
     if (state === 'proposto') {
       itemPlan.accept(item.id)
     }
-    if (sourceColumn === 'Done' || sourceColumn === 'In review') {
-      backlog.moveTo(item.id, READY_COLUMN)
+    if (runItem.canRun(item.id) && !runItem.hasPendingDecision(item.id)) {
+      void runItem.run(item.id)
+    } else {
+      backlog.moveTo(item.id, targetColumn)
     }
-    void runItem.run(item.id)
     return
   }
 

@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { AgentProfile } from '../team/teamApi'
-import type { AgentState, TurnActivity } from '../team/events'
-import { formatClock } from '../team/activitySummary'
-import ActivityRun from '../team/ActivityRun.vue'
+import type { AgentState, ToolActivity, TurnActivity } from '../team/events'
+import { activityRows, formatClock, type ActivityRowModel, type AgentNameOf, type CardTitleOf } from '../team/activitySummary'
+import CompactToolRows from '../team/CompactToolRows.vue'
 import MarkdownText from '../team/MarkdownText.vue'
 import TurnPlanCard from '../team/TurnPlanCard.vue'
+import { useBacklog } from '../backlog/useBacklog'
+import { useRoster } from '../team/useRoster'
 import { useTurnPlans } from '../team/useTurnPlans'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
 import { useProjects } from '../projects/useProjects'
 import { stopAgentTurn } from '../team/teamApi'
 import { useFeed } from '../team/useFeed'
-import { currentTurn } from './consoleTurn'
+import { liveTimeline } from './liveTimeline'
 import { useConsole } from './useConsole'
 
 const props = defineProps<{ agent: AgentProfile; state: AgentState; since?: number; activity?: TurnActivity; itemId?: string }>()
@@ -26,6 +28,8 @@ const DOT_CLASSES = 'size-2 fill-current motion-reduce:animate-none'
 const DOT_ANIMATIONS = ['animate-dot-1', 'animate-dot-2', 'animate-dot-3']
 
 const consoleStore = useConsole()
+const backlog = useBacklog()
+const roster = useRoster()
 const turnPlans = useTurnPlans()
 const projects = useProjects()
 const feed = useFeed()
@@ -53,19 +57,25 @@ onMounted(() => {
 })
 onUnmounted(() => clearInterval(timer))
 
-// Só o que o agente já escreveu neste turno: o stream não traz o texto do raciocínio.
+type LiveSegment = { kind: 'text'; text: string } | { kind: 'tools'; tools: ToolActivity[]; rows: ActivityRowModel[] }
+
+const cardTitleOf: CardTitleOf = (cardId) => backlog.items.find((item) => item.id === cardId)?.title
+const agentNameOf: AgentNameOf = (id) => roster.profileOf(id)?.name
+
 // Fora de 'thinking' (envio) o turno ainda não começou: sem isso, currentTurn devolve a resposta anterior.
-const written = computed(() => {
+const timelineSegments = computed<LiveSegment[]>(() => {
   if (props.state !== 'thinking') {
-    return undefined
+    return []
   }
-  return currentTurn(consoleStore.entriesOf(props.agent.id))
-    .filter((entry) => entry.kind === 'text')
-    .at(-1)?.text
+  return liveTimeline(consoleStore.entriesOf(props.agent.id), props.activity?.tools ?? []).map((segment) =>
+    segment.kind === 'text'
+      ? segment
+      : { kind: 'tools', tools: segment.tools, rows: activityRows(segment.tools, cardTitleOf, agentNameOf) },
+  )
 })
 
-const preview = computed(() =>
-  props.state === 'thinking' ? props.activity?.thinkingText?.trim() || written.value : undefined,
+const thinkingPreview = computed(() =>
+  props.state === 'thinking' ? props.activity?.thinkingText?.trim() || undefined : undefined,
 )
 const stepLabel = computed(() =>
   props.state === 'thinking' ? props.activity?.currentStepLabel?.trim() || undefined : undefined,
@@ -94,12 +104,7 @@ const label = computed(() => {
 <template>
   <div class="group flex min-w-0 max-w-xl flex-col gap-1">
     <span class="flex min-w-0 items-center gap-2 text-caption text-muted">
-      <span class="min-w-0 truncate" :title="`${agent.name} · ${label}`" data-testid="agent-thinking-label">
-        {{ agent.name }} · {{ label }}
-      </span>
-      <span class="flex shrink-0 items-center gap-1" aria-hidden="true">
-        <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
-      </span>
+      <span class="min-w-0 truncate" :title="agent.name">{{ agent.name }}</span>
       <button
         type="button"
         class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm border border-line bg-surface px-1.5 py-0.5 text-tiny font-medium text-danger opacity-0 transition-opacity duration-150 hover:bg-danger-soft focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40 motion-reduce:transition-none"
@@ -114,9 +119,33 @@ const label = computed(() => {
       </button>
     </span>
     <TurnPlanCard v-if="activePlan" :plan="activePlan" status="active" />
-    <ActivityRun v-if="activity" :activity="activity" live />
-    <div v-if="preview" class="line-clamp-4 min-w-0">
-      <MarkdownText :text="preview" />
+    <template v-for="(segment, index) in timelineSegments" :key="index">
+      <div v-if="segment.kind === 'text'" class="line-clamp-4 min-w-0">
+        <MarkdownText :text="segment.text" />
+      </div>
+      <ul
+        v-else-if="segment.rows.length > 0"
+        class="mt-0.5 flex min-w-0 max-w-full flex-col gap-1 text-caption text-muted"
+        data-testid="activity-live"
+      >
+        <CompactToolRows
+          :tools="segment.tools"
+          :rows="segment.rows"
+          :card-title-of="cardTitleOf"
+          :agent-name-of="agentNameOf"
+        />
+      </ul>
+    </template>
+    <div v-if="thinkingPreview" class="line-clamp-4 min-w-0">
+      <MarkdownText :text="thinkingPreview" />
     </div>
+    <span class="flex min-w-0 items-center gap-2 text-caption text-muted">
+      <span class="min-w-0 truncate" :title="`${agent.name} · ${label}`" data-testid="agent-thinking-label">
+        {{ label }}
+      </span>
+      <span class="flex shrink-0 items-center gap-1" aria-hidden="true">
+        <UiHandLine v-for="animation in DOT_ANIMATIONS" :key="animation" variant="circle" :class="[DOT_CLASSES, animation]" />
+      </span>
+    </span>
   </div>
 </template>

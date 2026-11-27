@@ -25,7 +25,7 @@ pub(crate) mod step_labels;
 mod text_fallback;
 pub(crate) mod turn_plan;
 mod turns;
-mod validation;
+pub(crate) mod validation;
 pub(crate) mod web_search;
 pub(crate) mod work_steps;
 
@@ -51,6 +51,5 @@ pub(crate) use flow::{
     active_instances, all_active_instances, drain_waiting_for_project, forget_project, has_flow,
     queue_metrics, restore_flow_queue, stop_agent_turn, stop_task_flow, QueueMetricsSnapshot,
 };
-pub(crate) use plan_stages::start_approved_plan;
 pub(crate) use session_pool::{schedule_preload, spawn_idle_reaper, SessionPool};
 pub(crate) use validation::return_task;

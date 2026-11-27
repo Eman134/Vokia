@@ -321,7 +321,132 @@ function commandRow(tool: ToolActivity, detail: CommandDetail, nameOf: AgentName
   }
 }
 
-function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): ActivityRowModel {
+interface VokiaCommandSpec {
+  icon: RowIconKind
+  running: string
+  done: string
+  failed: string
+  chipFields?: readonly string[]
+  defaultChip?: string
+}
+
+const VOKIA_COMMAND_SPECS: Readonly<Record<string, VokiaCommandSpec>> = {
+  commands: { icon: 'settings', running: 'Listando comandos', done: 'Listou comandos', failed: 'Tentou listar comandos', chipFields: ['domain'], defaultChip: 'Vokia' },
+  tools: { icon: 'settings', running: 'Listando ferramentas', done: 'Listou ferramentas', failed: 'Tentou listar ferramentas', defaultChip: 'Vokia' },
+  app_commands_list: { icon: 'settings', running: 'Listando comandos', done: 'Listou comandos', failed: 'Tentou listar comandos', chipFields: ['domain'], defaultChip: 'Vokia' },
+  app_command_call: { icon: 'command', running: 'Executando comando Vokia', done: 'Executou comando Vokia', failed: 'Tentou executar comando Vokia', chipFields: ['name'] },
+  command_search: { icon: 'search', running: 'Buscando comando', done: 'Buscou comando', failed: 'Tentou buscar comando', chipFields: ['query'] },
+  list_projects: { icon: 'project', running: 'Listando projetos', done: 'Listou projetos', failed: 'Tentou listar projetos', defaultChip: 'Projetos' },
+  create_project: { icon: 'project', running: 'Criando projeto', done: 'Criou projeto', failed: 'Tentou criar projeto', chipFields: ['name'] },
+  update_project: { icon: 'project', running: 'Atualizando projeto', done: 'Atualizou projeto', failed: 'Tentou atualizar projeto', chipFields: ['name', 'id'] },
+  delete_project: { icon: 'project', running: 'Removendo projeto', done: 'Removeu projeto', failed: 'Tentou remover projeto', chipFields: ['id'] },
+  list_backlog: { icon: 'backlog', running: 'Listando backlog', done: 'Listou backlog', failed: 'Tentou listar backlog', chipFields: ['column'], defaultChip: 'Backlog' },
+  read_card: { icon: 'backlog', running: 'Lendo card', done: 'Leu card', failed: 'Tentou ler card', chipFields: ['id', 'itemId'] },
+  create_card: { icon: 'backlog', running: 'Criando card', done: 'Criou card', failed: 'Tentou criar card', chipFields: ['title'] },
+  move_card: { icon: 'backlog', running: 'Movendo card', done: 'Moveu card', failed: 'Tentou mover card', chipFields: ['id', 'itemId', 'column'] },
+  move_backlog_item: { icon: 'backlog', running: 'Movendo card', done: 'Moveu card', failed: 'Tentou mover card', chipFields: ['id', 'itemId', 'column'] },
+  update_card: { icon: 'edit', running: 'Atualizando card', done: 'Atualizou card', failed: 'Tentou atualizar card', chipFields: ['id', 'itemId', 'title'] },
+  update_backlog_item: { icon: 'edit', running: 'Atualizando card', done: 'Atualizou card', failed: 'Tentou atualizar card', chipFields: ['id', 'itemId', 'title'] },
+  backlog_add_label: { icon: 'edit', running: 'Adicionando etiqueta', done: 'Adicionou etiqueta', failed: 'Tentou adicionar etiqueta', chipFields: ['label', 'id', 'itemId'] },
+  backlog_remove_label: { icon: 'edit', running: 'Removendo etiqueta', done: 'Removeu etiqueta', failed: 'Tentou remover etiqueta', chipFields: ['label', 'id', 'itemId'] },
+  backlog_set_responsible: { icon: 'agent', running: 'Definindo responsável', done: 'Definiu responsável', failed: 'Tentou definir responsável', chipFields: ['agent', 'id', 'itemId'] },
+  backlog_archive_item: { icon: 'backlog', running: 'Arquivando card', done: 'Arquivou card', failed: 'Tentou arquivar card', chipFields: ['id', 'itemId'] },
+  backlog_restore_item: { icon: 'backlog', running: 'Restaurando card', done: 'Restaurou card', failed: 'Tentou restaurar card', chipFields: ['id', 'itemId'] },
+  backlog_delete_item: { icon: 'backlog', running: 'Removendo card', done: 'Removeu card', failed: 'Tentou remover card', chipFields: ['id', 'itemId'] },
+  submit_for_review: { icon: 'check', running: 'Enviando para revisão', done: 'Enviou para revisão', failed: 'Tentou enviar para revisão', chipFields: ['itemId', 'id'] },
+  save_item_plan: { icon: 'artifact', running: 'Gravando plano', done: 'Gravou plano', failed: 'Tentou gravar plano', chipFields: ['item-id', 'itemId'] },
+  update_item_plan: { icon: 'artifact', running: 'Atualizando plano', done: 'Atualizou plano', failed: 'Tentou atualizar plano', chipFields: ['itemId'] },
+  import_plan: { icon: 'artifact', running: 'Importando plano', done: 'Importou plano', failed: 'Tentou importar plano', chipFields: ['title'] },
+  set_criterion: { icon: 'check', running: 'Marcando critério', done: 'Marcou critério', failed: 'Tentou marcar critério', chipFields: ['criterion-id', 'criterionId'] },
+  artifact_set_criterion: { icon: 'check', running: 'Marcando critério', done: 'Marcou critério', failed: 'Tentou marcar critério', chipFields: ['criterion-id', 'criterionId'] },
+  get_artifact: { icon: 'artifact', running: 'Lendo artefato', done: 'Leu artefato', failed: 'Tentou ler artefato', chipFields: ['id', 'artifactId'] },
+  list_artifacts: { icon: 'artifact', running: 'Listando artefatos', done: 'Listou artefatos', failed: 'Tentou listar artefatos', defaultChip: 'Artefatos' },
+  create_artifact: { icon: 'artifact', running: 'Criando artefato', done: 'Criou artefato', failed: 'Tentou criar artefato', chipFields: ['title', 'id'] },
+  update_artifact: { icon: 'artifact', running: 'Atualizando artefato', done: 'Atualizou artefato', failed: 'Tentou atualizar artefato', chipFields: ['id'] },
+  delete_artifact: { icon: 'artifact', running: 'Removendo artefato', done: 'Removeu artefato', failed: 'Tentou remover artefato', chipFields: ['id'] },
+  artifact: { icon: 'artifact', running: 'Gerenciando artefato', done: 'Gerenciou artefato', failed: 'Tentou gerenciar artefato', chipFields: ['op', 'id'] },
+  request_decision: { icon: 'warning', running: 'Pedindo decisão', done: 'Pediu decisão', failed: 'Tentou pedir decisão', chipFields: ['title'] },
+  answer_decision: { icon: 'check', running: 'Respondendo decisão', done: 'Respondeu decisão', failed: 'Tentou responder decisão', chipFields: ['answer', 'id'] },
+  dismiss_decision: { icon: 'warning', running: 'Descartando decisão', done: 'Descartou decisão', failed: 'Tentou descartar decisão', chipFields: ['id'] },
+  propose_request: { icon: 'backlog', running: 'Propondo card', done: 'Propôs card', failed: 'Tentou propor card', chipFields: ['title'] },
+  memory_graph_query: { icon: 'search', running: 'Consultando grafo', done: 'Consultou grafo', failed: 'Tentou consultar grafo', chipFields: ['query'] },
+  memory_graph_save: { icon: 'artifact', running: 'Salvando no grafo', done: 'Salvou no grafo', failed: 'Tentou salvar no grafo', chipFields: ['category', 'fact'], defaultChip: 'Memória' },
+  get_context_graph: { icon: 'flow', running: 'Montando grafo de contexto', done: 'Montou grafo de contexto', failed: 'Tentou montar grafo', defaultChip: 'Grafo' },
+  list_project_memories: { icon: 'document', running: 'Listando memórias', done: 'Listou memórias', failed: 'Tentou listar memórias', defaultChip: 'Memórias' },
+  save_project_memory: { icon: 'document', running: 'Salvando memória', done: 'Salvou memória', failed: 'Tentou salvar memória', chipFields: ['fact'] },
+  run_memory_review: { icon: 'thinking', running: 'Revisando memórias', done: 'Revisou memórias', failed: 'Tentou revisar memórias' },
+  list_learning_suggestions: { icon: 'thinking', running: 'Listando sugestões', done: 'Listou sugestões', failed: 'Tentou listar sugestões' },
+  apply_learning_suggestion: { icon: 'check', running: 'Aplicando sugestão', done: 'Aplicou sugestão', failed: 'Tentou aplicar sugestão', chipFields: ['id'] },
+  dismiss_learning_suggestion: { icon: 'warning', running: 'Descartando sugestão', done: 'Descartou sugestão', failed: 'Tentou descartar sugestão', chipFields: ['id'] },
+  history_search: { icon: 'search', running: 'Buscando no histórico', done: 'Buscou no histórico', failed: 'Tentou buscar no histórico', chipFields: ['query'] },
+  history_read: { icon: 'document', running: 'Lendo histórico', done: 'Leu histórico', failed: 'Tentou ler histórico', chipFields: ['cardId', 'itemId', 'messageId'], defaultChip: 'Histórico' },
+  list_turn_work_steps: { icon: 'flow', running: 'Consultando etapas', done: 'Consultou etapas', failed: 'Tentou consultar etapas', chipFields: ['cardId', 'itemId'] },
+  web_search: { icon: 'web', running: 'Pesquisando na web', done: 'Pesquisou na web', failed: 'Tentou pesquisar na web', chipFields: ['query'] },
+  get_variables: { icon: 'settings', running: 'Lendo variáveis', done: 'Leu variáveis', failed: 'Tentou ler variáveis', defaultChip: 'Variáveis' },
+  set_variable: { icon: 'settings', running: 'Atualizando variável', done: 'Atualizou variável', failed: 'Tentou atualizar variável', chipFields: ['name'] },
+  get_orchestration: { icon: 'flow', running: 'Lendo orquestração', done: 'Leu orquestração', failed: 'Tentou ler orquestração', defaultChip: 'Orquestração' },
+  list_agents: { icon: 'team', running: 'Listando agentes', done: 'Listou agentes', failed: 'Tentou listar agentes', defaultChip: 'Agentes' },
+  list_movements: { icon: 'flow', running: 'Listando movimentos', done: 'Listou movimentos', failed: 'Tentou listar movimentos', defaultChip: 'Movimentos' },
+  post_channel_message: { icon: 'channel', running: 'Postando no canal', done: 'Postou no canal', failed: 'Tentou postar no canal', chipFields: ['channelId'] },
+  send_request: { icon: 'channel', running: 'Enviando pedido', done: 'Enviou pedido', failed: 'Tentou enviar pedido', chipFields: ['to'] },
+  ask_btw: { icon: 'agent', running: 'Perguntando /btw', done: 'Perguntou /btw', failed: 'Tentou perguntar /btw', chipFields: ['agent', 'question'] },
+}
+
+function parseVokiaCliFlag(cmd: string, flag: string): string | undefined {
+  const m = new RegExp(`--${flag}(?:=|\\s+)(?:"([^"]+)"|'([^']+)'|(\\S+))`).exec(cmd)
+  if (m) return (m[1] ?? m[2] ?? m[3])?.trim() || undefined
+  const jsonMatch = new RegExp(`"${flag}"\\s*:\\s*"([^"]+)"`).exec(cmd)
+  return jsonMatch?.[1]?.trim() || undefined
+}
+
+function vokiaCliRow(tool: ToolActivity, nameOf: AgentNameOf): ActivityRowModel | null {
+  const raw = tool.target.trim()
+  const match = /(?:^|[\s/\\])vokia-cli(?:\.exe)?\s+(.+)$/i.exec(raw)
+  if (!match) return null
+  const rest = match[1].trim()
+  const running = tool.status === 'running'
+  const failed = tool.status === 'failed'
+  const tokens = rest.split(/\s+/)
+  let sub = (tokens[0] ?? '').toLowerCase()
+  if (sub === 'cmd' && tokens[1]) sub = tokens[1].toLowerCase()
+  const normalized = sub.replace(/-/g, '_')
+
+  if (normalized === 'delegate') {
+    const agentId = parseVokiaCliFlag(rest, 'agent')
+    const itemId = parseVokiaCliFlag(rest, 'item-id') ?? parseVokiaCliFlag(rest, 'itemId')
+    const agentLabel = agentId ? (nameOf(agentId) ?? agentId) : undefined
+    return {
+      id: tool.callId,
+      icon: 'agent',
+      verb: running ? 'Delegando via Vokia' : failed ? 'Tentou delegar via Vokia' : 'Delegou via Vokia',
+      chip: agentLabel ? { label: agentLabel, title: raw, icon: 'generic' } : undefined,
+      meta: itemId ? `· ${itemId}` : undefined,
+      failed,
+    }
+  }
+
+  const spec = VOKIA_COMMAND_SPECS[normalized]
+  if (spec) {
+    const chipValue = spec.chipFields?.map((f) => parseVokiaCliFlag(rest, f)).find(Boolean) ?? spec.defaultChip
+    return {
+      id: tool.callId,
+      icon: spec.icon,
+      verb: running ? spec.running : failed ? spec.failed : spec.done,
+      chip: chipValue ? { label: chipValue, title: raw, icon: 'generic' } : undefined,
+      failed,
+    }
+  }
+
+  return {
+    id: tool.callId,
+    icon: 'command',
+    verb: commandPhrase(normalized, tool.status),
+    chip: { label: sub || 'vokia-cli', title: raw, icon: 'generic' },
+    failed,
+  }
+}
+
+function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean, nameOf: AgentNameOf): ActivityRowModel {
   if (tool.name === 'mcp__vokia__memory_graph_query' || tool.name === 'memory_graph_query') {
     return {
       id: tool.callId,
@@ -339,6 +464,10 @@ function defaultRow(tool: ToolActivity, icon: RowIconKind, failed: boolean): Act
       text: tool.target || undefined,
       failed,
     }
+  }
+  if (tool.category === 'command') {
+    const cliRow = vokiaCliRow(tool, nameOf)
+    if (cliRow) return cliRow
   }
   if (tool.category === 'command' && tool.description !== undefined) {
     return { id: tool.callId, icon, verb: tool.description, command: tool.target, failed }
@@ -533,7 +662,7 @@ function buildRows(tools: readonly ToolActivity[], titleOf: CardTitleOf, nameOf:
     if (tool.detail?.kind === 'command') return [commandRow(tool, tool.detail, nameOf)]
     const delegation = delegationOf(tool)
     if (delegation) return [delegationRow(tool, delegation)]
-    return [defaultRow(tool, icon, tool.status === 'failed')]
+    return [defaultRow(tool, icon, tool.status === 'failed', nameOf)]
   })
 }
 

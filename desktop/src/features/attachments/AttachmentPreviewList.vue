@@ -40,7 +40,11 @@ const { previews, expanded } = useAttachmentPreviews(() => props.attachments)
       :key="attachment.path"
       :title="attachment.size ? `${attachment.name} (${attachment.size})` : attachment.name"
       :data-attachment-name="attachment.name"
-      :class="compact ? ITEM_COMPACT_CLASSES : ITEM_DEFAULT_CLASSES"
+      :class="[
+        compact ? ITEM_COMPACT_CLASSES : ITEM_DEFAULT_CLASSES,
+        previews[attachment.path] ? 'cursor-zoom-in transition-colors hover:bg-hover' : '',
+      ]"
+      @click="previews[attachment.path] && (expanded = attachment)"
     >
       <button
         v-if="previews[attachment.path]"

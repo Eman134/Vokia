@@ -84,13 +84,65 @@ impl<'a> Exchange<'a> {
     }
 
     // O card no prompt poupa ao agente uma ida à API só para chamar read_card; sem banco ou card ilegível,
-    // o agente segue podendo chamar read_card.
+    // o agente segue podendo chamar read_card. Também resolve menções a tasks no pedido (#ID ou public_id).
     pub(super) fn card_context(&self) -> Option<String> {
-        let item_id = self.item_id?;
         let db_state = self.app.state::<DbState>();
         let db = db_state.db()?;
-        crate::mcp::tools::card_text(db, self.key.project_id, item_id).ok()
+        let mut sections = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
+        if let Some(item_id) = self.item_id {
+            if let Ok(text) = crate::mcp::tools::card_text(db, self.key.project_id, item_id) {
+                seen_ids.insert(item_id.to_string());
+                sections.push(text);
+            }
+        }
+
+        for mentioned_id in extract_mentioned_card_ids(db, self.key.project_id, self.request, &seen_ids) {
+            if let Ok(text) = crate::mcp::tools::card_text(db, self.key.project_id, &mentioned_id) {
+                seen_ids.insert(mentioned_id);
+                sections.push(text);
+            }
+        }
+
+        (!sections.is_empty()).then(|| sections.join("\n\n---\n\n"))
     }
+}
+
+pub(super) fn extract_mentioned_card_ids(
+    db: &crate::db::Db,
+    project_id: i64,
+    text: &str,
+    already_seen: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let Ok(snapshot) = db.list_backlog(project_id) else {
+        return Vec::new();
+    };
+    if snapshot.items.is_empty() {
+        return Vec::new();
+    }
+    let mut by_key = std::collections::HashMap::<String, String>::new();
+    for item in &snapshot.items {
+        by_key.insert(item.id.to_ascii_lowercase(), item.id.clone());
+        if let Some(pub_id) = item.public_id.as_deref() {
+            by_key.insert(pub_id.to_ascii_lowercase(), item.id.clone());
+        }
+    }
+
+    let mut result = Vec::new();
+    let mut local_seen = already_seen.clone();
+    for raw_token in text.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_' && c != '#') {
+        let trimmed = raw_token.trim_start_matches('#');
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(card_id) = by_key.get(&trimmed.to_ascii_lowercase()) {
+            if local_seen.insert(card_id.clone()) {
+                result.push(card_id.clone());
+            }
+        }
+    }
+    result
 }
 
 struct TurnWaitersGuard<'a> {
@@ -711,7 +763,7 @@ pub(super) async fn run_turns(
                         },
                         None,
                         None,
-                        None,
+                        usage.clone(),
                     )?;
                 }
                 Ok(())
@@ -871,6 +923,7 @@ pub(super) async fn run_turns(
                 );
             }
             if !has_pending_decision_for(state, project_id, &turn.speaker)
+                && !crate::plan_proposal::contains_plan_ready(&visible)
                 && super::continuation::is_waiting_for_human(&visible)
             {
                 let is_approval = super::continuation::is_approval_wait(&visible);

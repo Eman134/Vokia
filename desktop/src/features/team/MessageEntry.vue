@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { agentName, DEFAULT_RECIPIENT } from './agents'
 import { isBetweenAgents, type FeedEntry } from './timeline'
 import { useRoster } from './useRoster'
@@ -22,7 +22,7 @@ import {
   type ActivityRowModel,
 } from './activitySummary'
 import MarkdownText from './MarkdownText.vue'
-import { formatCostUsd, formatThinkingDuration, formatUsageModel, formatUsageTooltip, tokenSplit } from './messageUsageFormat'
+import { formatCostUsd, formatThinkingDuration, formatUsageModel, tokenSplit } from './messageUsageFormat'
 import TokenUsageChart from './TokenUsageChart.vue'
 import { extractAttachments } from '../attachments/attachmentBlock'
 import AttachmentPreviewList from '../attachments/AttachmentPreviewList.vue'
@@ -34,11 +34,11 @@ import { useUserProfile } from '../profile/useUserProfile'
 import { useBacklog } from '../backlog/useBacklog'
 import { runTitleOf } from '../backlog/useRunItem'
 import { useProjects } from '../projects/useProjects'
+import { useRequests } from './useRequests'
 import ContextGraphModal from '../memory/ContextGraphModal.vue'
 import UiButton from '../../ui/UiButton.vue'
 import UiHandLine from '../../ui/UiHandLine.vue'
 import UiIcon from '../../ui/UiIcon.vue'
-import UiTooltip from '../../ui/UiTooltip.vue'
 import { USER_BUBBLE_CLASSES } from '../../ui/handDrawn'
 import { DEFAULT_JITTER, sketchArrow } from '../../ui/sketch/sketchPath'
 
@@ -50,7 +50,28 @@ const userProfile = useUserProfile()
 const backlog = useBacklog()
 const turnPlans = useTurnPlans()
 const projects = useProjects()
+const requests = useRequests()
 const graphModalOpen = ref(false)
+
+const hasExchangeDetails = computed(() => {
+  if (props.entry.type !== 'message') return false
+  if (messagePlan.value) return true
+  const act = props.entry.activity
+  if (!act) return false
+  return Boolean(act.thinkingText?.trim()) || act.tools.length > 0
+})
+
+function quoteMessage(): void {
+  if (props.entry.type !== 'message') return
+  const author = isBetweenAgents(props.entry)
+    ? `${speakerName(props.entry.from)} → ${speakerName(props.entry.to)}`
+    : speakerName(props.entry.from)
+  requests.requestQuote({
+    author,
+    text: props.entry.text,
+    itemId: props.entry.itemId,
+  })
+}
 
 const messagePlan = computed(() => {
   if (props.entry.type !== 'message' || props.entry.from === 'user') return undefined
@@ -77,11 +98,6 @@ const thinkingDuration = computed(() =>
   props.entry.type === 'message' && props.entry.from !== 'user'
     ? formatThinkingDuration(props.entry.activity?.thinkingMs)
     : null,
-)
-const usageTooltip = computed(() =>
-  props.entry.type === 'message' && props.entry.from !== 'user'
-    ? formatUsageTooltip(props.entry.usage)
-    : '',
 )
 
 const runCard = computed(() => {
@@ -158,11 +174,52 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   return roster.profileOf(speaker)
 }
 
-const exchangeExpanded = ref(false)
-
-function formatExchangeSummary(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+function formatExchangeText(raw: string): string {
+  const { text } = extractAttachments(raw)
+  if (text.includes('\n- ') || text.includes('\n1. ') || text.includes('\n### ')) {
+    return text
+  }
+  return text
+    .replace(/\s+(IMPORTANTE:|ATENÇÃO:|NOTA:)\s*/g, '\n\n**$1** ')
+    .replace(/\s+(Lote\s+\d+[^:]*:)\s*/g, '\n\n**$1**\n')
+    .replace(/\s+\((\d+)\)\s+/g, '\n$1. ')
+    .trim()
 }
+
+const exchangeExpanded = ref(false)
+const exchangeBodyRef = ref<HTMLElement | null>(null)
+const exchangeOverflowing = ref(false)
+
+function measureExchangeOverflow(): void {
+  if (exchangeExpanded.value) return
+  const el = exchangeBodyRef.value
+  exchangeOverflowing.value = el ? el.scrollHeight > el.clientHeight + 2 : false
+}
+
+let exchangeResizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  void nextTick(measureExchangeOverflow)
+  if (typeof ResizeObserver !== 'undefined') {
+    exchangeResizeObserver = new ResizeObserver(measureExchangeOverflow)
+    if (exchangeBodyRef.value) exchangeResizeObserver.observe(exchangeBodyRef.value)
+  }
+})
+onUnmounted(() => {
+  exchangeResizeObserver?.disconnect()
+})
+watch(
+  () => (props.entry.type === 'message' ? props.entry.text : ''),
+  () => {
+    void nextTick(measureExchangeOverflow)
+  },
+)
+watch(exchangeBodyRef, (el, prev) => {
+  if (prev) exchangeResizeObserver?.unobserve(prev)
+  if (el) {
+    exchangeResizeObserver?.observe(el)
+    void nextTick(measureExchangeOverflow)
+  }
+})
 
 function exchangeBadge(text: string): string {
   const lower = text.trimStart().toLowerCase()
@@ -177,20 +234,6 @@ function exchangeBadge(text: string): string {
 function exchangeHeadline(text: string): string {
   const firstLine = text.trim().split('\n')[0] ?? ''
   return firstLine.replace(/^#+\s*/, '').trim()
-}
-
-function hasLongExchangeBody(text: string): boolean {
-  return text.length > 160 || text.includes('\n')
-}
-
-function exchangeTooltipText(): string {
-  if (props.entry.type !== 'message') return ''
-  const header = `${speakerName(props.entry.from)} → ${speakerName(props.entry.to)} · ${TIME_FORMAT.format(props.entry.time)}`
-  const metaParts: string[] = []
-  if (thinkingDuration.value) metaParts.push(`Duração: ${thinkingDuration.value}`)
-  if (usageTooltip.value) metaParts.push(usageTooltip.value)
-  const body = formatExchangeSummary(props.entry.text)
-  return [header, metaParts.join(' · '), body ? `\n${body}` : ''].filter(Boolean).join('\n')
 }
 
 const graphModalProjectId = computed(() =>
@@ -226,6 +269,18 @@ const graphModalMeta = computed(() => {
     </div>
     <div class="flex min-w-0 flex-1 flex-col items-end gap-0.5">
       <div class="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Citar mensagem"
+          aria-label="Citar mensagem"
+          data-testid="message-quote-btn"
+          @click.stop="quoteMessage()"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6.5h4v4H3zM9 6.5h4v4H9zM7 6.5c0-2 1-3 2-3.5M13 6.5c0-2 1-3 2-3.5" />
+          </svg>
+        </button>
         <button
           type="button"
           class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
@@ -291,10 +346,7 @@ const graphModalMeta = computed(() => {
     class="group flex min-w-0 flex-col items-center gap-1.5 text-center"
     data-testid="agent-exchange"
   >
-    <UiTooltip
-      class="inline-flex max-w-full flex-col items-center gap-1.5"
-      :text="exchangeTooltipText()"
-    >
+    <div class="inline-flex max-w-full flex-col items-center gap-1.5">
       <div class="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
         <span class="flex shrink-0 items-center gap-1.5 text-caption font-semibold text-ink">
           <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
@@ -361,6 +413,18 @@ const graphModalMeta = computed(() => {
         <button
           type="button"
           class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Citar delegação"
+          aria-label="Citar delegação"
+          data-testid="message-quote-btn"
+          @click.stop="quoteMessage()"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6.5h4v4H3zM9 6.5h4v4H9zM7 6.5c0-2 1-3 2-3.5M13 6.5c0-2 1-3 2-3.5" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
           title="Ver grafo e contexto da mensagem"
           aria-label="Ver grafo e contexto da mensagem"
           data-testid="message-graph-btn"
@@ -383,7 +447,7 @@ const graphModalMeta = computed(() => {
           <span v-if="entry.itemId" class="rounded-sm bg-surface px-1.5 py-0.5 font-mono font-semibold text-muted">{{ entry.itemId }}</span>
           <span class="min-w-0 flex-1 truncate font-medium text-ink">{{ exchangeHeadline(entry.text) }}</span>
           <button
-            v-if="hasLongExchangeBody(entry.text)"
+            v-if="exchangeOverflowing || exchangeExpanded"
             type="button"
             class="shrink-0 cursor-pointer text-tiny font-medium text-accent hover:underline"
             @click.stop="exchangeExpanded = !exchangeExpanded"
@@ -391,13 +455,25 @@ const graphModalMeta = computed(() => {
             {{ exchangeExpanded ? 'Recolher' : 'Ver tudo' }}
           </button>
         </div>
-        <MarkdownText
-          :class="exchangeExpanded ? 'wrap-break-word text-muted' : 'line-clamp-2 wrap-break-word text-muted'"
-          :text="entry.text"
-        />
+        <div
+          ref="exchangeBodyRef"
+          :class="
+            exchangeExpanded
+              ? 'mt-1.5 max-h-80 overflow-y-auto border-t border-line/60 pt-2 pr-1 wrap-break-word text-ink/90'
+              : 'relative wrap-break-word text-muted'
+          "
+          :style="!exchangeExpanded ? { maxHeight: '4.5rem', overflow: 'hidden' } : undefined"
+        >
+          <MarkdownText :text="formatExchangeText(entry.text)" class="text-caption! leading-relaxed" />
+          <div
+            v-if="!exchangeExpanded && exchangeOverflowing"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-gradient-to-t from-surface-2/90 to-transparent"
+          />
+        </div>
       </div>
-    </UiTooltip>
-    <div v-if="entry.activity || entry.usage?.isFallback" class="flex w-full flex-col gap-1">
+    </div>
+    <div v-if="hasExchangeDetails" class="flex w-full flex-col gap-1">
       <span class="flex items-center gap-1.5 text-caption font-semibold text-ink">
         <AgentPortrait :who="entry.from" :size="META_AVATAR_SIZE" />
         {{ speakerName(entry.from) }}
@@ -472,6 +548,18 @@ const graphModalMeta = computed(() => {
           <span v-if="usageCost" class="tabular-nums text-xs text-muted">· {{ usageCost }}</span>
           <TokenUsageChart :usage="entry.usage" />
         </span>
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+          title="Citar mensagem"
+          aria-label="Citar mensagem"
+          data-testid="message-quote-btn"
+          @click.stop="quoteMessage()"
+        >
+          <svg viewBox="0 0 16 16" class="size-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 6.5h4v4H3zM9 6.5h4v4H9zM7 6.5c0-2 1-3 2-3.5M13 6.5c0-2 1-3 2-3.5" />
+          </svg>
+        </button>
         <button
           type="button"
           class="inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 text-muted opacity-0 transition-opacity hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"

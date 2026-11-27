@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import UnreadDot from '../channels/UnreadDot.vue'
 import type { UnreadState } from '../channels/unread'
 import { useUnread } from '../channels/useUnread'
@@ -24,7 +24,7 @@ const props = defineProps<{
 const OPEN_CARD_LABEL = 'Abrir task'
 const OPEN_CARD_ICON_PATH = 'M3.5 3.5h9v9h-9z M6 8l1.5 1.5L10.5 6.5'
 const OPEN_CARD_ICON_SIZE = 13
-const START_THREAD_LABEL = 'Iniciar task'
+const START_THREAD_LABEL = 'Retomar / verificar'
 const START_THREAD_ICON_PATH = 'M5 3.5l7.5 4.5L5 12.5z'
 const THREAD_PORTRAIT_SIZE = 16
 const SELECTED_TEXT_CLASSES = 'text-ink-pen'
@@ -43,23 +43,6 @@ const backlog = useBacklog()
 const runItem = useRunItem()
 const unread = useUnread()
 
-const subthreadsOverride = ref<boolean | null>(null)
-
-function hasSelectedDescendant(node: TaskThread): boolean {
-  if (feed.screen.kind === 'thread' && feed.screen.itemId === node.itemId) return true
-  return node.subthreads.some(hasSelectedDescendant)
-}
-
-const subthreadsOpen = computed<boolean>(() => {
-  if (subthreadsOverride.value !== null) return subthreadsOverride.value
-  if (props.thread.subthreads.some(hasSelectedDescendant)) return true
-  return props.thread.subthreads.some((sub) => sub.status === 'working' || sub.status === 'needs-you')
-})
-
-function toggleSubthreads(): void {
-  subthreadsOverride.value = !subthreadsOpen.value
-}
-
 function threadShown(itemId: string): boolean {
   return feed.screen.kind === 'thread' && feed.screen.itemId === itemId
 }
@@ -72,6 +55,9 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
   const raw = (thread.publicId ?? thread.itemId).trim()
   return raw.length > 0 && raw.length <= 12 ? raw : null
 }
+const isThreadActive = computed(
+  () => runItem.isRunning(props.thread.itemId) || props.thread.status === 'working',
+)
 </script>
 
 <template>
@@ -90,19 +76,6 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
         :aria-pressed="threadShown(thread.itemId)"
         @click="feed.showScreen({ kind: 'thread', itemId: thread.itemId })"
       >
-        <span
-          v-if="thread.subthreads.length > 0"
-          role="button"
-          tabindex="0"
-          class="grid size-4 shrink-0 place-items-center rounded-sm text-[10px] text-muted hover:bg-hover hover:text-ink"
-          :title="subthreadsOpen ? 'Recolher subthreads' : 'Expandir subthreads'"
-          :aria-expanded="subthreadsOpen"
-          @click.stop="toggleSubthreads"
-          @keydown.enter.stop.prevent="toggleSubthreads"
-          @keydown.space.stop.prevent="toggleSubthreads"
-        >
-          {{ subthreadsOpen ? '▾' : '▸' }}
-        </span>
         <AgentPortrait
           v-if="thread.assignee && categoryKey !== 'done'"
           :who="thread.assignee"
@@ -117,13 +90,6 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
           :title="`${thread.subthreads.length} subthread(s)`"
         >
           {{ thread.subthreads.length }}
-        </span>
-        <span
-          v-if="categoryKey !== 'done' && thread.exchangeCount > 0"
-          class="shrink-0 rounded-sm bg-surface-2 px-1 text-[10px] font-medium text-muted tabular-nums"
-          :title="`${thread.exchangeCount} mensagens entre agentes`"
-        >
-          ↔{{ thread.exchangeCount }}
         </span>
         <span
           v-if="categoryKey !== 'done' && THREAD_DOT[thread.status]"
@@ -141,7 +107,7 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
         <UiHandLine v-if="threadShown(thread.itemId)" draw :class="CHANNEL_MARK_CLASSES" />
       </button>
       <button
-        v-if="runItem.canRun(thread.itemId)"
+        v-if="runItem.canRun(thread.itemId) && !isThreadActive"
         type="button"
         :class="[THREAD_CARD_BUTTON_CLASSES, 'right-6 text-ok hover:text-ok']"
         :title="`${START_THREAD_LABEL}: ${thread.title}`"
@@ -160,18 +126,5 @@ function shortThreadId(thread: { itemId: string; publicId?: string }): string | 
         <UiIcon :path="OPEN_CARD_ICON_PATH" :size="OPEN_CARD_ICON_SIZE" />
       </button>
     </div>
-
-    <ul
-      v-if="thread.subthreads.length > 0 && subthreadsOpen"
-      class="mt-0.5 ml-4 flex flex-col gap-0.5 border-l border-line pl-2"
-      data-testid="subthreads-tree"
-    >
-      <ThreadTreeNode
-        v-for="sub in thread.subthreads"
-        :key="`${categoryKey}-${sub.itemId}`"
-        :thread="sub"
-        :category-key="categoryKey"
-      />
-    </ul>
   </li>
 </template>

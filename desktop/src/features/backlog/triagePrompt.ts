@@ -11,7 +11,7 @@ const FLOW_HEADING = 'Fluxo de cada time (referência de handoff entre camadas, 
 const NO_FLOW_TEXT = 'sem arestas definidas'
 const NO_LEADER_TEXT = 'sem líder'
 const STAGE_RULE =
-  'Ao propor o plano, monte as etapas pelo papel e pelas instruções de cada agente do time escolhido e use no #roteiro (quem:) apenas agentes desse time. Qualquer membro pode abrir o plano. Divida o trabalho em quantas etapas forem necessárias (um #lote por etapa); etapas independentes rodam em paralelo e uma que depende de outra declara apos:<n> no #roteiro.'
+  'Ao propor o plano, inclua a priori apenas os agentes que compõem o time escolhido e crie as etapas de acordo com as instruções de cada um (pode criar várias etapas para o mesmo agente quando necessário, como várias etapas de backend). Se precisar usar algum agente fora do time, NÃO o inclua direto: abra uma decisão via request_decision antes. Divida o trabalho em um #lote por etapa; etapas independentes rodam em paralelo e uma que depende de outra declara apos:<n> no #roteiro.'
 const DETAIL_INDENT = '    '
 
 function memberLabel(profile: AgentProfile | undefined, agentId: string, layer: OrchLayer | undefined): string {
@@ -87,7 +87,7 @@ export function buildTriagePrompt(
     `- Para atribuir direto, chame a ferramenta backlog_set_responsible com item_id "${item.id}" e agent com o id entre parênteses abaixo.`,
     '- Para delegar, use o fluxo de delegação do time. Você só delega: quem grava o responsável é a ferramenta.',
     '- Ao gravar plano via save_item_plan, use ' + PLAN_PROTOCOL_HINT,
-    '- Em caso de dúvidas ou ambiguidades na triagem, pergunte ao usuário via request_decision, a menos que ele peça para aplicar recomendações e seguir tudo automático.',
+    '- Em caso de dúvidas ou ambiguidades na triagem, pergunte ao usuário via request_decision com a pergunta direta e curta em title (nunca cole o plano completo em request_decision; planos vão apenas em save_item_plan), a menos que ele peça para aplicar recomendações e seguir tudo automático.',
     '- Na triagem, defina também um public_id bem curto para o card (ex: FIL01 para filtros, ANIM01 para animações, máx. 8 caracteres) ao chamar save_item_plan ou backlog_set_responsible.',
     '',
     'Times e camadas deste projeto:',

@@ -2,6 +2,7 @@
 // então o resultado é seguro para v-html: nada digitado pelo usuário vira tag ou atributo.
 
 import { findAgentMentions } from './agentMentions'
+import { parseProposal, PLAN_READY_MARKER } from '../backlog/planProposal'
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -48,6 +49,12 @@ export interface MentionAgent {
   icon: string
 }
 
+export interface MentionTask {
+  id: string
+  publicId?: string
+  title: string
+}
+
 function highlightMentions(html: string, agents: readonly MentionAgent[]): string {
   let out = ''
   let cursor = 0
@@ -59,17 +66,38 @@ function highlightMentions(html: string, agents: readonly MentionAgent[]): strin
   return out + html.slice(cursor)
 }
 
+function highlightTaskMentions(html: string, tasks: readonly MentionTask[]): string {
+  if (tasks.length === 0 || !html.includes('#')) return html
+  const byKey = new Map<string, MentionTask>()
+  for (const task of tasks) {
+    byKey.set(task.id.toLowerCase(), task)
+    if (task.publicId) byKey.set(task.publicId.toLowerCase(), task)
+  }
+  return html.replace(/(^|\s)#([\p{L}\p{N}_-]+)(?![\p{L}\p{N}_-])/gu, (full, prefix: string, rawKey: string) => {
+    const task = byKey.get(rawKey.toLowerCase())
+    if (!task) return full
+    const title = escapeHtml(task.title)
+    return `${prefix}<span data-task-mention="${escapeHtml(task.id)}" class="inline-flex cursor-pointer items-center rounded-sm bg-surface-2 px-1 font-mono text-small font-semibold text-accent hover:underline" title="${title}">#${rawKey}</span>`
+  })
+}
+
 export interface MarkdownOptions {
   taskList?: boolean
+  taskMentions?: readonly MentionTask[]
 }
 
 interface TaskCounter {
   next: number
 }
 
-function taskListItem(match: RegExpExecArray, index: number, mentions: readonly MentionAgent[]): string {
+function taskListItem(
+  match: RegExpExecArray,
+  index: number,
+  mentions: readonly MentionAgent[],
+  taskMentions: readonly MentionTask[],
+): string {
   const checked = match[1] === ' ' ? '' : ' checked'
-  return `<li class="list-none"><label class="inline-flex cursor-pointer items-start gap-2"><input type="checkbox" class="mt-1 cursor-pointer" data-check-index="${index}"${checked}><span>${formatInline(match[2].trim(), mentions)}</span></label></li>`
+  return `<li class="list-none"><label class="inline-flex cursor-pointer items-start gap-2"><input type="checkbox" class="mt-1 cursor-pointer" data-check-index="${index}"${checked}><span>${formatInline(match[2].trim(), mentions, taskMentions)}</span></label></li>`
 }
 
 function startsBlock(line: string, fences: FenceRules): boolean {
@@ -138,9 +166,15 @@ function parseTableHeader(lines: readonly string[], index: number): { headers: s
   return { headers, alignments }
 }
 
-function renderTableCell(tag: 'th' | 'td', raw: string, align: TableAlign, mentions: readonly MentionAgent[]): string {
+function renderTableCell(
+  tag: 'th' | 'td',
+  raw: string,
+  align: TableAlign,
+  mentions: readonly MentionAgent[],
+  taskMentions: readonly MentionTask[],
+): string {
   const attr = align ? ` style="text-align:${align}"` : ''
-  return `<${tag}${attr}>${formatInline(raw, mentions)}</${tag}>`
+  return `<${tag}${attr}>${formatInline(raw, mentions, taskMentions)}</${tag}>`
 }
 
 function renderFileLink(label: string, escapedUrl: string): string {
@@ -158,7 +192,11 @@ function renderFileLink(label: string, escapedUrl: string): string {
   return `<span data-file-link class="inline-flex max-w-full items-center gap-1 rounded-sm border border-line bg-surface-2 px-1.5 py-0.5 align-baseline font-mono text-small text-ink" title="${fullPath}">${FILE_ICON_SVG}<span class="truncate">${fileName}</span>${anchorHtml}</span>`
 }
 
-function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
+function formatInline(
+  raw: string,
+  mentions: readonly MentionAgent[],
+  taskMentions: readonly MentionTask[] = [],
+): string {
   // Trechos já prontos (código e links) ficam guardados e só voltam no fim,
   // para que negrito, itálico e menções não mexam dentro deles.
   const stash: string[] = []
@@ -180,10 +218,16 @@ function formatInline(raw: string, mentions: readonly MentionAgent[]): string {
     .replace(ITALIC_STAR, '$1<em>$2</em>')
     .replace(ITALIC_UNDER, '$1<em>$2</em>')
   text = highlightMentions(text, mentions)
+  text = highlightTaskMentions(text, taskMentions)
   return text.replace(PLACEHOLDER, (_, index: string) => stash[Number(index)])
 }
 
-function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[], tasks: TaskCounter | null = null): string {
+function renderBlocks(
+  lines: readonly string[],
+  mentions: readonly MentionAgent[],
+  taskMentions: readonly MentionTask[] = [],
+  tasks: TaskCounter | null = null,
+): string {
   const html: string[] = []
   const fences = tasks === null ? CHAT_FENCES : TASK_FENCES
   let i = 0
@@ -213,7 +257,7 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
     const heading = HEADING.exec(line)
     if (heading) {
       const level = heading[1].length + 2
-      html.push(`<h${level}>${formatInline(heading[2], mentions)}</h${level}>`)
+      html.push(`<h${level}>${formatInline(heading[2], mentions, taskMentions)}</h${level}>`)
       i++
       continue
     }
@@ -230,7 +274,7 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
         quoted.push(QUOTE.exec(lines[i])![1])
         i++
       }
-      html.push(`<blockquote>${renderBlocks(quoted, mentions)}</blockquote>`)
+      html.push(`<blockquote>${renderBlocks(quoted, mentions, taskMentions)}</blockquote>`)
       continue
     }
 
@@ -242,8 +286,8 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
         const task = tasks !== null && listPattern === UL_ITEM ? TASK_ITEM.exec(lines[i]) : null
         items.push(
           task && tasks
-            ? taskListItem(task, tasks.next++, mentions)
-            : `<li>${formatInline(listPattern.exec(lines[i])![1], mentions)}</li>`,
+            ? taskListItem(task, tasks.next++, mentions, taskMentions)
+            : `<li>${formatInline(listPattern.exec(lines[i])![1], mentions, taskMentions)}</li>`,
         )
         i++
       }
@@ -254,13 +298,15 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
     const table = parseTableHeader(lines, i)
     if (table) {
       const { headers, alignments } = table
-      const headerHtml = headers.map((cell, col) => renderTableCell('th', cell, alignments[col], mentions)).join('')
+      const headerHtml = headers
+        .map((cell, col) => renderTableCell('th', cell, alignments[col], mentions, taskMentions))
+        .join('')
       i += 2
       const bodyRows: string[] = []
       while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|') && !startsBlock(lines[i], fences)) {
         const cells = splitTableRow(lines[i])
         const rowHtml = headers
-          .map((_, col) => renderTableCell('td', cells[col] ?? '', alignments[col], mentions))
+          .map((_, col) => renderTableCell('td', cells[col] ?? '', alignments[col], mentions, taskMentions))
           .join('')
         bodyRows.push(`<tr>${rowHtml}</tr>`)
         i++
@@ -277,13 +323,87 @@ function renderBlocks(lines: readonly string[], mentions: readonly MentionAgent[
       !startsBlock(lines[i], fences) &&
       !parseTableHeader(lines, i)
     ) {
-      paragraph.push(formatInline(lines[i], mentions))
+      paragraph.push(formatInline(lines[i], mentions, taskMentions))
       i++
     }
     html.push(`<p>${paragraph.join('<br>')}</p>`)
   }
 
   return html.join('')
+}
+
+const PROTOCOL_LINE_PATTERN = /^#(plano-pronto|estimativa|lote|roteiro|risco|etiquetas)\b/im
+const INLINE_PROTOCOL_MARKERS = /(^|\s)(#(?:plano-pronto|estimativa|lote|roteiro|risco|etiquetas)\b)/gi
+const SECTION_LABEL_PATTERN = /^(Descrição|Critérios|Plano|Objetivo|Perguntas em aberto|Decisão arquitetural):(?:\s*(.*))?$/gm
+
+function formatProtocolToMarkdown(raw: string): string {
+  const expanded = raw.replace(INLINE_PROTOCOL_MARKERS, (_full, prefix: string, marker: string) =>
+    prefix === '' ? marker : `\n${marker}`,
+  )
+  const lines = expanded.split(/\r?\n/)
+  const firstMarkerIdx = lines.findIndex((line) => PROTOCOL_LINE_PATTERN.test(line.trim()))
+  const prefix = firstMarkerIdx > 0 ? lines.slice(0, firstMarkerIdx).join('\n').trim() : ''
+  const protocolBody = firstMarkerIdx >= 0 ? lines.slice(firstMarkerIdx).join('\n') : expanded
+  const normalizedBody = protocolBody.includes(PLAN_READY_MARKER)
+    ? protocolBody
+    : `${PLAN_READY_MARKER}\n${protocolBody}`
+
+  const parsed = parseProposal(normalizedBody)
+  const parts: string[] = []
+
+  if (prefix) parts.push(`**${prefix.replace(/:$/, '')}**`)
+  if (parsed.estimate) parts.push(`- **Estimativa:** \`${parsed.estimate}\``)
+  if (parsed.risk) parts.push(`- **Risco:** ${parsed.risk}`)
+  if (parsed.tags.length > 0) {
+    parts.push(`- **Etiquetas:** ${parsed.tags.map((t) => `\`${t}\``).join(' ')}`)
+  }
+
+  for (const lot of parsed.lots) {
+    const meta = lot.meta ? ` *(${lot.meta})*` : ''
+    parts.push(`\n#### Lote ${lot.n} — ${lot.title}${meta}`)
+    if (lot.tasks) parts.push(`- **Tarefas:** ${lot.tasks}`)
+    const s = lot.script
+    if (s) {
+      const metaLine: string[] = []
+      if (s.who) metaLine.push(`**Agente:** @${s.who}`)
+      if (s.model) metaLine.push(`**Modelo:** ${s.model}`)
+      if (s.after && s.after.length > 0) metaLine.push(`**Após:** lote ${s.after.join(', ')}`)
+      if (metaLine.length > 0) parts.push(`- ${metaLine.join(' · ')}`)
+      if (s.block.context) parts.push(`- **Contexto:** ${s.block.context}`)
+      if (s.block.files.length > 0) {
+        parts.push(`- **Arquivos:** ${s.block.files.map((f) => `\`${f}\``).join(', ')}`)
+      }
+      if (s.block.steps.length > 0) {
+        parts.push('**Passos:**')
+        s.block.steps.forEach((step, idx) => parts.push(`${idx + 1}. ${step}`))
+      }
+      if (s.block.done.length > 0) {
+        parts.push('**Critérios de pronto:**')
+        s.block.done.forEach((done) => parts.push(`- [ ] ${done}`))
+      }
+      if (s.block.limits.length > 0) {
+        parts.push('**Limites:**')
+        s.block.limits.forEach((limit) => parts.push(`- ${limit}`))
+      }
+    }
+  }
+
+  if (parsed.summary) parts.push(`\n${parsed.summary}`)
+  return parts.join('\n').trim() || raw
+}
+
+function normalizeRichText(source: string): string {
+  const trimmed = source.trim()
+  if (trimmed === '') return source
+  if (
+    PROTOCOL_LINE_PATTERN.test(trimmed) ||
+    (trimmed.includes(PLAN_READY_MARKER) && (trimmed.includes('#lote ') || trimmed.includes('#roteiro ')))
+  ) {
+    return formatProtocolToMarkdown(trimmed)
+  }
+  return source.replace(SECTION_LABEL_PATTERN, (_, label: string, rest: string | undefined) =>
+    rest && rest.trim() !== '' ? `\n**${label}:** ${rest.trim()}` : `\n**${label}:**\n`,
+  )
 }
 
 /** Converte o texto de uma mensagem em HTML seguro. `agents` são os agentes reais, destacados com o ícone quando citados. */
@@ -294,5 +414,6 @@ export function renderMarkdown(
 ): string {
   // Com taskList, "- [ ]" vira checkbox numerado (data-check-index); citações não entram na contagem.
   const tasks = options.taskList ? { next: 0 } : null
-  return renderBlocks(source.replace(/\r\n?/g, '\n').split('\n'), agents, tasks)
+  const normalized = normalizeRichText(source)
+  return renderBlocks(normalized.replace(/\r\n?/g, '\n').split('\n'), agents, options.taskMentions ?? [], tasks)
 }

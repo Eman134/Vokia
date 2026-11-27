@@ -1,4 +1,8 @@
-const PLAN_READY_MARKER: &str = "#plano-pronto";
+pub(crate) const PLAN_READY_MARKER: &str = "#plano-pronto";
+
+pub(crate) fn contains_plan_ready(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == PLAN_READY_MARKER)
+}
 const ESTIMATE_MARKER: &str = "#estimativa";
 const LOT_MARKER: &str = "#lote";
 const SCRIPT_MARKER: &str = "#roteiro";

@@ -84,7 +84,7 @@ export const COLUMN_LABEL: Record<BacklogColumn, string> = {
   Done: 'Concluído',
 }
 
-export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'Done']
+export const MOVABLE_COLUMNS: readonly BacklogColumn[] = ['Backlog', 'Ready', 'In progress', 'In review', 'Done']
 export const DEFAULT_COLUMN: BacklogColumn = 'Backlog'
 // O dono "voce" é o padrão de card criado pelo usuário; o backend só troca o responsável quando ele é esse.
 export const USER_OWNER = 'voce'

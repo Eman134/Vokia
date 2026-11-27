@@ -77,15 +77,15 @@ const interacting = computed(
     modeOpen.value ||
     agentPickerOpen.value,
 )
-const expanded = computed(() => flow.active || interacting.value)
 const inlinePermission = computed(() =>
   showsInlinePermission({
     flowActive: flow.active,
-    expanded: expanded.value,
     pendingCount: feed.projectPermissions.length,
     hasContent: hasDraft.value,
   }),
 )
+const pillExpanded = computed(() => interacting.value || inlinePermission.value)
+const expanded = computed(() => flow.active || pillExpanded.value)
 const canAsk = computed(() => flow.flow !== 'onboarding')
 const statusStore = useTeamStatus()
 const requests = useRequests()
@@ -98,6 +98,7 @@ useErrorNotices()
 const layoutKey = computed(() =>
   [
     interacting.value,
+    inlinePermission.value,
     flow.active,
     flow.flow,
     flow.step,
@@ -114,14 +115,14 @@ const layoutKey = computed(() =>
   ].join('|'),
 )
 const pillWidthClass = computed(() => {
-  if (canAsk.value && interacting.value) {
+  if (canAsk.value && pillExpanded.value) {
     return EXPANDED_WIDTH_CLASS
   }
   return flow.active ? CONTENT_WIDTH_CLASS : COMPACT_WIDTH_CLASS
 })
 
 // Sem isto o rótulo é cortado com "…" nos quadros em que a pílula já está mais estreita que o texto.
-watch(interacting, (active) => {
+watch(pillExpanded, (active) => {
   clearTimeout(collapseTimer)
   collapsing.value = !active
   if (!active) {
@@ -259,6 +260,21 @@ function onPointerLeave(): void {
       <div class="flex shrink-0 items-center gap-0.5 empty:hidden">
         <ExecutionModeSelector v-if="canAsk && expanded && !flow.active && !inlinePermission" v-model:open="modeOpen" />
         <ActiveLlmSwitcher v-if="canAsk && expanded && !inlinePermission && !flow.active" v-model:open="llmSwitcherOpen" />
+      </div>
+      <div
+        v-if="requests.pendingQuote && expanded"
+        class="flex max-w-48 shrink-0 items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-tiny text-ink"
+        data-testid="composer-quote-chip"
+      >
+        <span class="truncate">Citando {{ requests.pendingQuote.author }}</span>
+        <button
+          type="button"
+          class="cursor-pointer text-muted hover:text-ink"
+          aria-label="Remover citação"
+          @click="requests.clearPendingQuote()"
+        >
+          ×
+        </button>
       </div>
       <ComposerField
         v-model:draft="draft"

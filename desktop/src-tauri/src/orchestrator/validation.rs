@@ -105,7 +105,7 @@ pub(super) async fn on_flow_end(
             .is_some_and(|orch_team| orch_team.final_validation == FINAL_VALIDATION_AUTOMATIC)
     });
     if !automatic {
-        return open_manual_validation(app, state, &leader, project_id, &item, "");
+        return Ok(());
     }
     let open_decision = has_open_decision(state, project_id, item_id)?;
     match evaluate(&item, open_decision, finished) {
@@ -150,6 +150,24 @@ pub(super) async fn on_flow_end(
             )
         }
     }
+}
+
+pub(crate) fn submit_card_for_review(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    item_id: &str,
+    leader: &Agent,
+    note: &str,
+) -> Result<(), FlowError> {
+    let db_state = app.state::<DbState>();
+    let db = db_state.require()?;
+    let item = db.read_card(project_id, item_id)?;
+    if item.column.as_deref() != Some("Done") && item.column.as_deref() != Some("In review") {
+        db.advance_card(project_id, &item.id, "In review")?;
+        emit_backlog_changed(app, project_id)?;
+    }
+    open_manual_validation(app, state, leader, project_id, &item, note)
 }
 
 fn open_manual_validation(

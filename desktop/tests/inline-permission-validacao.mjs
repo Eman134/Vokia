@@ -8,7 +8,6 @@ const { showsInlinePermission, hasComposerContent } = jiti('../src/features/team
 
 const state = (draft, attachments, confirmed) => ({
   flowActive: false,
-  expanded: true,
   pendingCount: 1,
   hasContent: hasComposerContent(draft, attachments, confirmed),
 })
@@ -28,8 +27,7 @@ test('a inline volta ao esvaziar a barra', () => {
   assert.equal(showsInlinePermission(state('', 0, 0)), true)
 })
 
-test('sem permissão pendente, fluxo ativo ou barra recolhida a inline não aparece', () => {
+test('sem permissão pendente ou com fluxo ativo a inline não aparece', () => {
   assert.equal(showsInlinePermission({ ...state('', 0, 0), pendingCount: 0 }), false)
   assert.equal(showsInlinePermission({ ...state('', 0, 0), flowActive: true }), false)
-  assert.equal(showsInlinePermission({ ...state('', 0, 0), expanded: false }), false)
 })

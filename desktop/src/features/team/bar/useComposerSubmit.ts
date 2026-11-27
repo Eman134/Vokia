@@ -221,15 +221,32 @@ export function useComposerSubmit(scope: ComposerScope = 'bar') {
     )
     const expandedCommand = expandCommand(text)
     const pending = draft.value
+    const pendingQuote = requests.pendingQuote
     // O watch do rascunho esvazia as menções confirmadas; guardá-las antes permite restaurá-las na falha.
     const pendingConfirmed = confirmed.value
     const batch = composerAttachments.take()
+    const rawBody = expandedCommand?.text ?? text
+    const quotedLines = pendingQuote
+      ? pendingQuote.text
+          .trim()
+          .split('\n')
+          .slice(0, 12)
+          .map((line) => `> ${line}`)
+          .join('\n')
+      : ''
+    const finalBody = pendingQuote
+      ? `> **${pendingQuote.author}**${pendingQuote.itemId ? ` (\`${pendingQuote.itemId}\`)` : ''}:\n${quotedLines}\n\n${rawBody}`
+      : rawBody
     draft.value = ''
+    requests.clearPendingQuote()
     // A rejeição do comando chega depois do envio: o usuário pode já ter digitado de novo, e isso não se sobrescreve.
     const restore = (): void => {
       if (draft.value === '') {
         draft.value = pending
         confirmed.value = pendingConfirmed
+      }
+      if (pendingQuote && requests.pendingQuote === null) {
+        requests.requestQuote(pendingQuote)
       }
       if (composerAttachments.attachments.value.length === 0) {
         composerAttachments.restore(batch)
@@ -238,7 +255,7 @@ export function useComposerSubmit(scope: ComposerScope = 'bar') {
     const forceMode = deliveryMode.value === 'auto' ? undefined : deliveryMode.value
     deliveryMode.value = 'auto'
     if (
-      !(await requests.send(expandedCommand?.text ?? text, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
+      !(await requests.send(finalBody, expandedCommand ? (to ?? DEFAULT_RECIPIENT) : to, {
         channelId: channelId ?? undefined,
         itemId: itemId ?? undefined,
         attachments: batch.ids,

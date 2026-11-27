@@ -2,14 +2,20 @@ import { computed, ref, useId, watch, type Ref } from 'vue'
 import { normalizeName, useRoster } from '../useRoster'
 import type { AgentProfile } from '../teamApi'
 import type { Agent } from '../events'
+import { useBacklog } from '../../backlog/useBacklog'
+import type { BacklogItem } from '../../backlog/backlogTypes'
 import {
+  findTaskTrigger,
   findTrigger,
   insertMention,
+  insertTaskMention,
   MENTION_TRIGGER,
   replaceTrigger,
   type TriggerMatch,
 } from '../composerMentions'
 import { COMMAND_TRIGGER, findCommandTrigger, SLASH_COMMANDS, type SlashCommand } from '../slashCommands'
+
+const MAX_TASK_MENTION_RESULTS = 8
 
 interface ComposerMenusInput {
   draft: Ref<string>
@@ -21,16 +27,18 @@ interface ComposerMenusInput {
 
 export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }: ComposerMenusInput) {
   const roster = useRoster()
+  const backlog = useBacklog()
   const listboxId = useId()
   const menuDismissed = ref(false)
   const highlightedIndex = ref(0)
 
   const mentionMatch = computed<TriggerMatch | null>(() => findTrigger(draft.value, caret.value, MENTION_TRIGGER))
+  const taskMatch = computed<TriggerMatch | null>(() => findTaskTrigger(draft.value, caret.value))
   const commandMatch = computed<TriggerMatch | null>(() => findCommandTrigger(draft.value, caret.value))
-  const menuKind = computed<'command' | 'mention' | null>(() =>
-    commandMatch.value ? 'command' : mentionMatch.value ? 'mention' : null,
+  const menuKind = computed<'command' | 'mention' | 'task' | null>(() =>
+    commandMatch.value ? 'command' : mentionMatch.value ? 'mention' : taskMatch.value ? 'task' : null,
   )
-  const activeMatch = computed(() => commandMatch.value ?? mentionMatch.value)
+  const activeMatch = computed(() => commandMatch.value ?? mentionMatch.value ?? taskMatch.value)
   const mentionQuery = computed<string | null>(() => mentionMatch.value?.query ?? null)
   const mentionMatches = computed<AgentProfile[]>(() => {
     const query = mentionQuery.value
@@ -40,6 +48,31 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     const prefix = normalizeName(query)
     return roster.agents.filter((agent) => normalizeName(agent.name).startsWith(prefix))
   })
+  const taskMatches = computed<BacklogItem[]>(() => {
+    const match = taskMatch.value
+    if (match === null) {
+      return []
+    }
+    const query = match.query.trim().toLowerCase()
+    const items = backlog.items.filter((item) => !item.error)
+    if (query === '') {
+      return items.slice(0, MAX_TASK_MENTION_RESULTS)
+    }
+    const scored = items
+      .map((item) => {
+        const pub = item.publicId?.toLowerCase() ?? ''
+        const id = item.id.toLowerCase()
+        const title = item.title.toLowerCase()
+        if (pub === query || id === query) return { item, rank: 0 }
+        if (pub.startsWith(query) || id.startsWith(query)) return { item, rank: 1 }
+        if (pub.includes(query) || id.includes(query)) return { item, rank: 2 }
+        if (title.includes(query)) return { item, rank: 3 }
+        return null
+      })
+      .filter((entry): entry is { item: BacklogItem; rank: number } => entry !== null)
+    scored.sort((a, b) => a.rank - b.rank)
+    return scored.slice(0, MAX_TASK_MENTION_RESULTS).map((entry) => entry.item)
+  })
   const commandMatches = computed<SlashCommand[]>(() => {
     const match = commandMatch.value
     if (match === null) {
@@ -48,12 +81,16 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     const prefix = match.query.toLowerCase()
     return SLASH_COMMANDS.filter((command) => command.id.startsWith(prefix))
   })
-  const menuCount = computed(() => (menuKind.value === 'command' ? commandMatches.value : mentionMatches.value).length)
-  const highlighted = computed<AgentProfile | SlashCommand | undefined>(() =>
-    menuKind.value === 'command'
-      ? commandMatches.value.at(highlightedIndex.value)
-      : mentionMatches.value.at(highlightedIndex.value),
-  )
+  const menuCount = computed(() => {
+    if (menuKind.value === 'command') return commandMatches.value.length
+    if (menuKind.value === 'task') return taskMatches.value.length
+    return mentionMatches.value.length
+  })
+  const highlighted = computed<AgentProfile | SlashCommand | BacklogItem | undefined>(() => {
+    if (menuKind.value === 'command') return commandMatches.value.at(highlightedIndex.value)
+    if (menuKind.value === 'task') return taskMatches.value.at(highlightedIndex.value)
+    return mentionMatches.value.at(highlightedIndex.value)
+  })
   const menuOpen = computed(() => activeMatch.value !== null && !menuDismissed.value && !locked.value)
   const activeOptionId = computed(() =>
     menuOpen.value && highlighted.value ? `${listboxId}-${highlighted.value.id}` : undefined,
@@ -79,6 +116,17 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     applyMention(insertMention(draft.value, trigger, caret.value, agent.name), agent)
   }
 
+  function chooseMentionTask(task: BacklogItem): void {
+    const trigger = taskMatch.value
+    if (trigger === null) {
+      return
+    }
+    const next = insertTaskMention(draft.value, trigger, caret.value, task.publicId ?? task.id)
+    draft.value = next.text
+    caret.value = next.caret
+    void placeCaret(next.caret)
+  }
+
   function chooseCommand(command: SlashCommand): void {
     const trigger = commandMatch.value
     if (trigger === null || !command.enabled) {
@@ -90,9 +138,11 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     void placeCaret(next.caret)
   }
 
-  function chooseHighlighted(item: AgentProfile | SlashCommand): void {
+  function chooseHighlighted(item: AgentProfile | SlashCommand | BacklogItem): void {
     if ('role' in item) {
       chooseMentionAgent(item)
+    } else if ('title' in item) {
+      chooseMentionTask(item)
     } else {
       chooseCommand(item)
     }
@@ -158,6 +208,7 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     menuKind,
     activeMatch,
     mentionMatches,
+    taskMatches,
     commandMatches,
     menuCount,
     highlightedIndex,
@@ -165,6 +216,7 @@ export function useComposerMenus({ draft, caret, confirmed, locked, placeCaret }
     activeOptionId,
     listboxId,
     chooseMentionAgent,
+    chooseMentionTask,
     chooseCommand,
     insertAtCaret,
     dismissMenu,

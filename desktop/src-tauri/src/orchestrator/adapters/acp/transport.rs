@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use serde_json::{json, Value as Json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
 
 use crate::claude::{kill_process_tree, ClaudeError};
 use crate::orchestrator::session_pool::NO_PID;
+use crate::silent_process::SilentChildStdin;
 
 use super::flavor::AcpSpawnSpec;
 
@@ -63,7 +63,7 @@ pub enum IncomingRpc {
 }
 
 pub struct AcpTransport {
-    stdin: AsyncMutex<ChildStdin>,
+    stdin: AsyncMutex<SilentChildStdin>,
     pending: Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Json, AcpRpcError>>>>>,
     incoming_rx: AsyncMutex<mpsc::UnboundedReceiver<IncomingRpc>>,
     next_id: AtomicU64,
@@ -75,10 +75,10 @@ pub struct AcpTransport {
 
 impl AcpTransport {
     pub fn spawn(
-        mut spec: AcpSpawnSpec,
+        spec: AcpSpawnSpec,
         pid_sink: Option<&AtomicU32>,
     ) -> Result<Self, ClaudeError> {
-        let mut child = spec.command.spawn().map_err(ClaudeError::Spawn)?;
+        let mut child = crate::silent_process::spawn_silent(spec.command).map_err(ClaudeError::Spawn)?;
         let pid = child.id().unwrap_or(NO_PID);
         if let Some(sink) = pid_sink {
             sink.store(pid, Ordering::SeqCst);
@@ -248,6 +248,37 @@ impl AcpTransport {
                 map.remove(&id);
                 Err(TransportError::Timeout(timeout_dur))
             }
+        }
+    }
+
+    pub async fn request_unbounded(
+        &self,
+        method: &str,
+        params: Json,
+    ) -> Result<Json, TransportError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut map = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            map.insert(id, tx);
+        }
+
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        if let Err(err) = self.write_json(&payload).await {
+            let mut map = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            map.remove(&id);
+            return Err(err);
+        }
+
+        match rx.await {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(rpc)) => Err(TransportError::Rpc(rpc)),
+            Err(_) => Err(TransportError::Io(self.with_stderr("canal RPC ACP fechado"))),
         }
     }
 

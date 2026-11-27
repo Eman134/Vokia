@@ -24,7 +24,7 @@ const DEFAULT_COLUMN: &str = "Backlog";
 const IN_PROGRESS_COLUMN: &str = "In progress";
 const IN_REVIEW_COLUMN: &str = "In review";
 pub const BOARD_COLUMNS: &[&str] = &["Backlog", "Ready", IN_PROGRESS_COLUMN, "In review", "Done"];
-const MOVABLE_COLUMNS: &[&str] = &["Backlog", "Ready", "Done"];
+const MOVABLE_COLUMNS: &[&str] = BOARD_COLUMNS;
 pub const BACKLOG_PRIORITIES: &[&str] = &["Baixa", "Média", "Alta", "Urgente"];
 const ITEM_TYPES: &[&str] = &["task", "feature"];
 const ITEM_STATES: &[&str] = &["vazio", "triagem", "gerando", "proposto", "vinculado"];
@@ -564,13 +564,14 @@ impl Db {
         Ok(())
     }
 
-    // Início da execução de um card ou etapa: vai para In progress e troca as etiquetas de planejamento pela de andamento.
+    // Início da execução de um card ou etapa: vai para In progress, aprova plano proposto se houver e troca as etiquetas.
     // Repetir não grava nada; card concluído fica como está.
     pub fn start_card(&self, project_id: i64, id: &str) -> Result<(), DbError> {
         let item = self.read_card(project_id, id)?;
         if item.column.as_deref() == Some(DONE_COLUMN) {
             return Ok(());
         }
+        let _ = self.approve_proposed_plan(project_id, id);
         let tags = running_tags(&item.tags);
         if item.column.as_deref() != Some(IN_PROGRESS_COLUMN) {
             self.advance_card(project_id, id, IN_PROGRESS_COLUMN)?;
@@ -580,6 +581,42 @@ impl Db {
             write_tags(&conn, project_id, id, &tags)?;
         }
         Ok(())
+    }
+
+    // Aprova e vincula automaticamente um plano proposto quando o card é iniciado ou colocado em andamento.
+    pub fn approve_proposed_plan(&self, project_id: i64, item_id: &str) -> Result<bool, DbError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        ensure_project(&tx, project_id)?;
+        let current: Option<(String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT state, text, agent FROM item_plans WHERE project_id = ?1 AND item_id = ?2",
+                params![project_id, item_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((state, proposal, agent)) = current else {
+            return Ok(false);
+        };
+        if state != PROPOSED_PLAN {
+            return Ok(false);
+        }
+        let item = find_card(&tx, project_id, item_id)?;
+        let plan_id = item.public_id.clone().unwrap_or_else(|| item_id.to_string());
+        let plan = ItemPlanInput {
+            state: LINKED_PLAN.to_string(),
+            proposal,
+            plan: Some(LinkedPlan {
+                id: plan_id,
+                name: item.title.clone(),
+                meta: item.estimate.clone().unwrap_or_default(),
+            }),
+            agent,
+            public_id: item.public_id.clone(),
+        };
+        write_item_plan(&tx, project_id, item_id, &plan)?;
+        tx.commit()?;
+        Ok(true)
     }
 
     // Conclui o card: Done com quem concluiu (o usuário, ou a validação automática).
@@ -1956,10 +1993,15 @@ fn refresh_parent_of(conn: &Connection, project_id: i64, id: &str) -> Result<(),
 }
 
 fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
+    let trimmed = id.trim().trim_start_matches('#');
     let mut item = conn
         .query_row(
-            &format!("SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 AND id = ?2"),
-            params![project_id, id],
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM backlog_items \
+                 WHERE project_id = ?1 AND (id = ?2 OR UPPER(public_id) = UPPER(?2)) \
+                 ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END LIMIT 1"
+            ),
+            params![project_id, trimmed],
             read_item,
         )
         .optional()?
@@ -1968,13 +2010,13 @@ fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem
         conn,
         "SELECT COUNT(*), MAX(created_at) FROM messages WHERE project_id = ?1 AND item_id = ?2",
         project_id,
-        id,
+        &item.id,
     )?;
     let handoff_stats = read_single_event_stats(
         conn,
         "SELECT COUNT(*), MAX(created_at) FROM orch_handoffs WHERE project_id = ?1 AND item_id = ?2",
         project_id,
-        id,
+        &item.id,
     )?;
     enrich_item_metrics(&mut item, msg_stats, handoff_stats);
     Ok(item)

@@ -71,53 +71,21 @@ const ALWAYS_ACTION: CardAction = {
   message: (_agent, subject) => `${subject} liberado sempre neste projeto`,
 }
 
-const CONCLUDE_ACTION: CardAction = {
-  id: 'conclude',
-  label: 'Concluir',
-  variant: 'approve',
-  answer: 'Concluir',
-  message: () => 'Task concluída',
-}
-
 const PERMISSION_ACTIONS: readonly CardAction[] = [
   { ...APPROVE_ACTION, answer: PERMISSION_ALLOW },
   { ...DENY_ACTION, answer: PERMISSION_DENY },
   { ...ALWAYS_ACTION, answer: PERMISSION_ALWAYS },
 ]
 
-export function actionsFor(kind: CardKind, agent: string): CardAction[] {
+export function actionsFor(kind: CardKind, _agent: string): CardAction[] {
   switch (kind) {
     case 'aprovacao':
       return [APPROVE_ACTION, DENY_ACTION, ALWAYS_ACTION]
-    case 'revisao':
-      return [
-        {
-          id: 'approve-batch',
-          label: 'Aprovar lote',
-          variant: 'approve',
-          answer: 'Lote aprovado',
-          message: () => 'Lote aprovado',
-        },
-        {
-          id: 'open-diff',
-          label: 'Abrir diff',
-          variant: 'quiet',
-          answer: '',
-          message: () => '',
-          disabled: true,
-        },
-        {
-          id: 'return',
-          label: `Devolver ao ${agent}`,
-          variant: 'quiet',
-          answer: 'Devolvido para ajustes',
-          message: () => `Devolvido a ${agent}`,
-        },
-      ]
     case 'permissao':
       return [...PERMISSION_ACTIONS]
+    case 'revisao':
     case 'validacao':
-      return [CONCLUDE_ACTION]
+      return []
     case 'escolha':
     case 'pergunta':
       return []
@@ -129,8 +97,8 @@ export function optionMessage(kind: DecisionKind, agent: string, answer: string)
 }
 
 // Escolha, pergunta e revisão com opções aceitam também uma resposta digitada; o texto tem prioridade sobre a opção marcada.
-export function acceptsTypedAnswer(kind: CardKind, optionCount: number): boolean {
-  return kind === 'escolha' || kind === 'pergunta' || (kind === 'revisao' && optionCount > 0)
+export function acceptsTypedAnswer(kind: CardKind, _optionCount: number): boolean {
+  return kind === 'escolha' || kind === 'pergunta'
 }
 
 export function chosenAnswer(selected: string | null, typed: string): string {

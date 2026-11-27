@@ -517,6 +517,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "backlog_add_label",
             "backlog_remove_label",
             "backlog_set_responsible",
+            "submit_for_review",
             "backlog_archive_item",
             "backlog_restore_item",
             "backlog_delete_item",
@@ -538,7 +539,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "app_command_call"
         ]
     );
-    assert_eq!(names.len(), 27);
+    assert_eq!(names.len(), 28);
     assert!(tools
         .iter()
         .all(|tool| tool["inputSchema"]["additionalProperties"] == json!(false)));
@@ -560,6 +561,7 @@ fn tools_list_traz_as_ferramentas_e_move_card_nao_oferece_ready() {
             "mcp__vokia__backlog_add_label",
             "mcp__vokia__backlog_remove_label",
             "mcp__vokia__backlog_set_responsible",
+            "mcp__vokia__submit_for_review",
             "mcp__vokia__backlog_archive_item",
             "mcp__vokia__backlog_restore_item",
             "mcp__vokia__backlog_delete_item",
@@ -936,7 +938,7 @@ fn meta_tools_e_commands_list_e_commands_call_sem_regressao_nas_tools_existentes
     let tool_names = world.server.tool_names(ToolScope::Coordinator);
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_commands_list"));
     assert!(tool_names.iter().any(|name| name == "mcp__vokia__app_command_call"));
-    assert_eq!(tool_names.len(), 27);
+    assert_eq!(tool_names.len(), 28);
 
     // 2. commands/list aceita filtro por domínio
     let body_list = json!({
@@ -1061,6 +1063,6 @@ fn worker_lista_so_as_ferramentas_de_trabalho_e_coordenador_lista_todas() {
     for work in ["read_card", "delegate", "set_variable", "artifact_set_criterion", "request_decision", "save_item_plan"] {
         assert!(worker.iter().any(|name| name == work), "worker perdeu {work}");
     }
-    assert_eq!(worker.len(), 19);
-    assert_eq!(coordinator.len(), 27);
+    assert_eq!(worker.len(), 20);
+    assert_eq!(coordinator.len(), 28);
 }

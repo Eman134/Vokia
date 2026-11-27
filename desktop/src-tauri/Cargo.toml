@@ -1,6 +1,6 @@
 [package]
 name = "vokia"
-version = "0.20.0"
+version = "0.21.1"
 edition = "2021"
 default-run = "vokia"
 # tests/ guarda módulos de teste incluídos por #[path] nos fontes, não crates de integração.
@@ -35,6 +35,16 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 axum = "0.8.9"
 getrandom = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Pipes",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 debug = 0

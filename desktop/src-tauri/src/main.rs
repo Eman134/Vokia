@@ -21,6 +21,7 @@ mod providers;
 mod roles;
 mod session_key;
 mod shell;
+mod silent_process;
 mod state;
 mod task;
 mod usage;
