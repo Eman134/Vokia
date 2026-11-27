@@ -4,7 +4,7 @@ pub const SESSION_ROTATE_MESSAGES: u32 = 30;
 pub const SESSION_IDLE_LIMIT_SECS: u64 = 600;
 pub const SESSION_REAP_INTERVAL_SECS: u64 = 180;
 pub const SESSION_CLOSE_TIMEOUT_SECS: u64 = 3;
-pub const MAX_LIVE_SESSIONS: usize = 16;
+pub const MAX_LIVE_SESSIONS: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallMode {

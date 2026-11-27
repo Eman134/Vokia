@@ -138,11 +138,11 @@ fn semente_do_elenco_padrao_cria_tres_camadas_um_time_e_uma_posicao_por_agente()
     assert_eq!(
         placed,
         vec![
-            (leader.as_str(), "time", "lideranca", 1),
-            ("vexa", "time", "implementacao", 1),
-            ("kairo", "time", "implementacao", 1),
-            ("sentry", "time", "revisao", 1),
-            ("oracle", "time", "implementacao", 1),
+            (leader.as_str(), "time", "lideranca", 2),
+            ("vexa", "time", "implementacao", 3),
+            ("kairo", "time", "implementacao", 3),
+            ("sentry", "time", "revisao", 2),
+            ("oracle", "time", "implementacao", 3),
         ]
     );
 }

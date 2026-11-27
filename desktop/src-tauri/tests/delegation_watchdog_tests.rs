@@ -366,6 +366,7 @@ fn fluxo_com_job_na_fila_continua_e_mantem_as_delegacoes_registradas() {
         db_id: None,
         text: "próximo".to_string(),
         context: RequestContext::new(None, Some(ITEM.to_string()), None),
+        queued_at: std::time::Instant::now(),
     });
 
     let next = next_job(&world.state(), key).unwrap();

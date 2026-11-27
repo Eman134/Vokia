@@ -12,22 +12,27 @@ const REVIEW_KIND: &str = "revisar";
 const LEADER_LAYER_ID: &str = "lideranca";
 const IMPLEMENTATION_LAYER_ID: &str = "implementacao";
 const REVIEW_LAYER_ID: &str = "revisao";
-const PLACEMENT_MAX_INSTANCES: i64 = 1;
+const LEADER_MAX_INSTANCES: i64 = 2;
+const IMPLEMENTATION_MAX_INSTANCES: i64 = 3;
+const REVIEW_MAX_INSTANCES: i64 = 2;
 
 pub(crate) fn build(team: &Team) -> OrchestrationSeed {
     let placements = team
         .ids()
         .filter(|agent| *agent != &Agent::ember())
-        .map(|agent| PlacementDraft {
-            agent_id: agent.as_str().to_string(),
-            team_id: TEAM_ID.to_string(),
-            layer_id: layer_of(agent).to_string(),
-            instructions: String::new(),
-            max_instances: PLACEMENT_MAX_INSTANCES,
-            pos_x: None,
-            pos_y: None,
-            criteria: String::new(),
-            max_worktrees: None,
+        .map(|agent| {
+            let layer = layer_of(agent);
+            PlacementDraft {
+                agent_id: agent.as_str().to_string(),
+                team_id: TEAM_ID.to_string(),
+                layer_id: layer.to_string(),
+                instructions: String::new(),
+                max_instances: default_instances_for(layer),
+                pos_x: None,
+                pos_y: None,
+                criteria: String::new(),
+                max_worktrees: None,
+            }
         })
         .collect();
     OrchestrationSeed {
@@ -50,6 +55,14 @@ pub(crate) fn build(team: &Team) -> OrchestrationSeed {
 pub(crate) fn fill_missing_leaders(db: &Db, team: &Team) -> Result<(), DbError> {
     let roster: Vec<String> = team.ids().map(|id| id.as_str().to_string()).collect();
     db.fill_missing_team_leaders(&roster)
+}
+
+fn default_instances_for(layer_id: &str) -> i64 {
+    match layer_id {
+        LEADER_LAYER_ID => LEADER_MAX_INSTANCES,
+        REVIEW_LAYER_ID => REVIEW_MAX_INSTANCES,
+        _ => IMPLEMENTATION_MAX_INSTANCES,
+    }
 }
 
 fn layer_of(agent: &Agent) -> &'static str {

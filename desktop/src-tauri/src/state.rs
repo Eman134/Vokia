@@ -114,13 +114,24 @@ pub struct QueuedJob {
     pub db_id: Option<i64>,
     pub text: String,
     pub context: RequestContext,
+    pub queued_at: Instant,
 }
 
-// Delegação paralela que esperou o teto de max_parallel liberar uma vaga.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaitingReason {
+    Paused,
+    WorktreeLimit,
+    MaxParallel,
+}
+
+// Delegação paralela que esperou o teto de max_parallel, worktree ou pausa.
 pub struct WaitingDelegation {
     pub base: crate::events::Agent,
     pub text: String,
     pub context: RequestContext,
+    pub reason: WaitingReason,
+    pub queued_at: Instant,
 }
 
 pub const DEFAULT_DELEGATION_PING_SECS: u64 = 20;

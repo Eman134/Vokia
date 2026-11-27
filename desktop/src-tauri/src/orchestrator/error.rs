@@ -13,6 +13,7 @@ use crate::roles::RoleError;
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RequestOutcome {
+    Started,
     Finished,
     Failed,
     Queued,

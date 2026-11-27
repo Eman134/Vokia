@@ -27,7 +27,8 @@ use crate::roles::RoleRegistry;
 use crate::session_key::SessionKey;
 use crate::state::{
     ActiveDelegation, AppState, Batch, PendingDecision, QueuedJob, RequestContext, WaitingDelegation,
-    DEFAULT_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS, MAX_WATCHDOG_RETRIES, MIN_DELEGATION_PING_SECS,
+    WaitingReason, DEFAULT_DELEGATION_PING_SECS, MAX_DELEGATION_PING_SECS, MAX_WATCHDOG_RETRIES,
+    MIN_DELEGATION_PING_SECS,
 };
 use crate::task::{
     fast_definition, long_request_text, needs_llm_interpreter, parse_definition, ActiveTask, TaskDefinition,
@@ -63,6 +64,20 @@ use crate::task::Change;
 
 // Sem configuração de gate, a junção segue o padrão do projeto: revisão a cada lote.
 const HUMAN_GATE_LOTE: &str = "lote";
+const EMBER_MAX_INSTANCES: i64 = 3;
+
+fn pick_ember_instance(state: &AppState, project_id: i64) -> Agent {
+    let Ok(flow) = state.flow.lock() else {
+        return Agent::ember();
+    };
+    instances::pick(&Agent::ember(), EMBER_MAX_INSTANCES, |candidate| {
+        flow.pending.contains_key(&SessionKey {
+            project_id,
+            agent: candidate.clone(),
+        })
+    })
+    .unwrap_or_else(Agent::ember)
+}
 
 pub async fn handle_request(
     app: &AppHandle,
@@ -148,9 +163,14 @@ pub(super) async fn handle_request_from(
                 .mark_attachments_sent(project_id, &context.attachments)?;
         }
     }
+    let resolved_agent = if recipient == Agent::ember() && context.resumed_run.is_none() {
+        pick_ember_instance(state, project_id)
+    } else {
+        recipient
+    };
     let key = SessionKey {
         project_id,
-        agent: recipient,
+        agent: resolved_agent,
     };
     if context.resumed_run.is_none() && is_agent_paused(app, project_id, &key.agent) {
         return Ok(RequestOutcome::Paused);
@@ -160,10 +180,13 @@ pub(super) async fn handle_request_from(
             return Ok(RequestOutcome::Steered);
         }
     }
-    if (key.agent != Agent::ember() || context.resumed_run.is_some())
-        && !start_or_enqueue(app, state, key.clone(), request, context.clone())?
-    {
+    if !start_or_enqueue(app, state, key.clone(), request, context.clone())? {
         return Ok(RequestOutcome::Queued);
+    }
+    // Fire-and-ack: pedidos da UI com run_id disparam em background e liberam o chamador imediatamente.
+    if context.run_id.is_some() && context.resumed_run.is_none() {
+        spawn_flow(app, key, request.to_string(), context);
+        return Ok(RequestOutcome::Started);
     }
     let item_id = context.item_id.clone();
     let result = run_flow(app, state, cli, key.clone(), request, context, &team).await;
@@ -394,6 +417,8 @@ fn start_dispatch(
                 base: base.clone(),
                 text: request.to_string(),
                 context: parallel,
+                reason: WaitingReason::Paused,
+                queued_at: Instant::now(),
             });
         return Ok(());
     }
@@ -415,6 +440,8 @@ fn start_dispatch(
                 base: base.clone(),
                 text: request.to_string(),
                 context: parallel,
+                reason: WaitingReason::WorktreeLimit,
+                queued_at: Instant::now(),
             });
         return Ok(());
     }
@@ -427,11 +454,7 @@ fn start_dispatch(
         push_pending_job(app, pending, &key, request.to_string(), parallel);
         return Ok(());
     };
-    let running = flow
-        .pending
-        .keys()
-        .filter(|key| key.project_id == project_id)
-        .count() as i64;
+    let running = active_running_count(&flow, project_id);
     if running >= max_parallel {
         flow.waiting
             .entry(project_id)
@@ -440,6 +463,8 @@ fn start_dispatch(
                 base: base.clone(),
                 text: request.to_string(),
                 context: parallel,
+                reason: WaitingReason::MaxParallel,
+                queued_at: Instant::now(),
             });
         return Ok(());
     }
@@ -803,6 +828,92 @@ fn abandon_flow(app: &AppHandle, state: &AppState, key: &SessionKey, item_id: Op
     drain_waiting(app, state, key.project_id);
 }
 
+/// Interrompe qualquer execução, fila ou delegação ativa de um card e o devolve para Ready se estava em andamento.
+pub(crate) async fn stop_task_flow(
+    app: &AppHandle,
+    state: &AppState,
+    project_id: i64,
+    item_id: &str,
+) -> Result<bool, FlowError> {
+    let mut active_keys = Vec::new();
+    let mut removed_db_ids = Vec::new();
+    let mut had_pending = false;
+
+    if let Ok(mut flow) = state.flow.lock() {
+        active_keys = flow
+            .running
+            .iter()
+            .filter(|(key, running)| key.project_id == project_id && running.as_str() == item_id)
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        for (key, deque) in flow.pending.iter_mut() {
+            if key.project_id != project_id {
+                continue;
+            }
+            let before = deque.len();
+            deque.retain(|job| {
+                let matches = job.context.item_id.as_deref() == Some(item_id);
+                if matches {
+                    if let Some(id) = job.db_id {
+                        removed_db_ids.push(id);
+                    }
+                }
+                !matches
+            });
+            if deque.len() != before {
+                had_pending = true;
+            }
+        }
+
+        if let Some(waiting) = flow.waiting.get_mut(&project_id) {
+            let before = waiting.len();
+            waiting.retain(|entry| entry.context.item_id.as_deref() != Some(item_id));
+            if waiting.len() != before {
+                had_pending = true;
+            }
+        }
+
+        let before_delegations = flow.active_delegations.len();
+        flow.active_delegations
+            .retain(|(p, _, item), _| !(*p == project_id && item.as_deref() == Some(item_id)));
+        if flow.active_delegations.len() != before_delegations {
+            had_pending = true;
+        }
+
+        let card_key = (project_id, item_id.to_string());
+        flow.open_branches.remove(&card_key);
+        flow.ended.remove(&card_key);
+        flow.stopped.remove(&card_key);
+    }
+
+    if let Some(db) = app.state::<DbState>().db() {
+        for id in removed_db_ids {
+            let _ = db.remove_flow_job(id);
+        }
+    }
+
+    for key in &active_keys {
+        state.continuations.cancel_agent(project_id, &key.agent);
+        let _ = state.sessions.interrupt_turn(key).await;
+    }
+
+    if let Some(db) = app.state::<DbState>().db() {
+        if let Ok(card) = db.read_card(project_id, item_id) {
+            if card.column.as_deref() == Some("In progress") {
+                let _ = db.advance_card(project_id, item_id, "Ready");
+                let _ = db.add_card_activity(project_id, item_id, "Execução interrompida pelo usuário.");
+                let _ = emit_backlog_changed(app, project_id);
+            }
+        }
+    }
+
+    reconcile_waiting(app, state, project_id);
+    drain_waiting(app, state, project_id);
+
+    Ok(!active_keys.is_empty() || had_pending)
+}
+
 fn push_pending_job(
     app: &AppHandle,
     pending: &mut VecDeque<QueuedJob>,
@@ -818,6 +929,7 @@ fn push_pending_job(
         db_id,
         text,
         context,
+        queued_at: Instant::now(),
     });
 }
 
@@ -839,6 +951,7 @@ fn start_or_enqueue(
                 db_id,
                 text: request.to_string(),
                 context,
+                queued_at: Instant::now(),
             });
         } else {
             push_pending_job(app, pending, &key, request.to_string(), context);
@@ -855,7 +968,20 @@ fn next_job_with_db(
     key: SessionKey,
 ) -> Result<Option<QueuedJob>, FlowError> {
     let mut flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
-    let next = flow.pending.get_mut(&key).and_then(VecDeque::pop_front);
+    let next = flow
+        .pending
+        .get_mut(&key)
+        .and_then(VecDeque::pop_front)
+        .or_else(|| {
+            // Work-stealing: réplica ociosa puxa o próximo pedido pendente na fila da instância base.
+            let (base_name, _) = replica_of(key.agent.as_str())?;
+            let base_agent = Agent::from_stored(base_name)?;
+            let base_key = SessionKey {
+                project_id: key.project_id,
+                agent: base_agent,
+            };
+            flow.pending.get_mut(&base_key).and_then(VecDeque::pop_front)
+        });
     if let Some(ref job) = next {
         if let Some(db_id) = job.db_id {
             if let Some(db) = db {
@@ -1045,6 +1171,69 @@ pub(crate) fn active_instances(
         .collect())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QueuedJobMetric {
+    pub(crate) project_id: i64,
+    pub(crate) agent: String,
+    pub(crate) item_id: Option<String>,
+    pub(crate) wait_ms: u64,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WaitingDelegationMetric {
+    pub(crate) project_id: i64,
+    pub(crate) agent: String,
+    pub(crate) item_id: Option<String>,
+    pub(crate) wait_ms: u64,
+    pub(crate) reason: WaitingReason,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QueueMetricsSnapshot {
+    pub(crate) active_instances: usize,
+    pub(crate) total_queued: usize,
+    pub(crate) total_waiting: usize,
+    pub(crate) queued_jobs: Vec<QueuedJobMetric>,
+    pub(crate) waiting_delegations: Vec<WaitingDelegationMetric>,
+}
+
+pub(crate) fn queue_metrics(state: &AppState) -> Result<QueueMetricsSnapshot, FlowError> {
+    let flow = state.flow.lock().map_err(|_| FlowError::QueuePoisoned)?;
+    let mut queued_jobs = Vec::new();
+    for (key, deque) in &flow.pending {
+        for job in deque {
+            queued_jobs.push(QueuedJobMetric {
+                project_id: key.project_id,
+                agent: key.agent.to_string(),
+                item_id: job.context.item_id.clone(),
+                wait_ms: job.queued_at.elapsed().as_millis() as u64,
+            });
+        }
+    }
+    let mut waiting_delegations = Vec::new();
+    for (&project_id, deque) in &flow.waiting {
+        for waiting in deque {
+            waiting_delegations.push(WaitingDelegationMetric {
+                project_id,
+                agent: waiting.base.to_string(),
+                item_id: waiting.context.item_id.clone(),
+                wait_ms: waiting.queued_at.elapsed().as_millis() as u64,
+                reason: waiting.reason,
+            });
+        }
+    }
+    Ok(QueueMetricsSnapshot {
+        active_instances: flow.pending.len(),
+        total_queued: queued_jobs.len(),
+        total_waiting: waiting_delegations.len(),
+        queued_jobs,
+        waiting_delegations,
+    })
+}
+
 async fn run_flow(
     app: &AppHandle,
     state: &AppState,
@@ -1065,7 +1254,7 @@ async fn run_flow(
     let mut outcome: Result<(), FlowError> = Ok(());
     // Só o primeiro exchange é o pedido de quem chamou; os seguintes saem da fila interna.
     let mut first: Option<RequestOutcome> = None;
-    let mut current_run: Option<u64> = None;
+    let mut current_run: Option<u64> = context.run_id;
     loop {
         start_item_work(app, key.project_id, item_id.as_deref())?;
         set_running_item(state, &key, item_id.as_deref())?;
@@ -1215,8 +1404,13 @@ async fn run_exchange(
     run_id: Option<u64>,
     reply_to: Option<&Agent>,
 ) -> Result<TaskOutcome, FlowError> {
-    // Uma tarefa por projeto: a troca de líder segura o lock da tarefa; cada passo reserva só a instância que fala.
-    let task = state.sessions.task_lock(key.project_id);
+    // Lock por instância + card: réplicas, agentes ou cards distintos rodam em paralelo no mesmo projeto.
+    let thread_key = format!(
+        "agent:{}:{}",
+        key.agent,
+        item_id.unwrap_or("")
+    );
+    let task = state.sessions.task_lock(key.project_id, &thread_key);
     let _task_guard = task.lock_owned().await;
     let mut sessions = ExchangeSessions::new(&state.sessions, key.project_id);
     let result = exchange_turns(
@@ -1863,6 +2057,8 @@ async fn done_cleanup(
     project_id: i64,
     item_id: &str,
 ) -> Result<worktree::CleanupOutcome, FlowError> {
+    let refinery = app.state::<AppState>().sessions.refinery_lock(project_id);
+    let _refinery_guard = refinery.lock_owned().await;
     let project = load_project(app, project_id)?;
     let root = worktree::project_worktrees_dir(
         &app.path().app_data_dir().map_err(FlowError::ArchivePath)?,
@@ -2093,16 +2289,23 @@ pub(super) fn drain_all_waiting(app: &AppHandle, state: &AppState) {
     }
 }
 
+// Agentes em Waiting (aguardando lote ou decisão humana) não consomem vaga de execução paralela.
+fn active_running_count(flow: &crate::state::FlowQueue, project_id: i64) -> i64 {
+    flow.pending
+        .keys()
+        .filter(|key| {
+            key.project_id == project_id
+                && flow.agent_states.get(&(project_id, key.agent.clone()))
+                    != Some(&AgentState::Waiting)
+        })
+        .count() as i64
+}
+
 fn has_room(state: &AppState, project_id: i64, max_parallel: i64) -> bool {
     let Ok(flow) = state.flow.lock() else {
         return false;
     };
-    let running = flow
-        .pending
-        .keys()
-        .filter(|key| key.project_id == project_id)
-        .count() as i64;
-    running < max_parallel
+    active_running_count(&flow, project_id) < max_parallel
 }
 
 fn take_waiting(state: &AppState, project_id: i64) -> Option<WaitingDelegation> {
@@ -2473,6 +2676,7 @@ pub(crate) async fn restore_flow_queue(app: AppHandle) {
                     db_id: Some(head_id),
                     text: head_text,
                     context: head_context,
+                    queued_at: Instant::now(),
                 });
                 for mut job in session_jobs {
                     job.context.batch = None;
@@ -2480,6 +2684,7 @@ pub(crate) async fn restore_flow_queue(app: AppHandle) {
                         db_id: Some(job.id),
                         text: job.text,
                         context: job.context,
+                        queued_at: Instant::now(),
                     });
                 }
             } else {
@@ -2490,6 +2695,7 @@ pub(crate) async fn restore_flow_queue(app: AppHandle) {
                         db_id: Some(job.id),
                         text: job.text,
                         context: job.context,
+                        queued_at: Instant::now(),
                     });
                 }
                 flow.pending.insert(key.clone(), deque);

@@ -49,7 +49,7 @@ pub use runs::resume_run;
 pub(crate) use runs::emit_agent_pauses_changed;
 pub(crate) use flow::{
     active_instances, all_active_instances, drain_waiting_for_project, forget_project, has_flow,
-    restore_flow_queue,
+    queue_metrics, restore_flow_queue, stop_task_flow, QueueMetricsSnapshot,
 };
 pub(crate) use plan_stages::start_approved_plan;
 pub(crate) use session_pool::{schedule_preload, spawn_idle_reaper, SessionPool};

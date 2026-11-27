@@ -60,7 +60,8 @@ impl SessionSlot {
 #[derive(Default)]
 pub(crate) struct SessionPool {
     slots: StdMutex<HashMap<SessionKey, Arc<SessionSlot>>>,
-    tasks: StdMutex<HashMap<i64, Arc<Mutex<()>>>>,
+    tasks: StdMutex<HashMap<(i64, String), Arc<Mutex<()>>>>,
+    refinery: StdMutex<HashMap<i64, Arc<Mutex<()>>>>,
     adapters: AdapterRuntimePool,
 }
 
@@ -68,11 +69,21 @@ impl SessionPool {
     pub(crate) fn adapters(&self) -> &AdapterRuntimePool {
         &self.adapters
     }
-    // A tarefa do projeto é uma só (Cache guarda uma tarefa ativa): trocas de líder rodam uma de cada vez.
-    pub(super) fn task_lock(&self, project_id: i64) -> Arc<Mutex<()>> {
+    // Lock por thread (agente/instância + card) no projeto: instâncias ou cards distintos rodam em paralelo.
+    pub(super) fn task_lock(&self, project_id: i64, thread_key: &str) -> Arc<Mutex<()>> {
         let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
         Arc::clone(
             tasks
+                .entry((project_id, thread_key.to_string()))
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
+    }
+
+    // Fila dedicada de integração/limpeza (padrão Refinery): serializa apenas merge/cleanup git por projeto.
+    pub(super) fn refinery_lock(&self, project_id: i64) -> Arc<Mutex<()>> {
+        let mut refinery = self.refinery.lock().unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(
+            refinery
                 .entry(project_id)
                 .or_insert_with(|| Arc::new(Mutex::new(()))),
         )
@@ -154,6 +165,10 @@ impl SessionPool {
         message: &str,
     ) -> Result<bool, FlowError> {
         self.adapters.steer_turn(key, message).await
+    }
+
+    pub(crate) async fn interrupt_turn(&self, key: &SessionKey) -> Result<bool, FlowError> {
+        self.adapters.interrupt_turn(key).await
     }
 
     // Na saída do app o processo é encerrado pelo pid, sem esperar o lock de um passo em andamento.

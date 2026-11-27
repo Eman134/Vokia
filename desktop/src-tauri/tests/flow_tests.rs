@@ -595,3 +595,176 @@ mod waiting_reconcile {
         assert_eq!(last_state_for(&world, "axiom").as_deref(), Some("idle"));
     }
 }
+
+mod parallel_improvements {
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
+
+    use tauri::Manager;
+
+    use super::*;
+    use crate::agents::replica_id;
+    use crate::events::AgentState;
+    use crate::mcp::support::build_app;
+    use crate::state::AppState;
+
+    static NEXT_DIR: AtomicU32 = AtomicU32::new(0);
+
+    fn setup() -> (tauri::App, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "vokia-parallel-improvements-{}-{}",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        (build_app(&dir), dir)
+    }
+
+    fn agent(id: &str) -> Agent {
+        Agent::from_stored(id).expect("agent")
+    }
+
+    #[tokio::test]
+    async fn task_lock_por_thread_permite_replicas_e_cards_paralelos_no_mesmo_projeto() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+
+        let lock_a = state.sessions.task_lock(1, "agent:axiom:PP-1");
+        let lock_b = state.sessions.task_lock(1, "agent:axiom-2:PP-2");
+        let _guard_a = lock_a.lock_owned().await;
+        let acquired_b = tokio::time::timeout(Duration::from_millis(100), lock_b.lock_owned()).await;
+        assert!(acquired_b.is_ok(), "réplica/card distinto não pode esperar task_lock");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn replica_ociosa_faz_work_stealing_da_fila_da_instancia_base() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+        let vexa = agent("vexa");
+        let vexa_2 = replica_id(&vexa, 2);
+        {
+            let mut flow = state.flow.lock().unwrap();
+            flow.pending.insert(SessionKey { project_id: 1, agent: vexa.clone() }, VecDeque::new());
+            flow.pending.insert(SessionKey { project_id: 1, agent: vexa_2.clone() }, VecDeque::new());
+        }
+        dispatch_request(
+            app.handle(),
+            &state,
+            1,
+            &vexa,
+            "pedido-roubavel",
+            RequestContext::new(None, None, None),
+            2,
+            8,
+        )
+        .unwrap();
+
+        let stolen = next_job(&state, SessionKey { project_id: 1, agent: vexa_2.clone() })
+            .expect("next_job")
+            .expect("vexa-2 deveria roubar o pedido da fila de vexa");
+        assert_eq!(stolen.text, "pedido-roubavel");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn agente_em_waiting_nao_consome_vaga_de_max_parallel() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+        let axiom = agent("axiom");
+        let vexa = agent("vexa");
+        {
+            let mut flow = state.flow.lock().unwrap();
+            flow.pending.insert(SessionKey { project_id: 1, agent: axiom.clone() }, VecDeque::new());
+            flow.pending.insert(SessionKey { project_id: 1, agent: vexa.clone() }, VecDeque::new());
+            flow.agent_states.insert((1, axiom), AgentState::Waiting);
+        }
+
+        dispatch_request(
+            app.handle(),
+            &state,
+            1,
+            &vexa,
+            "segundo-worker",
+            RequestContext::new(None, None, None),
+            2,
+            2,
+        )
+        .unwrap();
+
+        let flow = state.flow.lock().unwrap();
+        assert!(
+            flow.waiting.get(&1).is_none_or(VecDeque::is_empty),
+            "vexa-2 deveria iniciar sem ir para waiting quando axiom está apenas Waiting"
+        );
+        assert!(flow.pending.contains_key(&SessionKey { project_id: 1, agent: replica_id(&vexa, 2) }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ember_usa_multiplas_instancias_quando_ocupado() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+        let ember = Agent::ember();
+        assert_eq!(pick_ember_instance(&state, 1), ember);
+
+        state
+            .flow
+            .lock()
+            .unwrap()
+            .pending
+            .insert(SessionKey { project_id: 1, agent: ember.clone() }, VecDeque::new());
+        assert_eq!(pick_ember_instance(&state, 1), replica_id(&ember, 2));
+
+        state
+            .flow
+            .lock()
+            .unwrap()
+            .pending
+            .insert(SessionKey { project_id: 1, agent: replica_id(&ember, 2) }, VecDeque::new());
+        assert_eq!(pick_ember_instance(&state, 1), replica_id(&ember, 3));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn queue_metrics_reporta_filas_e_esperas_com_motivo() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+        let vexa = agent("vexa");
+        {
+            let mut flow = state.flow.lock().unwrap();
+            flow.pending.insert(SessionKey { project_id: 1, agent: vexa.clone() }, VecDeque::new());
+        }
+        dispatch_request(
+            app.handle(),
+            &state,
+            1,
+            &vexa,
+            "espera-teto",
+            RequestContext::new(None, Some("PP-9".to_string()), None),
+            2,
+            1,
+        )
+        .unwrap();
+
+        let metrics = queue_metrics(&state).expect("queue_metrics");
+        assert_eq!(metrics.active_instances, 1);
+        assert_eq!(metrics.total_waiting, 1);
+        assert_eq!(metrics.waiting_delegations[0].reason, WaitingReason::MaxParallel);
+        assert_eq!(metrics.waiting_delegations[0].item_id.as_deref(), Some("PP-9"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn refinery_lock_e_isolado_por_projeto() {
+        let (app, dir) = setup();
+        let state = app.state::<AppState>();
+        let r1 = state.sessions.refinery_lock(1);
+        let r2 = state.sessions.refinery_lock(2);
+        let _g1 = r1.lock_owned().await;
+        let g2 = tokio::time::timeout(Duration::from_millis(100), r2.lock_owned()).await;
+        assert!(g2.is_ok(), "refinery_lock de projetos diferentes não deve bloquear");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
