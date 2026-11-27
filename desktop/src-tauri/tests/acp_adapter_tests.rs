@@ -389,10 +389,34 @@ fn gemini_flavor_rotulo_gemini_args_e_preset_gemini_cli_e_retrocompatibilidade()
         .get_args()
         .map(|s| s.to_string_lossy().to_string())
         .collect();
-    let gemini_dir_idx = std_args.iter().position(|a| a == "--gemini-dir").unwrap();
-    assert!(Path::new(&std_args[gemini_dir_idx + 1]).is_absolute());
-    let app_data_idx = std_args.iter().position(|a| a == "--app-data-dir").unwrap();
-    assert!(!Path::new(&std_args[app_data_idx + 1]).is_absolute());
+    assert!(std_args.contains(&"acp".to_string()));
+    assert!(std_args.contains(&"--add-dir".to_string()));
+    assert!(std_args.contains(&"--sandbox".to_string()));
+    assert!(!std_args.contains(&"--gemini-dir".to_string()));
+    assert!(!std_args.contains(&"--app-data-dir".to_string()));
+
+    let bypass_spec = GeminiFlavor { is_gemini_cli: false }
+        .build_spawn_spec(
+            Path::new("agy"),
+            &[],
+            Access::Project(ProjectAccess {
+                dir: &project_dir,
+                attachments: &attachments_dir,
+                extra_dirs: &[],
+                level: PermissionLevel::Liberado,
+                builtin_tools: true,
+            }),
+            None,
+            &project_dir,
+        )
+        .expect("bypass build_spawn_spec");
+    let bypass_args: Vec<String> = bypass_spec
+        .command
+        .as_std()
+        .get_args()
+        .map(|s| s.to_string_lossy().to_string())
+        .collect();
+    assert!(bypass_args.contains(&"--dangerously-skip-permissions".to_string()));
 
     // Preserva ordem de modelos da CLI
     let ordered = GeminiFlavor { is_gemini_cli: false }.sort_models(vec![

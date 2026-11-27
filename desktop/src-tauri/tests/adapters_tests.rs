@@ -323,17 +323,18 @@ fn antigravity_build_command_text_only_leitura_edicao_e_liberado() {
     let cmd_text = antigravity::build_command(program, &user_args, role, model, Access::TextOnly, message);
     let args_text = args_of(&cmd_text);
     assert_eq!(args_text[0], "--user-agy");
-    assert_eq!(args_text[1], "-p=");
-    assert_eq!(args_text[2], "--input-format");
-    assert_eq!(args_text[3], "stream-json");
-    assert_eq!(args_text[4], "--output-format");
-    assert_eq!(args_text[5], "stream-json");
-    assert_eq!(args_text[6], "--model");
-    assert_eq!(args_text[7], "gemini-4-hydrogen-medium");
-    assert_eq!(args_text[8], "--disable-slash-commands");
-    assert_eq!(args_text[9], "--sandbox");
-    assert_eq!(args_text[10], "--mode");
-    assert_eq!(args_text[11], "plan");
+    assert_eq!(args_text[1], "--print");
+    assert_eq!(args_text[2], "");
+    assert_eq!(args_text[3], "--input-format");
+    assert_eq!(args_text[4], "stream-json");
+    assert_eq!(args_text[5], "--output-format");
+    assert_eq!(args_text[6], "stream-json");
+    assert_eq!(args_text[7], "--model");
+    assert_eq!(args_text[8], "gemini-4-hydrogen-medium");
+    assert_eq!(args_text[9], "--disable-slash-commands");
+    assert_eq!(args_text[10], "--sandbox");
+    assert_eq!(args_text[11], "--mode");
+    assert_eq!(args_text[12], "plan");
     assert!(!args_text.iter().any(|arg| arg.contains('\n')));
 
     // Project: Leitura
@@ -428,11 +429,12 @@ fn antigravity_build_command_p_colado_nunca_seguido_de_valor_solto_e_prompt_fora
     for access in acessos {
         let cmd = antigravity::build_command(program, &[], role, "m", access, message);
         let args = args_of(&cmd);
-        assert_eq!(args.iter().filter(|a| a.as_str() == "-p=").count(), 1);
-        assert!(!args.iter().any(|a| a == "-p"), "-p solto consumiria o proximo arg");
-        let i = position(&args, "-p=");
-        assert_eq!(args[i + 1], "--input-format");
-        assert_eq!(args[i + 2], "stream-json");
+        assert_eq!(args.iter().filter(|a| a.as_str() == "--print").count(), 1);
+        assert!(!args.iter().any(|a| a == "-p="), "-p= pode gerar unknown option '-='");
+        let i = position(&args, "--print");
+        assert_eq!(args[i + 1], "");
+        assert_eq!(args[i + 2], "--input-format");
+        assert_eq!(args[i + 3], "stream-json");
         assert!(!args.iter().any(|a| a.contains("PAPEL-SECRETO") || a.contains("MENSAGEM-SECRETA")));
         assert!(!args.iter().any(|a| a.contains('\n')));
     }

@@ -387,7 +387,7 @@ async fn execute_single_prompt(
     });
 
     let transport = &handle.transport;
-    let prompt_fut = transport.request("session/prompt", prompt_params, limit);
+    let prompt_fut = transport.request_unbounded("session/prompt", prompt_params);
     tokio::pin!(prompt_fut);
 
     let mut text_buf = String::new();
@@ -397,15 +397,22 @@ async fn execute_single_prompt(
     let mut last_at = Instant::now();
     let mut usage: Option<TurnUsage> = None;
 
+    let idle_deadline = tokio::time::sleep(limit);
+    tokio::pin!(idle_deadline);
+
     let prompt_result = loop {
         tokio::select! {
             res = &mut prompt_fut => {
                 break res;
             }
+            _ = &mut idle_deadline => {
+                break Err(TransportError::Timeout(limit));
+            }
             incoming = transport.recv_incoming() => {
                 let Some(msg) = incoming else {
                     continue;
                 };
+                idle_deadline.as_mut().reset(tokio::time::Instant::now() + limit);
                 handle_incoming_rpc(
                     transport,
                     msg,
@@ -587,6 +594,14 @@ async fn handle_incoming_rpc(
                 "agent_message_chunk" => {
                     if let Some(chunk) = extract_content_text(update) {
                         text_buf.push_str(&chunk);
+                        let label_changed =
+                            activity.current_step_label.as_deref() != Some("Respondendo…");
+                        if label_changed || elapsed_ms >= 350 {
+                            activity.current_step_label = Some("Respondendo…".to_string());
+                            if let Some(c) = console {
+                                c.live_activity(activity.clone());
+                            }
+                        }
                     }
                 }
                 "agent_thought_chunk" => {
@@ -598,7 +613,9 @@ async fn handle_incoming_rpc(
                     }
                     activity.thinking_ms =
                         Some(activity.thinking_ms.unwrap_or(0).saturating_add(elapsed_ms));
-                    activity.current_step_label = None;
+                    if activity.current_step_label.is_none() {
+                        activity.current_step_label = Some("Raciocinando…".to_string());
+                    }
                     if let Some(c) = console {
                         c.live_activity(activity.clone());
                     }

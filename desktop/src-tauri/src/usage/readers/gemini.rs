@@ -213,7 +213,11 @@ pub fn parse_quota_summary_json(
         ))
     })?;
 
-    let Some(raw_groups) = value.get("groups").and_then(Json::as_array) else {
+    let Some(raw_groups) = value
+        .get("groups")
+        .or_else(|| value.pointer("/command/data/groups"))
+        .and_then(Json::as_array)
+    else {
         return Ok(None);
     };
 
@@ -377,6 +381,7 @@ fn classify_bucket_duration_mins(bucket: &Json, resets_at: u64, now_ms: u64) -> 
         "label",
         "name",
         "period",
+        "window",
         "windowType",
         "quotaType",
         "displayName",
@@ -503,6 +508,52 @@ pub async fn read_gemini_usage(
         return Ok(None);
     }
 
+    let custom_endpoints =
+        config.load_code_assist_url.is_some() || config.retrieve_quota_url.is_some();
+    match read_gemini_usage_http(config, now_ms).await {
+        Ok(Some(usage)) => Ok(Some(usage)),
+        Ok(None) if !custom_endpoints => read_usage_via_agy_cli(config.timeout, now_ms).await,
+        Ok(None) => Ok(None),
+        Err(err) if !custom_endpoints => {
+            if let Ok(Some(usage)) = read_usage_via_agy_cli(config.timeout, now_ms).await {
+                Ok(Some(usage))
+            } else {
+                Err(err)
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+async fn read_usage_via_agy_cli(
+    timeout: Duration,
+    now_ms: u64,
+) -> Result<Option<ProviderPlanUsage>, UsageReadError> {
+    let mut command = tokio::process::Command::new("agy");
+    command
+        .args(["-p", "/usage", "--output-format", "json"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    {
+        command.creation_flags(0x0800_0000);
+    }
+    let output = tokio::time::timeout(timeout, command.output())
+        .await
+        .map_err(|_| UsageReadError::new("Timeout ao consultar `agy -p /usage`."))?
+        .map_err(|err| UsageReadError::new(format!("Falha ao executar `agy -p /usage`: {err}")))?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_quota_summary_json(stdout.trim(), now_ms)
+}
+
+async fn read_gemini_usage_http(
+    config: &GeminiReaderConfig,
+    now_ms: u64,
+) -> Result<Option<ProviderPlanUsage>, UsageReadError> {
     let Some(access_token) = read_valid_oauth_token(&config.token_paths, now_ms)? else {
         return Ok(None);
     };

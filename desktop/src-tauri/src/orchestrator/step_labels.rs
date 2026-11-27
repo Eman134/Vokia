@@ -127,6 +127,7 @@ pub fn label_for_antigravity_step(step: &Value) -> Option<String> {
         step.get("tool_name"),
         step.get("name"),
         step.get("tool"),
+        step.pointer("/tool_info/name"),
         step.pointer("/tool_call/name"),
         step.pointer("/tool_use/name"),
     ]);
@@ -136,6 +137,8 @@ pub fn label_for_antigravity_step(step: &Value) -> Option<String> {
             step.get("input"),
             step.get("arguments"),
             step.get("args"),
+            step.pointer("/tool_info/parameters"),
+            step.pointer("/tool_info/input"),
             step.pointer("/tool_call/input"),
             step.pointer("/tool_call/arguments"),
             step.pointer("/tool_use/input"),

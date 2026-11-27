@@ -251,6 +251,37 @@ impl AcpTransport {
         }
     }
 
+    pub async fn request_unbounded(
+        &self,
+        method: &str,
+        params: Json,
+    ) -> Result<Json, TransportError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut map = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            map.insert(id, tx);
+        }
+
+        let payload = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        if let Err(err) = self.write_json(&payload).await {
+            let mut map = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+            map.remove(&id);
+            return Err(err);
+        }
+
+        match rx.await {
+            Ok(Ok(result)) => Ok(result),
+            Ok(Err(rpc)) => Err(TransportError::Rpc(rpc)),
+            Err(_) => Err(TransportError::Io(self.with_stderr("canal RPC ACP fechado"))),
+        }
+    }
+
     pub async fn notify(&self, method: &str, params: Json) -> Result<(), TransportError> {
         let payload = json!({
             "jsonrpc": "2.0",
