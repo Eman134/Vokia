@@ -174,6 +174,18 @@ function profile(speaker: Speaker): AgentProfile | undefined {
   return roster.profileOf(speaker)
 }
 
+function formatExchangeText(raw: string): string {
+  const { text } = extractAttachments(raw)
+  if (text.includes('\n- ') || text.includes('\n1. ') || text.includes('\n### ')) {
+    return text
+  }
+  return text
+    .replace(/\s+(IMPORTANTE:|ATENÇÃO:|NOTA:)\s*/g, '\n\n**$1** ')
+    .replace(/\s+(Lote\s+\d+[^:]*:)\s*/g, '\n\n**$1**\n')
+    .replace(/\s+\((\d+)\)\s+/g, '\n$1. ')
+    .trim()
+}
+
 const exchangeExpanded = ref(false)
 const exchangeBodyRef = ref<HTMLElement | null>(null)
 const exchangeOverflowing = ref(false)
@@ -445,10 +457,14 @@ const graphModalMeta = computed(() => {
         </div>
         <div
           ref="exchangeBodyRef"
-          :class="exchangeExpanded ? 'wrap-break-word text-muted' : 'relative wrap-break-word text-muted'"
+          :class="
+            exchangeExpanded
+              ? 'mt-1.5 max-h-80 overflow-y-auto border-t border-line/60 pt-2 pr-1 wrap-break-word text-ink/90'
+              : 'relative wrap-break-word text-muted'
+          "
           :style="!exchangeExpanded ? { maxHeight: '4.5rem', overflow: 'hidden' } : undefined"
         >
-          <MarkdownText :text="entry.text" class="text-caption!" />
+          <MarkdownText :text="formatExchangeText(entry.text)" class="text-caption! leading-relaxed" />
           <div
             v-if="!exchangeExpanded && exchangeOverflowing"
             aria-hidden="true"
