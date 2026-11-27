@@ -1275,6 +1275,9 @@ pub(super) fn open_decision(
                 options: decision.options.clone(),
             },
         );
+    let decision_id = id.clone();
+    let decision_agent = agent.clone();
+    let decision_title = decision.title.clone();
     emit(
         app,
         VokiaEvent::Decision {
@@ -1287,7 +1290,14 @@ pub(super) fn open_decision(
             project_id: Some(project_id),
             item_id: item_id.map(str::to_string),
         },
-    )
+    )?;
+    crate::shell::notify_decision(
+        app,
+        &decision_id.to_string(),
+        decision_agent.as_str(),
+        &decision_title,
+    );
+    Ok(())
 }
 
 fn raise_decision(

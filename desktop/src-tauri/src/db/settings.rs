@@ -19,6 +19,7 @@ pub const SETTING_CONTINUATION_ENABLED: &str = "continuationEnabled";
 pub const SETTING_CONTINUATION_MAX_COUNT: &str = "continuationMaxCount";
 pub const SETTING_LEARNING_MODE: &str = "learning_mode";
 pub const SETTING_LEARNING_TURN_CADENCE: &str = "learning_turn_cadence";
+pub const SETTING_NOTIFICATIONS_ENABLED: &str = "notifications_enabled";
 pub const LEARNING_MODE_ASK: &str = "ask";
 pub const LEARNING_MODE_OFF: &str = "off";
 pub const LEARNING_MODE_AUTO: &str = "auto";
@@ -92,6 +93,7 @@ const SETTINGS_SCHEMA: &[(&str, SettingRule)] = &[
         SETTING_LEARNING_TURN_CADENCE,
         SettingRule::OneOf(LEARNING_CADENCE_VALUES),
     ),
+    (SETTING_NOTIFICATIONS_ENABLED, SettingRule::OneOf(BOOL_VALUES)),
 ];
 
 // Só entram aqui as configurações que o backend precisa resolver; o tema tem o padrão no front.
@@ -103,6 +105,7 @@ const SETTING_DEFAULTS: &[(&str, &str)] = &[
     (SETTING_CONTINUATION_MAX_COUNT, "5"),
     (SETTING_LEARNING_MODE, LEARNING_MODE_ASK),
     (SETTING_LEARNING_TURN_CADENCE, "20"),
+    (SETTING_NOTIFICATIONS_ENABLED, "true"),
 ];
 
 impl Db {
@@ -188,6 +191,13 @@ impl Db {
             .get(SETTING_LEARNING_TURN_CADENCE)
             .and_then(|value| value.parse::<u32>().ok())
             .unwrap_or(20))
+    }
+
+    pub fn notifications_enabled(&self) -> Result<bool, DbError> {
+        let settings = self.load_settings()?;
+        Ok(settings
+            .get(SETTING_NOTIFICATIONS_ENABLED)
+            .map_or(true, |value| value == "true"))
     }
 }
 

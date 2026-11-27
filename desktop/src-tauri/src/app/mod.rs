@@ -11,6 +11,7 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_single_instance::init(
             shell::handle_second_instance,
         ))
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::new(cli))
         .invoke_handler(tauri::generate_handler![
             // team

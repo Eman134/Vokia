@@ -8,6 +8,7 @@
     "core:event:allow-unlisten",
     "updater:default",
     "process:allow-restart",
+    "notification:default",
     "core:resources:allow-close"
   ]
 }
