@@ -126,6 +126,19 @@ pub(super) async fn handle_request_from(
         .team()
         .map_err(FlowError::Team)?;
     project_dir(app, project_id)?;
+    // Decisão pendente no card impede prosseguimento automático até ser respondida ou o usuário mandar seguir.
+    if from != Speaker::User {
+        if let Some(item_id) = context.item_id.as_deref() {
+            let blocked = state.decisions.lock().is_ok_and(|decisions| {
+                decisions
+                    .values()
+                    .any(|d| d.project_id == project_id && d.item_id.as_deref() == Some(item_id))
+            });
+            if blocked {
+                return Ok(RequestOutcome::Finished);
+            }
+        }
+    }
     // Nova mensagem do usuário cancela imediatamente qualquer continuação automática em curso.
     if from == Speaker::User {
         state.continuations.cancel_agent(project_id, &recipient);
@@ -783,10 +796,14 @@ fn start_item_work(
     })?;
     if let Ok(card) = db.read_card(project_id, item_id) {
         let explicit_run = request.trim_start().starts_with("Execute o item ");
-        let unapproved = matches!(card.state.as_str(), "triagem" | "gerando" | "proposto");
-        let in_backlog = card.column.as_deref() == Some("Backlog");
-        if unapproved || (in_backlog && !explicit_run) {
-            return Ok(());
+        if card.state == "proposto" && explicit_run {
+            let _ = db.approve_proposed_plan(project_id, item_id);
+        } else {
+            let unapproved = matches!(card.state.as_str(), "triagem" | "gerando" | "proposto");
+            let in_backlog = card.column.as_deref() == Some("Backlog");
+            if unapproved || (in_backlog && !explicit_run) {
+                return Ok(());
+            }
         }
     }
     db.start_card(project_id, item_id).map_err(|source| FlowError::CardStart {

@@ -27,6 +27,7 @@ const LIST_BACKLOG: &str = "list_backlog";
 const READ_CARD: &str = "read_card";
 const CREATE_CARD: &str = "create_card";
 const MOVE_CARD: &str = "move_card";
+const SUBMIT_FOR_REVIEW: &str = "submit_for_review";
 const UPDATE_CARD: &str = "update_card";
 const BACKLOG_ADD_LABEL: &str = "backlog_add_label";
 const BACKLOG_REMOVE_LABEL: &str = "backlog_remove_label";
@@ -413,6 +414,15 @@ pub fn definitions() -> Vec<Value> {
             &["item_id", "agent"],
         ),
         tool(
+            SUBMIT_FOR_REVIEW,
+            "Envia o card para In review e abre o popup de validação final para o usuário concluir ou devolver a task. Chame somente quando toda a implementação e validação estiverem concluídas.",
+            json!({
+                "item_id": { "type": "string", "description": "ID do card (opcional dentro de um turno de card)." },
+                "note": { "type": "string", "description": "Resumo curto do que foi entregue/validado." },
+            }),
+            &[],
+        ),
+        tool(
             BACKLOG_ARCHIVE_ITEM,
             "Arquiva um card do backlog: ele sai do quadro e das listagens, mas pode ser restaurado.",
             json!({ "item_id": { "type": "string" } }),
@@ -432,7 +442,7 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             REQUEST_DECISION,
-            "Pede uma decisão ao usuário e não espera a resposta: depois de chamar, termine a resposta.",
+            "Pede uma decisão ao usuário com pergunta direta e curta (title). Use detail apenas para contexto breve, NUNCA cole planos completos ou listas de passos em request_decision (para planos use save_item_plan). Depois de chamar, termine a resposta.",
             json!({
                 "kind": { "type": "string", "enum": decision_kinds },
                 "title": { "type": "string" },
@@ -624,6 +634,9 @@ pub fn call(app: &AppHandle, binding: &Binding, name: &str, arguments: &Value) -
         READ_CARD => parse(name, arguments).and_then(|args| read_card(app, binding, args)),
         CREATE_CARD => parse(name, arguments).and_then(|args| create_card(app, binding, args)),
         MOVE_CARD => parse(name, arguments).and_then(|args| move_card(app, binding, args)),
+        SUBMIT_FOR_REVIEW => {
+            parse(name, arguments).and_then(|args| submit_for_review(app, binding, args))
+        }
         UPDATE_CARD => parse(name, arguments).and_then(|args| update_card(app, binding, args)),
         BACKLOG_ADD_LABEL => parse(name, arguments).and_then(|args| add_backlog_label(app, binding, args)),
         BACKLOG_REMOVE_LABEL => {
@@ -1007,6 +1020,38 @@ fn update_card(app: &AppHandle, binding: &Binding, args: UpdateArgs) -> ToolText
             description: args.description,
         },
     )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubmitForReviewArgs {
+    item_id: Option<String>,
+    note: Option<String>,
+}
+
+fn submit_for_review(app: &AppHandle, binding: &Binding, args: SubmitForReviewArgs) -> ToolText {
+    let slot_item_id = binding.slot.lock().item_id.clone();
+    let item_id = args
+        .item_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or(slot_item_id)
+        .ok_or_else(|| "Informe item_id para enviar o card para validação final.".to_string())?;
+    let note = args.note.as_deref().unwrap_or("").trim();
+    crate::orchestrator::validation::submit_card_for_review(
+        app,
+        &app.state::<crate::state::AppState>(),
+        binding.project_id,
+        &item_id,
+        &binding.agent,
+        note,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(format!(
+        "Card {item_id} enviado para In review com decisão de validação final aberta."
+    ))
 }
 
 fn move_card(app: &AppHandle, binding: &Binding, args: MoveArgs) -> ToolText {

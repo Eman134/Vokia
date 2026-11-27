@@ -763,7 +763,7 @@ pub(super) async fn run_turns(
                         },
                         None,
                         None,
-                        None,
+                        usage.clone(),
                     )?;
                 }
                 Ok(())
