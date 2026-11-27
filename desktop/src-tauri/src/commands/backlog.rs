@@ -374,17 +374,13 @@ pub(crate) fn notify_backlog_changed(app: &AppHandle, project_id: i64) {
 }
 
 pub(crate) fn save_item_plan_exec(app: &AppHandle, args: SaveItemPlanArgs) -> Result<(), String> {
-    let approved = {
+    {
         let state = app.state::<DbState>();
         let db = state.require().map_err(|error| error.to_string())?;
         db.save_item_plan(args.project_id, &args.item_id, &args.plan)
-            .map_err(|error| error.to_string())?
-    };
-    notify_backlog_changed(app, args.project_id);
-    if approved {
-        orchestrator::start_approved_plan(app, args.project_id, &args.item_id)
             .map_err(|error| error.to_string())?;
     }
+    notify_backlog_changed(app, args.project_id);
     Ok(())
 }
 

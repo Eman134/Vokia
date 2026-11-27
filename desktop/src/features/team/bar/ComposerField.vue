@@ -8,8 +8,9 @@ import { agentName } from '../agents'
 import { useRoster } from '../useRoster'
 import { useTeamStatus } from '../useTeamStatus'
 import { placeholderFor, QUEUE_SUFFIX } from '../composerPlaceholder'
-import { mentionSegments, mentionSpans, MENTION_TRIGGER } from '../composerMentions'
+import { composerHighlightSegments, findTaskMentions, mentionSegments, mentionSpans, MENTION_TRIGGER } from '../composerMentions'
 import { findAgentMentions } from '../agentMentions'
+import { useBacklog } from '../../backlog/useBacklog'
 import AgentPortrait from '../AgentPortrait.vue'
 import { FLOW_PLACEHOLDER } from '../flowSteps'
 import { screenDestination, screenPlaceholder } from '../screenRecipient'
@@ -18,6 +19,7 @@ import type { Agent } from '../events'
 import type { RailPage } from '../../../shell/railNav'
 import { useProjects } from '../../projects/useProjects'
 import MentionMenu from '../MentionMenu.vue'
+import TaskMentionMenu from '../TaskMentionMenu.vue'
 import CommandMenu from '../CommandMenu.vue'
 import { useComposerMenus } from './useComposerMenus'
 import AttachmentChips from '../../attachments/AttachmentChips.vue'
@@ -47,13 +49,14 @@ const RAISED_ICON_SIZE = 9
 
 // Deve casar com o pl-2 do campo e do espelho, para o menu cair sobre o @.
 const FIELD_PADDING_X = 8
-// Devem casar com o w-65 do MentionMenu e o w-75 do CommandMenu.
-const MENU_WIDTH_BY_KIND = { mention: 260, command: 300 } as const
+// Devem casar com o w-65 do MentionMenu, w-80 do TaskMentionMenu e o w-75 do CommandMenu.
+const MENU_WIDTH_BY_KIND = { mention: 260, task: 320, command: 300 } as const
 
 const connection = useConnection()
 const feed = useFeed()
 const requests = useRequests()
 const roster = useRoster()
+const backlog = useBacklog()
 const channelsStore = useChannels()
 const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const statusStore = useTeamStatus()
@@ -111,6 +114,7 @@ const {
   menuKind,
   activeMatch,
   mentionMatches,
+  taskMatches,
   commandMatches,
   menuCount,
   highlightedIndex,
@@ -118,6 +122,7 @@ const {
   activeOptionId,
   listboxId,
   chooseMentionAgent,
+  chooseMentionTask,
   chooseCommand,
   insertAtCaret,
   dismissMenu,
@@ -143,9 +148,10 @@ const recipient = computed<Agent | null>(
 const segments = computed(() => mentionSegments(draft.value, spans.value))
 // Só o destaque visual: o destino do pedido continua vindo das menções confirmadas (spans).
 const highlightSegments = computed(() =>
-  mentionSegments(
+  composerHighlightSegments(
     draft.value,
     findAgentMentions(draft.value, roster.agents).map(({ start, end, agent }) => ({ start, end, agent: agent.id })),
+    findTaskMentions(draft.value, backlog.items),
   ),
 )
 const queueHint = computed(() => {
@@ -324,7 +330,10 @@ defineExpose({ isFocused, selectRecipient })
         :style="{ transform: `translateX(${-scrollLeft}px)` }"
       >
         <template v-for="(segment, index) in highlightSegments" :key="index">
-          <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
+          <span v-if="segment.kind === 'text'" class="text-ink">{{ segment.text }}</span>
+          <span v-else-if="segment.kind === 'task'" :data-task-mention="segment.itemId" class="font-mono text-accent">{{
+            segment.text
+          }}</span>
           <span v-else :data-mention="segment.agent" class="relative text-accent">
             <span
               v-if="segment.text.startsWith(MENTION_TRIGGER)"
@@ -392,6 +401,14 @@ defineExpose({ isFocused, selectRecipient })
     :active-index="highlightedIndex"
     :left="menuLeft"
     @choose="chooseCommand"
+  />
+  <TaskMentionMenu
+    v-else-if="menuOpen && menuKind === 'task'"
+    :id="listboxId"
+    :tasks="taskMatches"
+    :active-index="highlightedIndex"
+    :left="menuLeft"
+    @choose="chooseMentionTask"
   />
   <MentionMenu
     v-else-if="menuOpen"

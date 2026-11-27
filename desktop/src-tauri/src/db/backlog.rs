@@ -1939,9 +1939,14 @@ fn refresh_parent_of(conn: &Connection, project_id: i64, id: &str) -> Result<(),
 }
 
 fn find_card(conn: &Connection, project_id: i64, id: &str) -> Result<BacklogItem, DbError> {
+    let trimmed = id.trim().trim_start_matches('#');
     conn.query_row(
-        &format!("SELECT {ITEM_COLUMNS} FROM backlog_items WHERE project_id = ?1 AND id = ?2"),
-        params![project_id, id],
+        &format!(
+            "SELECT {ITEM_COLUMNS} FROM backlog_items \
+             WHERE project_id = ?1 AND (id = ?2 OR UPPER(public_id) = UPPER(?2)) \
+             ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END LIMIT 1"
+        ),
+        params![project_id, trimmed],
         read_item,
     )
     .optional()?

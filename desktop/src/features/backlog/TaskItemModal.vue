@@ -416,6 +416,19 @@ function openConversations(): void {
   navigation.goTo('conversas')
 }
 
+async function copyIdentifier(): Promise<void> {
+  closeMenus()
+  const current = item.value
+  if (!current) return
+  const identifier = current.publicId ?? current.id
+  try {
+    await navigator.clipboard.writeText(identifier)
+    feed.notify(`Identificador ${identifier} copiado.`)
+  } catch {
+    feed.notify(`Não foi possível copiar ${identifier}.`)
+  }
+}
+
 function openInTasks(): void {
   const id = item.value?.id
   if (!id) return
@@ -658,6 +671,9 @@ watch(
                     </svg>
                   </button>
                   <div v-if="moreMenuOpen" role="menu" class="right-0 w-52" :class="POPOVER_CLASSES">
+                    <button type="button" role="menuitem" data-testid="task-copy-id" :class="MENU_ITEM_CLASSES" @click="copyIdentifier()">
+                      Copiar identificador
+                    </button>
                     <button type="button" role="menuitem" :class="MENU_ITEM_CLASSES" @click="openConversations()">
                       {{ CONVERSATIONS_LABEL }}
                     </button>
@@ -739,7 +755,7 @@ watch(
             <section v-if="pendingQuestions.length" class="flex flex-col gap-3">
               <h3 class="text-label font-semibold text-ink">{{ QUESTIONS_TITLE(leaderName) }}</h3>
               <div v-for="question in pendingQuestions" :key="question.id" class="flex flex-col gap-1.5">
-                <p class="text-control text-ink">{{ question.text }}</p>
+                <MarkdownText :text="question.text" tasks class="text-control text-ink" />
                 <div class="flex flex-wrap gap-1.5">
                   <UiChip
                     v-for="option in [...question.options, OTHER_OPTION]"

@@ -766,7 +766,13 @@ fn next_job(state: &AppState, key: SessionKey) -> Result<Option<QueuedJob>, Flow
 }
 
 // Começar a executar um card ou etapa o põe em In progress com as etiquetas de andamento; o quadro é avisado na hora.
-fn start_item_work(app: &AppHandle, project_id: i64, item_id: Option<&str>) -> Result<(), FlowError> {
+// Cards em A fazer (Backlog), triagem ou com plano não aprovado permanecem onde estão até aprovação ou pedido explícito de execução.
+fn start_item_work(
+    app: &AppHandle,
+    project_id: i64,
+    item_id: Option<&str>,
+    request: &str,
+) -> Result<(), FlowError> {
     let Some(item_id) = item_id else {
         return Ok(());
     };
@@ -775,6 +781,14 @@ fn start_item_work(app: &AppHandle, project_id: i64, item_id: Option<&str>) -> R
         item_id: item_id.to_string(),
         source,
     })?;
+    if let Ok(card) = db.read_card(project_id, item_id) {
+        let explicit_run = request.trim_start().starts_with("Execute o item ");
+        let unapproved = matches!(card.state.as_str(), "triagem" | "gerando" | "proposto");
+        let in_backlog = card.column.as_deref() == Some("Backlog");
+        if unapproved || (in_backlog && !explicit_run) {
+            return Ok(());
+        }
+    }
     db.start_card(project_id, item_id).map_err(|source| FlowError::CardStart {
         item_id: item_id.to_string(),
         source,
@@ -911,7 +925,7 @@ async fn run_flow(
     let mut first: Option<RequestOutcome> = None;
     let mut current_run: Option<u64> = context.run_id;
     loop {
-        start_item_work(app, key.project_id, item_id.as_deref())?;
+        start_item_work(app, key.project_id, item_id.as_deref(), &request)?;
         set_running_item(state, &key, item_id.as_deref())?;
         register_main_branch(state, key.project_id, item_id.as_deref())?;
         let journal_run = if parallel {

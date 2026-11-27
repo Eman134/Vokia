@@ -105,6 +105,9 @@ pub(super) async fn on_flow_end(
             .is_some_and(|orch_team| orch_team.final_validation == FINAL_VALIDATION_AUTOMATIC)
     });
     if !automatic {
+        if item.parent.is_some() {
+            return Ok(());
+        }
         return open_manual_validation(app, state, &leader, project_id, &item, "");
     }
     let open_decision = has_open_decision(state, project_id, item_id)?;

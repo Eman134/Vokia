@@ -16,7 +16,7 @@ use crate::db::{
 use crate::events::{DecisionKind, RequestProposal};
 use crate::orchestration::policy::check_intent;
 use crate::orchestration::snapshot::{find_team, team_leader, team_leaders, TeamLeader};
-use crate::orchestrator::{emit_backlog_changed, start_approved_plan, variables_listing, with_cache};
+use crate::orchestrator::{emit_backlog_changed, variables_listing, with_cache};
 use crate::state::{AppState, MAX_DELEGATION_PING_SECS, MIN_DELEGATION_PING_SECS};
 use crate::task::{Change, VarValue};
 
@@ -767,8 +767,12 @@ pub(crate) fn card_text(db: &Db, project_id: i64, id: &str) -> ToolText {
         .read_card(project_id, id)
         .map_err(|error| refusal_or_system(&error))?;
     let recent = card.activity.len().saturating_sub(RECENT_ACTIVITY_COUNT);
+    let heading = match card.public_id.as_deref() {
+        Some(pub_id) if pub_id != card.id => format!("Card {} ({}): {}", pub_id, card.id, card.title),
+        _ => format!("Card {}: {}", card.id, card.title),
+    };
     let mut lines = vec![
-        format!("Card {}: {}", card.id, card.title),
+        heading,
         format!("Coluna: {}", column_of(&card)),
         format!("Dono: {}", card.who),
         format!("Origem: {}", card.origin),
@@ -1343,26 +1347,19 @@ fn list_agents(app: &AppHandle) -> ToolText {
 }
 
 fn save_item_plan(app: &AppHandle, binding: &Binding, args: SavePlanArgs) -> ToolText {
-    let approved = {
+    {
         let state = app.state::<DbState>();
         let db = state.require().map_err(|error| refusal_or_system(&error))?;
-        match db.save_item_plan(binding.project_id, &args.item_id, &args.plan) {
-            Ok(approved) => {
-                crate::commands::learning::prepopulate_card_graph_from_plan(
-                    db,
-                    binding.project_id,
-                    &args.item_id,
-                    binding.agent.as_str(),
-                    &args.plan,
-                );
-                approved
-            }
-            Err(error) => return Err(refusal_or_system(&error)),
+        if let Err(error) = db.save_item_plan(binding.project_id, &args.item_id, &args.plan) {
+            return Err(refusal_or_system(&error));
         }
-    };
-    if approved {
-        start_approved_plan(app, binding.project_id, &args.item_id)
-            .map_err(|error| error.to_string())?;
+        crate::commands::learning::prepopulate_card_graph_from_plan(
+            db,
+            binding.project_id,
+            &args.item_id,
+            binding.agent.as_str(),
+            &args.plan,
+        );
     }
     let message = format!("Plano do card {} gravado.", args.item_id);
     record_backlog_change(app, binding, vec![message.clone()]);

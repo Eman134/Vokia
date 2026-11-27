@@ -8,6 +8,7 @@ import AgentPortrait from './AgentPortrait.vue'
 import AttachmentChips from '../attachments/AttachmentChips.vue'
 import CommandMenu from './CommandMenu.vue'
 import MentionMenu from './MentionMenu.vue'
+import TaskMentionMenu from './TaskMentionMenu.vue'
 import { useBacklog } from '../backlog/useBacklog'
 import { useTriage } from '../backlog/useTriage'
 import { useRunItem } from '../backlog/useRunItem'
@@ -17,7 +18,7 @@ import { agentName } from './agents'
 import { findAgentMentions } from './agentMentions'
 import { useComposerMenus } from './bar/useComposerMenus'
 import { useComposerSubmit } from './bar/useComposerSubmit'
-import { MENTION_TRIGGER, mentionSegments, mentionSpans } from './composerMentions'
+import { composerHighlightSegments, findTaskMentions, MENTION_TRIGGER, mentionSpans } from './composerMentions'
 import type { Agent } from './events'
 import { useThreads } from './useThreads'
 import { screenPlaceholder } from './screenRecipient'
@@ -65,6 +66,7 @@ const locked = computed(() => connection.checking)
 const {
   menuKind,
   mentionMatches,
+  taskMatches,
   commandMatches,
   menuCount,
   highlightedIndex,
@@ -72,6 +74,7 @@ const {
   activeOptionId,
   listboxId,
   chooseMentionAgent,
+  chooseMentionTask,
   chooseCommand,
   insertAtCaret,
   dismissMenu,
@@ -80,9 +83,10 @@ const {
 
 const spans = computed(() => mentionSpans(draft.value, confirmed.value))
 const highlightSegments = computed(() =>
-  mentionSegments(
+  composerHighlightSegments(
     draft.value,
     findAgentMentions(draft.value, roster.agents).map(({ start, end, agent }) => ({ start, end, agent: agent.id })),
+    findTaskMentions(draft.value, backlog.items),
   ),
 )
 const scrollTop = ref(0)
@@ -268,6 +272,22 @@ async function useChip(id: string): Promise<void> {
 
 <template>
   <div :class="FOOTER_CLASSES" data-testid="conversation-composer">
+    <div
+      v-if="requests.pendingQuote"
+      class="flex items-center gap-2 rounded-sm border border-line bg-surface-2 px-2.5 py-1 text-tiny text-ink"
+      data-testid="conversation-quote-preview"
+    >
+      <span class="shrink-0 font-semibold">Citando {{ requests.pendingQuote.author }}:</span>
+      <span class="min-w-0 flex-1 truncate text-muted">{{ requests.pendingQuote.text }}</span>
+      <button
+        type="button"
+        class="shrink-0 cursor-pointer rounded-sm px-1 text-muted hover:bg-hover hover:text-ink"
+        aria-label="Remover citação"
+        @click="requests.clearPendingQuote()"
+      >
+        ×
+      </button>
+    </div>
     <div role="group" :aria-label="COMMANDS_LABEL" class="flex flex-wrap items-center gap-1.5">
       <button
         v-for="command in chips"
@@ -303,6 +323,15 @@ async function useChip(id: string): Promise<void> {
         :left="0"
         class="bottom-full mb-1.5"
         @choose="chooseMentionAgent"
+      />
+      <TaskMentionMenu
+        v-else-if="menuOpen && menuKind === 'task'"
+        :id="listboxId"
+        :tasks="taskMatches"
+        :active-index="highlightedIndex"
+        :left="0"
+        class="bottom-full mb-1.5"
+        @choose="chooseMentionTask"
       />
       <CommandMenu
         v-else-if="!taskCommandMatch && menuOpen && menuKind === 'command'"
@@ -391,7 +420,10 @@ async function useChip(id: string): Promise<void> {
             :style="{ transform: `translate(${-scrollLeft}px, ${-scrollTop}px)` }"
           >
             <template v-for="(segment, index) in highlightSegments" :key="index">
-              <span v-if="segment.agent === null" class="text-ink">{{ segment.text }}</span>
+              <span v-if="segment.kind === 'text'" class="text-ink">{{ segment.text }}</span>
+              <span v-else-if="segment.kind === 'task'" :data-task-mention="segment.itemId" class="font-mono text-accent">{{
+                segment.text
+              }}</span>
               <span v-else :data-mention="segment.agent" class="relative text-accent">
                 <span
                   v-if="segment.text.startsWith(MENTION_TRIGGER)"
