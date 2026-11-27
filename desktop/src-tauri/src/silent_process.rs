@@ -487,24 +487,22 @@ impl SilentChild {
 }
 
 /// Inicia um processo de agente/fallback de forma silenciosa.
-/// No Windows, isola o processo em um desktop oculto (`CreateDesktopW` + `lpDesktop`)
-/// com `CREATE_NO_WINDOW` e `SW_HIDE`, degradando para `command.spawn()` se o desktop falhar.
+/// No Windows, aplica `CREATE_NO_WINDOW` e usa o `tokio::process::Command` padrão
+/// (evitando `CreateDesktopW` e shims `.cmd`/`.bat` já resolvidos por `configure_tokio_command`).
 pub fn spawn_silent(mut command: tokio::process::Command) -> io::Result<SilentChild> {
-    #[cfg(not(windows))]
-    {
-        command.spawn().map(SilentChild::from_tokio)
-    }
-
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     {
-        let Some(desktop) = hidden_desktop() else {
-            return command.spawn().map(SilentChild::from_tokio);
-        };
-        spawn_in_hidden_desktop(&mut command, desktop)
+        command.creation_flags(CREATE_NO_WINDOW);
     }
+    command.spawn().map(SilentChild::from_tokio)
 }
 
 #[cfg(windows)]
+#[allow(dead_code)]
 mod win32 {
     use super::*;
     use windows_sys::Win32::Foundation::{
@@ -887,4 +885,4 @@ mod win32 {
 }
 
 #[cfg(windows)]
-use win32::{hidden_desktop, spawn_in_hidden_desktop, Win32Child};
+use win32::Win32Child;
