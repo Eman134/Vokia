@@ -39,7 +39,7 @@ const ITEM_ON = 'text-ink-pen'
 const ITEM_OFF = 'text-muted hover:bg-hover hover:text-ink'
 const TOGGLE = 'cursor-pointer bg-transparent text-ink'
 const GROUP = 'flex flex-col gap-0.5'
-const GROUP_LABEL = 'pl-1.25 text-caption text-muted'
+const SECTION_DIVIDER = 'my-0.5 h-px w-full shrink-0 bg-graphite-soft'
 const ICON_SIZE = 17
 const SEARCH_ICON = 'M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M10.8 10.8 14 14'
 const SEARCH_LABEL = 'Buscar'
@@ -143,10 +143,10 @@ function toggleProject(project: Project) {
     :style="{ width: `${expanded ? RAIL_EXPANDED_WIDTH : RAIL_COLLAPSED_WIDTH}px` }"
   >
     <UiHandDivider class="absolute inset-y-0 right-0 h-full text-line!" />
-    <div class="flex shrink-0 items-center gap-2.5 pl-1.25 [@media(max-height:740px)]:pl-0.5">
+    <div class="flex shrink-0 items-center gap-2.5">
       <button
         type="button"
-        :class="`grid size-10 [@media(max-height:860px)]:size-9 [@media(max-height:740px)]:size-8 flex-none place-items-center rounded-md text-ink [--logo-cut:var(--color-paper)] ${INK_FOCUS_CLASSES}`"
+        :class="`${ICON_BOX} rounded-md text-ink [--logo-cut:var(--color-paper)] ${INK_FOCUS_CLASSES}`"
         aria-label="Vokia, início"
         title="Vokia"
         @click="navigation.goTo(PROJECT_LIST_PAGE)"
@@ -191,13 +191,18 @@ function toggleProject(project: Project) {
       </button>
     </nav>
 
-    <p v-if="expanded && (projectsStore.projects.length > 0 || projectsStore.loaded)" :class="GROUP_LABEL" aria-hidden="true">projetos</p>
+    <div v-if="projectsStore.projects.length > 0 || projectsStore.loaded" :class="SECTION_DIVIDER" aria-hidden="true" />
     <nav
       v-if="projectsStore.projects.length > 0"
       aria-label="Projetos"
       :class="[GROUP, 'shrink-0', expanded && 'w-full']"
     >
-      <div v-for="project in projectsStore.projects" :key="project.id" class="flex flex-col">
+      <template v-for="(project, index) in projectsStore.projects" :key="project.id">
+        <div v-if="index > 0" :class="SECTION_DIVIDER" aria-hidden="true" />
+        <div
+          class="flex flex-col rounded-md transition-colors"
+          :class="isOpen(project.name) ? 'bg-surface-2/45 py-0.5' : undefined"
+        >
         <div class="group/proj relative flex items-center">
           <button
             type="button"
@@ -258,7 +263,8 @@ function toggleProject(project: Project) {
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      </template>
     </nav>
     <div v-else class="min-h-0 flex-1">
       <nav v-if="projectsStore.loaded" aria-label="Projetos" :class="[GROUP, 'shrink-0', expanded && 'w-full']">
