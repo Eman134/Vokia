@@ -172,7 +172,6 @@ function toggleProject(project: Project) {
       <kbd v-if="expanded" :class="SEARCH_KBD">{{ SEARCH_SHORTCUT }}</kbd>
     </button>
 
-    <p v-if="expanded" :class="GROUP_LABEL" aria-hidden="true">workspace</p>
     <nav aria-label="Workspace" :class="[GROUP, 'shrink-0', expanded && 'w-full']">
       <button
         v-for="item in WORKSPACE_ITEMS"

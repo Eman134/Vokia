@@ -1,22 +1,29 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import UiButton from '../../ui/UiButton.vue'
 import { INK_FOCUS_CLASSES } from '../../ui/handDrawn'
 import { useNavigation } from '../../shell/useNavigation'
+import AgentPicker from '../agents/AgentPicker.vue'
 import AttachmentChips from '../attachments/AttachmentChips.vue'
 import CommandMenu from './CommandMenu.vue'
+import MentionMenu from './MentionMenu.vue'
 import { useBacklog } from '../backlog/useBacklog'
 import { useTriage } from '../backlog/useTriage'
 import { useRunItem } from '../backlog/useRunItem'
 import { isUnassigned } from '../backlog/backlogTypes'
 import { useChannels } from '../channels/useChannels'
 import { agentName } from './agents'
+import { findAgentMentions } from './agentMentions'
+import { useComposerMenus } from './bar/useComposerMenus'
 import { useComposerSubmit } from './bar/useComposerSubmit'
+import { MENTION_TRIGGER, mentionSpans } from './composerMentions'
+import type { Agent } from './events'
 import { useThreads } from './useThreads'
 import { screenPlaceholder } from './screenRecipient'
-import { COMMAND_TRIGGER, findCommandTrigger, SLASH_COMMANDS } from './slashCommands'
+import { COMMAND_TRIGGER, SLASH_COMMANDS } from './slashCommands'
 import { useConnection } from './useConnection'
 import { useFeed } from './useFeed'
+import { useRequests } from './useRequests'
 import { useRoster } from './useRoster'
 
 const FALLBACK_PLACEHOLDER = 'Mensagem para o time'
@@ -25,7 +32,7 @@ const SEND_LABEL = 'Enviar'
 const ATTACH_LABEL = 'Anexar arquivo'
 const COMMANDS_LABEL = 'Comandos'
 const FOOTER_CLASSES = 'flex shrink-0 flex-col gap-1.5 border-t border-line bg-paper px-4 py-2.5'
-// Mesma pílula da ActionBar: o clipe mora dentro dela, à esquerda, e o campo não tem borda própria.
+// Mesma pílula da ActionBar: o clipe e o @ moram dentro dela, à esquerda, e o campo não tem borda própria.
 const PILL_CLASSES = 'flex min-h-8.5 min-w-0 flex-1 items-center rounded-full bg-surface-2 pl-1.5 focus-within:outline-2 focus-within:outline-solid focus-within:outline-ink'
 const FIELD_CLASSES = 'field-sizing-content max-h-28 min-h-8 min-w-0 flex-1 resize-none border-0 bg-transparent py-1.5 pl-1 pr-3.5 text-control text-ink outline-none placeholder:text-faint'
 const ICON_SIZE_CLASSES = 'size-4 shrink-0'
@@ -38,14 +45,100 @@ const chips = SLASH_COMMANDS.filter((command) => command.enabled && command.id !
 
 const connection = useConnection()
 const feed = useFeed()
+const requests = useRequests()
 const roster = useRoster()
 const backlog = useBacklog()
 const triage = useTriage()
 const channels = useChannels()
 const threads = useThreads()
 const navigation = useNavigation()
-const { draft, submit, attachments } = useComposerSubmit('conversation')
+const { draft, confirmed, submit, attachments } = useComposerSubmit('conversation')
 const field = ref<HTMLTextAreaElement>()
+const caret = ref(0)
+const agentPickerOpen = ref(false)
+const locked = computed(() => connection.checking)
+
+const {
+  menuKind,
+  mentionMatches,
+  commandMatches,
+  menuCount,
+  highlightedIndex,
+  menuOpen,
+  activeOptionId,
+  listboxId,
+  chooseMentionAgent,
+  chooseCommand,
+  insertAtCaret,
+  dismissMenu,
+  onKeydown,
+} = useComposerMenus({ draft, caret, confirmed, locked, placeCaret })
+
+const spans = computed(() => mentionSpans(draft.value, confirmed.value))
+const selectedMentionRecipient = computed<Agent | null>(() => spans.value[0]?.agent ?? null)
+const queuedCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const entry of requests.queue) {
+    counts[entry.to] = (counts[entry.to] ?? 0) + 1
+  }
+  return counts
+})
+const recipientTooltip = computed(() =>
+  selectedMentionRecipient.value
+    ? `Destinatário: ${roster.nameOf(selectedMentionRecipient.value)} (trocar agente)`
+    : 'Escolher agente destinatário',
+)
+
+function queueCountLabel(count: number): string {
+  return `${count} na fila`
+}
+
+watch(draft, (text) => {
+  const present = new Set(
+    findAgentMentions(text, roster.agents).map((mention) => mention.agent.id),
+  )
+  const sameSize = present.size === confirmed.value.size
+  const sameAll = sameSize && [...present].every((id) => confirmed.value.has(id))
+  if (!sameAll) {
+    confirmed.value = present
+  }
+})
+
+function syncCaret(): void {
+  caret.value = field.value?.selectionStart ?? draft.value.length
+}
+
+async function placeCaret(position: number): Promise<void> {
+  await nextTick()
+  field.value?.focus()
+  field.value?.setSelectionRange(position, position)
+  syncCaret()
+}
+
+function selectRecipient(agentId: Agent): void {
+  const target = roster.agents.find((agent) => agent.id === agentId)
+  if (target === undefined) return
+  const firstSpan = spans.value[0]
+  if (firstSpan !== undefined) {
+    const replacement = `${MENTION_TRIGGER}${target.name}`
+    const nextText = `${draft.value.slice(0, firstSpan.start)}${replacement}${draft.value.slice(firstSpan.end)}`
+    const nextConfirmed = new Set(confirmed.value)
+    nextConfirmed.delete(firstSpan.agent)
+    nextConfirmed.add(target.id)
+    draft.value = nextText
+    confirmed.value = nextConfirmed
+    const endPos = firstSpan.start + replacement.length
+    const caretPos = nextText.slice(endPos).startsWith(' ') ? endPos + 1 : endPos
+    void placeCaret(caretPos)
+    return
+  }
+  insertAtCaret(target)
+}
+
+function onPickRecipient(agentId: Agent | null): void {
+  if (!agentId) return
+  void nextTick(() => selectRecipient(agentId))
+}
 
 const triageItems = computed(() => backlog.items.filter((item) => backlog.triagingIds.has(item.id)))
 const selectedTriageItem = computed(() => {
@@ -68,12 +161,6 @@ const triageTarget = computed(() => {
 
 const rosterOrder = computed(() => roster.agents.map((profile) => profile.id))
 const activeThread = computed(() => (feed.screen.kind === 'thread' ? threads.find(feed.screen.itemId) : undefined))
-const commandMatch = computed(() => findCommandTrigger(draft.value, field.value?.selectionStart ?? draft.value.length))
-const commandMatches = computed(() =>
-  commandMatch.value
-    ? SLASH_COMMANDS.filter((c) => c.enabled && c.id.startsWith(commandMatch.value!.query.toLowerCase()))
-    : [],
-)
 const taskCommandMatch = computed(() => {
   const m = /^\/(triar|iniciar)(?:\s+(.*))?$/i.exec(draft.value.trimStart())
   if (!m) return null
@@ -109,6 +196,7 @@ async function selectTaskForCommand(itemId: string): Promise<void> {
   }
   backlog.open(itemId)
 }
+
 const placeholder = computed(
   () =>
     screenPlaceholder(
@@ -123,6 +211,16 @@ const placeholder = computed(
 )
 const hasContent = computed(() => draft.value.trim() !== '' || attachments.attachments.value.length > 0)
 const canSend = computed(() => hasContent.value && !connection.checking && !attachments.saving.value)
+
+function onFieldKeydown(event: KeyboardEvent): void {
+  if (menuOpen.value && !taskCommandMatch.value) {
+    onKeydown(event)
+    if (event.defaultPrevented) return
+  }
+  if (event.key === 'Enter') {
+    onEnter(event)
+  }
+}
 
 // Enter envia, Shift+Enter quebra a linha; durante a composição de acento o Enter confirma a letra, não envia.
 function onEnter(event: KeyboardEvent): void {
@@ -150,8 +248,7 @@ function onPaste(event: ClipboardEvent): void {
 
 async function useChip(id: string): Promise<void> {
   draft.value = `${COMMAND_TRIGGER}${id} `
-  await nextTick()
-  field.value?.focus()
+  await placeCaret(draft.value.length)
 }
 </script>
 
@@ -184,14 +281,23 @@ async function useChip(id: string): Promise<void> {
       </select>
     </div>
     <div class="relative flex items-end gap-2">
-      <CommandMenu
-        v-if="!taskCommandMatch && commandMatch && commandMatches.length > 0"
-        id="conversation-command-menu"
-        :commands="commandMatches"
-        :active-index="0"
+      <MentionMenu
+        v-if="menuOpen && menuKind === 'mention'"
+        :id="listboxId"
+        :agents="mentionMatches"
+        :active-index="highlightedIndex"
         :left="0"
         class="bottom-full mb-1.5"
-        @choose="useChip($event.id)"
+        @choose="chooseMentionAgent"
+      />
+      <CommandMenu
+        v-else-if="!taskCommandMatch && menuOpen && menuKind === 'command'"
+        :id="listboxId"
+        :commands="commandMatches"
+        :active-index="highlightedIndex"
+        :left="0"
+        class="bottom-full mb-1.5"
+        @choose="chooseCommand"
       />
       <ul
         v-if="taskCommandMatch && taskCommandMatch.items.length > 0"
@@ -225,6 +331,39 @@ async function useChip(id: string): Promise<void> {
             <path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />
           </svg>
         </UiButton>
+        <AgentPicker
+          v-if="roster.agents.length > 0"
+          v-model:open="agentPickerOpen"
+          :model-value="selectedMentionRecipient"
+          :counts="queuedCounts"
+          :count-label="queueCountLabel"
+          :disabled="locked"
+          busy-first
+          placement="top"
+          floating="absolute"
+          trigger-variant="ghost"
+          :trigger-class="selectedMentionRecipient ? 'size-6.5 justify-center !px-0 text-accent' : 'size-6.5 justify-center !px-0 text-muted hover:text-ink'"
+          label="Escolher agente destinatário"
+          :title="recipientTooltip"
+          test-id="conversation-agent-picker"
+          @select="onPickRecipient"
+        >
+          <template #trigger>
+            <svg
+              class="size-3.5 shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
+            </svg>
+          </template>
+        </AgentPicker>
         <AttachmentChips
           :attachments="attachments.attachments.value"
           :saving="attachments.saving.value"
@@ -235,12 +374,22 @@ async function useChip(id: string): Promise<void> {
           ref="field"
           v-model="draft"
           rows="1"
+          role="combobox"
+          aria-autocomplete="list"
+          :aria-expanded="menuOpen"
+          :aria-controls="menuOpen && menuCount > 0 ? listboxId : undefined"
+          :aria-activedescendant="activeOptionId"
           :aria-label="FIELD_LABEL"
           :placeholder="placeholder"
           :class="FIELD_CLASSES"
           data-testid="conversation-composer-field"
-          @keydown.enter="onEnter"
+          @keydown="onFieldKeydown"
           @keydown.backspace="onBackspace"
+          @input="syncCaret"
+          @click="syncCaret"
+          @keyup="syncCaret"
+          @select="syncCaret"
+          @blur="dismissMenu"
           @paste="onPaste"
         />
       </div>
