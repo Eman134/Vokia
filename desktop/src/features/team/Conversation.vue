@@ -105,6 +105,11 @@ function channelName(target: number | typeof GENERAL_CHANNEL_NAME): string | nul
 const threads = useThreads()
 const backlog = useBacklog()
 const activeThread = computed(() => (feed.screen.kind === 'thread' ? threads.find(feed.screen.itemId) : undefined))
+const activeSubthread = computed(() => {
+  const current = feed.screen
+  if (current.kind !== 'thread' || !current.subItemId) return undefined
+  return activeThread.value?.subthreads.find((sub) => sub.itemId === current.subItemId)
+})
 
 const screenLabel = computed(() => {
   if (feed.screen.kind === 'agent') {
@@ -118,7 +123,7 @@ const screenLabel = computed(() => {
     return name === null ? ALL_SCREEN_LABEL : `#${name}`
   }
   if (feed.screen.kind === 'thread') {
-    return activeThread.value?.title ?? 'Thread'
+    return activeSubthread.value?.title ?? activeThread.value?.title ?? 'Thread'
   }
   if (feed.screen.kind === 'triage') {
     return `#${TRIAGE_CHANNEL_NAME}`
@@ -137,7 +142,7 @@ const screenRole = computed(() => {
     return roster.profileOf(feed.screen.baseAgent)?.role ?? ''
   }
   if (feed.screen.kind === 'thread') {
-    const col = activeThread.value?.column ?? ''
+    const col = activeSubthread.value?.column ?? activeThread.value?.column ?? ''
     return feed.screen.agent ? `${col} · ${agentName(feed.screen.agent)}` : col
   }
   if (feed.screen.kind === 'triage') return triageRole(backlog.triagingIds.size)
@@ -176,7 +181,9 @@ const scopedPendingAgents = computed<AgentProfile[]>(() => {
 const pendingGroups = computed(() =>
   groupPendingAgentsByState(scopedPendingAgents.value, feed.states, feed.stateSince),
 )
-const activeThreadItemId = computed(() => (feed.screen.kind === 'thread' ? feed.screen.itemId : undefined))
+const activeThreadItemId = computed(() =>
+  feed.screen.kind === 'thread' ? (feed.screen.subItemId ?? feed.screen.itemId) : undefined,
+)
 const scopedLiveRuns = computed(() =>
   pendingGroups.value
     .flatMap((group) => group.entries)

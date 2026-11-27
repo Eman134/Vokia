@@ -65,7 +65,7 @@ export function isAgentInScreen(
         return screen.agent === agentId
       }
       if (context.agentItems !== undefined) {
-        return context.agentItems[agentId] === screen.itemId
+        return context.agentItems[agentId] === (screen.subItemId ?? screen.itemId)
       }
       if (!context.thread) {
         return false
