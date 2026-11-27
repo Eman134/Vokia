@@ -34,12 +34,15 @@ import {
   COLUMN_LABEL,
   DEFAULT_COLUMN,
   isUnassigned,
+  READY_BLOCKED_HINT,
+  READY_COLUMN,
   type TaskCardAction,
   type BacklogColumn,
   type BacklogItem,
   type BacklogState,
   type KanbanStage,
 } from './backlogTypes'
+import { useFeed } from '../team/useFeed'
 import { useBacklog } from './useBacklog'
 import { PLAN_TAB_BY_ACTION, useItemPlan } from './useItemPlan'
 import { useRunItem } from './useRunItem'
@@ -78,6 +81,7 @@ const triage = useTriage()
 const navigation = useNavigation()
 const projectsStore = useProjects()
 const roster = useRoster()
+const feed = useFeed()
 const projectName = computed(() => projectsStore.selected?.name ?? '')
 
 function tryOpenPendingCard(): void {
@@ -123,6 +127,10 @@ function onSortMenuPointerDown(e: PointerEvent): void {
 
 function onWindowKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape') return
+  if (draggingId.value !== null) {
+    clearDragState()
+    return
+  }
   if (openSortColumn.value !== null) {
     openSortColumn.value = null
     return
@@ -337,8 +345,237 @@ watch(
   () => {
     dismissedError.value = false
     clearSelection()
+    clearDragState()
   },
 )
+
+const DRAG_THRESHOLD_PX = 6
+const draggingId = ref<string | null>(null)
+const dragOverColumn = ref<BacklogColumn | null>(null)
+const dragOverIndex = ref<number | null>(null)
+const dragPos = ref({ x: 0, y: 0 })
+const dragCardSize = ref({ width: 260, height: 80, offsetX: 40, offsetY: 20 })
+let pendingDrag: {
+  item: BacklogItem
+  startX: number
+  startY: number
+  rect: DOMRect
+} | null = null
+let suppressNextClick = false
+
+const draggingItem = computed(() =>
+  draggingId.value ? backlog.items.find((item) => item.id === draggingId.value) ?? null : null,
+)
+
+function setBodyDragCursor(active: boolean): void {
+  document.body.style.cursor = active ? 'grabbing' : ''
+  document.body.style.userSelect = active ? 'none' : ''
+}
+
+function clearDragState(): void {
+  pendingDrag = null
+  draggingId.value = null
+  dragOverColumn.value = null
+  dragOverIndex.value = null
+  setBodyDragCursor(false)
+  window.removeEventListener('pointermove', onWindowPointerMove)
+  window.removeEventListener('pointerup', onWindowPointerUp)
+  window.removeEventListener('pointercancel', onWindowPointerUp)
+}
+
+onUnmounted(() => {
+  clearDragState()
+})
+
+function canDropOnColumn(item: BacklogItem, target: BacklogColumn): { allowed: boolean; reason?: string } {
+  const source = columnOf(item)
+  if (source === target) return { allowed: true }
+  if (item.error) return { allowed: false, reason: 'Card com erro não pode ser movido.' }
+  if (target === 'In review') {
+    return { allowed: false, reason: 'Em revisão é atualizado automaticamente pela validação.' }
+  }
+  const state = itemPlan.stateFor(item)
+  if (target === READY_COLUMN) {
+    if (
+      itemPlan.isReviewed(item.id) ||
+      state === 'proposto' ||
+      source === 'In progress' ||
+      source === 'In review'
+    ) {
+      return { allowed: true }
+    }
+    return { allowed: false, reason: READY_BLOCKED_HINT }
+  }
+  if (target === 'In progress') {
+    if (runItem.canRun(item.id) || state === 'proposto' || source === 'In review' || source === 'Done') {
+      return { allowed: true }
+    }
+    return { allowed: false, reason: 'Este card não pode ser iniciado agora.' }
+  }
+  return { allowed: true }
+}
+
+function columnDropAllowed(column: BacklogColumn): boolean {
+  if (!draggingItem.value) return false
+  return canDropOnColumn(draggingItem.value, column).allowed
+}
+
+function onCardPointerDown(event: PointerEvent, item: BacklogItem): void {
+  if (event.button !== 0 || item.error) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button, input, select, textarea, a, [role="checkbox"]')) return
+  const cardEl = event.currentTarget as HTMLElement | null
+  if (!cardEl) return
+  pendingDrag = {
+    item,
+    startX: event.clientX,
+    startY: event.clientY,
+    rect: cardEl.getBoundingClientRect(),
+  }
+  window.addEventListener('pointermove', onWindowPointerMove)
+  window.addEventListener('pointerup', onWindowPointerUp)
+  window.addEventListener('pointercancel', onWindowPointerUp)
+}
+
+function hitTestDropTarget(clientX: number, clientY: number): { column: BacklogColumn; index: number } | null {
+  const cols = document.querySelectorAll<HTMLElement>('[data-drop-column]')
+  let matchedCol: HTMLElement | null = null
+  for (const col of cols) {
+    const rect = col.getBoundingClientRect()
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      matchedCol = col
+      break
+    }
+  }
+  if (!matchedCol) return null
+  const colName = matchedCol.dataset.dropColumn as BacklogColumn | undefined
+  if (!colName) return null
+
+  const cards = [...matchedCol.querySelectorAll<HTMLElement>('[data-card-id]')]
+    .filter((el) => el.dataset.cardId !== draggingId.value)
+  let index = cards.length
+  for (let i = 0; i < cards.length; i += 1) {
+    const rect = cards[i]!.getBoundingClientRect()
+    if (clientY < rect.top + rect.height / 2) {
+      index = i
+      break
+    }
+  }
+  return { column: colName, index }
+}
+
+function onWindowPointerMove(event: PointerEvent): void {
+  if (pendingDrag && draggingId.value === null) {
+    const dist = Math.hypot(event.clientX - pendingDrag.startX, event.clientY - pendingDrag.startY)
+    if (dist < DRAG_THRESHOLD_PX) return
+    draggingId.value = pendingDrag.item.id
+    dragCardSize.value = {
+      width: pendingDrag.rect.width,
+      height: pendingDrag.rect.height,
+      offsetX: event.clientX - pendingDrag.rect.left,
+      offsetY: event.clientY - pendingDrag.rect.top,
+    }
+    suppressNextClick = true
+    setBodyDragCursor(true)
+  }
+  if (draggingId.value === null) return
+  dragPos.value = { x: event.clientX, y: event.clientY }
+  const hit = hitTestDropTarget(event.clientX, event.clientY)
+  dragOverColumn.value = hit?.column ?? null
+  dragOverIndex.value = hit?.index ?? null
+}
+
+function onWindowPointerUp(): void {
+  const item = draggingItem.value
+  const targetColumn = dragOverColumn.value
+  const targetIndex = dragOverIndex.value
+  clearDragState()
+  if (suppressNextClick) {
+    requestAnimationFrame(() => {
+      suppressNextClick = false
+    })
+  }
+  if (!item || !targetColumn) return
+  void applyDrop(item, targetColumn, targetIndex)
+}
+
+function onOpenCardSafe(itemId: string): void {
+  if (suppressNextClick) return
+  onOpenCard(itemId)
+}
+
+function showDropGhostAt(column: BacklogColumn, slotIndex: number): boolean {
+  if (!draggingItem.value || dragOverColumn.value !== column || dragOverIndex.value !== slotIndex) {
+    return false
+  }
+  if (!columnDropAllowed(column)) return false
+  // Na mesma coluna, se não mudou de posição em relação ao card original, ainda mostra o fantasma na área de drop apenas quando o card saiu da vaga ou em outra coluna.
+  return true
+}
+
+function cardsForRender(column: BacklogColumn, cards: BacklogItem[]): BacklogItem[] {
+  if (dragOverColumn.value !== column || draggingId.value === null) return cards
+  return cards.filter((c) => c.id !== draggingId.value)
+}
+
+async function applyDrop(item: BacklogItem, targetColumn: BacklogColumn, targetIndex: number | null): Promise<void> {
+  const sourceColumn = columnOf(item)
+  if (sourceColumn === targetColumn) {
+    if (hasActiveFilters.value) {
+      feed.notify('Limpe os filtros para reordenar os cards da coluna.')
+      return
+    }
+    const currentOrder = columns.value.find((c) => c.name === targetColumn)?.cards.map((c) => c.id) ?? []
+    const withoutMoved = currentOrder.filter((id) => id !== item.id)
+    const insertAt = targetIndex !== null ? Math.max(0, Math.min(targetIndex, withoutMoved.length)) : withoutMoved.length
+    withoutMoved.splice(insertAt, 0, item.id)
+    if (withoutMoved.every((id, i) => id === currentOrder[i])) return
+    columnSort.value[targetColumn] = 'default'
+    backlog.reorderColumn(targetColumn, withoutMoved)
+    return
+  }
+
+  const check = canDropOnColumn(item, targetColumn)
+  if (!check.allowed) {
+    if (check.reason) feed.notify(check.reason)
+    return
+  }
+
+  const state = itemPlan.stateFor(item)
+  if (state === 'triagem' || state === 'gerando') {
+    itemPlan.cancel(item.id)
+  }
+
+  if (sourceColumn === 'In progress' || runItem.isRunning(item.id)) {
+    await runItem.stop(item.id)
+    if (targetColumn === 'Backlog' || targetColumn === 'Done') {
+      backlog.moveTo(item.id, targetColumn)
+    }
+    return
+  }
+
+  if (targetColumn === 'In progress') {
+    if (state === 'proposto') {
+      itemPlan.accept(item.id)
+    }
+    if (sourceColumn === 'Done' || sourceColumn === 'In review') {
+      backlog.moveTo(item.id, READY_COLUMN)
+    }
+    void runItem.run(item.id)
+    return
+  }
+
+  if (targetColumn === READY_COLUMN) {
+    if (state === 'proposto') {
+      itemPlan.accept(item.id)
+    } else {
+      backlog.moveTo(item.id, READY_COLUMN)
+    }
+    return
+  }
+
+  backlog.moveTo(item.id, targetColumn)
+}
 </script>
 
 <template>
@@ -447,9 +684,21 @@ watch(
           role="list"
           aria-label="Colunas do backlog"
           :aria-busy="backlog.loading"
-          :class="GRID_CLASSES"
+          :class="[GRID_CLASSES, draggingId !== null && '[&_[data-card-id]]:pointer-events-none']"
         >
-          <section v-for="column in columns" :key="column.name" role="listitem" :aria-label="COLUMN_LABEL[column.name]" :class="COLUMN_CLASSES">
+          <section
+            v-for="column in columns"
+            :key="column.name"
+            role="listitem"
+            :aria-label="COLUMN_LABEL[column.name]"
+            :data-drop-column="column.name"
+            :data-testid="`column-${column.name}`"
+            :class="[
+              COLUMN_CLASSES,
+              'rounded-md transition-colors',
+              dragOverColumn === column.name && (columnDropAllowed(column.name) ? 'bg-accent-soft/25 ring-2 ring-accent/40' : 'opacity-65'),
+            ]"
+          >
             <div :class="COLUMN_HEADER_CLASSES">
               <div :class="COLUMN_TITLE_CLASSES">
                 <b>{{ COLUMN_LABEL[column.name] }}</b>
@@ -496,22 +745,47 @@ watch(
               </div>
             </div>
             <span v-if="!backlog.loading && !isEmptyBoard && column.cards.length === 0" :class="EMPTY_COLUMN_CLASSES">{{ EMPTY_COLUMN_TEXT }}</span>
-            <TaskCard
-              v-for="item in column.cards"
+            <template
+              v-for="(item, cardIdx) in cardsForRender(column.name, column.cards)"
               :key="item.id"
-              :item="item"
-              :column="column.name"
-              :state="itemPlan.stateFor(item)"
-              :plan-line="itemPlan.lineFor(item)"
-              :proposal="itemPlan.proposalFor(item)"
-              :density="column.name === DEFAULT_COLUMN ? 'compact' : 'full'"
-              :selectable="column.name === DEFAULT_COLUMN && canSelectForTriage(item)"
-              :selected="column.name === DEFAULT_COLUMN && selection.selected.has(item.id)"
-              :queued="triage.isQueued(item.id)"
-              @open="onOpenCard(item.id)"
-              @action="onCardAction(item.id, $event)"
-              @toggle-select="onToggleSelect(item.id, $event)"
-            />
+            >
+              <div
+                v-if="showDropGhostAt(column.name, cardIdx)"
+                class="rounded-sm border-2 border-dashed border-accent/60 bg-accent-soft/35 px-2.5 py-2 text-caption text-accent/80 select-none"
+                :style="{ minHeight: `${Math.min(dragCardSize.height, 84)}px` }"
+                aria-hidden="true"
+                data-testid="drop-ghost"
+              >
+                <span class="font-mono text-tiny font-bold">{{ draggingItem?.publicId ?? draggingItem?.id }}</span>
+                <p class="truncate font-semibold">{{ draggingItem?.title }}</p>
+              </div>
+              <TaskCard
+                :item="item"
+                :column="column.name"
+                :state="itemPlan.stateFor(item)"
+                :plan-line="itemPlan.lineFor(item)"
+                :proposal="itemPlan.proposalFor(item)"
+                :density="column.name === DEFAULT_COLUMN ? 'compact' : 'full'"
+                :selectable="column.name === DEFAULT_COLUMN && canSelectForTriage(item)"
+                :selected="column.name === DEFAULT_COLUMN && selection.selected.has(item.id)"
+                :queued="triage.isQueued(item.id)"
+                :dragging="draggingId === item.id"
+                @pointerdown="onCardPointerDown($event, item)"
+                @open="onOpenCardSafe(item.id)"
+                @action="onCardAction(item.id, $event)"
+                @toggle-select="onToggleSelect(item.id, $event)"
+              />
+            </template>
+            <div
+              v-if="showDropGhostAt(column.name, cardsForRender(column.name, column.cards).length)"
+              class="rounded-sm border-2 border-dashed border-accent/60 bg-accent-soft/35 px-2.5 py-2 text-caption text-accent/80 select-none"
+              :style="{ minHeight: `${Math.min(dragCardSize.height, 84)}px` }"
+              aria-hidden="true"
+              data-testid="drop-ghost"
+            >
+              <span class="font-mono text-tiny font-bold">{{ draggingItem?.publicId ?? draggingItem?.id }}</span>
+              <p class="truncate font-semibold">{{ draggingItem?.title }}</p>
+            </div>
             <div v-if="backlog.loading" class="text-caption text-faint">{{ LOADING_TEXT }}</div>
           </section>
         </div>
@@ -528,5 +802,28 @@ watch(
       @triage="onBatchTriage"
       @clear="clearSelection"
     />
+    <Teleport to="body">
+      <div
+        v-if="draggingItem"
+        class="pointer-events-none fixed z-50"
+        :style="{
+          left: `${dragPos.x - dragCardSize.offsetX}px`,
+          top: `${dragPos.y - dragCardSize.offsetY}px`,
+          width: `${dragCardSize.width}px`,
+        }"
+        aria-hidden="true"
+      >
+        <TaskCard
+          :item="draggingItem"
+          :column="columnOf(draggingItem)"
+          :state="itemPlan.stateFor(draggingItem)"
+          :plan-line="itemPlan.lineFor(draggingItem)"
+          :proposal="itemPlan.proposalFor(draggingItem)"
+          :density="columnOf(draggingItem) === DEFAULT_COLUMN ? 'compact' : 'full'"
+          :queued="triage.isQueued(draggingItem.id)"
+          floating
+        />
+      </div>
+    </Teleport>
   </section>
 </template>

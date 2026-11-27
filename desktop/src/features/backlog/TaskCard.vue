@@ -45,12 +45,16 @@ const props = withDefaults(
     selectable?: boolean
     selected?: boolean
     queued?: boolean
+    dragging?: boolean
+    floating?: boolean
   }>(),
   {
     density: 'full',
     selectable: false,
     selected: false,
     queued: false,
+    dragging: false,
+    floating: false,
   },
 )
 const emit = defineEmits<{
@@ -69,6 +73,8 @@ const FULL_CARD_CLASSES =
 const COMPACT_CARD_CLASSES =
   'group relative flex min-w-0 cursor-pointer select-none flex-col gap-1 rounded-sm border border-line bg-surface px-2 py-1.5'
 const SELECTED_CARD_CLASSES = 'border-accent bg-accent-soft'
+const DRAGGING_GHOST_CLASSES = 'opacity-35 border-dashed border-graphite bg-surface-2 pointer-events-none select-none'
+const FLOATING_CARD_CLASSES = 'rotate-3 scale-[1.02] shadow-paper ring-1 ring-ink/15 pointer-events-none select-none'
 const CHECKBOX_BASE_CLASSES = `size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border transition-colors ${INK_FOCUS_CLASSES}`
 const CHECKBOX_ON_CLASSES = 'inline-flex border-accent bg-accent text-accent-ink'
 const CHECKBOX_OFF_CLASSES = 'hidden border-line bg-surface text-transparent hover:border-ink group-hover:inline-flex group-focus-within:inline-flex'
@@ -138,7 +144,15 @@ function onCardClick(event: MouseEvent): void {
 <template>
   <article
     tabindex="0"
-    :class="[isCompact ? COMPACT_CARD_CLASSES : FULL_CARD_CLASSES, selected && SELECTED_CARD_CLASSES, INK_FOCUS_CLASSES]"
+    :data-card-id="item.id"
+    :class="[
+      isCompact ? COMPACT_CARD_CLASSES : FULL_CARD_CLASSES,
+      !item.error && !floating && 'cursor-grab active:cursor-grabbing',
+      selected && SELECTED_CARD_CLASSES,
+      dragging && DRAGGING_GHOST_CLASSES,
+      floating && FLOATING_CARD_CLASSES,
+      INK_FOCUS_CLASSES,
+    ]"
     @click="onCardClick"
     @keydown.enter.self="emit('open')"
   >

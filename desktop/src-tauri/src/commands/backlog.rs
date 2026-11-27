@@ -401,6 +401,16 @@ pub(crate) async fn return_task_exec(app: &AppHandle, args: ReturnTaskArgs) -> R
     .map_err(|error| error.to_string())
 }
 
+// Interrompe qualquer execução ou fila em andamento de um card e o devolve para Ready.
+pub(crate) async fn stop_task_run_exec(
+    app: &AppHandle,
+    args: BacklogItemArgs,
+) -> Result<bool, String> {
+    orchestrator::stop_task_flow(app, &app.state::<AppState>(), args.project_id, &args.item_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn list_backlog(app: AppHandle, project_id: i64) -> Result<BacklogSnapshot, String> {
     list_backlog_exec(&app, ProjectIdArgs { project_id })
@@ -627,6 +637,22 @@ pub async fn return_task(
             project_id,
             item_id,
             motive,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn stop_task_run(
+    app: AppHandle,
+    project_id: i64,
+    item_id: String,
+) -> Result<bool, String> {
+    stop_task_run_exec(
+        &app,
+        BacklogItemArgs {
+            project_id,
+            item_id,
         },
     )
     .await

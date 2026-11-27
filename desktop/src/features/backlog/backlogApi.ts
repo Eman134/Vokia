@@ -8,7 +8,9 @@ const SAVE_BACKLOG_ITEM_COMMAND = 'save_backlog_item'
 const CREATE_BACKLOG_ITEM_COMMAND = 'create_backlog_item'
 const CREATE_REQUEST_FROM_PROPOSAL_COMMAND = 'create_request_from_proposal'
 const MOVE_BACKLOG_ITEM_COMMAND = 'move_backlog_item'
+const REORDER_BACKLOG_COLUMN_COMMAND = 'reorder_backlog_column'
 const RETURN_TASK_COMMAND = 'return_task'
+const STOP_TASK_RUN_COMMAND = 'stop_task_run'
 const SAVE_ITEM_PLAN_COMMAND = 'save_item_plan'
 const ARCHIVE_BACKLOG_ITEM_COMMAND = 'archive_backlog_item'
 const DELETE_BACKLOG_ITEM_COMMAND = 'delete_backlog_item'
@@ -74,9 +76,21 @@ export function moveBacklogItem(projectId: number, id: string, column: BacklogCo
   return invoke<void>(MOVE_BACKLOG_ITEM_COMMAND, { projectId, id, column })
 }
 
+export function reorderBacklogColumn(
+  projectId: number,
+  column: BacklogColumn,
+  itemIds: string[],
+): Promise<void> {
+  return invoke<void>(REORDER_BACKLOG_COLUMN_COMMAND, { projectId, column, itemIds })
+}
+
 // Devolve a task concluída ao líder: o motivo é obrigatório e o card volta a In progress.
 export function returnTask(projectId: number, itemId: string, motive: string): Promise<void> {
   return invoke<void>(RETURN_TASK_COMMAND, { projectId, itemId, motive })
+}
+
+export function stopTaskRun(projectId: number, itemId: string): Promise<boolean> {
+  return invoke<boolean>(STOP_TASK_RUN_COMMAND, { projectId, itemId })
 }
 
 export function saveItemPlan(projectId: number, itemId: string, plan: ItemPlanInput): Promise<void> {

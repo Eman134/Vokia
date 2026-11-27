@@ -10,6 +10,7 @@ import {
   deleteBacklogItem,
   fetchBacklog,
   moveBacklogItem,
+  reorderBacklogColumn,
   saveBacklogItem,
   saveItemPlan,
   type ItemPlanEntry,
@@ -268,6 +269,27 @@ export const useBacklog = defineStore('backlog', () => {
     enqueue(id, (projectId) => moveBacklogItem(projectId, id, column))
   }
 
+  function reorderColumn(column: BacklogColumn, orderedIds: string[]): void {
+    const projectId = loadedProjectId.value
+    if (projectId === null || orderedIds.length === 0) return
+    const orderMap = new Map(orderedIds.map((id, index) => [id, index]))
+    const reordered: BacklogItem[] = []
+    const slots: number[] = []
+    items.value.forEach((item, index) => {
+      if (orderMap.has(item.id)) {
+        slots.push(index)
+        reordered.push(item)
+      }
+    })
+    reordered.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0))
+    const next = [...items.value]
+    slots.forEach((slotIndex, i) => {
+      next[slotIndex] = reordered[i]!
+    })
+    items.value = next
+    void reorderBacklogColumn(projectId, column, orderedIds).catch(reportError)
+  }
+
   function addActivity(id: string, text: string): void {
     const item = editable(id)
     if (!item) return
@@ -387,6 +409,7 @@ export const useBacklog = defineStore('backlog', () => {
     createFromProposal,
     proposalCreated,
     moveTo,
+    reorderColumn,
     archive,
     remove,
     setPlanNote,

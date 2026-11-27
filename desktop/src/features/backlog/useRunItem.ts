@@ -5,6 +5,7 @@ import { agentName, DEFAULT_RECIPIENT } from '../team/agents'
 import { useRequests, type RunResult } from '../team/useRequests'
 import { useProjects } from '../projects/useProjects'
 import type { BacklogItem } from './backlogTypes'
+import { stopTaskRun } from './backlogApi'
 import { useBacklog, type RunColumn } from './useBacklog'
 import { useItemPlan } from './useItemPlan'
 import { isRunnableColumn } from './runnableColumn'
@@ -24,6 +25,7 @@ const DONE_NOTE = (agent: string) => `Execução concluída por ${agent}.`
 const NOT_SENT_NOTE = 'A execução não foi enviada.'
 const FAILED_NOTE = 'A execução falhou; veja o erro na barra.'
 const CANCELLED_NOTE = 'Execução cancelada na fila.'
+const STOPPED_NOTE = 'Execução interrompida pelo usuário.'
 const PAUSED_NOTE = 'Execução pausada pelo limite de uso; retome pelo aviso da barra.'
 const INTERRUPTED_NOTE = 'Execução interrompida: o app foi fechado ou o projeto trocado antes do fim.'
 const MOVED_NOTE = (label: string) => `Execução terminou (${label}) com o card já movido.`
@@ -196,5 +198,21 @@ export const useRunItem = defineStore('runItem', () => {
     }
   }
 
-  return { canRun, isRunning, run }
+  async function stop(itemId: string): Promise<void> {
+    const projectId = backlog.loadedProjectId
+    if (projectId === null) return
+    const cancelledInQueue = requests.cancelForItem(projectId, itemId)
+    delete running.value[runKey(projectId, itemId)]
+    try {
+      await stopTaskRun(projectId, itemId)
+    } catch (error) {
+      backlog.addActivity(itemId, `Não foi possível interromper no agente: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    const current = findItem(itemId)
+    if (!cancelledInQueue && current?.column === 'In progress') {
+      backlog.setRunColumn(itemId, 'Ready', STOPPED_NOTE)
+    }
+  }
+
+  return { canRun, isRunning, run, stop }
 })
