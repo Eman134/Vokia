@@ -62,6 +62,7 @@ pub(crate) fn run() {
             commands::backlog::reorder_backlog_column,
             commands::backlog::set_item_priority,
             commands::backlog::return_task,
+            commands::backlog::stop_task_run,
             commands::backlog::save_item_plan,
             commands::backlog::add_backlog_label,
             commands::backlog::remove_backlog_label,
@@ -122,6 +123,7 @@ pub(crate) fn run() {
             commands::orchestration::set_judge_full_flow,
             commands::orchestration::save_orchestration_settings,
             commands::orchestration::list_agent_activity,
+            commands::orchestration::queue_metrics,
             commands::orchestration::list_agent_copies,
             commands::turn_plan::get_turn_plan,
             // providers

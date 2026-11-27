@@ -571,6 +571,13 @@ pub(crate) fn list_agent_activity_exec(app: &AppHandle) -> Result<Vec<AgentActiv
         .collect())
 }
 
+pub(crate) fn queue_metrics_exec(
+    app: &AppHandle,
+) -> Result<orchestrator::QueueMetricsSnapshot, String> {
+    let app_state = app.state::<AppState>();
+    orchestrator::queue_metrics(&app_state).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn list_agent_copies(app: AppHandle, project_id: i64) -> Result<Vec<AgentCopies>, String> {
     list_agent_copies_exec(&app, ListAgentCopiesArgs { project_id })
@@ -579,6 +586,11 @@ pub fn list_agent_copies(app: AppHandle, project_id: i64) -> Result<Vec<AgentCop
 #[tauri::command]
 pub fn list_agent_activity(app: AppHandle) -> Result<Vec<AgentActivity>, String> {
     list_agent_activity_exec(&app)
+}
+
+#[tauri::command]
+pub fn queue_metrics(app: AppHandle) -> Result<orchestrator::QueueMetricsSnapshot, String> {
+    queue_metrics_exec(&app)
 }
 
 #[cfg(test)]

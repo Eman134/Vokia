@@ -652,6 +652,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("backlog", "reorder_backlog_column", "Reordena os cards de uma coluna do backlog.", "Para definir a ordem dos cards dentro de uma coluna (projectId, column, itemIds).", empty_object_schema),
     exposed("backlog", "set_item_priority", "Define ou limpa a prioridade de um item do backlog.", "Para definir a prioridade de um card (projectId, itemId, priority: Baixa|Média|Alta|Urgente ou vazio para limpar).", empty_object_schema),
     exposed("backlog", "return_task", "Devolve uma task concluída ao líder com um motivo.", "Para devolver ao líder uma task concluída com um motivo obrigatório; o card volta a In progress.", empty_object_schema),
+    exposed("backlog", "stop_task_run", "Interrompe a execução, fila ou delegação ativa de um card.", "Para parar imediatamente uma task em andamento (projectId, itemId) e devolvê-la para Ready.", empty_object_schema),
     exposed("backlog", "save_item_plan", "Grava o plano de um item do backlog (proposal no protocolo #plano-pronto com #lote, que é o formato recomendado; qualquer texto é aceito).", "Para gravar o plano de execução de um card.", schema_save_item_plan),
     exposed("backlog", "add_backlog_label", "Adiciona um rótulo a um item do backlog.", "Para marcar um card com um rótulo.", empty_object_schema),
     exposed("backlog", "remove_backlog_label", "Remove um rótulo de um item do backlog.", "Para tirar um rótulo de um card.", empty_object_schema),
@@ -707,6 +708,7 @@ const COMMANDS: &[CommandMeta] = &[
     exposed("orchestration", "set_judge_full_flow", "Liga ou desliga o julgamento de fluxo do líder de um time (args: teamId, enabled). Ligado, o líder escreve #fluxo completo|motivo ou #fluxo reduzido|motivo antes de delegar uma task nova, e o reduzido pula a camada de Revisão.", "Para deixar o líder do time escolher entre o fluxo completo e o reduzido em cada task.", schema_set_judge_full_flow),
     exposed("orchestration", "save_orchestration_settings", "Grava as configurações da orquestração.", "Para gravar os limites e opções gerais da orquestração.", schema_save_orchestration_settings),
     exposed("orchestration", "list_agent_activity", "Lista as execuções em andamento por agente.", "Para ver o que cada agente está executando agora em todos os projetos.", empty_object_schema),
+    exposed("orchestration", "queue_metrics", "Devolve métricas em tempo real de instâncias ativas, filas por agente e delegações aguardando vaga/worktree/pausa.", "Para diagnosticar gargalos, tempos de espera (waitMs) e filas da orquestração.", empty_object_schema),
     exposed("orchestration", "list_agent_copies", "Lista as réplicas de agentes em execução em um projeto.", "Para ver as réplicas de agentes em execução em um projeto e os cards delas.", schema_project_id),
     exposed("orchestration", "get_turn_plan", "Devolve o plano vivo de etapas do turno atual (ou mais recente) de um agente. Parâmetros: agent (obrigatório), projectId (opcional), cardId (opcional).", "Para consultar o checklist de etapas em execução de um agente ou o último plano registrado para um card.", schema_get_turn_plan),
     exposed("providers", "list_providers", "Lista os provedores configurados.", "Para ver os provedores configurados, capacidades de esforço, instalação e estado de conexão de cada um.", empty_object_schema),
@@ -956,6 +958,9 @@ async fn run(
             parse_args(arguments)?,
         )),
         "return_task" => json_result(backlog::return_task_exec(app, parse_args(arguments)?).await),
+        "stop_task_run" => {
+            json_result(backlog::stop_task_run_exec(app, parse_args(arguments)?).await)
+        }
         "save_item_plan" => json_result(backlog::save_item_plan_exec(app, parse_args(arguments)?)),
         "add_backlog_label" => {
             json_result(backlog::add_backlog_label_exec(app, parse_args(arguments)?))
@@ -1075,6 +1080,7 @@ async fn run(
             orchestration::save_orchestration_settings_exec(app, parse_args(arguments)?),
         ),
         "list_agent_activity" => json_result(orchestration::list_agent_activity_exec(app)),
+        "queue_metrics" => json_result(orchestration::queue_metrics_exec(app)),
         "list_agent_copies" => json_result(orchestration::list_agent_copies_exec(
             app,
             parse_args(arguments)?,
