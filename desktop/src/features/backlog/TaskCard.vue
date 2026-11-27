@@ -118,22 +118,47 @@ const ownerName = computed(() => (isUnassigned(props.item) ? UNASSIGNED_TEXT : (
 const action = computed(() => cardActionFor(props.item, props.column, props.state))
 
 const progress = computed(() => {
-  const { children, triageStep } = props.item
+  const { children, triageStep, criteria } = props.item
   if (props.column === DONE_COLUMN) {
-    const total = Math.max(children?.total ?? 0, DONE_SEGMENTS)
-    return { total, filled: total, fillClass: 'bg-ok', showText: children !== undefined && children.total > 0, statusText: undefined }
+    const hasChildren = children !== undefined && children.total > 0
+    const criteriaTotal = criteria?.length ?? 0
+    const total = Math.max(hasChildren ? children.total : criteriaTotal, DONE_SEGMENTS)
+    const text = hasChildren
+      ? `${children.total} micro-tarefas · ${children.total} feitas`
+      : criteriaTotal > 0
+        ? `${criteriaTotal} ${criteriaTotal === 1 ? 'critério' : 'critérios'} · ${criteriaTotal} ${criteriaTotal === 1 ? 'feito' : 'feitos'}`
+        : undefined
+    return { total, filled: total, fillClass: 'bg-ok', text, statusText: undefined }
   }
-  if (children) {
-    return { total: children.total, filled: Math.min(children.done, children.total), fillClass: 'bg-ok', showText: true, statusText: undefined }
+  if (children && children.total > 0) {
+    const filled = Math.min(children.done, children.total)
+    return {
+      total: children.total,
+      filled,
+      fillClass: 'bg-ok',
+      text: `${children.total} micro-tarefas · ${filled} feitas`,
+      statusText: undefined,
+    }
   }
   if (props.state === 'triagem') {
-    return { total: TRIAGE_STEP_COUNT, filled: triageStep ?? 0, fillClass: 'bg-accent', showText: false, statusText: props.planLine }
+    return { total: TRIAGE_STEP_COUNT, filled: triageStep ?? 0, fillClass: 'bg-accent', text: undefined, statusText: props.planLine }
   }
   if (props.state === 'gerando') {
-    return { total: TRIAGE_STEP_COUNT, filled: 1, fillClass: 'bg-accent', showText: false, statusText: props.planLine ?? GENERATING_TEXT }
+    return { total: TRIAGE_STEP_COUNT, filled: 1, fillClass: 'bg-accent', text: undefined, statusText: props.planLine ?? GENERATING_TEXT }
   }
   if (props.queued) {
-    return { total: TRIAGE_STEP_COUNT, filled: 0, fillClass: 'bg-accent', showText: false, statusText: QUEUED_TEXT }
+    return { total: TRIAGE_STEP_COUNT, filled: 0, fillClass: 'bg-accent', text: undefined, statusText: QUEUED_TEXT }
+  }
+  if (criteria && criteria.length > 0) {
+    const filled = criteria.filter((criterion) => criterion.done).length
+    const total = criteria.length
+    return {
+      total,
+      filled,
+      fillClass: 'bg-ok',
+      text: `${total} ${total === 1 ? 'critério' : 'critérios'} · ${filled} ${filled === 1 ? 'feito' : 'feitos'}`,
+      statusText: undefined,
+    }
   }
   return undefined
 })
@@ -341,8 +366,8 @@ onUnmounted(() => {
     </div>
 
     <div v-if="progress" class="flex flex-col gap-1" data-testid="card-progress">
-      <p v-if="progress.showText" class="hidden justify-between text-meta text-muted xl:flex">
-        <span>{{ item.children?.total }} micro-tarefas · {{ progress.filled }} feitas</span>
+      <p v-if="progress.text" class="hidden justify-between text-meta text-muted xl:flex">
+        <span>{{ progress.text }}</span>
         <span>{{ percent }}%</span>
       </p>
       <p v-else-if="progress.statusText" class="truncate text-tiny text-muted">{{ progress.statusText }}</p>
