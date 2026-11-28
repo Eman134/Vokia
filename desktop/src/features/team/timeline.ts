@@ -113,6 +113,53 @@ function entriesOfItems(
   return feed.filter((entry) => entryInThreads(entry, itemIds, participants))
 }
 
+// Rastreia delegações sem canal originadas pelo agente da tela (e cadeias no mesmo itemId)
+// para exibir a resposta final ao usuário e consumir a pendência após a entrega.
+function agentScreenEntries(
+  feed: readonly FeedEntry[],
+  agent: Agent,
+  channels: readonly Channel[],
+): readonly FeedEntry[] {
+  const pendingByAgent = new Map<Agent, Set<string | null>>()
+  const result: FeedEntry[] = []
+
+  const addPending = (target: Agent, itemKey: string | null) => {
+    let items = pendingByAgent.get(target)
+    if (!items) {
+      items = new Set<string | null>()
+      pendingByAgent.set(target, items)
+    }
+    items.add(itemKey)
+  }
+
+  for (const entry of feed) {
+    if (entryHasChannel(entry, channels)) continue
+
+    if (entryInvolves(entry, agent)) {
+      result.push(entry)
+      if (entry.type === 'message' && entry.from === agent && entry.to !== 'user' && entry.to !== agent) {
+        addPending(entry.to, entry.itemId ?? null)
+      }
+      continue
+    }
+
+    if (entry.type !== 'message' || entry.from === 'user') continue
+    const itemKey = entry.itemId ?? null
+
+    if (entry.to === 'user') {
+      const pending = pendingByAgent.get(entry.from)
+      if (pending?.has(itemKey)) {
+        result.push(entry)
+        pending.delete(itemKey)
+      }
+    } else if (pendingByAgent.get(entry.from)?.has(itemKey) && entry.to !== entry.from) {
+      addPending(entry.to, itemKey)
+    }
+  }
+
+  return result
+}
+
 // Filtra antes de agrupar: na tela de um agente, um grupo misto mostra só as mensagens dele (P4).
 // Em #triagem, `triagingIds` são os cards em triagem e `threadAgents` os agentes ativos neles.
 export function screenEntries(
@@ -126,7 +173,7 @@ export function screenEntries(
     case 'all':
       return feed
     case 'agent':
-      return feed.filter((entry) => entryInvolves(entry, screen.agent) && !entryHasChannel(entry, channels))
+      return agentScreenEntries(feed, screen.agent, channels)
     case 'copy':
       return feed.filter((entry) => entryInvolves(entry, screen.copyId) && !entryHasChannel(entry, channels))
     case 'channel':

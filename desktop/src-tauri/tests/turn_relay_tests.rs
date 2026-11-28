@@ -65,14 +65,29 @@ fn fala_com_delegacao_vai_a_quem_pediu_e_nao_ao_helper() {
 }
 
 #[test]
-fn resposta_do_helper_fica_na_linha_dele_e_nao_vira_turno_do_requisitante() {
+fn resposta_do_helper_sem_proximo_turno_entrega_ao_usuario_e_nao_ao_requisitante() {
     let definition = definition();
     let vexa = Turn::new(agent("vexa"), "vexa oi", "vexa oi", vec![agent("axiom")]);
 
     let next = next_turn(&definition, &vexa, "Oi! Em que posso ajudar?", None);
 
     assert!(next.is_none());
-    assert!(speech_recipient(&definition, &vexa, None) == Speaker::from(agent("axiom")));
+    assert!(speech_recipient(&definition, &vexa, None) == Speaker::User);
+}
+
+#[test]
+fn fala_intermediaria_em_cadeia_sincrona_responde_ao_requisitante() {
+    let definition = definition();
+    let vexa = Turn::new(agent("vexa"), "vexa oi", "vexa oi", vec![agent("axiom")]);
+    let delegation = (agent("gitta"), "gitta confere".to_string());
+    let next = next_turn(&definition, &vexa, "Vou confirmar com a Gitta.", Some(&delegation));
+
+    assert!(next.is_some());
+    assert!(speech_recipient(&definition, &vexa, next.as_ref()) == Speaker::from(agent("axiom")));
+    assert!(
+        final_recipient(&definition, &vexa, next.as_ref(), Some(&Agent::ember()))
+            == Speaker::from(agent("axiom"))
+    );
 }
 
 #[test]
@@ -84,17 +99,33 @@ fn sem_delegacao_nem_requisitante_a_fala_vai_ao_usuario_e_a_conversa_termina() {
     assert!(speech_recipient(&definition, &axiom, None) == Speaker::User);
 }
 
-// Release com CI/CD: Ember→Axiom→Gitta. O Axiom espera o Gitta (requisitante dele) e só a resposta final vai ao Ember.
+// Ember→Axiom→User e Ember→Axiom→Gitta→User: o fim de cadeia entrega ao usuário mesmo com reply_to ou requesters.
 #[test]
-fn resposta_final_do_lider_delegado_pelo_ember_vai_ao_ember_e_a_do_gitta_ao_axiom() {
+fn fim_de_cadeia_delegada_pelo_ember_entrega_ao_usuario() {
     let definition = definition();
     let ember = Agent::ember();
-    let gitta = Turn::new(agent("gitta"), "release", "release", vec![agent("axiom")]);
     let axiom = Turn::new(agent("axiom"), "release", "release", Vec::new());
+    let gitta = Turn::new(agent("gitta"), "release", "release", vec![agent("axiom")]);
 
-    assert!(final_recipient(&definition, &gitta, None, Some(&ember)) == Speaker::from(agent("axiom")));
-    assert!(final_recipient(&definition, &axiom, None, Some(&ember)) == Speaker::from(ember.clone()));
+    assert!(final_recipient(&definition, &axiom, None, Some(&ember)) == Speaker::User);
+    assert!(final_recipient(&definition, &gitta, None, Some(&ember)) == Speaker::User);
     assert!(final_recipient(&definition, &axiom, None, None) == Speaker::User);
+}
+
+#[test]
+fn modo_alternado_mantem_revezamento_e_entrega_ao_usuario_no_fim() {
+    let mut definition = definition();
+    definition.alternate = true;
+    let ember = Agent::ember();
+    let axiom = Turn::new(agent("axiom"), "pedido", "pedido", Vec::new());
+    let next = next_turn(&definition, &axiom, "Minha vez.", None).expect("próximo do revezamento");
+
+    assert!(next.speaker == agent("vexa"));
+    assert!(
+        final_recipient(&definition, &axiom, Some(&next), Some(&ember))
+            == Speaker::from(agent("vexa"))
+    );
+    assert!(final_recipient(&definition, &axiom, None, Some(&ember)) == Speaker::User);
 }
 
 #[test]

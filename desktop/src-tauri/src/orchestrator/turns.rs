@@ -1698,10 +1698,13 @@ fn next_turn(
     Some(Turn::new(helper.clone(), request, request, requesters))
 }
 
-// A fala de quem falou vai ao próximo do revezamento ou, sem revezamento, a quem pediu o turno.
+// Fora do modo alternado, o fim da cadeia entrega ao usuário; falas intermediárias respondem ao requisitante.
 fn speech_recipient(definition: &TaskDefinition, turn: &Turn, next: Option<&Turn>) -> Speaker {
     if definition.alternate {
         return next.map_or(Speaker::User, |next| Speaker::from(next.speaker.clone()));
+    }
+    if next.is_none() {
+        return Speaker::User;
     }
     turn.requesters
         .last()
@@ -1709,19 +1712,13 @@ fn speech_recipient(definition: &TaskDefinition, turn: &Turn, next: Option<&Turn
         .map_or(Speaker::User, Speaker::from)
 }
 
-// A resposta que fecha o fluxo de uma delegação do orquestrador vai a ele (mensagem, sem turno); o resto segue a regra comum.
 fn final_recipient(
     definition: &TaskDefinition,
     turn: &Turn,
     next: Option<&Turn>,
-    reply_to: Option<&Agent>,
+    _reply_to: Option<&Agent>,
 ) -> Speaker {
-    match (next, reply_to) {
-        (None, Some(orchestrator)) if turn.requesters.is_empty() => {
-            Speaker::from(orchestrator.clone())
-        }
-        _ => speech_recipient(definition, turn, next),
-    }
+    speech_recipient(definition, turn, next)
 }
 
 fn next_participant(participants: &[Agent], speaker: &Agent) -> Agent {
